@@ -19,6 +19,7 @@ class AbilityEffect(BaseModel):
     target_switched: bool = False
     bleed_applied: bool = False
     clear_debuffs: bool = False
+    counter_attack: Optional[Dict[str, Any]] = None
 
 class Ability(BaseModel):
     name: str
