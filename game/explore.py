@@ -1,0 +1,582 @@
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from database.db_instance import get_database
+from database.characters import get_character_data
+import asyncio
+from datetime import datetime
+from typing import List, Optional, Dict, Tuple
+import random
+from telegram.constants import ParseMode
+from database.models import Character, Titan, Player
+from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
+import logging
+
+logger = logging.getLogger(__name__)
+
+class BattleSystem:
+    def __init__(self, character: 'Character', titan: 'Titan'):
+        self.character = character
+        self.titan = titan
+        self.character_hp = character.current_hp
+        self.titan_hp = titan.max_hp
+        self.gas = character.gas
+        self.character_gas = character.gas  # Max gas
+        self.ability_cooldowns = {ability.name: 0 for ability in character.active_abilities + character.passive_abilities}
+        self.buffs = {}
+        self.debuffs = {}  # Character debuffs
+        self.titan_debuffs = {}  # Titan debuffs
+        self.turn = 0
+        self.trigger_states = {
+            "first_damage_taken": False,
+            "dodge_count": 0,
+            "fear_counter": 0,
+            "focused_turns": 0,
+            "ally_died": False
+        }
+        self.apply_passives("battle_start")
+
+    def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
+        """Build standardized battle context for ability effect functions."""
+        return {
+            "character_stats": self.character.stats.dict(),
+            "character_hp": self.character_hp,
+            "character_max_hp": self.character.stats.HP,
+            "titan_hp": self.titan_hp,
+            "titan_size": random.randint(5, 15),
+            "is_intelligent_titan": random.random() < 0.1,
+            "is_leader": random.random() < 0.05,
+            "first_damage_taken": self.trigger_states["first_damage_taken"],
+            "dodge_count": self.trigger_states["dodge_count"],
+            "fear_counter": self.trigger_states["fear_counter"],
+            "focused_turns": self.trigger_states["focused_turns"],
+            "ally_died": self.trigger_states["ally_died"],
+            "turn": self.turn,
+            "gas": self.gas,
+            "character_gas": self.character_gas,
+            "base_damage": ability.base_damage + self.character.stats.ATK if ability else 0,
+            "character_level": self.character.level,
+            "target_is_self": False  # Adjust based on ability logic if needed
+        }
+
+    def apply_passives(self, trigger: str) -> List[str]:
+        """Apply passive abilities for a given trigger, returning messages."""
+        character_data = get_character_data(self.character.character_type)
+        messages = []
+        for ability_name, ability in character_data.abilities.get("passive", {}).items():
+            if (self.character.unlocked_abilities.get(ability_name, False) or ability.is_unlocked) and ability.effect_function:
+                context = self.build_context(trigger, ability)
+                effect = ability.effect_function(context)
+                self.apply_effect(effect)
+                if effect.message:
+                    messages.append(effect.message)
+        return messages
+
+    def apply_effect(self, effect: AbilityEffect) -> None:
+        """Apply an AbilityEffect to the battle state."""
+        self.titan_hp = max(0, self.titan_hp - effect.damage)
+        self.character_hp = min(self.character.stats.HP, self.character_hp + effect.healed)
+        if effect.shield:
+            self.buffs["shield"] = self.buffs.get("shield", 0) + effect.shield
+        if effect.stun_duration:
+            self.titan_debuffs["stun"] = max(self.titan_debuffs.get("stun", 0), effect.stun_duration)
+        self.buffs.update(effect.buffs)
+        self.titan_debuffs.update(effect.debuffs)
+        if effect.clear_debuffs:
+            self.debuffs.clear()
+        if effect.items_dropped:
+            self.buffs["items_dropped"] = self.buffs.get("items_dropped", []) + effect.items_dropped
+        if effect.target_switched:
+            self.titan_debuffs["target_switched"] = 1
+        if effect.bleed_applied:
+            self.titan_debuffs["bleed"] = self.titan_debuffs.get("bleed", 0) + 1
+
+    def titan_attack(self) -> Tuple[int, str]:
+        """Calculate damage dealt by titan, respecting debuffs and buffs."""
+        if self.titan_debuffs.get("stun", 0) > 0:
+            self.titan_debuffs["stun"] -= 1
+            return 0, f"{self.titan.name} is stunned and cannot attack this turn!"
+        if self.titan_debuffs.get("delay", 0) > 0:
+            self.titan_debuffs["delay"] -= 1
+            return 0, f"{self.titan.name} is delayed and cannot attack this turn!"
+            
+        if self.buffs.get("dodge", 0) > 0 or self.trigger_states["dodge_count"] > 0:
+            self.trigger_states["dodge_count"] = max(0, self.trigger_states["dodge_count"] - 1)
+            messages = self.apply_passives("dodge")
+            return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
+            
+        base_damage = max(10, self.titan.level * 5)
+        damage = int(base_damage * (1 - self.character.stats.DEF / 200))
+        
+        # Apply damage reduction buffs
+        if self.buffs.get("damage_reduction", 0):
+            damage = int(damage * (1 - self.buffs["damage_reduction"]))
+            
+        # Apply shield if available
+        if self.buffs.get("shield", 0) > 0:
+            shield_absorb = min(self.buffs["shield"], damage)
+            self.buffs["shield"] -= shield_absorb
+            damage -= shield_absorb
+            if self.buffs["shield"] <= 0:
+                del self.buffs["shield"]
+                
+        self.character_hp = max(0, self.character_hp - damage)
+        
+        # Trigger passives based on damage taken
+        if damage > 0 and not self.trigger_states["first_damage_taken"]:
+            self.trigger_states["first_damage_taken"] = True
+            messages = self.apply_passives("damage_taken")
+            
+        # Check for low HP triggers
+        if self.character_hp / self.character.stats.HP <= 0.3:
+            self.trigger_states["fear_counter"] += 1
+            messages = self.apply_passives("low_hp")
+            
+        self.trigger_states["focused_turns"] = min(3, self.trigger_states["focused_turns"] + 1)
+        messages = self.apply_passives("titan_attack")
+        
+        return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(messages)
+
+    def use_ability(self, ability_name: str, target_is_self: bool = False) -> Tuple[int, str, Dict]:
+        """Use a character ability, returning damage, message, and effects."""
+        character_data = get_character_data(self.character.character_type)
+        effects = {
+            "healed": 0, 
+            "shield": 0, 
+            "stun_duration": 0, 
+            "items_dropped": [], 
+            "target_switched": False, 
+            "bleed_applied": False
+        }
+        
+        # Check all ability types (active, passive, ultimate)
+        for ability_type in character_data.abilities:
+            if ability_name in character_data.abilities[ability_type]:
+                ability = character_data.abilities[ability_type][ability_name]
+                
+                # Validate ability usage
+                if not (self.character.unlocked_abilities.get(ability_name, False) or ability.is_unlocked):
+                    return 0, f"Ability {ability_name} is locked.", effects
+                if ability.disabled_against_titans:
+                    return 0, f"{ability_name} cannot be used against titans.", effects
+                if self.ability_cooldowns.get(ability_name, 0) > 0:
+                    return 0, f"{ability_name} is on cooldown for {self.ability_cooldowns[ability_name]} turns.", effects
+                if self.gas < ability.gas_cost:
+                    return 0, f"Not enough gas to use {ability_name} (requires {ability.gas_cost}).", effects
+                
+                # Apply ability
+                self.gas -= ability.gas_cost
+                self.ability_cooldowns[ability_name] = ability.cooldown or 1
+                context = self.build_context("ability_use", ability)
+                context["target_is_self"] = target_is_self
+                effect = ability.effect_function(context) if ability.effect_function else AbilityEffect()
+                
+                # Apply effect to battle state
+                self.apply_effect(effect)
+                effects.update({
+                    "healed": effect.healed,
+                    "shield": effect.shield,
+                    "stun_duration": effect.stun_duration,
+                    "items_dropped": effect.items_dropped,
+                    "target_switched": effect.target_switched,
+                    "bleed_applied": effect.bleed_applied
+                })
+                
+                return effect.damage, effect.message or f"{self.character.name} used {ability_name}!", effects
+        
+        return 0, f"Ability {ability_name} not found.", effects
+
+    def update_cooldowns(self) -> None:
+        """Decrease ability cooldowns and temporary effects."""
+        for ability_name in list(self.ability_cooldowns.keys()):
+            if self.ability_cooldowns[ability_name] > 0:
+                self.ability_cooldowns[ability_name] -= 1
+                
+        for debuff in list(self.titan_debuffs.keys()):
+            if isinstance(self.titan_debuffs[debuff], (int, float)):
+                self.titan_debuffs[debuff] = max(0, self.titan_debuffs[debuff] - 1)
+                if self.titan_debuffs[debuff] <= 0:
+                    del self.titan_debuffs[debuff]
+                    
+        for buff in list(self.buffs.keys()):
+            if isinstance(self.buffs[buff], (int, float)) and buff not in ["shield", "items_dropped"]:
+                self.buffs[buff] = max(0, self.buffs[buff] - 1)
+                if self.buffs[buff] <= 0:
+                    del self.buffs[buff]
+
+    def get_battle_status(self) -> Dict:
+        """Return current battle state."""
+        character_hp_percent = self.character_hp / self.character.stats.HP
+        titan_hp_percent = self.titan_hp / self.titan.max_hp
+        character_bar = "█" * int(character_hp_percent * 10) + "▒" * (10 - int(character_hp_percent * 10))
+        titan_bar = "█" * int(titan_hp_percent * 10) + "▒" * (10 - int(titan_hp_percent * 10))
+        
+        status_message = f"Turn: {self.turn + 1}\n"
+        
+        if self.titan_debuffs:
+            status_message += f"Titan debuffs: {', '.join([f'{k}({v})' for k, v in self.titan_debuffs.items()])}\n"
+            
+        if self.buffs:
+            buffs_display = []
+            for k, v in self.buffs.items():
+                if k == "items_dropped":
+                    continue
+                buffs_display.append(f"{k}({v})")
+            if buffs_display:
+                status_message += f"Buffs: {', '.join(buffs_display)}\n"
+                
+        if self.buffs.get("items_dropped"):
+            status_message += f"Items dropped: {', '.join(self.buffs['items_dropped'])}\n"
+            
+        return {
+            "character_hp": self.character_hp,
+            "titan_hp": self.titan_hp,
+            "gas": self.gas,
+            "character_bar": character_bar,
+            "titan_bar": titan_bar,
+            "status_message": status_message
+        }
+
+    def calculate_rewards(self) -> dict:
+        """Calculate rewards for defeating the titan."""
+        return {
+            "xp": self.titan.xp_reward,
+            "marks": max(1, self.titan.level * 2),
+            "titan_crystals": max(1, self.titan.level // 2),
+            "valor_points": max(1, self.titan.level)
+        }
+
+# Store active battles
+active_battles = {}
+
+def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardButton]]:
+    """Generate keyboard buttons for valid abilities."""
+    keyboard = []
+    character_data = get_character_data(battle.character.character_type)
+    
+    # Add active abilities
+    for ability_name, ability in character_data.abilities.get("active", {}).items():
+        is_unlocked = (
+            battle.character.unlocked_abilities.get(ability_name, False) or 
+            ability.is_unlocked or
+            (hasattr(ability, 'level_required') and ability.level_required <= battle.character.level)
+        )
+        
+        if (
+            is_unlocked and
+            not ability.disabled_against_titans and
+            battle.ability_cooldowns.get(ability_name, 0) == 0 and
+            battle.gas >= ability.gas_cost
+        ):
+            keyboard.append([InlineKeyboardButton(
+                f"{ability.name} ({ability.gas_cost} gas)",
+                callback_data=f"ability_{ability_name}"
+            )])
+    
+    # Add ultimate abilities
+    for ability_name, ability in character_data.abilities.get("ultimate", {}).items():
+        is_unlocked = (
+            battle.character.unlocked_abilities.get(ability_name, False) or 
+            ability.is_unlocked or
+            (hasattr(ability, 'level_required') and ability.level_required <= battle.character.level)
+        )
+        
+        if (
+            is_unlocked and
+            not ability.disabled_against_titans and
+            battle.ability_cooldowns.get(ability_name, 0) == 0 and
+            battle.gas >= ability.gas_cost
+        ):
+            keyboard.append([InlineKeyboardButton(
+                f"✨ {ability.name} ({ability.gas_cost} gas) ✨",
+                callback_data=f"ability_{ability_name}"
+            )])
+    
+    # Add passive abilities
+    for ability_name, ability in character_data.abilities.get("passive", {}).items():
+        is_unlocked = (
+            battle.character.unlocked_abilities.get(ability_name, False) or 
+            ability.is_unlocked or
+            (hasattr(ability, 'level_required') and ability.level_required <= battle.character.level)
+        )
+        
+        if is_unlocked:
+            keyboard.append([InlineKeyboardButton(
+                f"✦ {ability.name}",
+                callback_data=f"ability_{ability_name}"
+            )])
+    
+    # Add run button
+    keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
+    
+    return keyboard
+
+async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /explore command to find titans."""
+    user_id = update.effective_user.id
+    db = await get_database()
+    
+    player_data = await db.players.find_one({"user_id": user_id})
+    if not player_data:
+        await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        return
+
+    player = Player(**player_data)
+    if not player.team or len(player.team) == 0:
+        await update.message.reply_text("You need to have at least one character in your team. Use /team to manage your team.")
+        return
+
+    team_sorted = sorted(player.team, key=lambda x: x.position)
+    character_name = team_sorted[0].character_name
+    character = await db.get_character(user_id, character_name)
+
+    if not character:
+        await update.message.reply_text(f"Error: Your character {character_name} was not found.")
+        return
+
+    if character.gas < 10:
+        await update.message.reply_text(f"{character_name} doesn't have enough gas to explore (needs at least 10). Use /profile to refill gas.")
+        return
+
+    character.gas -= 10
+    await db.update_character(character)
+    
+    titan = await db.get_random_titan(
+        max(1, character.level - 2),
+        character.level + 2,
+        target_level=character.level,
+        unlocked_areas=player.unlocked_areas or ["Trost District", "Karanes District", "Shiganshina District", "Wall Maria", "Wall Rose"],
+    )
+    
+    if not titan:
+        await update.message.reply_text("No titans found in your level range.")
+        return
+    
+    keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=f"battle_{titan.name}")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    titan_bar = "█" * 10
+    await update.message.reply_text(
+        text=(
+            f"<b>🛑 Titan Appeared 🛑</b>\n\n"
+            f"<b>| {titan.name} (Lv. {titan.level}) |</b>\n"
+            f"<b>HP: {titan.max_hp}/{titan.max_hp} [{titan_bar}]</b>\n"
+        ),
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+
+async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the start of a battle when user clicks the Battle button."""
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    
+    titan_name = query.data[7:]
+    user_id = update.effective_user.id
+    db = await get_database()
+    
+    player = await db.players.find_one({"user_id": user_id})
+    if not player or 'team' not in player or not player['team']:
+        await query.edit_message_text("Error: No character in your team.")
+        return
+    
+    character_name = player['team'][0].get('character_name') if isinstance(player['team'][0], dict) else player['team'][0]
+    character = await db.get_character(user_id, character_name)
+
+    if not character:
+        await query.edit_message_text(f"Error: Character {character_name} not found.")
+        return
+    
+    titan = await db.get_titan(titan_name)
+    if not titan:
+        normalized_titan_name = titan_name.lower().replace(" ", "_")
+        titan = await db.get_titan(normalized_titan_name)
+        if not titan:
+            await query.edit_message_text(f"Error: Titan {titan_name} not found.")
+            return
+    
+    battle = BattleSystem(character, titan)
+    active_battles[user_id] = battle
+    
+    keyboard = generate_ability_keyboard(battle)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    status = battle.get_battle_status()
+    await query.edit_message_text(
+        text=(
+            f"<b>⚔️ BATTLE ⚔️</b>\n\n"
+            f"<b>| {battle.titan.name} (Lv. {battle.titan.level}) |</b>\n"
+            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]</b>\n\n"
+            f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
+            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]</b>\n"
+            f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
+            f"{status['status_message']}\n"
+            f"<b>Choose your action:</b>"
+        ),
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+    asyncio.create_task(battle_timeout(user_id, query))
+
+async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle battle actions with immediate titan response."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    if user_id not in active_battles:
+        await query.edit_message_text("Battle has expired or doesn't exist.")
+        return
+    
+    battle = active_battles[user_id]
+    action = query.data
+    full_message = []
+    effects = {}
+    
+    # Process player action
+    if action == "action_run":
+        if random.random() < 0.5:  # 50% chance to escape
+            await query.edit_message_text(f"{battle.character.name} successfully escaped from the battle!")
+            del active_battles[user_id]
+            return
+        else:
+            full_message.append(f"{battle.character.name} failed to escape!")
+    elif action.startswith("ability_"):
+        ability_name = action[8:]
+        damage, message, effects = battle.use_ability(ability_name)
+        full_message.append(message)
+        if effects.get("items_dropped"):
+            full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
+        if effects.get("target_switched"):
+            full_message.append("Titan switched targets!")
+        if effects.get("bleed_applied"):
+            full_message.append("Titan is bleeding!")
+    
+    # Check if battle ended from player's attack
+    if battle.titan_hp <= 0:
+        await handle_battle_end(query, battle, user_id)
+        return
+    
+    # Titan's turn (if battle still ongoing)
+    if battle.character_hp > 0:
+        titan_damage, titan_message = battle.titan_attack()
+        full_message.append(titan_message)
+    
+    # Update battle state
+    battle.turn += 1
+    battle.update_cooldowns()
+    
+    # Update database with current state
+    db = await get_database()
+    await db.characters.update_one(
+        {"user_id": user_id, "name": battle.character.name},
+        {"$set": {
+            "current_hp": battle.character_hp,
+            "gas": battle.gas,
+            "ability_cooldowns": battle.ability_cooldowns
+        }}
+    )
+    
+    # Check battle end conditions
+    if battle.character_hp <= 0:
+        await handle_battle_end(query, battle, user_id)
+        return
+    if battle.titan_hp <= 0:
+        await handle_battle_end(query, battle, user_id)
+        return
+    
+    # Prepare next turn
+    keyboard = generate_ability_keyboard(battle)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    status = battle.get_battle_status()
+    
+    await query.edit_message_text(
+        text= (
+        f"<b>⚔️ BATTLE ⚔️</b>\n\n"
+        f"<b>{' '.join(full_message)}</b>\n\n"
+        f"<b>| {battle.titan.name} (Lv. {battle.titan.level}) |</b>\n"
+        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]</b>\n\n"
+        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
+        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]</b>\n"
+        f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
+        f"<b>{status['status_message']}</b>\n"
+        f"<b>Choose your action:</b>",
+        ),
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+    
+    asyncio.create_task(battle_timeout(user_id, query))
+
+async def handle_battle_end(query, battle: BattleSystem, user_id: int):
+    """Handle battle end with rewards or defeat message."""
+    db = await get_database()
+    
+    if battle.titan_hp <= 0:
+        rewards = battle.calculate_rewards()
+        reward_updates = {
+            "marks": rewards["marks"],
+            "$inc": {
+                "titan_crystals": rewards["titan_crystals"],
+                "valor_points": rewards["valor_points"],
+                "xp": rewards["xp"]
+            }
+        }
+        
+        await db.players.update_one(
+            {"user_id": user_id},
+            {"$inc": reward_updates["$inc"]}
+        )
+        
+        # Reset character HP and gas
+        battle.character.current_hp = battle.character.stats.HP
+        battle.character.gas = battle.character_gas
+        await db.update_character(battle.character)
+        
+        reward_msg = [
+            f"🎉 {battle.character.name} defeated {battle.titan.name}! 🎉",
+            f"\nRewards:",
+            f"XP: {rewards['xp']}",
+            f"Marks: {rewards['marks']}"
+        ]
+        if rewards['titan_crystals'] > 0:
+            reward_msg.append(f"✨ Titan Crystals: {rewards['titan_crystals']} ✨")
+        if rewards['valor_points'] > 0:
+            reward_msg.append(f"🔥 Valor Points: {rewards['valor_points']} 🔥")
+        
+        await query.edit_message_text("\n".join(reward_msg))
+    else:
+        # Character defeated
+        battle.character.current_hp = 0
+        await db.update_character(battle.character)
+        await query.edit_message_text(
+            f"💀 {battle.character.name} was defeated by {battle.titan.name}! 💀\n\n"
+            f"Use /revive to heal your character or /explore to try again with another character."
+        )
+    
+    del active_battles[user_id]
+
+async def battle_timeout(user_id: int, query):
+    """Handle battle timeout after 1 minute of inactivity."""
+    await asyncio.sleep(60)
+    if user_id in active_battles:
+        battle = active_battles[user_id]
+        db = await get_database()
+        
+        # Save current state before timeout
+        await db.characters.update_one(
+            {"user_id": user_id, "name": battle.character.name},
+            {"$set": {
+                "current_hp": battle.character_hp,
+                "gas": battle.gas,
+                "ability_cooldowns": battle.ability_cooldowns
+            }}
+        )
+        
+        await query.edit_message_text(
+            "⏰ Battle Expired ⏰\n\n"
+            "You didn't respond in time. The battle has expired.\n"
+            "Use /explore to find another titan."
+        )
+        del active_battles[user_id]
