@@ -112,7 +112,7 @@ class BattleSystem:
             
         base_damage = max(10, self.titan.level * 5)
         # Adjust damage based on difficulty
-        damage_multipliers = {"Easy": 0.8, "Normal": 1.0, "Hard": 1.3}
+        damage_multipliers = {"Easy": 0.5, "Normal": 1.0, "Hard": 1.3}
         base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
         
         # Apply special ability effects
