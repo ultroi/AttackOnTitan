@@ -39,7 +39,7 @@ class Character(BaseModel):
     total_xp: int = 0
     rank: str = "Cadet"
     stats: CharacterStats = Field(default_factory=CharacterStats)
-    gas: int = 100
+    gas: int = 5000
     crystals: int = 0
     valor: int = 0
     marks: int = 0
