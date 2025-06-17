@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Callable, List
+from typing import Dict, Optional, Callable, List, Any
 from pydantic import BaseModel
 import random
 
@@ -20,6 +20,8 @@ class AbilityEffect(BaseModel):
     bleed_applied: bool = False
     clear_debuffs: bool = False
     counter_attack: Optional[Dict[str, Any]] = None
+    class Config:
+        arbitrary_types_allowed = True
 
 class Ability(BaseModel):
     name: str
