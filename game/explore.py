@@ -85,13 +85,23 @@ class BattleSystem:
             self.buffs["shield"] = self.buffs.get("shield", 0) + effect.shield
         if effect.stun_duration:
             self.titan_debuffs["stun"] = max(self.titan_debuffs.get("stun", 0), effect.stun_duration)
+
+        if effect.counter_attack:
+        counter_dmg = effect.counter_attack.get("damage", 0)
+        
+        # Apply crit if available
+        if self.buffs.get("crit_damage"):
+            counter_dmg *= self.buffs["crit_damage"]
+            
+        self.titan_hp = max(0, self.titan_hp - counter_dmg)
+        
+        # Handle attack type effects
+        if effect.counter_attack.get("type") == "pierce":
+            self.titan_debuffs["bleed"] = 3
+        elif effect.counter_attack.get("type") == "slash":
+            self.buffs["momentum"] = self.buffs.get("momentum", 0) + 1
         self.buffs.update(effect.buffs)
         self.titan_debuffs.update(effect.debuffs)
-        # Special effects based on attack type
-        if effect['counter_attack']['type'] == "pierce":
-            battle.titan_buffs['bleed'] = 3  # 3 turns of bleeding
-        elif effect['counter_attack']['type'] == "slash":
-            battle.character_buffs['momentum'] = 1
         if effect.clear_debuffs:
             self.debuffs.clear()
         if effect.items_dropped:
