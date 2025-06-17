@@ -246,14 +246,14 @@ class Database:
             special_abilities = random.sample(ability_options, min(max_abilities, len(ability_options)))
     
         # Generate titan
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
     
         return Titan(
             name=generate_titan_name(difficulty),
             level=level,
             max_hp=generate_titan_hp(level, difficulty),
             abilities=abilities,
-            created_at=datetime.utcnow(),
+            created_at=datetime.datetime.now(datetime.timezone.utc),
             difficulty=difficulty,
             special_abilities=special_abilities,
             spawn_areas=spawn_areas,
