@@ -169,7 +169,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
         f"⭐ <b>Level:</b> {player_level}\n"
         f"⚡ <b>XP:</b> {player.get('xp', 0)} / {player_xp_to_next}\n"
-        f"🔋 <b>Total Gas:</b> {player.get('gas', 0)}\n"
+        f"🔋 <b>Total Gas:</b> {player.get('gas', 5000)}\n"
         f"🏠 <b>Birthplace:</b> {character.get('birthplace', 'Unknown')}\n\n"
         f"💰 <b>Resources</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
