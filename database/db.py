@@ -354,21 +354,21 @@ class Database:
         rewards = {
             "xp": titan.xp_reward,  # Keep original XP
             "marks": random.randint(90, 150),  # New marks range
-            "titan_crystals": 0,  # Initialize
-            "valor_points": 0,  # Initialize
+            "crystal": 0,  # Initialize
+            "valor": 0,  # Initialize
         }
 
         # Valor points - rare drop (10-25) with explore count check
         if random.random() < 0.3:  # 30% chance
             required_explore = random.randint(30, 40)
             if hasattr(character, 'player') and character.player.explore_count >= required_explore:
-                rewards["valor_points"] = random.randint(10, 25)
+                rewards["valor"] = random.randint(10, 25)
 
         # Crystals - more common (2-4) with explore count check
         if random.random() < 0.6:  # 60% chance
             required_explore = random.randint(10, 15)
             if hasattr(character, 'player') and character.player.explore_count >= required_explore:
-                rewards["titan_crystals"] = random.randint(2, 4)
+                rewards["crystal"] = random.randint(2, 4)
 
         return rewards
 
