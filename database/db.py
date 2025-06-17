@@ -254,35 +254,27 @@ class Database:
             logger.error(f"Failed to get titan: {e}")
             raise
 
-    async def get_random_titan(min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
-        """Get a random titan scaled to the target level."""
+    async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
+        """Get a random titan (existing or newly scaled)."""
+        # Try to find an existing titan first
         query = {
             "level": {"$gte": min_level, "$lte": max_level},
             "min_level_requirement": {"$lte": target_level},
-            "$or": [
-                {"is_template": {"$ne": True}},
-                {"is_template": {"$exists": False}}
-            ]
+            "spawn_areas": {"$in": unlocked_areas} if unlocked_areas else {"$exists": True},
+            "is_template": {"$ne": True},  # Skip templates
+            "is_scaled": True  # Only fetch scaled titans
         }
     
-        if unlocked_areas:
-            query["spawn_areas"] = {"$in": unlocked_areas}
-    
-        # Try to find an existing titan first
-        pipeline = [
-            {"$match": query},
-            {"$sample": {"size": 1}}
-        ]
+        pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
         titans = await self.titans.aggregate(pipeline).to_list(1)
     
         if titans:
             return Titan(**titans[0])
     
-        # If no suitable titan exists, create a new scaled one
-        templates = await self.titans.find({"is_template": True}).to_list(None)
-        if not templates:
-            # Create default template if none exists
-            default_template = {
+        # If no titan exists, create and save a new scaled one
+        template = await self.titans.find_one({"is_template": True})
+        if not template:
+            template = {
                 "name": "Generic Titan",
                 "level": 1,
                 "max_hp": 300,
@@ -293,13 +285,10 @@ class Database:
                 "created_at": datetime.utcnow(),
                 "is_template": True
             }
-            await self.titans.insert_one(default_template)
-            templates = [default_template]
+            await self.titans.insert_one(template)
     
-        # Scale a random template
-        template = random.choice(templates)
         scaled_titan = scale_titan(template, target_level)
-        await self.titans.insert_one(scaled_titan)
+        await self.titans.insert_one(scaled_titan)  # Save for future use
         return Titan(**scaled_titan)
 
 
