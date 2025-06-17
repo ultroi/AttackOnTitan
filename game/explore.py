@@ -491,18 +491,21 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     
-    await query.edit_message_text(
-        text= (
+    # Format the battle message properly
+    battle_message = (
         f"<b>⚔️ BATTLE ⚔️</b>\n\n"
-        f"<b>{' '.join(full_message)}</b>\n\n"
+        f"{' '.join(full_message)}\n\n"
         f"<b>| {battle.titan.name} (Lv. {battle.titan.level}) |</b>\n"
-        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]</b>\n\n"
+        f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]</b>\n"
-        f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
-        f"<b>{status['status_message']}</b>\n"
-        f"<b>Choose your action:</b>",
-        ),
+        f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+        f"Gas: {status['gas']}/{battle.character.gas}\n\n"
+        f"{status['status_message']}\n"
+        f"<b>Choose your action:</b>"
+    )
+    
+    await query.edit_message_text(
+        text=battle_message,
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
