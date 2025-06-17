@@ -87,7 +87,7 @@ class BattleSystem:
             self.titan_debuffs["stun"] = max(self.titan_debuffs.get("stun", 0), effect.stun_duration)
 
         if effect.counter_attack:
-        counter_dmg = effect.counter_attack.get("damage", 0)
+            counter_dmg = effect.counter_attack.get("damage", 0)
         
         # Apply crit if available
         if self.buffs.get("crit_damage"):
