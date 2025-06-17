@@ -77,7 +77,7 @@ class BattleSystem:
                     messages.append(effect.message)
         return messages
 
-    def apply_effect(self, effect: AbilityEffect) -> None:
+    def apply_effect(self, effect: AbilityEffect, opponent: Dict, log: List[str]) -> None:
         """Apply an AbilityEffect to the battle state."""
         self.titan_hp = max(0, self.titan_hp - effect.damage)
         self.character_hp = min(self.character.stats.HP, self.character_hp + effect.healed)
