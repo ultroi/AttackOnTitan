@@ -390,16 +390,3 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to add new character to player: {e}")
             raise
-
-    async def fill_gas(self, user_id: int, character_name: str, cost: int) -> bool:
-        try:
-            character = await self.get_character(user_id, character_name)
-            if character and character.marks >= cost:
-                character.marks -= cost
-                character.gas = 100
-                await self.update_character(character)
-                return True
-            return False
-        except Exception as e:
-            logger.error(f"Failed to fill gas: {e}")
-            raise
