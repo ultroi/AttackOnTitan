@@ -168,7 +168,7 @@ class Database:
                 xp=0,
                 total_xp=0,
                 stats=CharacterStats(**char_data.base_stats),
-                gas=100,
+                gas=5000,
                 rank="Cadet",
                 active_abilities=[],
                 passive_abilities=[],
@@ -396,7 +396,7 @@ class Database:
             character = await self.get_character(user_id, character_name)
             if character and character.marks >= cost:
                 character.marks -= cost
-                character.gas = 1000
+                character.gas = 100
                 await self.update_character(character)
                 return True
             return False
