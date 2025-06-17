@@ -2,7 +2,7 @@ import os
 import random
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional, List, Dict
-from datetime import datetime
+import datetime
 from dotenv import load_dotenv
 from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, scale_titan
 from database.characters import get_character_data
@@ -282,7 +282,7 @@ class Database:
                 "difficulty": "Normal",
                 "spawn_areas": ["Trost District", "Karanes District", "Shiganshina District"],
                 "min_level_requirement": 1,
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.datetime.utcnow(),
                 "is_template": True
             }
             await self.titans.insert_one(template)
