@@ -514,7 +514,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     if battle.titan_hp <= 0:
         await handle_battle_end(query, battle, user_id)
         return
-    
+
+    unlocked_passives = [
+        ability for ability in battle.character.passive_abilities 
+        if getattr(ability, 'unlocked', False) and getattr(ability, 'gas_cost', 0) > 0
+    ]
     if unlocked_passives and battle.gas < min(ability.gas_cost for ability in unlocked_passives):
         min_cost = min(ability.gas_cost for ability in unlocked_passives)
         message =(
