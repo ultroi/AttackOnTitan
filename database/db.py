@@ -233,13 +233,33 @@ class Database:
             raise
 
     # Titan operations
-    async def create_titan(self, titan: Titan) -> Titan:
-        try:
-            await self.titans.insert_one(titan.model_dump())
-            return titan
-        except Exception as e:
-            logger.error(f"Failed to create titan: {e}")
-            raise
+    def create_new_titan(level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
+        """Create a completely new titan with no template dependency"""
+        # Determine abilities
+        abilities = ["Basic Attack"]
+        special_abilities = None
+    
+        # Chance for special abilities increases with level
+        if random.random() < (0.2 + min(0.3, level * 0.01)):
+            ability_options = SPECIAL_ABILITIES[difficulty]
+            max_abilities = 1 if difficulty == "Easy" else 2
+            special_abilities = random.sample(ability_options, min(max_abilities, len(ability_options)))
+    
+        # Generate titan
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    
+        return Titan(
+            name=generate_titan_name(difficulty),
+            level=level,
+            max_hp=generate_titan_hp(level, difficulty),
+            abilities=abilities,
+            created_at=datetime.utcnow(),
+            difficulty=difficulty,
+            special_abilities=special_abilities,
+            spawn_areas=spawn_areas,
+            min_level_requirement=max(1, level - 5),
+            internal_name=f"titan_{level}_{difficulty.lower()}_{timestamp}"
+        )
 
     async def get_titan(self, titan_name: str) -> Optional[Titan]:
         try:
@@ -254,15 +274,15 @@ class Database:
             logger.error(f"Failed to get titan: {e}")
             raise
 
+    
+
     async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
-        """Get a random titan (existing or newly scaled)."""
-        # Try to find an existing titan first
+        """Get a random titan with no template dependency"""
+        # First try to find existing titan in database
         query = {
             "level": {"$gte": min_level, "$lte": max_level},
             "min_level_requirement": {"$lte": target_level},
-            "spawn_areas": {"$in": unlocked_areas} if unlocked_areas else {"$exists": True},
-            "is_template": {"$ne": True},  # Skip templates
-            "is_scaled": True  # Only fetch scaled titans
+            "spawn_areas": {"$in": unlocked_areas} if unlocked_areas else {"$exists": True}
         }
     
         pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
@@ -271,25 +291,27 @@ class Database:
         if titans:
             return Titan(**titans[0])
     
-        # If no titan exists, create and save a new scaled one
-        template = await self.titans.find_one({"is_template": True})
-        if not template:
-            template = {
-                "name": "Generic Titan",
-                "level": 1,
-                "max_hp": 300,
-                "abilities": ["Basic Attack"],
-                "difficulty": "Normal",
-                "spawn_areas": ["Trost District", "Karanes District", "Shiganshina District"],
-                "min_level_requirement": 1,
-                "created_at": datetime.datetime.utcnow(),
-                "is_template": True
-            }
-            await self.titans.insert_one(template)
+        # If no existing titan found, create new one
+        level = random.randint(min_level, max_level)
+        difficulty = (
+            "Hard" if level >= 50 else 
+            "Normal" if level >= 20 else 
+            "Easy"
+        )
     
-        scaled_titan = scale_titan(template, target_level)
-        await self.titans.insert_one(scaled_titan)  # Save for future use
-        return Titan(**scaled_titan)
+        # Default spawn areas if none provided
+        if not unlocked_areas:
+            unlocked_areas = ["Trost District", "Karanes District", "Shiganshina District"]
+    
+        new_titan = create_new_titan(
+            level=level,
+            difficulty=difficulty,
+            spawn_areas=unlocked_areas
+        )
+    
+        # Save to database for future use
+        await self.titans.insert_one(new_titan.model_dump())
+        return new_titan
 
 
     async def get_available_titans(self, character_level: int) -> List[Titan]:
