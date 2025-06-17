@@ -608,7 +608,6 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
         await db.update_character(battle.character)
         await query.edit_message_text(
             f"💀 {battle.character.name} was defeated by {battle.titan.name}! 💀\n\n"
-            f"Use /revive to heal your character or /explore to try again with another character."
         )
     
     del active_battles[user_id]
