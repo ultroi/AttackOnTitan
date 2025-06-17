@@ -383,7 +383,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character.gas -= 100
     await db.update_character(character)
     
-    titan = await get_random_titan(
+    titan = await db.get_random_titan(
         db,
         max(1, character.level - 2),
         character.level + 2,
