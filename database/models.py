@@ -221,53 +221,59 @@ def generate_titan_name(difficulty: str) -> str:
 
 def scale_titan_stats(base_hp: int, base_xp: int, level_diff: int, difficulty: str) -> tuple:
     """Scale HP and XP with balanced multipliers."""
-    # Set base HP by difficulty
+    # New balanced base HP values
     if difficulty == "Easy":
-        base_hp = 300
-        hp_multiplier = 1 + (level_diff * 0.08)
+        base_hp = 50 + (level_diff * 15)  # Level 1: 65 HP
+        hp_multiplier = 1 + (level_diff * 0.05)  # Reduced scaling
     elif difficulty == "Normal":
-        base_hp = 400  # Increased base
-        hp_multiplier = 1 + (level_diff * 0.12)
+        base_hp = 70 + (level_diff * 20)  # Level 1: 90 HP
+        hp_multiplier = 1 + (level_diff * 0.08)
     else:  # Hard
-        base_hp = 500  # Higher base
-        hp_multiplier = 1 + (level_diff * 0.15)  # Reduced multiplier
+        base_hp = 100 + (level_diff * 25)  # Level 1: 125 HP
+        hp_multiplier = 1 + (level_diff * 0.1)  # More gradual scaling
+    
+    # XP scaling remains unchanged
+    xp_multiplier = 1 + (level_diff * 0.1)
     
     return int(base_hp * hp_multiplier), int(base_xp * xp_multiplier)
 
 def scale_titan(titan_data: dict, target_level: int) -> dict:
-    """Scale a titan template to the target level with unique properties (except HP)."""
-    base_level = titan_data["level"]
+    """Scale a titan template to the target level with balanced stats."""
+    base_level = titan_data.get("level", 1)
     level_diff = target_level - base_level
     scaled_data = titan_data.copy()
 
-    base_hp = titan_data["max_hp"]  # Treat this as fixed HP
+    # Get properly scaled HP (replaces fixed HP)
+    base_hp = titan_data.get("max_hp", 50)
+    difficulty = "Hard" if target_level >= 50 else "Normal" if target_level >= 20 else "Easy"
+    scaled_hp, scaled_xp = scale_titan_stats(base_hp, titan_data.get("xp", 100), level_diff, difficulty)
     
     # Remove MongoDB specific fields
     scaled_data.pop("_id", None)
     scaled_data.pop("is_template", None)
     
-    # Determine difficulty based on target level
-    if target_level >= 50:
-        difficulty = "Hard"
-    elif target_level >= 20:
-        difficulty = "Normal"
-    else:
-        difficulty = "Easy"
-    
-    # Scale fields except HP
-    scaled_data["level"] = target_level
-    scaled_data["max_hp"] = base_hp
-    scaled_data["current_hp"] = base_hp  # Ensure full HP
-    
-    # Generate unique name and properties
-    scaled_data["name"] = generate_titan_name(difficulty)
-    scaled_data["difficulty"] = difficulty
+    # Update core stats
+    scaled_data.update({
+        "level": target_level,
+        "max_hp": scaled_hp,
+        "current_hp": scaled_hp,
+        "xp": scaled_xp,
+        "difficulty": difficulty,
+        "name": generate_titan_name(difficulty),
+        "min_level_requirement": max(1, target_level - 5),
+        "internal_name": f"titan_{target_level}_{difficulty.lower()}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+        "created_at": datetime.utcnow(),
+        "is_scaled": True
+    })
 
-    # Add special abilities based on difficulty
-    if random.random() < 0.3 + (0.1 * (target_level // 10)):  # Higher chance at higher levels
-        num_abilities = 1 if difficulty == "Easy" else (2 if difficulty == "Normal" else 3)
+    # Special abilities with better balancing
+    ability_chance = 0.2 + min(0.3, target_level * 0.01)  # 20-50% chance
+    if random.random() < ability_chance:
+        abilities = SPECIAL_ABILITIES[difficulty]
+        max_abilities = 1 if difficulty == "Easy" else 2
         scaled_data["special_abilities"] = random.sample(
-            SPECIAL_ABILITIES[difficulty], num_abilities
+            abilities, 
+            min(max_abilities, len(abilities))
         )
     
     # Set min level requirement (players should be within 5 levels)
