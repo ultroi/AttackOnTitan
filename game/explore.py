@@ -368,6 +368,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You need to have at least one character in your team. Use /team to manage your team.")
         return
 
+    # Check if user is already in an active battle
+    if user_id in active_battles:
+        await update.message.reply_text("⚔️ You're already in an active battle! Finish it before exploring again.")
+        return
+
     team_sorted = sorted(player.team, key=lambda x: x.position)
     character_name = team_sorted[0].character_name
     character = await db.get_character(user_id, character_name)
