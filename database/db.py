@@ -292,7 +292,7 @@ class Database:
                 template = {
                     "name": "Generic Titan",
                     "level": 1,
-                    "max_hp": 600,
+                    "max_hp": 300,
                     "abilities": ["Basic Attack"],
                     "drop_table": {"marks": 0.5, "titan_crystals": 0.2, "valor_points": 0.1},
                     "xp_reward": 50,
