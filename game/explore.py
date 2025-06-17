@@ -384,7 +384,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.update_character(character)
     
     titan = await db.get_random_titan(
-        db,
         max(1, character.level - 2),
         character.level + 2,
         target_level=character.level,
