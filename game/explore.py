@@ -10,6 +10,7 @@ from telegram.constants import ParseMode
 from database.models import Character, Titan, Player
 from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class BattleSystem:
             "ally_died": False
         }
         self.apply_passives("battle_start")
+        self.timeout_task = None  # Track timeout task
 
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
         """Build standardized battle context for ability effect functions."""
@@ -55,7 +57,7 @@ class BattleSystem:
             "character_gas": self.character_gas,
             "base_damage": ability.base_damage + self.character.stats.ATK if ability else 0,
             "character_level": self.character.level,
-            "target_is_self": False  # Adjust based on ability logic if needed
+            "target_is_self": False
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
@@ -107,11 +109,9 @@ class BattleSystem:
         base_damage = max(10, self.titan.level * 5)
         damage = int(base_damage * (1 - self.character.stats.DEF / 200))
         
-        # Apply damage reduction buffs
         if self.buffs.get("damage_reduction", 0):
             damage = int(damage * (1 - self.buffs["damage_reduction"]))
             
-        # Apply shield if available
         if self.buffs.get("shield", 0) > 0:
             shield_absorb = min(self.buffs["shield"], damage)
             self.buffs["shield"] -= shield_absorb
@@ -121,12 +121,10 @@ class BattleSystem:
                 
         self.character_hp = max(0, self.character_hp - damage)
         
-        # Trigger passives based on damage taken
         if damage > 0 and not self.trigger_states["first_damage_taken"]:
             self.trigger_states["first_damage_taken"] = True
             messages = self.apply_passives("damage_taken")
             
-        # Check for low HP triggers
         if self.character_hp / self.character.stats.HP <= 0.3:
             self.trigger_states["fear_counter"] += 1
             messages = self.apply_passives("low_hp")
@@ -148,29 +146,32 @@ class BattleSystem:
             "bleed_applied": False
         }
         
-        # Check all ability types (active, passive, ultimate)
+        logger.debug(f"Attempting to use ability {ability_name} for {self.character.name}")
+        
         for ability_type in character_data.abilities:
             if ability_name in character_data.abilities[ability_type]:
                 ability = character_data.abilities[ability_type][ability_name]
                 
-                # Validate ability usage
                 if not (self.character.unlocked_abilities.get(ability_name, False) or ability.is_unlocked):
+                    logger.warning(f"Ability {ability_name} is locked for {self.character.name}")
                     return 0, f"Ability {ability_name} is locked.", effects
                 if ability.disabled_against_titans:
+                    logger.warning(f"Ability {ability_name} is disabled against titans")
                     return 0, f"{ability_name} cannot be used against titans.", effects
                 if self.ability_cooldowns.get(ability_name, 0) > 0:
+                    logger.info(f"Ability {ability_name} on cooldown: {self.ability_cooldowns[ability_name]} turns")
                     return 0, f"{ability_name} is on cooldown for {self.ability_cooldowns[ability_name]} turns.", effects
                 if self.gas < ability.gas_cost:
+                    logger.warning(f"Insufficient gas for {ability_name}: {self.gas}/{ability.gas_cost}")
                     return 0, f"Not enough gas to use {ability_name} (requires {ability.gas_cost}).", effects
                 
-                # Apply ability
+                logger.info(f"Using ability {ability_name} with gas cost {ability.gas_cost}")
                 self.gas -= ability.gas_cost
                 self.ability_cooldowns[ability_name] = ability.cooldown or 1
                 context = self.build_context("ability_use", ability)
                 context["target_is_self"] = target_is_self
                 effect = ability.effect_function(context) if ability.effect_function else AbilityEffect()
                 
-                # Apply effect to battle state
                 self.apply_effect(effect)
                 effects.update({
                     "healed": effect.healed,
@@ -183,7 +184,22 @@ class BattleSystem:
                 
                 return effect.damage, effect.message or f"{self.character.name} used {ability_name}!", effects
         
+        logger.error(f"Ability {ability_name} not found for {self.character.character_type}")
         return 0, f"Ability {ability_name} not found.", effects
+
+    def has_usable_abilities(self) -> bool:
+        """Check if the character has any usable abilities based on gas and cooldowns."""
+        character_data = get_character_data(self.character.character_type)
+        for ability_type in ["active", "ultimate"]:
+            for ability_name, ability in character_data.abilities.get(ability_type, {}).items():
+                if (
+                    (self.character.unlocked_abilities.get(ability_name, False) or ability.is_unlocked) and
+                    not ability.disabled_against_titans and
+                    self.ability_cooldowns.get(ability_name, 0) == 0 and
+                    self.gas >= ability.gas_cost
+                ):
+                    return True
+        return False
 
     def update_cooldowns(self) -> None:
         """Decrease ability cooldowns and temporary effects."""
@@ -245,7 +261,6 @@ class BattleSystem:
             "valor_points": max(1, self.titan.level)
         }
 
-# Store active battles
 active_battles = {}
 
 def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardButton]]:
@@ -253,7 +268,6 @@ def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardB
     keyboard = []
     character_data = get_character_data(battle.character.character_type)
     
-    # Add active abilities
     for ability_name, ability in character_data.abilities.get("active", {}).items():
         is_unlocked = (
             battle.character.unlocked_abilities.get(ability_name, False) or 
@@ -272,7 +286,6 @@ def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardB
                 callback_data=f"ability_{ability_name}"
             )])
     
-    # Add ultimate abilities
     for ability_name, ability in character_data.abilities.get("ultimate", {}).items():
         is_unlocked = (
             battle.character.unlocked_abilities.get(ability_name, False) or 
@@ -291,7 +304,6 @@ def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardB
                 callback_data=f"ability_{ability_name}"
             )])
     
-    # Add passive abilities
     for ability_name, ability in character_data.abilities.get("passive", {}).items():
         is_unlocked = (
             battle.character.unlocked_abilities.get(ability_name, False) or 
@@ -305,7 +317,6 @@ def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardB
                 callback_data=f"ability_{ability_name}"
             )])
     
-    # Add run button
     keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
     
     return keyboard
@@ -333,11 +344,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Error: Your character {character_name} was not found.")
         return
 
-    if character.gas < 10:
-        await update.message.reply_text(f"{character_name} doesn't have enough gas to explore (needs at least 10). Use /profile to refill gas.")
+    if character.gas < 100:
+        await update.message.reply_text(f"{character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
         return
 
-    character.gas -= 10
+    battle_system = BattleSystem(character, Titan(name="Dummy", level=1, max_hp=1, xp_reward=0))  # Temporary for ability check
+    if not battle_system.has_usable_abilities():
+        await update.message.reply_text(f"{character_name} has no usable abilities to fight. Refill gas or wait for ability cooldowns.")
+        return
+
+    character.gas -= 100
     await db.update_character(character)
     
     titan = await db.get_random_titan(
@@ -351,6 +367,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No titans found in your level range.")
         return
     
+    context.bot_data[f"last_titan_{user_id}"] = titan.name  # Store last titan
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=f"battle_{titan.name}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -375,6 +392,11 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     titan_name = query.data[7:]
     user_id = update.effective_user.id
     db = await get_database()
+    
+    last_titan = context.bot_data.get(f"last_titan_{user_id}")
+    if titan_name != last_titan:
+        await query.edit_message_text(f"Error: You can only battle the last titan encountered ({last_titan}). Use /explore to find a new titan.")
+        return
     
     player = await db.players.find_one({"user_id": user_id})
     if not player or 'team' not in player or not player['team']:
@@ -417,7 +439,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-    asyncio.create_task(battle_timeout(user_id, query))
+    asyncio.create_task(battle_timeout(user_id, query, battle))
 
 async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle battle actions with immediate titan response."""
@@ -434,9 +456,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     full_message = []
     effects = {}
     
-    # Process player action
+    if battle.timeout_task:
+        battle.timeout_task.cancel()  # Cancel previous timeout
+    
     if action == "action_run":
-        if random.random() < 0.5:  # 50% chance to escape
+        if random.random() < 0.5:
             await query.edit_message_text(f"{battle.character.name} successfully escaped from the battle!")
             del active_battles[user_id]
             return
@@ -453,21 +477,23 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         if effects.get("bleed_applied"):
             full_message.append("Titan is bleeding!")
     
-    # Check if battle ended from player's attack
     if battle.titan_hp <= 0:
         await handle_battle_end(query, battle, user_id)
         return
     
-    # Titan's turn (if battle still ongoing)
+    if not battle.has_usable_abilities():
+        full_message.append(f"{battle.character.name} has no usable abilities left due to insufficient gas!")
+        battle.character_hp = 0
+        await handle_battle_end(query, battle, user_id)
+        return
+    
     if battle.character_hp > 0:
         titan_damage, titan_message = battle.titan_attack()
         full_message.append(titan_message)
     
-    # Update battle state
     battle.turn += 1
     battle.update_cooldowns()
     
-    # Update database with current state
     db = await get_database()
     await db.characters.update_one(
         {"user_id": user_id, "name": battle.character.name},
@@ -478,7 +504,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         }}
     )
     
-    # Check battle end conditions
     if battle.character_hp <= 0:
         await handle_battle_end(query, battle, user_id)
         return
@@ -486,12 +511,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         await handle_battle_end(query, battle, user_id)
         return
     
-    # Prepare next turn
     keyboard = generate_ability_keyboard(battle)
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     
-    # Format the battle message properly
     battle_message = (
         f"<b>⚔️ BATTLE ⚔️</b>\n\n"
         f"{' '.join(full_message)}\n\n"
@@ -510,10 +533,13 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode=ParseMode.HTML
     )
     
-    asyncio.create_task(battle_timeout(user_id, query))
+    asyncio.create_task(battle_timeout(user_id, query, battle))
 
 async def handle_battle_end(query, battle: BattleSystem, user_id: int):
     """Handle battle end with rewards or defeat message."""
+    if battle.timeout_task:
+        battle.timeout_task.cancel()
+    
     db = await get_database()
     
     if battle.titan_hp <= 0:
@@ -532,7 +558,6 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
             {"$inc": reward_updates["$inc"]}
         )
         
-        # Reset character HP and gas
         battle.character.current_hp = battle.character.stats.HP
         battle.character.gas = battle.character_gas
         await db.update_character(battle.character)
@@ -550,7 +575,6 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
         
         await query.edit_message_text("\n".join(reward_msg))
     else:
-        # Character defeated
         battle.character.current_hp = 0
         await db.update_character(battle.character)
         await query.edit_message_text(
@@ -560,14 +584,13 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
     
     del active_battles[user_id]
 
-async def battle_timeout(user_id: int, query):
+async def battle_timeout(user_id: int, query, battle: BattleSystem):
     """Handle battle timeout after 1 minute of inactivity."""
+    battle.timeout_task = asyncio.current_task()
     await asyncio.sleep(60)
     if user_id in active_battles:
-        battle = active_battles[user_id]
         db = await get_database()
         
-        # Save current state before timeout
         await db.characters.update_one(
             {"user_id": user_id, "name": battle.character.name},
             {"$set": {
