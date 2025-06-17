@@ -95,6 +95,20 @@ class BattleSystem:
             self.titan_debuffs["target_switched"] = 1
         if effect.bleed_applied:
             self.titan_debuffs["bleed"] = self.titan_debuffs.get("bleed", 0) + 1
+        # 🔥 Add this block to handle counter_attack
+        if "counter_attack" in effect:
+           counter = effect["counter_attack"]
+           counter_damage = int(counter.get("damage", 0))
+           opponent["HP"] -= counter_damage
+
+        # Optional: clamp opponent HP to not go below 0
+        if opponent["HP"] < 0:
+         opponent["HP"] = 0
+
+        # Log the counter attack
+        log.append(counter.get("message", "🗡️ Counter attack!"))
+        log.append(f"{opponent['name']} took {counter_damage} damage from counter!")
+    
 
     def titan_attack(self) -> Tuple[int, str]:
         """Calculate damage dealt by titan, respecting debuffs, buffs, and special abilities."""
