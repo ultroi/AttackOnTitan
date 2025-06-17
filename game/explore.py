@@ -515,8 +515,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         await handle_battle_end(query, battle, user_id)
         return
     
-    if not battle.has_usable_abilities():
-        full_message.append(f"{battle.character.name} has no usable abilities left due to insufficient gas!")
+    if battle.gas < min(ability.gas_cost for ability in unlocked_passives):
+    # Only retreat if gas is less than the CHEAPEST ability's cost
         await query.edit_message_text(
             f"{battle.character.name} is out of gas and cannot continue the battle!"
         )
