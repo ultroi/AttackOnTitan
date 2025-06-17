@@ -256,12 +256,6 @@ def scale_titan(titan_data: dict, target_level: int) -> dict:
         titan_data["max_hp"], titan_data["xp_reward"], level_diff, difficulty
     )
     
-    # Adjust drop table
-    scaled_data["drop_table"] = {
-        k: min(0.99, v * (1 + level_diff * 0.02))  # Cap drop rates at 99%
-        for k, v in titan_data["drop_table"].items()
-    }
-    
     # Generate unique name and properties
     scaled_data["name"] = generate_titan_name(difficulty)
     scaled_data["difficulty"] = difficulty
