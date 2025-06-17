@@ -303,7 +303,7 @@ class Database:
         if not unlocked_areas:
             unlocked_areas = ["Trost District", "Karanes District", "Shiganshina District"]
     
-        new_titan = create_new_titan(
+        new_titan = self.create_new_titan(
             level=level,
             difficulty=difficulty,
             spawn_areas=unlocked_areas
