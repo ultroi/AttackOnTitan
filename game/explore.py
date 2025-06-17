@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.db_instance import get_database
 from database.characters import get_character_data
-from database.db import get_random_titan
+from database.db import Database, 
 import asyncio
 from datetime import datetime
 from typing import List, Optional, Dict, Tuple
