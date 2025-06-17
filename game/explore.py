@@ -7,12 +7,163 @@ from datetime import datetime
 from typing import List, Optional, Dict, Tuple
 import random
 from telegram.constants import ParseMode
-from database.models import Character, Titan, Player
+from database.models import Character, Player
 from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
 import logging
 import uuid
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+class Titan(BaseModel):
+    name: str
+    level: int
+    max_hp: int
+    abilities: List[str]
+    created_at: datetime
+    difficulty: str = "Normal"
+    special_abilities: Optional[List[str]] = None
+    spawn_areas: List[str]
+    min_level_requirement: int = 1
+    internal_name: Optional[str] = None
+    is_scaled: Optional[bool] = None
+    xp_reward: int = 0  # Added to match original Titan model
+
+# Titan name variations by type and difficulty
+TITAN_NAME_VARIANTS = {
+    "Easy": [
+        "Small", "Weak", "Young", "Dwarfed", "Frail", 
+        "Tiny", "Scrawny", "Puny", "Miniature", "Underdeveloped"
+    ],
+    "Normal": [
+        "Abnormal", "Standard", "Common", "Regular", "Average",
+        "Typical", "Ordinary", "Usual", "Routine", "Conventional"
+    ],
+    "Hard": [
+        "Armored", "Colossal", "Warhammer", "Beast", "Jaw",
+        "Female", "Founding", "Attack", "Cart", "Flying"
+    ]
+}
+
+# Special abilities by difficulty
+SPECIAL_ABILITIES = {
+    "Easy": ["Stumble", "Slow Movement", "Poor Vision"],
+    "Normal": ["Charge", "Ground Slam", "Roar", "Regeneration"],
+    "Hard": ["Titan Shift", "Armor Plating", "Steam Blast", "Crystal Armor", "Thunder Spear"]
+}
+
+def generate_titan_name(difficulty: str) -> str:
+    """Generate a unique titan name based on difficulty."""
+    prefix = random.choice(TITAN_NAME_VARIANTS[difficulty])
+    suffix = random.choice(["Titan", "Titan", "Titan", "Abnormal", "Creature", "Monster"])
+    return f"{prefix} {suffix}"
+
+def scale_titan_stats(base_hp: int, base_xp: int, level_diff: int, difficulty: str) -> tuple:
+    """Scale HP and XP based on level difference and difficulty."""
+    if difficulty == "Easy":
+        hp_multiplier = 1 + (level_diff * 0.08)
+        xp_multiplier = 1 + (level_diff * 0.03)
+    elif difficulty == "Normal":
+        hp_multiplier = 1 + (level_diff * 0.12)
+        xp_multiplier = 1 + (level_diff * 0.06)
+    else:  # Hard
+        hp_multiplier = 1 + (level_diff * 0.18)
+        xp_multiplier = 1 + (level_diff * 0.10)
+    
+    return int(base_hp * hp_multiplier), int(base_xp * xp_multiplier)
+
+def scale_titan(titan_data: dict, target_level: int) -> dict:
+    """Scale a titan template to the target level with unique properties."""
+    base_level = titan_data["level"]
+    level_diff = target_level - base_level
+    scaled_data = titan_data.copy()
+    
+    # Remove MongoDB specific fields
+    scaled_data.pop("_id", None)
+    scaled_data.pop("is_template", None)
+    
+    # Determine difficulty based on target level
+    if target_level >= 50:
+        difficulty = "Hard"
+    elif target_level >= 20:
+        difficulty = "Normal"
+    else:
+        difficulty = "Easy"
+    
+    # Scale stats
+    scaled_data["level"] = target_level
+    scaled_data["max_hp"], scaled_data["xp_reward"] = scale_titan_stats(
+        titan_data["max_hp"], titan_data["xp_reward"], level_diff, difficulty
+    )
+  
+    # Generate unique name and properties
+    scaled_data["name"] = generate_titan_name(difficulty)
+    scaled_data["difficulty"] = difficulty
+    
+    # Add special abilities based on difficulty
+    if random.random() < 0.3 + (0.1 * (target_level // 10)):  # Higher chance at higher levels
+        num_abilities = 1 if difficulty == "Easy" else (2 if difficulty == "Normal" else 3)
+        scaled_data["special_abilities"] = random.sample(SPECIAL_ABILITIES[difficulty], num_abilities)
+    
+    # Set min level requirement (players should be within 5 levels)
+    scaled_data["min_level_requirement"] = max(1, target_level - 5)
+    
+    # Internal identification
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    scaled_data["internal_name"] = f"titan_{target_level}_{difficulty.lower()}_{timestamp}"
+    scaled_data["created_at"] = datetime.utcnow()
+    scaled_data["is_scaled"] = True
+    
+    return scaled_data
+
+async def get_random_titan(db, min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
+    """Get a random titan scaled to the target level."""
+    query = {
+        "level": {"$gte": min_level, "$lte": max_level},
+        "min_level_requirement": {"$lte": target_level},
+        "$or": [
+            {"is_template": {"$ne": True}},
+            {"is_template": {"$exists": False}}
+        ]
+    }
+    
+    if unlocked_areas:
+        query["spawn_areas"] = {"$in": unlocked_areas}
+    
+    # Try to find an existing titan first
+    pipeline = [
+        {"$match": query},
+        {"$sample": {"size": 1}}
+    ]
+    titans = await db.titans.aggregate(pipeline).to_list(1)
+    
+    if titans:
+        return Titan(**titans[0])
+    
+    # If no suitable titan exists, create a new scaled one
+    templates = await db.titans.find({"is_template": True}).to_list(None)
+    if not templates:
+        # Create default template if none exists
+        default_template = {
+            "name": "Generic Titan",
+            "level": 1,
+            "max_hp": 300,
+            "abilities": ["Basic Attack"],
+            "difficulty": "Normal",
+            "spawn_areas": ["Trost District", "Karanes District", "Shiganshina District"],
+            "min_level_requirement": 1,
+            "created_at": datetime.utcnow(),
+            "is_template": True,
+            "xp_reward": 50
+        }
+        await db.titans.insert_one(default_template)
+        templates = [default_template]
+    
+    # Scale a random template
+    template = random.choice(templates)
+    scaled_titan = scale_titan(template, target_level)
+    await db.titans.insert_one(scaled_titan)
+    return Titan(**scaled_titan)
 
 class BattleSystem:
     def __init__(self, character: 'Character', titan: 'Titan'):
@@ -57,7 +208,9 @@ class BattleSystem:
             "character_gas": self.character_gas,
             "base_damage": ability.base_damage + self.character.stats.ATK if ability else 0,
             "character_level": self.character.level,
-            "target_is_self": False
+            "target_is_self": False,
+            "titan_difficulty": self.titan.difficulty,
+            "titan_special_abilities": self.titan.special_abilities or []
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
@@ -93,7 +246,7 @@ class BattleSystem:
             self.titan_debuffs["bleed"] = self.titan_debuffs.get("bleed", 0) + 1
 
     def titan_attack(self) -> Tuple[int, str]:
-        """Calculate damage dealt by titan, respecting debuffs and buffs."""
+        """Calculate damage dealt by titan, respecting debuffs, buffs, and special abilities."""
         if self.titan_debuffs.get("stun", 0) > 0:
             self.titan_debuffs["stun"] -= 1
             return 0, f"{self.titan.name} is stunned and cannot attack this turn!"
@@ -107,6 +260,25 @@ class BattleSystem:
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
             
         base_damage = max(10, self.titan.level * 5)
+        # Adjust damage based on difficulty
+        damage_multipliers = {"Easy": 0.8, "Normal": 1.0, "Hard": 1.3}
+        base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
+        
+        # Apply special ability effects
+        special_messages = []
+        if self.titan.special_abilities:
+            for ability in self.titan.special_abilities:
+                if ability == "Armor Plating" and self.titan.difficulty == "Hard":
+                    base_damage = int(base_damage * 0.9)  # Reduce incoming damage
+                    special_messages.append(f"{self.titan.name}'s Armor Plating reduces damage!")
+                elif ability == "Thunder Spear" and self.titan.difficulty == "Hard":
+                    base_damage = int(base_damage * 1.2)  # Increase damage
+                    special_messages.append(f"{self.titan.name} unleashes a Thunder Spear!")
+                elif ability == "Regeneration" and self.titan.difficulty == "Normal":
+                    heal = int(self.titan.max_hp * 0.05)
+                    self.titan_hp = min(self.titan.max_hp, self.titan_hp + heal)
+                    special_messages.append(f"{self.titan.name} regenerates {heal} HP!")
+        
         damage = int(base_damage * (1 - self.character.stats.DEF / 200))
         
         if self.buffs.get("damage_reduction", 0):
@@ -124,15 +296,18 @@ class BattleSystem:
         if damage > 0 and not self.trigger_states["first_damage_taken"]:
             self.trigger_states["first_damage_taken"] = True
             messages = self.apply_passives("damage_taken")
+            special_messages.extend(messages)
             
         if self.character_hp / self.character.stats.HP <= 0.3:
             self.trigger_states["fear_counter"] += 1
             messages = self.apply_passives("low_hp")
+            special_messages.extend(messages)
             
         self.trigger_states["focused_turns"] = min(3, self.trigger_states["focused_turns"] + 1)
         messages = self.apply_passives("titan_attack")
+        special_messages.extend(messages)
         
-        return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(messages)
+        return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
     def use_ability(self, ability_name: str, target_is_self: bool = False) -> Tuple[int, str, Dict]:
         """Use a character ability, returning damage, message, and effects."""
@@ -227,6 +402,9 @@ class BattleSystem:
         titan_bar = "█" * int(titan_hp_percent * 10) + "▒" * (10 - int(titan_hp_percent * 10))
         
         status_message = f"Turn: {self.turn + 1}\n"
+        status_message += f"Difficulty: {self.titan.difficulty}\n"
+        if self.titan.special_abilities:
+            status_message += f"Special Abilities: {', '.join(self.titan.special_abilities)}\n"
         
         if self.titan_debuffs:
             status_message += f"Titan debuffs: {', '.join([f'{k}({v})' for k, v in self.titan_debuffs.items()])}\n"
@@ -254,12 +432,15 @@ class BattleSystem:
 
     def calculate_rewards(self) -> dict:
         """Calculate rewards for defeating the titan."""
-        return {
+        reward_multipliers = {"Easy": 0.8, "Normal": 1.0, "Hard": 1.3}
+        base_rewards = {
             "xp": self.titan.xp_reward,
             "marks": max(1, self.titan.level * 2),
             "titan_crystals": max(1, self.titan.level // 2),
             "valor_points": max(1, self.titan.level)
         }
+        scaled_rewards = {k: int(v * reward_multipliers.get(self.titan.difficulty, 1.0)) for k, v in base_rewards.items()}
+        return scaled_rewards
 
 active_battles = {}
 
@@ -348,7 +529,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
         return
 
-    battle_system = BattleSystem(character, Titan(name="Dummy", level=1, max_hp=1, xp_reward=0))  # Temporary for ability check
+    battle_system = BattleSystem(character, Titan(name="Dummy", level=1, max_hp=1, abilities=["Basic Attack"], created_at=datetime.utcnow(), spawn_areas=["Trost District"], xp_reward=0))  # Temporary for ability check
     if not battle_system.has_usable_abilities():
         await update.message.reply_text(f"{character_name} has no usable abilities to fight. Refill gas or wait for ability cooldowns.")
         return
@@ -356,11 +537,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character.gas -= 100
     await db.update_character(character)
     
-    titan = await db.get_random_titan(
+    titan = await get_random_titan(
+        db,
         max(1, character.level - 2),
         character.level + 2,
         target_level=character.level,
-        unlocked_areas=player.unlocked_areas or ["Trost District", "Karanes District", "Shiganshina District", "Wall Maria", "Wall Rose"],
+        unlocked_areas=player.unlocked_areas or ["Trost District", "Karanes District", "Shiganshina District", "Wall Maria", "Wall Rose"]
     )
     
     if not titan:
@@ -372,11 +554,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     titan_bar = "█" * 10
+    special_abilities_text = f"\nSpecial Abilities: {', '.join(titan.special_abilities)}" if titan.special_abilities else ""
     await update.message.reply_text(
         text=(
             f"<b>🛑 Titan Appeared 🛑</b>\n\n"
             f"<b>| {titan.name} (Lv. {titan.level}) |</b>\n"
-            f"<b>HP: {titan.max_hp}/{titan.max_hp} [{titan_bar}]</b>\n"
+            f"Difficulty: {titan.difficulty}\n"
+            f"<b>HP: {titan.max_hp}/{titan.max_hp} [{titan_bar}]</b>\n\n<i>{special_abilities_text}</i>\n"
         ),
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
@@ -418,7 +602,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.edit_message_text(f"Error: Titan {titan_name} not found.")
             return
     
-    battle = BattleSystem(character, titan)
+    battle = BattleSystem(character, Titan(**titan))
     active_battles[user_id] = battle
     
     keyboard = generate_ability_keyboard(battle)
@@ -448,7 +632,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     user_id = update.effective_user.id
     if user_id not in active_battles:
-        await query.edit_message_text("Battle has expired or doesn't exist.")
+        await query.edit_message_text("Titan has ran away")
         return
     
     battle = active_battles[user_id]
@@ -547,8 +731,8 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
         reward_updates = {
             "marks": rewards["marks"],
             "$inc": {
-                "titan_crystals": rewards["titan_crystals"],
-                "valor_points": rewards["valor_points"],
+                "crystal": rewards["crystal"],
+                "valor": rewards["valor"],
                 "xp": rewards["xp"]
             }
         }
@@ -568,10 +752,10 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
             f"XP: {rewards['xp']}",
             f"Marks: {rewards['marks']}"
         ]
-        if rewards['titan_crystals'] > 0:
-            reward_msg.append(f"✨ Titan Crystals: {rewards['titan_crystals']} ✨")
-        if rewards['valor_points'] > 0:
-            reward_msg.append(f"🔥 Valor Points: {rewards['valor_points']} 🔥")
+        if rewards['crystal'] > 0:
+            reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
+        if rewards['valor'] > 0:
+            reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
         
         await query.edit_message_text("\n".join(reward_msg))
     else:
