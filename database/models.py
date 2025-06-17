@@ -188,7 +188,6 @@ class Titan(BaseModel):
     spawn_areas: List[str]
     min_level_requirement: int = 1
     internal_name: Optional[str] = None
-    is_scaled: Optional[bool] = None
 
 # Titan name variations by type and difficulty
 TITAN_NAME_VARIANTS = {
@@ -213,76 +212,40 @@ SPECIAL_ABILITIES = {
     "Hard": ["Titan Shift", "Armor Plating", "Steam Blast", "Crystal Armor", "Thunder Spear"]
 }
 
+# Base HP ranges by difficulty
+HP_RANGES = {
+    "Easy": (150, 300),
+    "Normal": (200, 500),
+    "Hard": (400, 800)
+}
+
 def generate_titan_name(difficulty: str) -> str:
     """Generate a unique titan name based on difficulty."""
     prefix = random.choice(TITAN_NAME_VARIANTS[difficulty])
     suffix = random.choice(["Titan", "Titan", "Titan", "Abnormal", "Creature", "Monster"])
     return f"{prefix} {suffix}"
 
-def scale_titan_stats(base_hp: int, base_xp: int, level_diff: int, difficulty: str) -> tuple:
-    """Scale HP and XP with balanced multipliers."""
-    # New balanced base HP values
-    if difficulty == "Easy":
-        base_hp = 50 + (level_diff * 15)  # Level 1: 65 HP
-        hp_multiplier = 1 + (level_diff * 0.05)  # Reduced scaling
-    elif difficulty == "Normal":
-        base_hp = 70 + (level_diff * 20)  # Level 1: 90 HP
-        hp_multiplier = 1 + (level_diff * 0.08)
-    else:  # Hard
-        base_hp = 100 + (level_diff * 25)  # Level 1: 125 HP
-        hp_multiplier = 1 + (level_diff * 0.1)  # More gradual scaling
+def generate_titan_hp(level: int, difficulty: str) -> int:
+    """Generate HP within specified ranges with level scaling"""
+    min_hp, max_hp = HP_RANGES[difficulty]
     
-    # XP scaling remains unchanged
-    xp_multiplier = 1 + (level_diff * 0.1)
+    # Scale HP based on level (1-100)
+    level_scale = 1 + (level / 100)
     
-    return int(base_hp * hp_multiplier), int(base_xp * xp_multiplier)
+    # Randomize within range
+    base_hp = random.randint(min_hp, max_hp)
+    
+    # Apply level scaling with diminishing returns
+    scaled_hp = base_hp * (1 + (level ** 0.7) * 0.02)
+    
+    return int(scaled_hp)
 
-def scale_titan(titan_data: dict, target_level: int) -> dict:
-    """Scale a titan template to the target level with balanced stats."""
-    base_level = titan_data.get("level", 1)
-    level_diff = target_level - base_level
-    scaled_data = titan_data.copy()
-
-    # Get properly scaled HP (replaces fixed HP)
-    base_hp = titan_data.get("max_hp", 50)
-    difficulty = "Hard" if target_level >= 50 else "Normal" if target_level >= 20 else "Easy"
-    scaled_hp, scaled_xp = scale_titan_stats(base_hp, titan_data.get("xp", 100), level_diff, difficulty)
+def generate_titan_xp(level: int, difficulty: str) -> int:
+    """Generate XP reward based on level and difficulty"""
+    base_xp = {
+        "Easy": 50,
+        "Normal": 100,
+        "Hard": 200
+    }[difficulty]
     
-    # Remove MongoDB specific fields
-    scaled_data.pop("_id", None)
-    scaled_data.pop("is_template", None)
-    
-    # Update core stats
-    scaled_data.update({
-        "level": target_level,
-        "max_hp": scaled_hp,
-        "current_hp": scaled_hp,
-        "xp": scaled_xp,
-        "difficulty": difficulty,
-        "name": generate_titan_name(difficulty),
-        "min_level_requirement": max(1, target_level - 5),
-        "internal_name": f"titan_{target_level}_{difficulty.lower()}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
-        "created_at": datetime.utcnow(),
-        "is_scaled": True
-    })
-
-    # Special abilities with better balancing
-    ability_chance = 0.2 + min(0.3, target_level * 0.01)  # 20-50% chance
-    if random.random() < ability_chance:
-        abilities = SPECIAL_ABILITIES[difficulty]
-        max_abilities = 1 if difficulty == "Easy" else 2
-        scaled_data["special_abilities"] = random.sample(
-            abilities, 
-            min(max_abilities, len(abilities))
-        )
-    
-    # Set min level requirement (players should be within 5 levels)
-    scaled_data["min_level_requirement"] = max(1, target_level - 5)
-    
-    # Internal identification
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    scaled_data["internal_name"] = f"titan_{target_level}_{difficulty.lower()}_{timestamp}"
-    scaled_data["created_at"] = datetime.utcnow()
-    scaled_data["is_scaled"] = True
-
-    return scaled_data
+    return int(base_xp * (1 + (level * 0.1)))
