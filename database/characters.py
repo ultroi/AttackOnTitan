@@ -385,7 +385,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                     "name": "Civilian Shell",
                     "description": "Hitch begins every encounter with 50% aggro avoidance. First damage taken is halved and forces a 'Wake-Up Protocol'—a permanent 1.25x boost to Speed and Awareness.",
                     "type": "passive",
-                    "gas_cost": 80,
+                    "gas_cost": 20,
                     "is_unlocked": True,
                     "effect_function": civilian_shell_effect
                 },
@@ -447,7 +447,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                     "name": "Panic Engine",
                     "description": "Has a 'Fear Counter' that rises with teammate deaths or low HP. At 3 stacks: gains 1 extra move. At 5 stacks: unleashes 'Heart Overload' — massive buff to Defense and Speed.",
                     "type": "passive",
-                    "gas_cost": 80,
+                    "gas_cost": 20,
                     "is_unlocked": True,
                     "effect_function": panic_engine_effect
                 },
@@ -509,7 +509,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                     "name": "Golden Hour Reflex",
                     "description": "First 2 enemy attacks against Mina are auto-dodged if from titans below 10 meters. Dodging increases Crit Rate by 10% for next 2 moves.",
                     "type": "passive",
-                    "gas_cost": 60,
+                    "gas_cost": 20,
                     "is_unlocked": True,
                     "effect_function": golden_hour_reflex_effect
                 },
