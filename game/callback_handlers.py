@@ -60,21 +60,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         player = await db.get_player(update.effective_user.id)
         character_name = query.message.text.split('\n')[0].strip()
         character = await db.get_character(update.effective_user.id, character_name)
-        if character:
-            cost = 100  # Cost in marks
-            if player.marks >= cost:
-                player.marks -= cost
-                character.gas = 1000
-                await db.update_character(character)
-                await db.update_player(update.effective_user.id, {"marks": player.marks})
-                await query.edit_message_text(
-                    f"Gas tank filled! (-{cost} marks)\n"
-                    f"Current gas: {character.gas}/1000"
-                )
-            else:
-                await query.edit_message_text(
-                    f"Not enough marks! Need {cost} marks to fill gas tank."
-                )
+    
+        if not character:
+            await query.edit_message_text("Character not found!")
+            return
+
+        if player.gas <= 0:  # Check player's gas reserves first
+            await query.edit_message_text(
+                "❌ Your personal gas reserves are empty!\n"
+                "You have to buy gas from shop."
+            )
+            return
+
+        gas_transfer_amount = 5000  # Amount to fill
+
+        if player.gas >= gas_transfer_amount:
+            player.gas -= gas_transfer_amount
+            character.gas = gas_transfer_amount
+
+            await db.update_character(character)
+            await db.update_player(update.effective_user.id, {
+                "gas": player.gas
+            })
+
+            await query.edit_message_text(
+                f"⛽ Gas tank filled! (-{gas_transfer_amount} player gas)\n"
+                f"Character gas: {character.gas}/5000\n"
+                f"Your remaining gas: {player.gas}"
+            )
+        else:
+            await query.edit_message_text(
+                f"⚠️ Not enough gas in your reserves!\n"
+                f"Needed: {gas_transfer_amount}\n"
+                f"Your gas: {player.gas}"
+            )
+
     
     elif query.data == "start_journey":
         await show_character_selection(update, context)
