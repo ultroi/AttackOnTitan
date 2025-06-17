@@ -1,4 +1,5 @@
 from datetime import datetime
+import random
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 from database.characters import CharacterData, get_character_data, Ability
