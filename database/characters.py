@@ -182,12 +182,28 @@ def survival_override_effect(ctx: Dict) -> AbilityEffect:
 
 # Mina Carolina Effects
 def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
-    if ctx.get('titan_height', 15) < 10 and ctx.get('attack_count', 0) <= 2:
+    attack_count = ctx.get('attack_count', 0)
+    
+    # First 2 attacks: Full dodge + crit boost
+    if attack_count <= 1:  # 0 and 1 (first two attacks)
         return create_effect(
-            message="Golden Hour Reflex: Auto-dodge, +10% Crit Rate",
-            buffs={"dodge": 1.0, "crit_rate": 1.1}
+            message="⚡ Golden Reflex! Dodged attack + next 2 hits gain +20% Crit",
+            buffs={
+                "dodge": 1.0,          # 100% dodge chance
+                "crit_damage": 1.2,     # +20% crit damage (stacks for 2 attacks)
+                "reflex_counter": 2     # Tracks remaining crit boosts
+            }
         )
-    return create_effect(message="Golden Hour Reflex: Ready to dodge...")
+    
+    # After dodges: Still get 1 bonus dodge when HP < 30%
+    elif ctx.get('hp_percent', 1.0) < 0.3 and ctx.get('reflex_available', True):
+        return create_effect(
+            message="💢 Last Resort Dodge! (Low HP)",
+            buffs={"dodge": 1.0},
+            clear_buffs=["reflex_available"]  # One-time use
+        )
+    
+    return create_effect(message="Golden Reflex: Ready...")
 
 def rookie_courage_effect(ctx: Dict) -> AbilityEffect:
     if ctx.get('ally_died_in_range', False):
