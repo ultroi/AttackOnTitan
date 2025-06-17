@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional, List, Dict
 import datetime
 from dotenv import load_dotenv
-from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, SPECIAL_ABILITIES, TITAN_NAME_VARIANTS, HP_RANGES
+from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, SPECIAL_ABILITIES, TITAN_NAME_VARIANTS, HP_RANGES, generate_titan_name, generate_titan_hp, generate_titan_xp
 from database.characters import get_character_data
 import datetime
 import logging
