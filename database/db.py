@@ -233,7 +233,7 @@ class Database:
             raise
 
     # Titan operations
-    def create_new_titan(level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
+    async def create_new_titan(level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
         """Create a completely new titan with no template dependency"""
         # Determine abilities
         abilities = ["Basic Attack"]
