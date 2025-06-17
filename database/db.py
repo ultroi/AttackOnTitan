@@ -254,64 +254,53 @@ class Database:
             logger.error(f"Failed to get titan: {e}")
             raise
 
-    async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
-        try:
-            query = {
-                "level": {"$gte": min_level, "$lte": max_level},
-                "min_level_requirement": {"$lte": max_level},
-                "$or": [
-                    {"is_template": {"$ne": True}},
-                    {"is_template": {"$exists": False}}
-                ]
-            }
-            if unlocked_areas:
-                query["spawn_areas"] = {"$in": unlocked_areas}
-        
-            pipeline = [
-                {"$match": query},
-                {"$sample": {"size": 1}}
+    async def get_random_titan(min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
+        """Get a random titan scaled to the target level."""
+        query = {
+            "level": {"$gte": min_level, "$lte": max_level},
+            "min_level_requirement": {"$lte": target_level},
+            "$or": [
+                {"is_template": {"$ne": True}},
+                {"is_template": {"$exists": False}}
             ]
-            titans = await self.titans.aggregate(pipeline).to_list(1)
-        
-            if titans:
-                return Titan(**titans[0])
-            
-            # Fallback: Try to find an existing scaled titan first
-            existing_scaled = await self.titans.find_one({
-                "level": target_level,
-                "is_scaled": True,
-                **({"spawn_areas": {"$in": unlocked_areas}} if unlocked_areas else {})
-            })
-            if existing_scaled:
-                return Titan(**existing_scaled)
-                
-            # Create new scaled titan
-            template = await self.titans.find_one({"name": "Generic Titan", "is_template": True})
-            if not template:
-                logger.warning("Generic Titan template not found, creating default")
-                template = {
-                    "name": "Generic Titan",
-                    "level": 1,
-                    "max_hp": 300,
-                    "abilities": ["Basic Attack"],
-                    "drop_table": {"marks": 0.5, "titan_crystals": 0.2, "valor_points": 0.1},
-                    "xp_reward": 50,
-                    "difficulty": "Normal",
-                    "spawn_areas": ["Trost District", "Karanes District", "Shiganshina District", "Wall Maria", "Wall Rose"],
-                    "min_level_requirement": 1,
-                    "created_at": datetime.datetime.utcnow(),
-                    "is_template": True
-                }
-                await self.titans.insert_one(template)
-            
-            scaled_titan = scale_titan(template, target_level)
-            await self.titans.insert_one(scaled_titan)
-            return Titan(**scaled_titan)
-        except Exception as e:
-            logger.error(f"Failed to get random titan: {e}")
-            raise
-
-        
+        }
+    
+        if unlocked_areas:
+            query["spawn_areas"] = {"$in": unlocked_areas}
+    
+        # Try to find an existing titan first
+        pipeline = [
+            {"$match": query},
+            {"$sample": {"size": 1}}
+        ]
+        titans = await self.titans.aggregate(pipeline).to_list(1)
+    
+        if titans:
+            return Titan(**titans[0])
+    
+        # If no suitable titan exists, create a new scaled one
+        templates = await self.titans.find({"is_template": True}).to_list(None)
+        if not templates:
+            # Create default template if none exists
+            default_template = {
+                "name": "Generic Titan",
+                "level": 1,
+                "max_hp": 300,
+                "abilities": ["Basic Attack"],
+                "difficulty": "Normal",
+                "spawn_areas": ["Trost District", "Karanes District", "Shiganshina District"],
+                "min_level_requirement": 1,
+                "created_at": datetime.utcnow(),
+                "is_template": True
+            }
+            await self.titans.insert_one(default_template)
+            templates = [default_template]
+    
+        # Scale a random template
+        template = random.choice(templates)
+        scaled_titan = scale_titan(template, target_level)
+        await self.titans.insert_one(scaled_titan)
+        return Titan(**scaled_titan)
 
 
     async def get_available_titans(self, character_level: int) -> List[Titan]:
