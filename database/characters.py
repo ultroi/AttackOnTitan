@@ -80,86 +80,130 @@ def create_effect(**kwargs) -> AbilityEffect:
 
 # Hitch Dreyse Effects
 def civilian_shell_effect(ctx: Dict) -> AbilityEffect:
+    atk_boost = ctx['character_stats']['ATK'] * 0.15  # 15% of ATK as bonus
     if not ctx.get('first_damage_taken', False):
         return create_effect(
-            message="Civilian Shell: 50% aggro avoidance, first damage halved",
-            buffs={"aggro_reduction": 0.5, "damage_reduction": 0.5}
+            message="Civilian Shell: 60% aggro avoidance, first damage reduced by 60%",
+            buffs={
+                "aggro_reduction": 0.6, 
+                "damage_reduction": 0.6,
+                "ATK": atk_boost  # Temporary attack boost
+            }
         )
     return create_effect(
-        message="Wake-Up Protocol: +25% Speed/Awareness",
-        buffs={"SPD": 1.25, "ACC": 1.25}
+        message="Wake-Up Protocol: +30% Speed/Awareness, +15% ATK",
+        buffs={
+            "SPD": 1.3, 
+            "ACC": 1.3,
+            "ATK": 1.15
+        }
     )
 
 def mocking_delay_effect(ctx: Dict) -> AbilityEffect:
-    delay = 2 if ctx.get('is_intelligent_titan', False) or ctx.get('is_leader', False) else 1
+    delay = 3 if ctx.get('is_intelligent_titan', False) or ctx.get('is_leader', False) else 2
+    spd_penalty = ctx['character_stats']['SPD'] * 0.1  # 10% of SPD as penalty
     return create_effect(
-        message=f"Mocking Delay: Enemy action delayed by {delay} turn(s)",
-        debuffs={"delay": delay}
+        message=f"Mocking Delay: Enemy action delayed by {delay} turns, -{spd_penalty:.0f} SPD to target",
+        debuffs={
+            "delay": delay,
+            "SPD": spd_penalty
+        }
     )
 
 def arc_net_trap_effect(ctx: Dict) -> AbilityEffect:
+    base_dmg = ctx['base_damage'] * 1.5  # 150% of base damage
     return create_effect(
-        message="Arc Net Trap: Stuns enemies, -30% Agility, allies gain +20% Dodge",
-        stun_duration=1,
-        debuffs={"SPD": 0.7},
-        buffs={"dodge_rate": 0.2}
+        message="Arc Net Trap: Stuns enemies, -40% Agility, allies gain +30% Dodge",
+        damage=base_dmg,
+        stun_duration=2,  # Increased from 1
+        debuffs={"SPD": 0.6},  # Stronger slow
+        buffs={"dodge_rate": 0.3}  # Better dodge
     )
 
 def stimulant_injection_effect(ctx: Dict) -> AbilityEffect:
+    heal_amount = max(150, ctx['character_stats']['DEF'] * 2)  # Minimum 150 or 2x DEF
     if ctx.get('target_is_self', False):
         return create_effect(
-            message="Stimulant Injection: 10% HP healed, Cold Edge granted",
-            healed=int(ctx.get('max_hp', 100) * 0.1),
-            buffs={"crit_chance": 2.0},
-            damage=int(ctx.get('enemy_max_hp', 100) * 0.05),
+            message=f"Stimulant Injection: {heal_amount} HP healed, Cold Edge granted",
+            healed=heal_amount,
+            buffs={
+                "crit_chance": 2.5,  # Increased from 2.0
+                "crit_damage": 1.3
+            },
+            damage=int(ctx['character_stats']['ATK'] * 1.8),  # 180% of ATK
             clear_debuffs=True
         )
     return create_effect(
-        message="Stimulant Injection: 15% HP healed, debuffs cleared",
-        healed=int(ctx.get('max_hp', 100) * 0.15),
+        message=f"Stimulant Injection: {heal_amount} HP healed, debuffs cleared",
+        healed=heal_amount,
         clear_debuffs=True
     )
 
 def bunker_descent_effect(ctx: Dict) -> AbilityEffect:
+    heal_amount = int(ctx['character_max_hp'] * 0.35)  # 35% heal up from 25%
     return create_effect(
-        message="Bunker Descent: Allies healed 25%, gain Stealth, enemy accuracy halved",
-        healed=int(ctx.get('max_hp', 100) * 0.25),
-        buffs={"stealth": 1.0, "enemy_accuracy": 0.5}
+        message="Bunker Descent: Allies healed 35%, gain Stealth, enemy accuracy reduced by 60%",
+        healed=heal_amount,
+        buffs={
+            "stealth": 1.0, 
+            "enemy_accuracy": 0.4,  # Stronger accuracy reduction
+            "DEF": 1.25  # Additional defense boost
+        }
     )
 
-# Daz Effects
+# Daz Enhanced Effects
 def panic_engine_effect(ctx: Dict) -> AbilityEffect:
     fear_counter = ctx.get('fear_counter', 0)
+    def_boost = ctx['character_stats']['DEF'] * 0.2 * fear_counter  # Scaling with DEF
     if fear_counter >= 5:
         return create_effect(
             message="Panic Engine: Heart Overload, massive DEF/SPD boost",
-            buffs={"DEF": 1.5, "SPD": 1.5}
+            buffs={
+                "DEF": 2.0 + def_boost,  # From 1.5 to 2.0 plus scaling
+                "SPD": 2.0,
+                "ATK": 1.5  # New attack boost
+            }
         )
     elif fear_counter >= 3:
         return create_effect(
-            message="Panic Engine: Extra move granted",
-            buffs={"extra_move": 1.0}
-        )
-    return create_effect(message="Panic Engine: Building fear...")
-
-def cowards_fortitude_effect(ctx: Dict) -> AbilityEffect:
-    if ctx.get('turns_not_focused', 0) >= 3:
-        return create_effect(
-            message="Coward's Fortitude: +20% Healing, Cover Aura active",
-            buffs={"healing_efficiency": 1.2, "aoe_damage_reduction": 0.25}
-        )
-    return create_effect(message="Coward's Fortitude: Waiting for safety...")
-
-def field_patch_effect(ctx: Dict) -> AbilityEffect:
-    healed = int(ctx.get('max_hp', 100) * 0.05 * 3)  # 5% per second for 3 turns
-    if ctx.get('target_hp_percent', 1.0) < 0.3:
-        return create_effect(
-            message="Field Patch: 15% HP healed, Survivor's Shield granted",
-            healed=healed,
-            shield=500
+            message="Panic Engine: Extra move granted, +15% ATK",
+            buffs={
+                "extra_move": 1.0,
+                "ATK": 1.15
+            }
         )
     return create_effect(
-        message="Field Patch: 15% HP healed over 3 turns",
+        message="Panic Engine: Building fear... +5% DEF per stack",
+        buffs={"DEF": 1.0 + (fear_counter * 0.05)}
+    )
+
+def cowards_fortitude_effect(ctx: Dict) -> AbilityEffect:
+    if ctx.get('turns_not_focused', 0) >= 2:  # Reduced from 3 turns
+        heal_boost = ctx['character_stats']['INT'] * 0.1  # INT scaling
+        return create_effect(
+            message="Coward's Fortitude: +30% Healing, Cover Aura active",
+            buffs={
+                "healing_efficiency": 1.3 + heal_boost,  # From 1.2 to 1.3 + scaling
+                "aoe_damage_reduction": 0.35  # From 0.25 to 0.35
+            }
+        )
+    return create_effect(
+        message="Coward's Fortitude: Waiting for safety... +5% Dodge",
+        buffs={"dodge_rate": 0.05}
+    )
+
+def field_patch_effect(ctx: Dict) -> AbilityEffect:
+    base_heal = ctx['character_stats']['INT'] * 0.5  # INT scaling
+    healed = int(base_heal * 3)  # Over 3 turns
+    if ctx.get('target_hp_percent', 1.0) < 0.3:
+        shield_amount = 500 + ctx['character_stats']['DEF'] * 2  # DEF scaling
+        return create_effect(
+            message=f"Field Patch: {healed} HP healed, Survivor's Shield ({shield_amount}) granted",
+            healed=healed,
+            shield=shield_amount
+        )
+    return create_effect(
+        message=f"Field Patch: {healed} HP healed over 3 turns",
         healed=healed
     )
 
@@ -170,79 +214,129 @@ def supply_dump_effect(ctx: Dict) -> AbilityEffect:
         message=f"Supply Dump: Dropped {selected_item}",
         items_dropped=[selected_item]
     )
+    
+    # Enhanced item effects
     if selected_item == "Fear Syringe":
-        effect.stun_duration = 1
+        effect.stun_duration = 2  # From 1 to 2 turns
+        effect.damage = ctx['base_damage'] * 0.8  # 80% of base damage
+    elif selected_item == "Gas Canister":
+        effect.buffs = {"gas_regen": 50}  # Restore 50 gas
+    elif selected_item == "Blades":
+        effect.buffs = {"ATK": 0.2}  # +20% ATK
     return effect
 
 def survival_override_effect(ctx: Dict) -> AbilityEffect:
     return create_effect(
-        message="Survival Override: Movement costs negated, 2 actions/turn, enhanced passives",
-        buffs={"movement_cost": 0.0, "actions_per_turn": 2.0, "passive_enhance": 1.0}
+        message="Survival Override: Movement costs negated, 3 actions/turn, enhanced passives",
+        buffs={
+            "movement_cost": 0.0, 
+            "actions_per_turn": 3.0,  # From 2 to 3
+            "passive_enhance": 1.0,
+            "ATK": 1.5,  # New attack boost
+            "SPD": 1.5   # New speed boost
+        }
     )
 
-# Mina Carolina Effects
+# Mina Carolina Enhanced Effects
 def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
     attack_count = ctx.get('attack_count', 0)
+    spd_boost = ctx['character_stats']['SPD'] * 0.25  # 25% of SPD as bonus
     
-    # First 2 attacks: Full dodge + crit boost
-    if attack_count <= 1:  # 0 and 1 (first two attacks)
+    if attack_count <= 1:
         return create_effect(
-            message="⚡ Golden Reflex! Dodged attack + next 2 hits gain +20% Crit",
+            message="⚡ Golden Reflex! Dodged attack + next 2 hits gain +30% Crit",
             buffs={
-                "dodge": 1.0,          # 100% dodge chance
-                "crit_damage": 1.2,     # +20% crit damage (stacks for 2 attacks)
-                "reflex_counter": 2     # Tracks remaining crit boosts
+                "dodge": 1.0,
+                "crit_damage": 1.3,  # From 1.2 to 1.3
+                "reflex_counter": 2,
+                "SPD": spd_boost  # Temporary SPD boost
             }
         )
-    
-    # After dodges: Still get 1 bonus dodge when HP < 30%
     elif ctx.get('hp_percent', 1.0) < 0.3 and ctx.get('reflex_available', True):
         return create_effect(
-            message="💢 Last Resort Dodge! (Low HP)",
-            buffs={"dodge": 1.0},
-            clear_buffs=["reflex_available"]  # One-time use
+            message="💢 Last Resort Dodge! (Low HP) + Temporary Invincibility",
+            buffs={
+                "dodge": 1.0,
+                "damage_reduction": 0.8  # 80% damage reduction next hit
+            },
+            clear_buffs=["reflex_available"]
         )
-    
-    return create_effect(message="Golden Reflex: Ready...")
+    return create_effect(
+        message="Golden Reflex: Ready... +5% Evasion",
+        buffs={"evasion": 0.05}
+    )
 
 def rookie_courage_effect(ctx: Dict) -> AbilityEffect:
     if ctx.get('ally_died_in_range', False):
         return create_effect(
-            message="Rookie Courage: Rapid Focus Mode, double action, +20% titan damage",
-            buffs={"actions_per_turn": 2.0, "titan_damage": 1.2}
+            message="Rookie Courage: Rapid Focus Mode, triple action, +30% titan damage",
+            buffs={
+                "actions_per_turn": 3.0,  # From 2 to 3
+                "titan_damage": 1.3,     # From 1.2 to 1.3
+                "ATK": 1.2                # Additional ATK boost
+            }
         )
     return create_effect(
-        message="Rookie Courage: +5% movement speed to nearby allies",
-        buffs={"movement_speed": 1.05}
+        message="Rookie Courage: +10% movement speed and +5% ATK to nearby allies",
+        buffs={
+            "movement_speed": 1.1,  # From 1.05 to 1.1
+            "ATK": 1.05
+        }
     )
 
 def nape_cutter_dash_effect(ctx: Dict) -> AbilityEffect:
-    damage = ctx.get('base_damage', 60) * (2 if ctx.get('gas_full', False) else 1)
+    base_dmg = ctx['base_damage'] * (2.5 if ctx.get('gas_full', False) else 1.8)  # Increased multipliers
+    crit_chance = min(0.5, ctx['character_stats']['ACC'] * 0.01)  # ACC affects crit chance
+    if random.random() < crit_chance:
+        base_dmg *= 2.0
+        return create_effect(
+            message=f"⚡ CRITICAL Nape Cutter Dash: Dealt {base_dmg} damage",
+            damage=base_dmg
+        )
     return create_effect(
-        message=f"Nape Cutter Dash: Dealt {damage} damage",
-        damage=damage
+        message=f"Nape Cutter Dash: Dealt {base_dmg} damage",
+        damage=base_dmg
     )
 
 def emergency_pulse_beacon_effect(ctx: Dict) -> AbilityEffect:
-    if random.random() < 0.25:
+    def_boost = 0.25 + ctx['character_stats']['DEF'] * 0.002  # DEF scaling
+    if random.random() < 0.35:  # Increased from 0.25
         return create_effect(
-            message="Emergency Pulse Beacon: +20% DEF, +15% ACC, titans may switch targets",
-            buffs={"DEF": 1.2, "ACC": 1.15},
+            message=f"Emergency Pulse Beacon: +{def_boost*100:.0f}% DEF, +20% ACC, titans may switch targets",
+            buffs={
+                "DEF": 1.0 + def_boost,
+                "ACC": 1.2
+            },
             target_switched=True
         )
     return create_effect(
-        message="Emergency Pulse Beacon: +20% DEF, +15% ACC",
-        buffs={"DEF": 1.2, "ACC": 1.15}
+        message=f"Emergency Pulse Beacon: +{def_boost*100:.0f}% DEF, +20% ACC",
+        buffs={
+            "DEF": 1.0 + def_boost,
+            "ACC": 1.2
+        }
     )
 
 def flicker_instinct_effect(ctx: Dict) -> AbilityEffect:
-    damage = ctx.get('base_damage', 120)
-    bleed = random.random() < 0.4
+    base_dmg = ctx['base_damage'] * 1.5  # 150% of base damage
+    attacks = 4  # Increased from 3
+    total_dmg = 0
+    bleed_count = 0
+    
+    for _ in range(attacks):
+        attack_dmg = base_dmg * (0.8 + random.random() * 0.4)  # 80-120% variation
+        total_dmg += attack_dmg
+        if random.random() < 0.5:  # Increased from 0.4
+            bleed_count += 1
+    
     return create_effect(
-        message="Flicker Instinct: 3 rapid strikes, 80% Evasion on final hit",
-        damage=damage,
-        bleed_applied=bleed,
-        buffs={"evasion": 0.8}
+        message=f"Flicker Instinct: {attacks} rapid strikes, 90% Evasion on final hit",
+        damage=int(total_dmg),
+        bleed_applied=bleed_count > 0,
+        buffs={
+            "evasion": 0.9,  # From 0.8 to 0.9
+            "SPD": 0.2       # Temporary speed boost
+        }
     )
 
 # ======================
