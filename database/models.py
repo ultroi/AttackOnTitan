@@ -181,49 +181,103 @@ class Titan(BaseModel):
     level: int
     max_hp: int
     abilities: List[str]
-    drop_table: Dict[str, float]
-    xp_reward: int
     created_at: datetime
     difficulty: str = "Normal"
     special_abilities: Optional[List[str]] = None
-    weakness: Optional[str] = None
-    resistance: Optional[str] = None
     spawn_areas: List[str]
     min_level_requirement: int = 1
+    internal_name: Optional[str] = None
+    is_scaled: Optional[bool] = None
 
+# Titan name variations by type and difficulty
+TITAN_NAME_VARIANTS = {
+    "Easy": [
+        "Small", "Weak", "Young", "Dwarfed", "Frail", 
+        "Tiny", "Scrawny", "Puny", "Miniature", "Underdeveloped"
+    ],
+    "Normal": [
+        "Abnormal", "Standard", "Common", "Regular", "Average",
+        "Typical", "Ordinary", "Usual", "Routine", "Conventional"
+    ],
+    "Hard": [
+        "Armored", "Colossal", "Warhammer", "Beast", "Jaw",
+        "Female", "Founding", "Attack", "Cart", "Flying"
+    ]
+}
+
+# Special abilities by difficulty
+SPECIAL_ABILITIES = {
+    "Easy": ["Stumble", "Slow Movement", "Poor Vision"],
+    "Normal": ["Charge", "Ground Slam", "Roar", "Regeneration"],
+    "Hard": ["Titan Shift", "Armor Plating", "Steam Blast", "Crystal Armor", "Thunder Spear"]
+}
+
+def generate_titan_name(difficulty: str) -> str:
+    """Generate a unique titan name based on difficulty."""
+    prefix = random.choice(TITAN_NAME_VARIANTS[difficulty])
+    suffix = random.choice(["Titan", "Titan", "Titan", "Abnormal", "Creature", "Monster"])
+    return f"{prefix} {suffix}"
+
+def scale_titan_stats(base_hp: int, base_xp: int, level_diff: int, difficulty: str) -> tuple:
+    """Scale HP and XP based on level difference and difficulty."""
+    if difficulty == "Easy":
+        hp_multiplier = 1 + (level_diff * 0.08)
+        xp_multiplier = 1 + (level_diff * 0.03)
+    elif difficulty == "Normal":
+        hp_multiplier = 1 + (level_diff * 0.12)
+        xp_multiplier = 1 + (level_diff * 0.06)
+    else:  # Hard
+        hp_multiplier = 1 + (level_diff * 0.18)
+        xp_multiplier = 1 + (level_diff * 0.10)
+    
+    return int(base_hp * hp_multiplier), int(base_xp * xp_multiplier)
 
 def scale_titan(titan_data: dict, target_level: int) -> dict:
-    """Scale a titan template to the target level."""
+    """Scale a titan template to the target level with unique properties."""
     base_level = titan_data["level"]
     level_diff = target_level - base_level
     scaled_data = titan_data.copy()
     
-    # 🧼 Remove existing MongoDB ID to avoid duplicate key error
+    # Remove MongoDB specific fields
     scaled_data.pop("_id", None)
-    scaled_data.pop("is_template", None)  # Remove template flag for scaled titans
-
-    scaled_data["level"] = target_level
-    scaled_data["max_hp"] = int(titan_data["max_hp"] * (1 + level_diff * 0.1))
-    scaled_data["xp_reward"] = int(titan_data["xp_reward"] * (1 + level_diff * 0.05))
-    scaled_data["drop_table"] = {
-        k: v * (1 + level_diff * 0.03) for k, v in titan_data["drop_table"].items()
-    }
-
-    # Make name unique by adding timestamp internally
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    base_name = titan_data['name'].replace("Generic Titan", "").strip()
-    scaled_data["name"] = f"Level {target_level} Generic Titan"
-    scaled_data["internal_name"] = f"level_{target_level}_generic_{timestamp}"
-    scaled_data["min_level_requirement"] = max(1, target_level - 2)
-    scaled_data["created_at"] = datetime.utcnow()
-    scaled_data["is_scaled"] = True  # Mark as scaled titan
-
-    # Set difficulty
+    scaled_data.pop("is_template", None)
+    
+    # Determine difficulty based on target level
     if target_level >= 50:
-        scaled_data["difficulty"] = "Hard"
+        difficulty = "Hard"
     elif target_level >= 20:
-        scaled_data["difficulty"] = "Normal"
+        difficulty = "Normal"
     else:
-        scaled_data["difficulty"] = "Easy"
-
+        difficulty = "Easy"
+    
+    # Scale stats
+    scaled_data["level"] = target_level
+    scaled_data["max_hp"], scaled_data["xp_reward"] = scale_titan_stats(
+        titan_data["max_hp"], titan_data["xp_reward"], level_diff, difficulty
+    )
+    
+    # Adjust drop table
+    scaled_data["drop_table"] = {
+        k: min(0.99, v * (1 + level_diff * 0.02))  # Cap drop rates at 99%
+        for k, v in titan_data["drop_table"].items()
+    }
+    
+    # Generate unique name and properties
+    scaled_data["name"] = generate_titan_name(difficulty)
+    scaled_data["difficulty"] = difficulty
+    
+    # Add special abilities based on difficulty
+    if random.random() < 0.3 + (0.1 * (target_level // 10)):  # Higher chance at higher levels
+        num_abilities = 1 if difficulty == "Easy" else (2 if difficulty == "Normal" else 3)
+        scaled_data["special_abilities"] = random.sample(SPECIAL_ABILITIES[difficulty], num_abilities)
+    
+    # Set min level requirement (players should be within 5 levels)
+    scaled_data["min_level_requirement"] = max(1, target_level - 5)
+    
+    # Internal identification
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    scaled_data["internal_name"] = f"titan_{target_level}_{difficulty.lower()}_{timestamp}"
+    scaled_data["created_at"] = datetime.utcnow()
+    scaled_data["is_scaled"] = True
+    
     return scaled_data
