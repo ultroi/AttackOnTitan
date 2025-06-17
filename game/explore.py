@@ -110,7 +110,7 @@ class BattleSystem:
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
             
-        base_damage = max(10, self.titan.level * 5)
+        base_damage = max(10, self.titan.level * 1)
         # Adjust damage based on difficulty
         damage_multipliers = {"Easy": 0.5, "Normal": 1.0, "Hard": 1.3}
         base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
