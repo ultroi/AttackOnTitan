@@ -597,7 +597,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.edit_message_text(f"Error: Titan {titan_name} not found.")
             return
     
-    battle = BattleSystem(character, Titan(**titan))
+    battle = BattleSystem(character, titan)
     active_battles[user_id] = battle
     
     keyboard = generate_ability_keyboard(battle)
