@@ -241,15 +241,21 @@ def survival_override_effect(ctx: Dict) -> AbilityEffect:
 def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
     attack_count = ctx.get('attack_count', 0)
     spd_boost = ctx['character_stats']['SPD'] * 0.25  # 25% of SPD as bonus
+    atk = ctx['character_stats']['ATK']
     
     if attack_count <= 1:
         return create_effect(
-            message="⚡ Golden Reflex! Dodged attack + next 2 hits gain +30% Crit",
+            message="⚡ Golden Reflex! Dodged attack + Counter! +30% Crit for next 2 hits",
             buffs={
                 "dodge": 1.0,
-                "crit_damage": 1.3,  # From 1.2 to 1.3
+                "crit_damage": 1.3,
                 "reflex_counter": 2,
-                "SPD": spd_boost  # Temporary SPD boost
+                "SPD": spd_boost
+            },
+            counter_attack={
+                "damage": atk * 1.5,  # 150% ATK counter strike
+                "type": "slash",     # You can customize: slash/pierce/blunt
+                "message": "🗡️ Mina strikes back instantly!"
             }
         )
     elif ctx.get('hp_percent', 1.0) < 0.3 and ctx.get('reflex_available', True):
@@ -257,9 +263,14 @@ def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
             message="💢 Last Resort Dodge! (Low HP) + Temporary Invincibility",
             buffs={
                 "dodge": 1.0,
-                "damage_reduction": 0.8  # 80% damage reduction next hit
+                "damage_reduction": 0.8
             },
-            clear_buffs=["reflex_available"]
+            clear_buffs=["reflex_available"],
+            counter_attack={
+                "damage": atk * 2.5,
+                "type": "pierce",
+                "message": "💥 Mina pierces the Titan's eye in desperation!"
+            }
         )
     return create_effect(
         message="Golden Reflex: Ready... +5% Evasion",
