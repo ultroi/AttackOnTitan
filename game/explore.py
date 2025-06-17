@@ -529,11 +529,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
         return
 
-    battle_system = BattleSystem(character, Titan(name="Dummy", level=1, max_hp=1, abilities=["Basic Attack"], created_at=datetime.utcnow(), spawn_areas=["Trost District"], xp_reward=0))  # Temporary for ability check
-    if not battle_system.has_usable_abilities():
-        await update.message.reply_text(f"{character_name} has no usable abilities to fight. Refill gas or wait for ability cooldowns.")
-        return
-
     character.gas -= 100
     await db.update_character(character)
     
