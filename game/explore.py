@@ -77,7 +77,7 @@ class BattleSystem:
                     messages.append(effect.message)
         return messages
 
-    def apply_effect(self, effect: AbilityEffect, opponent: Dict, log: List[str]) -> None:
+    def apply_effect(self, effect: AbilityEffect) -> None:
         """Apply an AbilityEffect to the battle state."""
         self.titan_hp = max(0, self.titan_hp - effect.damage)
         self.character_hp = min(self.character.stats.HP, self.character_hp + effect.healed)
@@ -87,6 +87,11 @@ class BattleSystem:
             self.titan_debuffs["stun"] = max(self.titan_debuffs.get("stun", 0), effect.stun_duration)
         self.buffs.update(effect.buffs)
         self.titan_debuffs.update(effect.debuffs)
+        # Special effects based on attack type
+        if effect['counter_attack']['type'] == "pierce":
+            battle.titan_buffs['bleed'] = 3  # 3 turns of bleeding
+        elif effect['counter_attack']['type'] == "slash":
+            battle.character_buffs['momentum'] = 1
         if effect.clear_debuffs:
             self.debuffs.clear()
         if effect.items_dropped:
@@ -95,20 +100,7 @@ class BattleSystem:
             self.titan_debuffs["target_switched"] = 1
         if effect.bleed_applied:
             self.titan_debuffs["bleed"] = self.titan_debuffs.get("bleed", 0) + 1
-        # 🔥 Add this block to handle counter_attack
-        if "counter_attack" in effect:
-           counter = effect["counter_attack"]
-           counter_damage = int(counter.get("damage", 0))
-           opponent["HP"] -= counter_damage
-
-        # Optional: clamp opponent HP to not go below 0
-        if opponent["HP"] < 0:
-         opponent["HP"] = 0
-
-        # Log the counter attack
-        log.append(counter.get("message", "🗡️ Counter attack!"))
-        log.append(f"{opponent['name']} took {counter_damage} damage from counter!")
-    
+        
 
     def titan_attack(self) -> Tuple[int, str]:
         """Calculate damage dealt by titan, respecting debuffs, buffs, and special abilities."""
