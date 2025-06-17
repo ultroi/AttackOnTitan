@@ -415,7 +415,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=(
             f"<b>🛑 Titan Appeared 🛑</b>\n\n"
             f"<b>| {titan.name} (Lv. {titan.level}) |</b>\n"
-            f"<b>Difficulty:<b> {titan.difficulty}\n\n"
+            f"<b>Difficulty:</b> {titan.difficulty}\n\n"
             f"<i>{special_abilities_text}</i>\n"
         ),
         reply_markup=reply_markup,
