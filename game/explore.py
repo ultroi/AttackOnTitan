@@ -512,8 +512,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not battle.has_usable_abilities():
         full_message.append(f"{battle.character.name} has no usable abilities left due to insufficient gas!")
-        battle.character_hp = 0
-        await handle_battle_end(query, battle, user_id)
+        await query.edit_message_text(
+            f"{battle.character.name} is out of gas and cannot continue the battle!"
+        )
+        del active_battles[user_id]
         return
     
     if battle.character_hp > 0:
