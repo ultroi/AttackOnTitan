@@ -252,7 +252,6 @@ class Database:
             name=generate_titan_name(difficulty),
             level=level,
             max_hp=generate_titan_hp(level, difficulty),
-            xp_reward=generate_titan_xp(level, difficulty), 
             abilities=abilities,
             created_at=datetime.datetime.now(datetime.timezone.utc),
             difficulty=difficulty,
@@ -353,7 +352,7 @@ class Database:
     async def calculate_rewards(self, titan: Titan, character: Character, player: Player, explore_count: int, valor: int, crystal: int) -> dict:
         """Calculate rewards for defeating the titan with new random system."""
         rewards = {
-            "xp": titan.xp_reward,  # Keep original XP
+            "xp": xp,  # Keep original XP
             "marks": random.randint(90, 150),  # New marks range
             "crystal": 0,  # Initialize
             "valor": 0,  # Initialize
