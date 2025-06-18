@@ -602,12 +602,16 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
     
     if battle.titan_hp <= 0:
         rewards = battle.calculate_rewards()
+
+        character_xp = rewards["xp"] // 2
+        player_xp = rewards["xp"] - character_xp
+        
         reward_updates = {
             "marks": rewards["marks"],
             "$inc": {
                 "crystal": rewards["crystal"],
                 "valor": rewards["valor"],
-                "xp": rewards["xp"]
+                "xp": player_xp
             }
         }
         
@@ -616,10 +620,10 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
             {"$inc": reward_updates["$inc"]}
         )
         
+        battle.character.xp += character_xp
         battle.character.current_hp = battle.character.stats.HP
         battle.character.gas = battle.character_gas
         await db.update_character(battle.character)
-        
         reward_msg = [
             f"🎉 {battle.character.name} defeated {battle.titan.name}! 🎉",
             f"\nRewards:",
