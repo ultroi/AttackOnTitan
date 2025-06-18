@@ -252,6 +252,7 @@ class Database:
             name=generate_titan_name(difficulty),
             level=level,
             max_hp=generate_titan_hp(level, difficulty),
+            xp_reward=generate_titan_xp(level, difficulty), 
             abilities=abilities,
             created_at=datetime.datetime.now(datetime.timezone.utc),
             difficulty=difficulty,
