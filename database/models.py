@@ -181,6 +181,7 @@ class Titan(BaseModel):
     name: str
     level: int
     max_hp: int
+    xp_reward: int
     abilities: List[str]
     created_at: datetime
     difficulty: str = "Normal"
