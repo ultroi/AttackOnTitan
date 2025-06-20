@@ -110,7 +110,7 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🛡️ <b>By:</b> {executor_name}\n"
     )
     if reason:
-        log_msg += f"\n📌 Reason: <code>{reason}</code>"
+        log_msg += f"📌 Reason: <code>{reason}</code>"
 
     try:
         await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode="HTML")
