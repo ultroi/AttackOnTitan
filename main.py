@@ -66,6 +66,67 @@ async def error_handler(update, context):
         await update.callback_query.message.reply_text(f"Error: {context.error}")
 
 
+# STRICT OWNER VERIFICATION
+OWNERS = {5956598856, 5845254367}
+ADMIN_LOG_CHANNEL = -1002848899456
+
+async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Immediate reset by owner — no confirmation"""
+    user = update.effective_user
+
+    # Silent ignore if not owner
+    if user.id not in OWNERS:
+        return
+
+    try:
+        target_id = int(context.args[0])
+        if target_id in OWNERS:
+            return  # Can't reset other owners
+    except:
+        return  # Ignore malformed command
+
+    # Optional reason
+    reason = " ".join(context.args[1:]).strip()
+
+    # Database deletion
+    db_instance = await db.get_database()
+    player_result = await db_instance.players.delete_one({"user_id": target_id})
+    char_result = await db_instance.characters.delete_many({"user_id": target_id})
+
+    # Attempt to fetch user info for logging
+    try:
+        target_user = await context.bot.get_chat(target_id)
+        target_name = f"[{target_user.first_name}](tg://user?id={target_user.id})"
+    except:
+        target_name = f"`{target_id}`"
+
+    executor_name = f"[{user.first_name}](tg://user?id={user.id})"
+
+    # Send log to audit channel
+    log_msg = (
+        f"☢️ **RESET INITIATED** ☢️\n\n"
+        f"👤 **Target:** {target_name}\n"
+        f"🆔 **ID:** `{target_id}`\n"
+        f"🛡️ **By:** {executor_name}\n"
+    )
+    if reason:
+        log_msg += f"\n📌 Reason: `{reason}`"
+
+    try:
+        await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode="Markdown")
+    except:
+        pass
+
+    # Notify target if possible
+    try:
+        await context.bot.send_message(
+            target_id,
+            "⚠️ Your account has been resetted.\n"
+        )
+    except:
+        pass
+
+
 
 async def initialize_bot():
     """Initialize the bot with all handlers."""
@@ -76,6 +137,7 @@ async def initialize_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("explore", explore))
+    application.add_handler(CommandHandler("nuke", owner_reset))
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))  # Show character details
     application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))  # Confirm character selection
