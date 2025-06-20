@@ -180,8 +180,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [
-        [InlineKeyboardButton(f"🎭 Character", callback_data="show_character_profile")],
-        [InlineKeyboardButton("👥 Team", callback_data="manage_team")],
+        [InlineKeyboardButton(f"🎭 Character", callback_data="show_character_profile"),
+        InlineKeyboardButton("👥 Team", callback_data="manage_team")],
         [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]
     ]
     await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -325,7 +325,7 @@ async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_T
                 profile_text += "\n"
 
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data="fill_gas")],
-        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
+        [InlineKeyboardButton("Fill Gas", callback_data="fill_gas"),
+        InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     await update.callback_query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
