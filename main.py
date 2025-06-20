@@ -114,7 +114,7 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_msg += f"\n📌 Reason: `{reason}`"
 
     try:
-        await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode="HTML")
+        await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
     except:
         pass
 
