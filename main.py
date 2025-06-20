@@ -85,6 +85,8 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Optional reason
     reason = " ".join(context.args[1:]).strip()
+    
+
 
     # Database deletion
     db_instance = await get_database()
@@ -94,11 +96,11 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Attempt to fetch user info for logging
     try:
         target_user = await context.bot.get_chat(target_id)
-        target_name = f"[{target_user.first_name}](tg://user?id={target_user.id})"
+        target_name = f"<a href='tg://user?id={target_user.id}'>{target_user.first_name}</a>"
     except:
         target_name = f"`{target_id}`"
 
-    executor_name = f"[{user.first_name}](tg://user?id={user.id})"
+    executor_name = f"<a href='tg://user?id={user.id}'>{user.first_name}</a>"
 
     # Send log to audit channel
     log_msg = (
