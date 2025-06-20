@@ -81,6 +81,8 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("U not owner, Baka !! 😾")
         return
 
+    target_id = int(context.args[0])
+
     # Optional reason
     reason = " ".join(context.args[1:]).strip()
 
@@ -100,10 +102,10 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Send log to audit channel
     log_msg = (
-        f"☢️ **RESET INITIATED** ☢️\n\n"
-        f"👤 **Target:** {target_name}\n"
-        f"🆔 **ID:** `{target_id}`\n"
-        f"🛡️ **By:** {executor_name}\n"
+        f"☢️ <b>RESET INITIATED</b>☢️\n\n"
+        f"👤 <b>Target:</b> {target_name}\n"
+        f"🆔 <b>ID:</b> <code>{target_id}</code>\n"
+        f"🛡️ <b>By:</b> {executor_name}\n"
     )
     if reason:
         log_msg += f"\n📌 Reason: `{reason}`"
