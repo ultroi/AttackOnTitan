@@ -81,14 +81,6 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_text("U not owner, Baka !! 😾")
         return
 
-    try:
-        target_id = int(context.args[0])
-        if target_id in OWNERS:
-            await message.reply_text("Invalid Format")
-            return  # Can't reset other owners
-    except:
-        return  # Ignore malformed command
-
     # Optional reason
     reason = " ".join(context.args[1:]).strip()
 
