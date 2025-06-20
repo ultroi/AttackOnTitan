@@ -74,14 +74,17 @@ ADMIN_LOG_CHANNEL = -1002848899456
 async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Immediate reset by owner — no confirmation"""
     user = update.effective_user
+    message = update.message 
 
     # Silent ignore if not owner
     if user.id not in OWNERS:
+        await message.reply_text("U not owner, Baka !! 😾")
         return
 
     try:
         target_id = int(context.args[0])
         if target_id in OWNERS:
+            await message.reply_text("Invalid Format")
             return  # Can't reset other owners
     except:
         return  # Ignore malformed command
