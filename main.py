@@ -25,6 +25,7 @@ from game.explore import (
     active_battles,
     handle_battle_start
 )
+from telegram.constants import ParseMode
 from game.callback_handlers import button_callback
 
 # Load environment variables
@@ -89,7 +90,7 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reason = " ".join(context.args[1:]).strip()
 
     # Database deletion
-    db_instance = await db.get_database()
+    db_instance = await get_database()
     player_result = await db_instance.players.delete_one({"user_id": target_id})
     char_result = await db_instance.characters.delete_many({"user_id": target_id})
 
@@ -113,7 +114,7 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_msg += f"\n📌 Reason: `{reason}`"
 
     try:
-        await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode="Markdown")
+        await context.bot.send_message(ADMIN_LOG_CHANNEL, log_msg, parse_mode="HTML")
     except:
         pass
 
