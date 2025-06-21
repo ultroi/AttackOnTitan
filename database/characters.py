@@ -392,7 +392,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         role="Wall Garrison Officer",
         archetype="Tactical Support / Debuff Specialist",
         core_trait="Apathy → Awakening (Echo Trait Bias: Loyalty → Desperation)",
-        base_stats={"ATK": 12, "DEF": 11, "ACC": 10, "INT": 12, "SPD": 13},
+        base_stats={"ATK": 60, "DEF": 40, "ACC": 22, "INT": 51, "SPD": 17},
         abilities={
             "passive": {
                 "civilian_shell": {
