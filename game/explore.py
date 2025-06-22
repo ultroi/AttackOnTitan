@@ -2,7 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.db_instance import get_database
 from database.characters import get_character_data
-from database.db import Database
+from database.db import Database, calculate_rewards
 import asyncio
 from datetime import datetime
 from typing import List, Optional, Dict, Tuple
@@ -295,18 +295,6 @@ class BattleSystem:
             "titan_bar": titan_bar,
             "status_message": status_message
         }
-
-    def calculate_rewards(self) -> dict:
-        """Calculate rewards for defeating the titan."""
-        reward_multipliers = {"Easy": 0.8, "Normal": 1.0, "Hard": 1.3}
-        base_rewards = {
-            "xp": self.titan.xp_reward,
-            "marks": max(1, self.titan.level * 2),
-            "titan_crystals": max(1, self.titan.level // 2),
-            "valor_points": max(1, self.titan.level)
-        }
-        scaled_rewards = {k: int(v * reward_multipliers.get(self.titan.difficulty, 1.0)) for k, v in base_rewards.items()}
-        return scaled_rewards
 
 active_battles = {}
 
