@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Tuple
 import random
 from telegram.constants import ParseMode
-from database.models import Character, Player
+from database.models import Character, Player, Titan
 from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
 import logging
 import uuid
