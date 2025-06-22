@@ -1,3 +1,4 @@
+from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.db_instance import get_database
@@ -9,7 +10,6 @@ from typing import List, Optional, Dict, Tuple
 import random
 from telegram.constants import ParseMode
 from database.models import Character, Player, Titan
-from database.characters import get_character_data, AbilityEffect, CharacterData, Ability
 import logging
 import uuid
 from pydantic import BaseModel
@@ -435,9 +435,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     special_abilities_text = f"\nSpecial Abilities: {', '.join(titan.special_abilities)}" if titan.special_abilities else ""
     await update.message.reply_text(
         text=(
-            f"<b>🛑 Titan Appeared 🛑</b>\n\n"
-            f"<b>| {titan.name} (Lv. {titan.level}) |</b>\n"
-            f"<b>Difficulty:</b> {titan.difficulty}\n\n"
+            f"<b>TITAN APPEARED</b>\n\n"
+            f"<b>| {titan.name} (Lv. {titan.level}) |</b>\n\n"
+            f"<b>Difficulty:</b> {titan.difficulty}\n"
             f"<i>{special_abilities_text}</i>\n"
         ),
         reply_markup=reply_markup,
@@ -490,10 +490,12 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         text=(
             f"<b>⚔️ BATTLE ⚔️</b>\n\n"
-            f"<b>| {battle.titan.name} (Lv. {battle.titan.level}) |</b>\n"
-            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]</b>\n\n"
+            f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>\n"
+            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
+            f"{status['titan_bar']}\n\n"
             f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]</b>\n"
+            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
+            f"{status['character_bar']}\n"
             f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
             f"{status['status_message']}\n"
             f"<b>Choose your action:</b>"
@@ -591,10 +593,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         f"<b>| {battle.titan.name} (Lv. {battle.titan.level}) |</b>\n"
         f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-        f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+        f"HP: {status['character_hp']}/{battle.character.stats.HP}\n"
+        f"{status['character_bar']}\n"
         f"Gas: {status['gas']}/{battle.character.gas}\n\n"
         f"{status['status_message']}\n"
-        f"<b>Choose your action:</b>"
     )
     
     await query.edit_message_text(
@@ -630,7 +632,8 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
             "$inc": {
                 "crystal": rewards["crystal"],
                 "valor": rewards["valor"],
-                "xp": player_xp
+                "xp": player_xp,
+                "explore_count": 1
             }
         }
         
