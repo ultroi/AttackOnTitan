@@ -296,7 +296,7 @@ class BattleSystem:
             "status_message": status_message
         }
 
-    async def calculate_rewards(self, titan: Titan, character: Character, player: Player, explore_count: int, valor: int, crystal: int) -> dict:
+    async def calculate_rewards(self) -> dict:
         """Calculate rewards for defeating the titan with new random system."""
         rewards = {
             "xp": xp,  # Keep original XP
@@ -612,7 +612,14 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
     db = await get_database()
     
     if battle.titan_hp <= 0:
-        rewards = battle.calculate_rewards()
+        rewards = battle.calculate_rewards(
+            titan=battle.titan,
+            character=battle.character,
+            player=battle.player,
+            explore_count=battle.character.player.explore_count,
+            valor=0,
+            crystal=0
+        )
 
         character_xp = rewards["xp"] // 2
         player_xp = rewards["xp"] - character_xp
