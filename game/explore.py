@@ -613,6 +613,13 @@ async def handle_battle_end(query, battle: BattleSystem, user_id: int):
         battle.timeout_task.cancel()
     
     db = await get_database()
+
+    player_data = await db.players.find_one({"user_id": user_id})
+    if not player_data:
+        await query.edit_message_text("❌ Player data not found!")
+        return
+
+    explore_count = player_data.get("explore_count", 0)
     
     if battle.titan_hp <= 0:
         rewards = battle.calculate_rewards(
