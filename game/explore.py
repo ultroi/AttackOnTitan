@@ -17,7 +17,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 class BattleSystem:
-    def __init__(self, character: 'Character', titan: 'Titan'):
+    def __init__(self, character: 'Character', titan: 'Titan', player: 'Player' = None):
         self.character = character
         self.titan = titan
         self.character_hp = character.current_hp
@@ -299,14 +299,14 @@ class BattleSystem:
     async def calculate_rewards(self) -> dict:
         """Calculate rewards for defeating the titan with new random system."""
         rewards = {
-            "xp": xp,  # Keep original XP
+            "xp": self.xp,  # Keep original XP
             "marks": random.randint(90, 150),  # New marks range
             "crystal": 0,  # Initialize
             "valor": 0,  # Initialize
         }
 
         # Valor points - rare drop (10-25) with explore count check
-        if random.random() < 0.3:  # 30% chance
+        if random.random() < 0.3 and self.player:  # 30% chance
             required_explore = random.randint(30, 40)
             if hasattr(character, 'player') and character.player.explore_count >= required_explore:
                 rewards["valor"] = random.randint(10, 25)
