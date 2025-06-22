@@ -296,6 +296,30 @@ class BattleSystem:
             "status_message": status_message
         }
 
+    async def calculate_rewards(self, titan: Titan, character: Character, player: Player, explore_count: int, valor: int, crystal: int) -> dict:
+        """Calculate rewards for defeating the titan with new random system."""
+        rewards = {
+            "xp": xp,  # Keep original XP
+            "marks": random.randint(90, 150),  # New marks range
+            "crystal": 0,  # Initialize
+            "valor": 0,  # Initialize
+        }
+
+        # Valor points - rare drop (10-25) with explore count check
+        if random.random() < 0.3:  # 30% chance
+            required_explore = random.randint(30, 40)
+            if hasattr(character, 'player') and character.player.explore_count >= required_explore:
+                rewards["valor"] = random.randint(10, 25)
+
+        # Crystals - more common (2-4) with explore count check
+        if random.random() < 0.6:  # 60% chance
+            required_explore = random.randint(10, 15)
+            if hasattr(character, 'player') and character.player.explore_count >= required_explore:
+                rewards["crystal"] = random.randint(2, 4)
+
+        return rewards
+    
+
 active_battles = {}
 
 def generate_ability_keyboard(battle: BattleSystem) -> List[List[InlineKeyboardButton]]:
