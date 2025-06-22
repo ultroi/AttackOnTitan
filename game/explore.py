@@ -20,6 +20,7 @@ class BattleSystem:
     def __init__(self, character: 'Character', titan: 'Titan', player: 'Player' = None):
         self.character = character
         self.titan = titan
+        self.player = player
         self.character_hp = character.current_hp
         self.titan_hp = titan.max_hp
         self.gas = character.gas
