@@ -43,8 +43,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-asyncio.get_event_loop().run_until_complete(initialize_database())
-logger.info("✅ Database initialized")
+# Initialize database before starting the app
+async def initialize_app():
+    await initialize_database()
+    logger.info("✅ Database initialized")
+
+asyncio.get_event_loop().run_until_complete(initialize_app())
 
 # Flask app
 app = Flask(__name__)
@@ -139,6 +143,8 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @app.route("/")
 def home():
     return "Bot is running via Webhook on Vercel!"
+
+
 
 @app.post(WEBHOOK_SECRET_PATH)
 async def webhook():
