@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import random
+from flask import request, Flask
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -31,6 +32,7 @@ from game.callback_handlers import button_callback
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_SECRET_PATH = f"/{TOKEN}"
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 
@@ -40,6 +42,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Flask app
+app = Flask(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -127,54 +132,39 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
 
+# Routes for Flask
+@app.route("/")
+def home():
+    return "Bot is running via Webhook on Vercel!"
 
-async def initialize_bot():
-    """Initialize the bot with all handlers."""
-    # Create the Application
-    application = Application.builder().token(TOKEN).build()
+@app.post(WEBHOOK_SECRET_PATH)
+async def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    await application.process_update(update)
+    return "OK"
     
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("profile", profile))
-    application.add_handler(CommandHandler("explore", explore))
-    application.add_handler(CommandHandler("nuke", owner_reset))
-    application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
-    application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))  # Show character details
-    application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))  # Confirm character selection
-    application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))  
-    application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
-    application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
-    application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
-    application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))  # New handler for adding to team
-    application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
-    application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_error_handler(error_handler)
-    
-    return application
 
-async def main():
-    try:
-        logger.info("Initializing database...")
-        await initialize_database()
-        logger.info("Database initialized successfully")
-        
-        application = await initialize_bot()
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        
-        while True:
-            await asyncio.sleep(1)
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        raise
+# Add handlers
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("profile", profile))
+application.add_handler(CommandHandler("explore", explore))
+application.add_handler(CommandHandler("nuke", owner_reset))
+application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
+application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))  # Show character details
+application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))  # Confirm character selection
+application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))  
+application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
+application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
+application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
+application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))  # New handler for adding to team
+application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
+application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
+application.add_handler(CallbackQueryHandler(button_callback))
+application.add_error_handler(error_handler)
 
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        raise
+# Run DB init
+@app.before_first_request
+def init():
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(initialize_database())
+    logger.info("✅ Database initialized")
