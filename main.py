@@ -165,6 +165,9 @@ application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^s
 application.add_handler(CallbackQueryHandler(button_callback))
 application.add_error_handler(error_handler)
 
+
+db_initialized = False
+
 # Run DB init
 @app.before_first_request
 def init():
