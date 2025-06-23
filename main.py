@@ -142,7 +142,10 @@ async def webhook():
     update = Update.de_json(request.get_json(force=True), application.bot)
     await application.process_update(update)
     return "OK"
-    
+
+
+# Define bot application first
+application = Application.builder().token(TOKEN).build()
 
 # Add handlers
 application.add_handler(CommandHandler("start", start))
