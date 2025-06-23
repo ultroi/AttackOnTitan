@@ -43,6 +43,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+asyncio.get_event_loop().run_until_complete(initialize_database())
+logger.info("✅ Database initialized")
+
 # Flask app
 app = Flask(__name__)
 
@@ -164,13 +167,3 @@ application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
 application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
 application.add_handler(CallbackQueryHandler(button_callback))
 application.add_error_handler(error_handler)
-
-
-db_initialized = False
-
-# Run DB init
-@app.before_first_request
-def init():
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(initialize_database())
-    logger.info("✅ Database initialized")
