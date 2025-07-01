@@ -1,8 +1,8 @@
-import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.db_instance import get_database
 from game.explore import BattleSystem, active_battles, handle_battle_end, handle_battle_start, handle_battle_action
+from game.explore import handle_battle_action
 from game.character_system import (
     show_character_selection,
     show_character_details,
