@@ -34,10 +34,9 @@ from game.character_system import (
 )
 from game.explore import (
     explore,
-    active_battles,
-    handle_battle_start,
-    handle_battle_action
+    active_battles
 )
+from game.battle_system import handle_battle_start, handle_battle_action
 from game.callback_handlers import button_callback
 from utils.monitor import resource_monitor
 from game.shop_system import shop_system
@@ -225,7 +224,38 @@ async def error_handler(update, context):
     except Exception as e:
         logger.error(f"Failed to send error message: {e}")
 
+async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle currency purchases and exchanges"""
+    if not update.effective_user or not update.message:
+        logger.error("Invalid update: missing user or message")
+        return
+
+    user_id = update.effective_user.id
+
+    if not context.args or len(context.args) != 2:
+        await update.message.reply_text(
+            "❌ Invalid command format!\n\n"
+            "Usage:\n"
+            "🔹 `/buy gas <amount>` - 2 marks = 1 gas\n"
+            "🔹 `/buy crystals <amount>` - 100 marks = 1 crystal\n"
+            "🔹 `/buy valor <amount>` - 500 marks = 1 valor\n"
+            "🔹 `/buy marks <amount>` - Exchange crystals to marks",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+
+    currency_type = context.args[0].lower()
+    try:
+        amount = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text("❌ Please enter a valid amount.")
+        return
+
+    result = await shop_system.buy_currency(user_id, currency_type, amount)
+    await update.message.reply_text(result)
+
 async def show_shop(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    """Display the shop interface"""
     if not update.effective_user or not update.message:
         logger.error("Invalid update: missing user or message")
         return
@@ -344,6 +374,7 @@ async def setup_application():
     application.add_handler(CommandHandler("cleanup", owner_cleanup))
     application.add_handler(CommandHandler("health", owner_health))
     application.add_handler(CommandHandler("shop", show_shop))
+    application.add_handler(CommandHandler("buy", buy))
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))

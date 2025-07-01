@@ -311,7 +311,10 @@ def bunker_descent_effect(ctx: Dict) -> AbilityEffect:
 # Daz Enhanced Effects
 def panic_engine_effect(ctx: Dict) -> AbilityEffect:
     fear_counter = ctx.get('fear_counter', 0)
-    def_boost = ctx['character_stats']['DEF'] * 0.2 * fear_counter  # Scaling with DEF
+    character_stats = ctx.get('character_stats', {})
+    base_def = character_stats.get('DEF', 10)  # Default DEF of 10 if not found
+    
+    def_boost = base_def * 0.2 * fear_counter  # Scaling with DEF
     if fear_counter >= 5:
         return create_effect(
             message="Panic Engine: Heart Overload, massive DEF/SPD boost",
@@ -397,36 +400,32 @@ def survival_override_effect(ctx: Dict) -> AbilityEffect:
 # Mina Carolina Enhanced Effects
 def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
     attack_count = ctx.get('attack_count', 0)
-    spd_boost = ctx['character_stats']['SPD'] * 0.25  # 25% of SPD as bonus
+    titan_hp = ctx.get('titan_hp', 0)
     atk = ctx['character_stats']['ATK']
     
     if attack_count <= 1:
+        buffs = {
+            "dodge": 1.0,
+            "crit_rate": 1.1,  # +10% Crit Rate
+            "reflex_counter": 2
+        }
+        message = "⚡ Golden Reflex! Dodged attack! +10% Crit for next 2 moves"
+        
+        # Titan-specific enhancements
+        if 75 < titan_hp <= 100:  # Normal Titans
+            buffs["bonus_dash"] = 1.0
+            message += ", gained Bonus Dash to weak spot"
+        elif titan_hp > 100:  # Difficult Titans
+            buffs["defense_ignore"] = 0.15  # 15% Defense ignore
+            message += ", Strike Window activated (15% Defense ignore)"
+            
         return create_effect(
-            message="⚡ Golden Reflex! Dodged attack + Counter! +30% Crit for next 2 hits",
-            buffs={
-                "dodge": 1.0,
-                "crit_damage": 1.3,
-                "reflex_counter": 2,
-                "SPD": spd_boost
-            },
+            message=message,
+            buffs=buffs,
             counter_attack={
-                "damage": atk * 1.5,  # 150% ATK counter strike
-                "type": "slash",     # You can customize: slash/pierce/blunt
-                "message": "🗡️ Mina strikes back instantly!"
-            }
-        )
-    elif ctx.get('hp_percent', 1.0) < 0.3 and ctx.get('reflex_available', True):
-        return create_effect(
-            message="💢 Last Resort Dodge! (Low HP) + Temporary Invincibility",
-            buffs={
-                "dodge": 1.0,
-                "damage_reduction": 0.8
-            },
-            clear_buffs=["reflex_available"],
-            counter_attack={
-                "damage": atk * 2.5,
-                "type": "pierce",
-                "message": "💥 Mina pierces the Titan's eye in desperation!"
+                "damage": atk * 1.5,
+                "type": "slash",
+                "message": "�️ Mina strikes back instantly!"
             }
         )
     return create_effect(
@@ -436,75 +435,136 @@ def golden_hour_reflex_effect(ctx: Dict) -> AbilityEffect:
 
 def rookie_courage_effect(ctx: Dict) -> AbilityEffect:
     if ctx.get('ally_died_in_range', False):
-        return create_effect(
-            message="Rookie Courage: Rapid Focus Mode, triple action, +30% titan damage",
-            buffs={
-                "actions_per_turn": 3.0,  # From 2 to 3
-                "titan_damage": 1.3,     # From 1.2 to 1.3
-                "ATK": 1.2                # Additional ATK boost
-            }
-        )
-    return create_effect(
-        message="Rookie Courage: +10% movement speed and +5% ATK to nearby allies",
-        buffs={
-            "movement_speed": 1.1,  # From 1.05 to 1.1
-            "ATK": 1.05
+        titan_hp = ctx.get('titan_hp', 0)
+        allies_died = ctx.get('allies_died_this_turn', 1)
+        
+        buffs = {
+            "actions_per_turn": 2.0,  # Double action
+            "titan_damage": 1.2      # +20% Titan damage
         }
+        message = "Rookie Courage: Rapid Focus Mode - Double action, +20% titan damage"
+        
+        if titan_hp > 100:
+            buffs.update({
+                "crit_rate": 1.15,  # +15% Crit Rate
+                "INT": 10           # +10 INT
+            })
+            message += ", +15% Crit Rate, +10 INT vs Strong Titan"
+            
+        if allies_died > 1:
+            buffs["reset_odm_cooldowns"] = 1.0
+            message += ", ODM cooldowns reset"
+            
+        return create_effect(
+            message=message,
+            buffs=buffs
+        )
+        
+    return create_effect(
+        message="Rookie Courage: +5% movement speed to nearby allies",
+        buffs={"movement_speed": 1.05}
     )
 
 def nape_cutter_dash_effect(ctx: Dict) -> AbilityEffect:
-    base_dmg = ctx['base_damage'] * (2.5 if ctx.get('gas_full', False) else 1.8)  # Increased multipliers
-    crit_chance = min(0.5, ctx['character_stats']['ACC'] * 0.01)  # ACC affects crit chance
-    if random.random() < crit_chance:
+    titan_hp = ctx.get('titan_hp', 0)
+    base_dmg = ctx['base_damage'] * (2.0 if ctx.get('gas_full', False) else 1.0)
+    message = "Nape Cutter Dash"
+    debuffs = {}
+    
+    # Easy Titan auto-crit
+    if titan_hp < 50 and ctx.get('titan_hp_percent', 1.0) < 0.25:
         base_dmg *= 2.0
-        return create_effect(
-            message=f"⚡ CRITICAL Nape Cutter Dash: Dealt {base_dmg} damage",
-            damage=base_dmg
-        )
+        message += " (Auto-Critical vs Low HP Easy Titan)"
+    # Normal Titan agility reduction
+    elif titan_hp <= 100:
+        debuffs["SPD"] = 10
+        message += " (-10 Agility)"
+    # Difficult Titan post-dodge/kill bonus
+    elif titan_hp > 100 and (ctx.get('just_dodged', False) or ctx.get('just_killed', False)):
+        base_dmg *= 1.5
+        message += " (+50% damage after dodge/kill)"
+    
     return create_effect(
-        message=f"Nape Cutter Dash: Dealt {base_dmg} damage",
-        damage=base_dmg
+        message=f"{message}: Dealt {int(base_dmg)} damage",
+        damage=int(base_dmg),
+        debuffs=debuffs
     )
 
 def emergency_pulse_beacon_effect(ctx: Dict) -> AbilityEffect:
-    def_boost = 0.25 + ctx['character_stats']['DEF'] * 0.002  # DEF scaling
-    if random.random() < 0.35:  # Increased from 0.25
-        return create_effect(
-            message=f"Emergency Pulse Beacon: +{def_boost*100:.0f}% DEF, +20% ACC, titans may switch targets",
-            buffs={
-                "DEF": 1.0 + def_boost,
-                "ACC": 1.2
-            },
-            target_switched=True
-        )
+    buffs = {
+        "DEF": 1.2,  # +20% Defense
+        "ACC": 1.15  # +15% Accuracy
+    }
+    debuffs = {}
+    message = "Emergency Pulse Beacon: +20% DEF, +15% ACC to allies"
+    
+    # Target switch chance
+    if random.random() < 0.25:
+        titan_hp = ctx.get('titan_hp', 0)
+        if titan_hp < 75:
+            debuffs["unstable"] = 1.0  # Cannot charge or grapple next turn
+            message += ", Titan became Unstable (no charge/grapple)"
+        message += ", target switched"
+    
+    # Clear fear under Rapid Focus
+    if ctx.get('rapid_focus_active', False):
+        buffs["clear_fear"] = 1.0
+        message += ", cleared Fear debuffs"
+    
     return create_effect(
-        message=f"Emergency Pulse Beacon: +{def_boost*100:.0f}% DEF, +20% ACC",
-        buffs={
-            "DEF": 1.0 + def_boost,
-            "ACC": 1.2
-        }
+        message=message,
+        buffs=buffs,
+        debuffs=debuffs,
+        target_switched=bool(debuffs)
     )
 
 def flicker_instinct_effect(ctx: Dict) -> AbilityEffect:
-    base_dmg = ctx['base_damage'] * 1.2  # Reduced from 1.5 to 1.2
-    attacks = 3  # Reduced from 4 to 3
+    titan_hp = ctx.get('titan_hp', 0)
+    titan_hp_percent = ctx.get('titan_hp_percent', 1.0)
+    base_dmg = ctx['base_damage']
     total_dmg = 0
     bleed_count = 0
+    buffs = {"evasion": 0.8}  # 80% Evasion after final hit
+    debuffs = {}
+    message = []
     
-    for _ in range(attacks):
-        attack_dmg = base_dmg * (0.8 + random.random() * 0.4)  # 80-120% variation
+    for i in range(3):  # 3 strikes
+        attack_dmg = base_dmg * (0.9 + random.random() * 0.2)  # 90-110% variation
         total_dmg += attack_dmg
-        if random.random() < 0.35:  # Reduced from 0.5 to 0.35
+        if random.random() < 0.4:  # 40% Bleed chance
             bleed_count += 1
     
+    # Titan tier enhancements
+    if titan_hp < 50:  # Easy Titans
+        if titan_hp_percent < 0.35:
+            total_dmg *= 1.5  # More damage to low HP targets
+            if titan_hp_percent < 0.15:
+                total_dmg *= 2.0  # Execution damage
+                message.append("Execution strike!")
+    elif titan_hp <= 100:  # Normal Titans
+        if bleed_count > 0:
+            debuffs.update({
+                "DEF": 0.9,  # -10% Defense
+                "deep_bleed": 2  # 2 turns of HP loss
+            })
+            message.append("Deep Bleed applied")
+    else:  # Difficult Titans
+        buffs.update({
+            "reset_nape_cutter": 1.0,  # Reset Nape Cutter cooldown
+            "SPD": 1.3  # +30% Speed
+        })
+        message.append("Nape Cutter refreshed, Speed Surge gained")
+    
+    message_str = f"Flicker Instinct: {3} strikes dealt {int(total_dmg)} damage"
+    if message:
+        message_str += f" ({', '.join(message)})"
+    
     return create_effect(
-        message=f"Flicker Instinct: {attacks} rapid strikes, 75% Evasion on final hit",
+        message=message_str,
         damage=int(total_dmg),
         bleed_applied=bleed_count > 0,
-        buffs={
-            "evasion": 0.75,  # Reduced from 0.9 to 0.75
-            "SPD": 0.15       # Reduced from 0.2 to 0.15
-        }
+        buffs=buffs,
+        debuffs=debuffs
     )
 
 # ======================
@@ -610,12 +670,13 @@ CHARACTERS: Dict[str, CharacterData] = {
         role="NPC-Ally / Emergency Support",
         archetype="RNG-dependent Last-Resort Utility",
         core_trait="Despair → Spark",
-        base_stats={"ATK": 15, "DEF": 16, "ACC": 14, "INT": 13, "SPD": 12},
+        base_stats={"ATK": 13, "DEF": 13, "ACC": 12, "INT": 12, "SPD": 11},
+        max_potential={"ATK": 125, "DEF": 125, "ACC": 115, "INT": 115, "SPD": 115},
         abilities={
             "passive": {
                 "panic_engine": {
                     "name": "Panic Engine",
-                    "description": "Has a 'Fear Counter' that rises with teammate deaths or low HP. At 3 stacks: gains 1 extra move. At 5 stacks: unleashes 'Heart Overload' — massive buff to Defense and Speed.",
+                    "description": "Fear Counter: +1 when ally dies, +1 when below 50% HP, +1 when hit by Titan >75 HP. At 3 stacks: gains bonus action with 1.5x movement vs Normal Titans, ignores overwatch vs Difficult Titans. At 5 stacks: Heart Overload (+60% DEF, +40% SPD). VS Titans >100 HP: Next ability becomes AoE at 80% power (once per combat).",
                     "type": "passive",
                     "gas_cost": 20,
                     "is_unlocked": True,
@@ -623,7 +684,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 },
                 "cowards_fortitude": {
                     "name": "Coward's Fortitude",
-                    "description": "If not focused for 3 turns, gains +20% Healing Efficiency and creates a 'Cover Aura' reducing AoE damage to nearby allies by 25%.",
+                    "description": "If not attacked for 3 turns, gains +20% Healing Efficiency and creates 'Cover Aura' reducing AoE damage to nearby allies by 25%.",
                     "type": "passive",
                     "gas_cost": 120,
                     "level_required": 25,
@@ -633,7 +694,7 @@ CHARACTERS: Dict[str, CharacterData] = {
             "active": {
                 "field_patch": {
                     "name": "Field Patch",
-                    "description": "Heals 5% HP every second for 3 turns to a target ally. If target is below 30%, adds a 'Survivor's Shield' (absorbs 500 damage).",
+                    "description": "Heals 5% HP/second for 3 turns. If target HP < 30%, applies Survivor's Shield: 500 damage absorption (1000 vs Easy Titans, 750 vs Normal). VS Difficult Titans: enemy breaking shield loses 10 ACC.",
                     "type": "active",
                     "gas_cost": 150,
                     "cooldown": 3,
@@ -643,7 +704,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 },
                 "supply_dump": {
                     "name": "Supply Dump",
-                    "description": "Tosses a gear pack into the field. RNG selects one: Gas Canister, Blades, Ration Pack, or Repair Kit. Chance of dropping 'Fear Syringe' (stuns one enemy for 1 turn).",
+                    "description": "Tosses random support item: Gas (resets movement), Blades (+15% Crit), Ration (20% HP), or Repair Kit (removes status effects). With Fear Counter ≥3: effect doubles/becomes AoE. 20% chance for Fear Syringe (stuns Titan, causes 30% AoE miss vs Normal/Difficult).",
                     "type": "active",
                     "gas_cost": 75,
                     "cooldown": 2,
@@ -655,7 +716,7 @@ CHARACTERS: Dict[str, CharacterData] = {
             "ultimate": {
                 "survival_override": {
                     "name": "Survival Override",
-                    "description": "Triggers automatically if last alive. All movement costs negated. Gains 2 actions per turn. All passives enhanced (cooldown-free). Lasts 3 turns.",
+                    "description": "Auto-triggers if last alive. 3 turns: Zero movement cost, +2 actions/turn, enhanced passives. Field Patch becomes AoE, Supply Dump drops 2 items, Heart Overload recastable. VS Titans >100 HP: abilities apply -20% Titan Morale Resist. Final action deals True Damage = 10% highest Titan HP. Collapses after 3 turns (bypasses revive).",
                     "type": "ultimate",
                     "gas_cost": 400,
                     "cooldown": 1,
@@ -672,12 +733,13 @@ CHARACTERS: Dict[str, CharacterData] = {
         role="Early Scout Cadet",
         archetype="Burst Damage + Agility Hybrid",
         core_trait="Innocence → Resilience",
-        base_stats={"ATK": 16, "DEF": 14, "ACC": 15, "INT": 12, "SPD": 17},
+        base_stats={"ATK": 14, "DEF": 12, "ACC": 13, "INT": 11, "SPD": 13},
+        max_potential={"ATK": 130, "DEF": 120, "ACC": 120, "INT": 110, "SPD": 125},
         abilities={
             "passive": {
                 "golden_hour_reflex": {
                     "name": "Golden Hour Reflex",
-                    "description": "First 2 enemy attacks against Mina are auto-dodged if from titans below 10 meters. Dodging increases Crit Rate by 10% for next 2 moves.",
+                    "description": "First 2 attacks from Titans < 10m are auto-dodged. Each dodge +10% Crit Rate for 2 moves. VS Normal: Dodge adds Bonus Dash. VS Difficult: Dodge triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
                     "type": "passive",
                     "gas_cost": 20,
                     "is_unlocked": True,
@@ -685,7 +747,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 },
                 "rookie_courage": {
                     "name": "Rookie Courage",
-                    "description": "Allies gain +5% movement speed when near. If ally dies in 15m radius, enters 'Rapid Focus Mode': gains double-action round and +20% damage against titans for 3 moves.",
+                    "description": "+5% Movement Speed to allies within 15m. If ally dies in range: Double Action Round, +20% Titan Damage (3 moves). VS Titans >100 HP: +15% Crit Rate, +10 INT. Multiple ally deaths: ODM cooldowns reset.",
                     "type": "passive",
                     "gas_cost": 100,
                     "level_required": 25,
@@ -695,7 +757,7 @@ CHARACTERS: Dict[str, CharacterData] = {
             "active": {
                 "nape_cutter_dash": {
                     "name": "Nape Cutter Dash",
-                    "description": "High-speed ODM slice targeting titan's weak spot. If executed at full gas, deals 2x normal damage.",
+                    "description": "High-speed ODM slice. 2x damage at Full Gas. Easy Titans: Auto-Crit if HP <25%. Normal: -10 Agility for 1 turn. Difficult: +50% damage after dodge/kill.",
                     "type": "active",
                     "gas_cost": 150,
                     "cooldown": 2,
@@ -705,7 +767,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 },
                 "emergency_pulse_beacon": {
                     "name": "Emergency Pulse Beacon",
-                    "description": "Sends shock beacon; allies gain 20% Defense and 15% Accuracy for 3 turns. Titans in 30m radius have 25% chance to switch targets.",
+                    "description": "Allies: +20% DEF, +15% ACC (3 turns). Titans (30m): 25% target switch. Titans <75 HP become Unstable on switch. Under Rapid Focus: clears Fear debuffs on allies.",
                     "type": "active",
                     "gas_cost": 80,
                     "cooldown": 3,
@@ -717,7 +779,7 @@ CHARACTERS: Dict[str, CharacterData] = {
             "ultimate": {
                 "flicker_instinct": {
                     "name": "Flicker Instinct",
-                    "description": "Performs 3 rapid ODM strikes across different titans. Each hit has 40% chance to inflict Bleed. On final hit, gains 80% Evasion for 1 round.",
+                    "description": "3 strikes on multiple/single target. 40% Bleed Chance. 80% Evasion after final hit. Easy: Execute <15% HP. Normal: Deep Bleed (-10% DEF, HP loss). Difficult: Refreshes Nape Cutter + Speed Surge.",
                     "type": "ultimate",
                     "gas_cost": 450,
                     "cooldown": 1,

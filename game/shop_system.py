@@ -1,10 +1,13 @@
 import random
 from datetime import datetime, timedelta
+import logging
 from typing import Dict, List, Optional, Any
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from database.db_instance import get_database
 from database.models import Equipment
+
+logger = logging.getLogger(__name__)
 
 class ShopItem:
     def __init__(self, name: str, item_type: str, price: int, currency: str = "marks", 
@@ -29,8 +32,11 @@ class ShopSystem:
     def __init__(self):
         self.db = None
         self.shop_items = self._initialize_shop_items()
-        self.rotation_date = None
+        # Initialize with the start of the current day
+        now = datetime.utcnow()
+        self.rotation_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         self.hidden_items = {}  # Items that appear under special conditions
+        self.refresh_costs = {}  # Track refresh costs per user
     
     async def _get_db(self):
         """Get database instance"""
@@ -402,10 +408,15 @@ class ShopSystem:
     
     async def show_shop(self, user_id: int, category: str = "main") -> tuple:
         """Display the shop interface"""
+        await self.check_daily_refresh()  # Check for daily refresh
+        
         db = await self._get_db()
         player = await db.players.find_one({"user_id": user_id})
         if not player:
             return "❌ Character not found! Create a character first.", None
+            
+        # Ensure user_id is in the player data for refresh cost tracking
+        player['user_id'] = user_id
         
         if category == "main":
             return await self._show_main_shop(player)
@@ -414,23 +425,42 @@ class ShopSystem:
     
     async def _show_main_shop(self, player: Dict) -> tuple:
         """Show main shop interface with categories"""
-        currencies = (
-            f"💰 **Your Currencies:**\n"
-            f"🎯 Marks: `{player.get('marks', 0):,}`\n"
-            f"💎 Titan Crystals: `{player.get('crystals', 0):,}`\n"
-            f"⚡ Valor Points: `{player.get('valor', 0):,}`\n\n"
-        )
-        
-        message = (
-            f"🏪 **ATTACK ON TITAN SHOP**\n"
-            f"═══════════════════════\n\n"
-            f"{currencies}"
-            f"🛒 **Shop Categories:**\n"
-            f"Choose a category to browse items:\n\n"
-            f"💱 **Exchange Rates:**\n"
-            f"• 1 Titan Crystal = 125 Valor Points\n"
-            f"• 1 Valor Point = 1,000 Marks\n\n"
-            f"🔄 **Shop rotates every 3-4 days!**"
+        marks = player.get('marks', 0)
+        crystals = player.get('crystal', 0)
+        gas = player.get('gas', 0)
+        valor = player.get('valor', 0)
+        user_id = player.get('user_id')
+
+        # Calculate time until next midnight (00:00)
+        now = datetime.utcnow()
+        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        time_until_refresh = next_midnight - now
+        hours = int(time_until_refresh.total_seconds() // 3600)
+        minutes = int((time_until_refresh.total_seconds() % 3600) // 60)
+
+        # Ensure user_id is an integer
+        user_id_int = int(user_id) if user_id is not None else 0
+        refresh_cost = await self._get_refresh_cost(user_id_int)
+
+        header = (
+            "🏪 *ATTACK ON TITAN SHOP*\n"
+            "═══════════════════════\n\n"
+            "💰 *Your Resources*\n"
+            f"🎯 Marks: `{marks:,}`\n"
+            f"💎 Crystals: `{crystal:,}`\n"
+            f"⚡ Valor: `{valor:,}`\n"
+            f"🛢️ Gas: `{gas:,}`\n\n"
+            "� *Currency Exchange*\n"
+            "• 2 Marks ➜ 1 Gas\n"
+            "• 1250 Marks ➜ 1 Valor\n"
+            "• 40 Valor ➜ 1 Crystal\n"
+            "• 1 Crystal ➜ 50000 Marks\n\n"
+            "`/buy <item_name> <quantity>`\n E.g - /buy gas 20 or /buy crystal 100\n\n"
+            "⏰ *Shop Information*\n"
+            f"• Next Free Refresh: {hours}h {minutes}m\n"
+            f"• Manual Refresh Cost: {refresh_cost} Valor\n\n"
+            "🛍️ *SHOP CATEGORIES*\n"
+            "═══════════════════════\n"
         )
         
         keyboard = [
@@ -438,13 +468,12 @@ class ShopSystem:
              InlineKeyboardButton("🔷 Echo Shards", callback_data="shop_echo_shards")],
             [InlineKeyboardButton("🛡️ Gear", callback_data="shop_gear"),
              InlineKeyboardButton("🌀 Utilities", callback_data="shop_utilities")],
-            [InlineKeyboardButton("🏛️ Barracks Quartermaster", callback_data="shop_barracks"),
-             InlineKeyboardButton("💀 Hollow Exchange", callback_data="shop_hollow")],
-            [InlineKeyboardButton("💱 Currency Exchange", callback_data="shop_exchange"),
-             InlineKeyboardButton("🔄 Refresh Shop", callback_data="shop_refresh")]
+            [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks"),
+             InlineKeyboardButton("💀 Black Market", callback_data="shop_hollow")],
+            [InlineKeyboardButton("🔄 Refresh Shop", callback_data="shop_refresh")]
         ]
         
-        return message, InlineKeyboardMarkup(keyboard)
+        return header, InlineKeyboardMarkup(keyboard)
     
     async def _show_category(self, player: Dict, category: str) -> tuple:
         """Show items in a specific category"""
@@ -473,6 +502,8 @@ class ShopSystem:
         message += "═══════════════════════\n\n"
         
         keyboard = []
+        remaining = None
+        
         for i, (item_key, item) in enumerate(available_items):
             price_str = f"{item.price:,} {item.currency.title()}"
             if item.damage_range:
@@ -497,8 +528,10 @@ class ShopSystem:
             message += item_text + "\n"
             
             # Add buy button if player can afford and has stock
-            if await self._can_afford(player, item) and (item.stock_limit == -1 or remaining > 0):
-                keyboard.append([InlineKeyboardButton(f"🛒 Buy {item.name}", callback_data=f"buy_{item_key}")])
+            if await self._can_afford(player, item):
+                if item.stock_limit == -1 or (remaining is not None and remaining > 0):
+                    buy_button = InlineKeyboardButton(f"🛒 Buy {item.name}", callback_data=f"buy_{item_key}")
+                    keyboard.append([buy_button])
         
         keyboard.append([InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")])
         
@@ -553,7 +586,7 @@ class ShopSystem:
         if item.currency == "marks":
             return player.get("marks", 0) >= item.price
         elif item.currency == "crystals":
-            return player.get("crystals", 0) >= item.price
+            return player.get("crystal", 0) >= item.price
         elif item.currency == "valor":
             return player.get("valor", 0) >= item.price
         return False
@@ -615,7 +648,7 @@ class ShopSystem:
         if item.currency == "marks":
             update_data["marks"] = player.get("marks", 0) - item.price
         elif item.currency == "crystals":
-            update_data["crystals"] = player.get("crystals", 0) - item.price
+            update_data["crystals"] = player.get("crystal", 0) - item.price
         elif item.currency == "valor":
             update_data["valor"] = player.get("valor", 0) - item.price
         
@@ -686,9 +719,9 @@ class ShopSystem:
         
         # Define exchange rates (as per your specification)
         rates = {
-            ("crystals", "valor"): 125,  # 1 Crystal = 125 Valor
-            ("valor", "marks"): 1000,    # 1 Valor = 1000 Marks
-            ("crystals", "marks"): 125000  # 1 Crystal = 125,000 Marks (via valor)
+            ("crystals", "valor"): 25,    # 1 Crystal = 25 Valor
+            ("valor", "marks"): 1250,     # 1 Valor = 1250 Marks
+            ("crystals", "marks"): 31250  # 1 Crystal = 31250 Marks
         }
         
         if (from_currency, to_currency) not in rates:
@@ -720,6 +753,196 @@ class ShopSystem:
             f"📥 **Received:** {received:,} {to_currency.title()}\n"
             f"💱 **Rate:** 1 {from_currency} = {rate:,} {to_currency}"
         )
+    
+    async def show_shop_details(self, user_id: int) -> tuple[str, InlineKeyboardMarkup]:
+        """Show shop with detailed header information including resources and buy guide"""
+        db = await self._get_db()
+        player = await db.players.find_one({"user_id": user_id}) or {}
+        
+        marks = player.get('marks', 0)
+        crystals = player.get('crystal', 0)
+        gas = player.get('gas', 0)
+        valor = player.get('valor', 0)
+        
+        # Create detailed header with buy guide and resources
+        header = (
+            "🏪 *ATTACK ON TITAN SHOP*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            "💫 *Quick Buy Guide*\n"
+            "🔸 `/buy gas <amount>`\n"
+            "🔸 `/buy crystals <amount>`\n"
+            "🔸 `/buy valor <amount>`\n"
+            "🔸 `/buy marks <amount>`\n\n"
+            "💰 *Your Resources*\n"
+            f"• Marks: {marks:,}\n"
+            f"• Crystals: {crystals:,}\n"
+            f"• Gas: {gas:,}\n"
+            f"• Valor: {valor:,}\n\n"
+            "📦 *Exchange Rates*\n"
+            "• 2 Marks ➜ 1 Gas\n"
+            "• 31250 Marks ➜ 1 Crystal\n"
+            "• 1250 Marks ➜ 1 Valor\n"
+            "• 1 Crystal ➜ 100 Marks\n\n"
+            "🛍️ *Available Items*\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+        )
+        
+        # Get shop content
+        shop_content, reply_markup = await self.show_shop(user_id)
+        
+        return header + shop_content, reply_markup
+        
+    def _get_rarity_icon(self, rarity: str) -> str:
+        """Get colored circle emoji based on item rarity"""
+        return {
+            "common": "🟢",
+            "uncommon": "🔵",
+            "rare": "🟣",
+            "epic": "🟡",
+            "legendary": "🔴"
+        }.get(rarity.lower(), "⚪")
+    
+    async def buy_currency(self, user_id: int, currency_type: str, amount: int) -> str:
+        """Handle currency purchases and exchanges"""
+        try:
+            db = await self._get_db()
+            player = await db.players.find_one({"user_id": user_id})
+            if not player:
+                return "❌ Character not found! Create a character first."
+
+            marks = player.get('marks', 0)
+            crystals = player.get('crystal', 0)
+            valor = player.get('valor', 0)
+            gas = player.get('gas', 0)
+
+            if amount <= 0:
+                return "❌ Please specify a positive amount."
+
+            updates = {}
+            msg = ""
+
+            if currency_type == "gas":
+                # 2 marks = 1 gas
+                cost = amount * 2
+                if marks < cost:
+                    return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} gas."
+                updates["$inc"] = {"marks": -cost, "gas": amount}
+                msg = f"✅ Successfully purchased {amount:,} gas for {cost:,} marks."
+
+            elif currency_type == "crystals":
+                # 40 valor = 1 crystal
+                valor_cost = amount * 40
+                if valor < valor_cost:
+                    return f"❌ Insufficient valor! You need {valor_cost:,} valor for {amount:,} crystals."
+                updates["$inc"] = {"valor": -valor_cost, "crystal": amount}  # Fixed field name to match database
+                msg = f"✅ Successfully purchased {amount:,} crystals for {valor_cost:,} valor."
+
+            elif currency_type == "valor":
+                # 1250 marks = 1 valor
+                cost = amount * 1250
+                if marks < cost:
+                    return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} valor points."
+                updates["$inc"] = {"marks": -cost, "valor": amount}
+                msg = f"✅ Successfully purchased {amount:,} valor points for {cost:,} marks."
+
+            elif currency_type == "marks":
+                # Convert crystals to marks (1 crystal = 50000 marks)
+                if crystal < amount:  # Updated variable name to match
+                    return f"❌ Insufficient crystals! You need {amount:,} crystals."
+                marks_gained = amount * 50000
+                updates["$inc"] = {"crystal": -amount, "marks": marks_gained}  # Fixed field name to match database
+                msg = f"✅ Successfully exchanged {amount:,} crystals for {marks_gained:,} marks."
+
+            else:
+                return "❌ Invalid currency type. Use: gas, crystals, valor, or marks."
+
+            # Apply the updates
+            result = await db.players.update_one(
+                {"user_id": user_id},
+                updates
+            )
+
+            if result.modified_count > 0:
+                return msg
+            else:
+                return "❌ Failed to process the transaction. Please try again."
+
+        except Exception as e:
+            logger.error(f"Error in buy_currency: {e}")
+            return "❌ An error occurred while processing your purchase. Please try again."
+
+    async def _get_refresh_cost(self, user_id: int) -> int:
+        """Get the current refresh cost for a user"""
+        current_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        if user_id not in self.refresh_costs or self.refresh_costs[user_id]["date"] != current_date:
+            self.refresh_costs[user_id] = {"date": current_date, "count": 0}
+        return 150 + (50 * self.refresh_costs[user_id]["count"])
+
+    async def refresh_shop(self, user_id: int) -> str:
+        """Handle manual shop refresh"""
+        try:
+            db = await self._get_db()
+            player = await db.players.find_one({"user_id": user_id})
+            if not player:
+                return "❌ Character not found!"
+
+            refresh_cost = await self._get_refresh_cost(user_id)
+            valor = player.get('valor', 0)
+
+            if valor < refresh_cost:
+                return f"❌ Insufficient valor! Shop refresh costs {refresh_cost} valor."
+
+            # Deduct valor and update refresh count
+            await db.players.update_one(
+                {"user_id": user_id},
+                {"$inc": {"valor": -refresh_cost}}
+            )
+
+            current_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            if user_id not in self.refresh_costs:
+                self.refresh_costs[user_id] = {"date": current_date, "count": 0}
+            self.refresh_costs[user_id]["count"] += 1
+
+            # Refresh shop items (you can add logic here to randomize available items)
+            self.rotation_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            next_cost = refresh_cost + 50
+            return f"✅ Shop refreshed successfully!\nSpent: {refresh_cost} valor\nNext refresh will cost: {next_cost} valor"
+
+        except Exception as e:
+            logger.error(f"Error in refresh_shop: {e}")
+            return "❌ An error occurred while refreshing the shop."
+
+    async def handle_callback(self, user_id: int, callback_data: str) -> Optional[tuple[str, InlineKeyboardMarkup]]:
+        """Handle shop-related callback queries"""
+        if callback_data == "shop_refresh":
+            # Handle shop refresh
+            refresh_result = await self.refresh_shop(user_id)
+            if "✅" in refresh_result:
+                # If refresh was successful, show updated shop
+                return await self.show_shop(user_id)
+            else:
+                # If refresh failed, return the error message with an empty keyboard
+                return refresh_result, InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")
+                ]])
+        elif callback_data.startswith("shop_"):
+            # Handle other shop categories
+            category = callback_data.replace("shop_", "")
+            return await self.show_shop(user_id, category)
+        return None
+
+    async def check_daily_refresh(self):
+        """Check and handle daily shop refresh"""
+        current_time = datetime.utcnow()
+        midnight = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Check if we've passed midnight since last refresh
+        if current_time >= midnight and self.rotation_date < midnight:
+            # Reset shop for new day
+            self.rotation_date = midnight
+            # Reset refresh costs for all users
+            self.refresh_costs = {}
 
 # Initialize shop system
 shop_system = ShopSystem()

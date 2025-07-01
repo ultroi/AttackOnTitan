@@ -1,8 +1,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.db_instance import get_database
-from game.explore import BattleSystem, active_battles, handle_battle_end, handle_battle_start, handle_battle_action
-from game.explore import handle_battle_action
+from game.explore import active_battles
+from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
+from game.shop_system import shop_system
 from game.character_system import (
     show_character_selection,
     show_character_details,
@@ -45,20 +46,78 @@ async def update_battle_status(query, battle, message):
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = await get_database()
     query = update.callback_query
+    if not query:
+        return
     await query.answer()
     
-    if query.data == "show_character_profile":
+    # Handle shop-related callbacks
+    if query.data and query.data.startswith("shop_"):
+        category = query.data.split("_")[1]
+        message_text, reply_markup = await shop_system.show_shop(query.from_user.id, category)
+        await query.edit_message_text(
+            text=message_text,
+            reply_markup=reply_markup,
+            parse_mode='MARKDOWN'
+        )
+    
+    # Handle buy item callbacks
+    elif query.data and query.data.startswith("buy_"):
+        item_key = query.data.split("_", 1)[1]
+        result = await shop_system.purchase_item(query.from_user.id, item_key)
+        
+        # After purchase, refresh the current shop category
+        category = "main"  # Default to main if we can't determine the category
+        if context.user_data and 'message_history' in context.user_data:
+            for prev_msg in reversed(context.user_data.get('message_history', [])):
+                if isinstance(prev_msg, str) and prev_msg.startswith("shop_"):
+                    category = prev_msg.split("_")[1]
+                    break
+                
+        message_text, reply_markup = await shop_system.show_shop(query.from_user.id, category)
+        
+        # Show purchase result first
+        await query.answer(text=result[:200])  # Show first 200 chars in popup
+        
+        # Then update the shop view
+        await query.edit_message_text(
+            text=f"{result}\n\n{message_text}",
+            reply_markup=reply_markup,
+            parse_mode='MARKDOWN'
+        )
+    
+    elif query.data == "show_character_profile":
         await show_character_profile(update, context)
     
     elif query.data == "back_to_profile":
         await profile(update, context)
     
     elif query.data == "exit_profile":
-        await query.message.delete()
+        try:
+            if query.message:
+                await query.message.delete()
+            else:
+                await query.edit_message_text("Profile closed.")
+        except Exception:
+            # If message can't be deleted, edit it instead
+            await query.edit_message_text("Profile closed.")
     
     elif query.data == "fill_gas":
+        if not update.effective_user:
+            await query.edit_message_text("User information not available.")
+            return
+        
         player = await db.get_player(update.effective_user.id)
-        character_name = query.message.text.split('\n')[0].strip('*')  # Remove markdown
+        if not player:
+            await query.edit_message_text("Player data not found!")
+            return
+            
+        character_name = ""
+        if query.message and hasattr(query.message, 'text') and query.message.text:
+            character_name = query.message.text.split('\n')[0].strip('*')  # Remove markdown
+        else:
+            await query.edit_message_text("Message information not available.")
+            return
+            
         character = await db.get_character(update.effective_user.id, character_name)
     
         if not character:
@@ -103,39 +162,42 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             available_gas = player.gas
             player.gas = 0
             character.gas = min(max_gas, current_gas + available_gas)
-
-            await db.update_character(character)
-            await db.update_player(update.effective_user.id, {
-                "gas": player.gas
-            })
-
-            await query.edit_message_text(
-                f"⛽ Partial refill completed!\n"
-                f"✅ {character.name} gas: {character.gas}/{max_gas}\n"
-                f"🏪 Your remaining gas: {player.gas}\n"
-                f"💡 Still need {max_gas - character.gas} more gas for full tank"
-            )
-
-    
-    elif query.data == "start_journey":
-        await show_character_selection(update, context)
-    
-    elif query.data.startswith("select_"):
+    elif query.data and query.data.startswith("select_"):
         char_name = query.data.split("_")[1]
-        context.user_data['selected_character'] = char_name
+        if context.user_data is not None:
+            context.user_data['selected_character'] = char_name
         await show_character_details(update, context)
     
-    elif query.data.startswith("confirm_"):
+    elif query.data and query.data.startswith("confirm_"):
         await confirm_character_selection(update, context)
     
-    elif query.data == "back_to_selection":
+    elif query.data and query.data == "back_to_selection":
         await show_character_selection(update, context)
     
-    elif query.data == "cancel_selection":
+    elif query.data and query.data == "cancel_selection":
         await show_character_selection(update, context)
     
-    elif query.data.startswith("birthplace_"):
+    elif query.data and query.data.startswith("birthplace_"):
         await create_character(update, context)
     
-    elif query.data.startswith("ability_") or query.data == "action_run":
+    elif query.data and (query.data.startswith("ability_") or query.data == "action_run"):
+        await handle_battle_action(update, context)
+        char_name = query.data.split("_")[1]
+        if context.user_data is not None:
+            context.user_data['selected_character'] = char_name
+        await show_character_details(update, context)
+    
+    elif query.data and query.data.startswith("confirm_"):
+        await confirm_character_selection(update, context)
+    
+    elif query.data and query.data == "back_to_selection":
+        await show_character_selection(update, context)
+    
+    elif query.data and query.data == "cancel_selection":
+        await show_character_selection(update, context)
+    
+    elif query.data and query.data.startswith("birthplace_"):
+        await create_character(update, context)
+    
+    elif query.data and (query.data.startswith("ability_") or query.data == "action_run"):
         await handle_battle_action(update, context)

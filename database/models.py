@@ -2,7 +2,7 @@ from datetime import datetime
 import random
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
-from database.characters import CharacterData, get_character_data, Ability
+from database.characters import CharacterData, get_character_data, Ability, AbilityEffect
 
 class CharacterStats(BaseModel):
     ATK: int = 10
