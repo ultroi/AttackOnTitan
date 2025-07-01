@@ -19,6 +19,9 @@ async def initialize_database():
 
 async def get_database() -> Database:
     """Get the initialized database instance."""
+    global _db
     if not _initialized:
         raise RuntimeError("Database not initialized. Call initialize_database() first.")
+    if _db is None:
+        raise RuntimeError("Database instance is None.")
     return _db

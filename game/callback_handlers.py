@@ -58,25 +58,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data == "fill_gas":
         player = await db.get_player(update.effective_user.id)
-        character_name = query.message.text.split('\n')[0].strip()
+        character_name = query.message.text.split('\n')[0].strip('*')  # Remove markdown
         character = await db.get_character(update.effective_user.id, character_name)
     
         if not character:
             await query.edit_message_text("Character not found!")
             return
 
-        if player.gas <= 0:  # Check player's gas reserves first
+        max_gas = 5000
+        current_gas = character.gas
+        gas_needed = max_gas - current_gas
+        
+        if gas_needed <= 0:
             await query.edit_message_text(
-                "❌ Your personal gas reserves are empty!\n"
-                "You have to buy gas from shop."
+                f"⛽ {character.name}'s gas tank is already full!\n"
+                f"Gas: {current_gas}/{max_gas}"
             )
             return
 
-        gas_transfer_amount = 5000  # Amount to fill
+        if player.gas <= 0:
+            await query.edit_message_text(
+                "❌ Your personal gas reserves are empty!\n"
+                "You need to buy gas from shop."
+            )
+            return
 
-        if player.gas >= gas_transfer_amount:
-            player.gas -= gas_transfer_amount
-            character.gas = gas_transfer_amount
+        if player.gas >= gas_needed:
+            # Refill only what's needed
+            player.gas -= gas_needed
+            character.gas = max_gas
 
             await db.update_character(character)
             await db.update_player(update.effective_user.id, {
@@ -84,15 +94,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             })
 
             await query.edit_message_text(
-                f"⛽ Gas tank filled! (-{gas_transfer_amount} player gas)\n"
-                f"Character gas: {character.gas}/5000\n"
-                f"Your remaining gas: {player.gas}"
+                f"⛽ Gas tank refilled! (-{gas_needed} from reserves)\n"
+                f"✅ {character.name} gas: {character.gas}/{max_gas}\n"
+                f"🏪 Your remaining gas: {player.gas}"
             )
         else:
+            # Partial refill with available gas
+            available_gas = player.gas
+            player.gas = 0
+            character.gas = min(max_gas, current_gas + available_gas)
+
+            await db.update_character(character)
+            await db.update_player(update.effective_user.id, {
+                "gas": player.gas
+            })
+
             await query.edit_message_text(
-                f"⚠️ Not enough gas in your reserves!\n"
-                f"Needed: {gas_transfer_amount}\n"
-                f"Your gas: {player.gas}"
+                f"⛽ Partial refill completed!\n"
+                f"✅ {character.name} gas: {character.gas}/{max_gas}\n"
+                f"🏪 Your remaining gas: {player.gas}\n"
+                f"💡 Still need {max_gas - character.gas} more gas for full tank"
             )
 
     
@@ -116,8 +137,5 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data.startswith("birthplace_"):
         await create_character(update, context)
     
-    elif query.data.startswith("battle_"):
-        await handle_battle_start(update, context)
-    
-    elif query.data.startswith("ability_"):
+    elif query.data.startswith("ability_") or query.data == "action_run":
         await handle_battle_action(update, context)

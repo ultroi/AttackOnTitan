@@ -6,7 +6,7 @@ import certifi
 import ssl
 import dns.resolver
 from bson import ObjectId
-from datetime import datetime
+import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -130,7 +130,7 @@ DEFAULT_TITANS = [
         "special_abilities": ["Fast Healing"],
         "spawn_areas": ["Shiganshina District"],
         "min_level_requirement": 8,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.datetime.utcnow()
     },
     {
         "name": "Warhammer Titan",
@@ -699,30 +699,30 @@ async def initialize_database():
         logger.info("Updated character collection validation schema")
 
         await db.command({
-            "collMod": "titan",
+            "collMod": "titans",
             "validator": {
                 "$jsonSchema": {
-                "bsonType": "object",
+                    "bsonType": "object",
                     "required": [
-                    "name", "level", "max_hp", "abilities", "drop_table",
-                    "xp_reward", "difficulty", "spawn_areas", "min_level_requirement", "created_at"
+                        "name", "level", "max_hp", "abilities", "drop_table",
+                        "xp_reward", "difficulty", "spawn_areas", "min_level_requirement", "created_at"
                     ],
-                "properties": {
-                    "name": {"bsonType": "string"},
-                    "level": {"bsonType": "int", "minimum": 1},
-                    "max_hp": {"bsonType": "int", "minimum": 1},
-                    "abilities": {"bsonType": "array", "items": {"bsonType": "string"}},
-                    "drop_table": {"bsonType": "object"},
-                    "xp_reward": {"bsonType": "int", "minimum": 0},
-                    "difficulty": {"enum": ["Easy", "Normal", "Hard"]},
-                    "special_abilities": {"bsonType": ["array", "null"], "items": {"bsonType": "string"}},
-                    "weakness": {"bsonType": ["string", "null"]},
-                    "resistance": {"bsonType": ["string", "null"]},
-                    "spawn_areas": {"bsonType": "array", "items": {"bsonType": "string"}},
-                    "min_level_requirement": {"bsonType": "int", "minimum": 1},
-                    "created_at": {"bsonType": "date"},
-                    "is_template": {"bsonType": ["bool", "null"]}
-                }
+                    "properties": {
+                        "name": {"bsonType": "string"},
+                        "level": {"bsonType": "int", "minimum": 1},
+                        "max_hp": {"bsonType": "int", "minimum": 1},
+                        "abilities": {"bsonType": "array", "items": {"bsonType": "string"}},
+                        "drop_table": {"bsonType": "object"},
+                        "xp_reward": {"bsonType": "int", "minimum": 0},
+                        "difficulty": {"enum": ["Easy", "Normal", "Hard"]},
+                        "special_abilities": {"bsonType": ["array", "null"], "items": {"bsonType": "string"}},
+                        "weakness": {"bsonType": ["string", "null"]},
+                        "resistance": {"bsonType": ["string", "null"]},
+                        "spawn_areas": {"bsonType": "array", "items": {"bsonType": "string"}},
+                        "min_level_requirement": {"bsonType": "int", "minimum": 1},
+                        "created_at": {"bsonType": "date"},
+                        "is_template": {"bsonType": ["bool", "null"]}
+                    }
                 }
             }
         })

@@ -1,10 +1,11 @@
 import os
 import random
+import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional, List, Dict
 import datetime
 from dotenv import load_dotenv
-from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, SPECIAL_ABILITIES, TITAN_NAME_VARIANTS, HP_RANGES, generate_titan_name, generate_titan_hp, generate_titan_xp
+from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, SPECIAL_ABILITIES, TITAN_NAME_VARIANTS, TITAN_DESCRIPTORS, HP_RANGES, generate_titan_name, generate_titan_hp, generate_titan_xp
 from database.characters import get_character_data
 import datetime
 import logging
@@ -55,9 +56,8 @@ class Database:
                 tlsCAFile=certifi.where()
             )
             
-            # Test the connection
-            self.client.admin.command('ping')
-            logger.info("Successfully connected to MongoDB")
+            # Connection will be tested when first used
+            logger.info("MongoDB client initialized")
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
             raise
@@ -67,22 +67,41 @@ class Database:
         self.players = self.db.players
         self.titans = self.db.titans
         self.equipment = self.db.equipment
+        self.shop_purchases = self.db.shop_purchases
 
     async def init_db(self):
         try:
-            # Create indexes with updated options
-            await self.players.create_index("user_id", unique=True, background=True)
-            await self.equipment.create_index("name", unique=True, background=True)
-            logger.info("Database indexes created successfully")
+            # Test connection first with timeout
+            await self.client.admin.command('ping', serverSelectionTimeoutMS=10000)
+            logger.info("Database connection verified")
+            
+            # Create indexes with retry logic and longer timeout
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await self.players.create_index("user_id", unique=True, background=True)
+                    await self.equipment.create_index("name", unique=True, background=True)
+                    logger.info("Database indexes created successfully")
+                    break
+                except Exception as index_error:
+                    if attempt == max_retries - 1:
+                        logger.warning(f"Failed to create indexes after {max_retries} attempts: {index_error}")
+                        logger.info("Continuing without indexes - they will be created automatically on first use")
+                        break
+                    else:
+                        logger.warning(f"Index creation attempt {attempt + 1} failed: {index_error}, retrying...")
+                        await asyncio.sleep(2)  # Wait 2 seconds before retry
+                        
         except Exception as e:
-            logger.error(f"Failed to create indexes: {e}")
-            raise
+            logger.error(f"Database initialization failed: {e}")
+            logger.info("Continuing with limited functionality - database operations may be slower")
+            # Don't raise the exception, allow the bot to start with degraded functionality
 
     # Player operations
     async def create_player(self, user_id: int, username: str, name: str) -> Player:
         try:
             player = Player(
-                user_id=str(user_id),  # Store as integer
+                user_id= str(user_id),  # Store as integer
                 username=username,
                 name=name,
                 level=1,
@@ -234,31 +253,58 @@ class Database:
 
     # Titan operations
     def create_new_titan(self, level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
-        """Create a completely new titan with no template dependency"""
-        # Determine abilities
+        """Create a completely new titan with anime-accurate features and varied stats"""
+        
+        # Generate varied abilities based on difficulty
         abilities = ["Basic Attack"]
         special_abilities = None
-    
-        # Chance for special abilities increases with level
-        if random.random() < (0.2 + min(0.3, level * 0.01)):
+        
+        # Enhanced special ability chances with level scaling
+        base_special_chance = {
+            "Easy": 0.25,
+            "Normal": 0.55, 
+            "Hard": 0.85
+        }[difficulty]
+        
+        # Increase chance with level (up to +20%)
+        level_bonus = min(0.2, level * 0.02)
+        special_chance = base_special_chance + level_bonus
+        
+        if random.random() < special_chance:
             ability_options = SPECIAL_ABILITIES[difficulty]
-            max_abilities = 1 if difficulty == "Easy" else 2
-            special_abilities = random.sample(ability_options, min(max_abilities, len(ability_options)))
-    
-        # Generate titan
-        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
-    
+            max_abilities = {
+                "Easy": 1,
+                "Normal": random.randint(1, 2), 
+                "Hard": random.randint(2, 3)  # Hard titans get more abilities
+            }[difficulty]
+            
+            num_abilities = min(max_abilities, len(ability_options))
+            special_abilities = random.sample(ability_options, num_abilities)
+        
+        # Generate unique titan with varied stats
+        titan_name = generate_titan_name(difficulty)
+        titan_hp = generate_titan_hp(level, difficulty)
+        
+        # Add size/strength variation for more realism (affects HP)
+        size_modifier = random.uniform(0.85, 1.25)
+        final_hp = max(50, int(titan_hp * size_modifier))  # Ensure minimum HP
+        
+        # Add rare chance for "Mutant" prefix for extra variety
+        if random.random() < 0.05:  # 5% chance
+            titan_name = f"Mutant {titan_name}"
+            final_hp = int(final_hp * 1.15)  # Mutants are stronger
+        
         return Titan(
-            name=generate_titan_name(difficulty),
+            name=titan_name,
             level=level,
-            max_hp=generate_titan_hp(level, difficulty),
+            max_hp=final_hp,
             abilities=abilities,
             created_at=datetime.datetime.now(datetime.timezone.utc),
             difficulty=difficulty,
             special_abilities=special_abilities,
             spawn_areas=spawn_areas,
-            min_level_requirement=max(1, level - 5),
-            internal_name=f"titan_{level}_{difficulty.lower()}_{timestamp}"
+            min_level_requirement=max(1, level - 3),
+            internal_name=None  # Will be set by caller
         )
 
     async def get_titan(self, titan_name: str) -> Optional[Titan]:
@@ -276,41 +322,38 @@ class Database:
 
     
 
-    async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: List[str] = None) -> Titan:
-        """Get a random titan with no template dependency"""
-        # First try to find existing titan in database
-        query = {
-            "level": {"$gte": min_level, "$lte": max_level},
-            "min_level_requirement": {"$lte": target_level},
-            "spawn_areas": {"$in": unlocked_areas} if unlocked_areas else {"$exists": True}
-        }
-    
-        pipeline = [{"$match": query}, {"$sample": {"size": 1}}]
-        titans = await self.titans.aggregate(pipeline).to_list(1)
-    
-        if titans:
-            return Titan(**titans[0])
-    
-        # If no existing titan found, create new one
+    async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: Optional[List[str]] = None) -> Titan:
+        """Generate a new random titan each time for unique encounters"""
+        
+        # Generate random level within range
         level = random.randint(min_level, max_level)
-        difficulty = (
-            "Hard" if level >= 50 else 
-            "Normal" if level >= 20 else 
-            "Easy"
-        )
-    
+        
+        # Determine difficulty based on level
+        if level >= 15:
+            difficulty = "Hard"
+        elif level >= 8:
+            difficulty = "Normal"
+        else:
+            difficulty = "Easy"
+        
         # Default spawn areas if none provided
         if not unlocked_areas:
             unlocked_areas = ["Trost District", "Karanes District", "Shiganshina District"]
-    
+        
+        # Create a completely new titan each time
         new_titan = self.create_new_titan(
             level=level,
             difficulty=difficulty,
             spawn_areas=unlocked_areas
         )
-    
-        # Save to database for future use
-        await self.titans.insert_one(new_titan.model_dump())
+        
+        # Generate unique internal name for this encounter
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S%f")
+        new_titan.internal_name = f"encounter_{level}_{difficulty.lower()}_{timestamp}"
+        
+        # Don't save to database - keep encounters unique and temporary
+        logger.info(f"Generated new titan: {new_titan.name} (Level {new_titan.level}, HP: {new_titan.max_hp})")
+        
         return new_titan
 
 
@@ -367,3 +410,16 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to add new character to player: {e}")
             raise
+
+    async def get_connection_stats(self):
+        """Get database connection statistics"""
+        try:
+            server_info = await self.client.admin.command("serverStatus")
+            return {
+                "connections_current": server_info.get("connections", {}).get("current", 0),
+                "connections_available": server_info.get("connections", {}).get("available", 0),
+                "uptime": server_info.get("uptime", 0)
+            }
+        except Exception as e:
+            logger.error(f"Failed to get connection stats: {e}")
+            return None

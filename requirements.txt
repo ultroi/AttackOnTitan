@@ -6,3 +6,5 @@ dnspython==2.6.1
 certifi==2024.2.2
 python-dotenv==1.0.0
 pydantic==2.7.1
+psutil==5.9.8
+pyngrok==7.0.0
