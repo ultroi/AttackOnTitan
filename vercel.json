@@ -1,3 +1,4 @@
+# vercel.json
 {
     "version": 2,
     "builds": [
@@ -6,19 +7,11 @@
             "use": "@vercel/python",
             "config": {
                 "maxLambdaSize": "15mb",
-                "runtime": "python3.11",
-                "includeFiles": [
-                    "api/requirements.txt",
-                    "api/runtime.txt"
-                ]
+                "runtime": "python3.11"
             }
         }
     ],
     "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "api/index.py"
-        },
         {
             "src": "/(.*)",
             "dest": "api/index.py"
@@ -28,3 +21,31 @@
         "PYTHONUNBUFFERED": "1"
     }
 }
+
+# api/requirements.txt
+python-telegram-bot==20.7
+flask==2.3.3
+python-dotenv==1.0.0
+pymongo==4.6.0
+asyncio==3.4.3
+
+# api/runtime.txt
+python-3.11
+
+# .env (create this file)
+TELEGRAM_TOKEN=your_bot_token_here
+SECRET_TOKEN=your_secret_token_here
+MONGODB_URI=your_mongodb_connection_string
+
+# .vercelignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.DS_Store
+*.log
