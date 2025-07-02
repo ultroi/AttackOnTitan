@@ -1,7 +1,9 @@
 import os
 import logging
+import signal
+import sys
+from functools import partial
 import asyncio
-# Removed unused imports
 from flask import Flask, jsonify, request, Response
 from dotenv import load_dotenv
 from telegram.ext import (
@@ -12,10 +14,7 @@ from telegram.ext import (
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
-from telegram import Update
-from telegram.constants import ParseMode
-# Rename the import to avoid conflict
-from database.db_instance import get_database
+from database.db_instance import get_database, close_connection
 from game.character_system import (
     profile,
     show_character_profile,
@@ -32,19 +31,19 @@ from game.character_system import (
 )
 from game.explore import explore
 from game.callback_handlers import button_callback
-from game.shop_system import shop_system
+from utils.web_dashboard import owner_monitor
+from game.shop_system import ShopSystem
+from config import PORT, DEBUG
 
 # Load environment variables and config
 load_dotenv()
-from config import PORT, DEBUG
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 
 IS_VERCEL = bool(os.getenv('VERCEL_URL'))
 
-# Initialize logging early
+# Initialize logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO if not DEBUG else logging.DEBUG
@@ -57,27 +56,45 @@ SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 app = Flask(__name__)
 
 # Only try to import web_dashboard in development environment
-dashboard_available = False
 if not IS_VERCEL:
     try:
-        # Import but don't use the module in Vercel environment
-        import utils.web_dashboard
-        dashboard_available = True
+        from utils.web_dashboard import owner_monitor
         logger.info("Web dashboard available in development mode")
-    except ImportError as e:
+    except (ImportError, ModuleNotFoundError) as e:
+        owner_monitor = None  # Create a dummy fallback
         logger.warning(f"Web dashboard not available - {str(e)}")
-    except ModuleNotFoundError as e:
-        logger.warning(f"Web dashboard dependency missing: {e}")
 else:
-    logger.info("Web dashboard disabled in Vercel environment")
+    owner_monitor = None
+
+# Initialize application and loop as None at module level
+application = None
+loop = None
+
+OWNERS = {5956598856, 5845254367}
+ADMIN_LOG_CHANNEL = -1002848899456
+
+async def initialize_database():
+    """Initialize database connection with retry logic"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            db = await get_database()
+            if db is None:
+                raise ConnectionError("Failed to get database instance")
+            
+            await db.command('ping')
+            logger.info("Database initialized successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Database initialization attempt {attempt + 1} failed: {e}")
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Failed to initialize database after {max_retries} attempts")
+            await asyncio.sleep(2)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user and update.message:
         user_id = update.effective_user.id
         await show_character_selection(update, context, user_id)
-        
-
-
 
 async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Owner command to reset/nuke data."""
@@ -92,6 +109,11 @@ async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Use context to avoid linting error
         if context:
             logger.info(f"Reset command executed by {user_id}")
+
+async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user:
+            user_id = update.effective_user.id
+            await ShopSystem.show_shop(update, context, user_id)
         
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log errors and send a message to admin channel."""
@@ -109,159 +131,208 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.error(f"Failed to send error to admin channel: {e}")
 
-# Application state tracking
-app_state = {
-    'initialized': False,
-    'loop': None
-}
-
-# Global application instance
-application = None
-
-# STRICT OWNER VERIFICATION
-OWNERS = {5956598856, 5845254367}
-ADMIN_LOG_CHANNEL = -1002848899456
-def telegram_webhook():
-    """Endpoint for Telegram webhook updates"""
+async def setup_application():
+    """Initialize and configure the bot application"""
     global application
     
-    # Initialize application if not already done
-    if not application:
-        try:
-            asyncio.run(setup_application())
-            return Response(status=503)  # Return 503 for this request, next one will work
-        except Exception as e:
-            logger.error(f"Failed to setup application: {e}")
-            return Response(status=500)
+    if not TOKEN:
+        raise ValueError("TELEGRAM_TOKEN is required")
+
+    try:
+        # Build and initialize the application
+        builder = Application.builder()
+        builder.token(TOKEN)
+        application = builder.build()
         
+        # Add command handlers
+        application.add_handler(CommandHandler("shop", shop_command))
+        application.add_handler(CommandHandler("profile", profile))
+        application.add_handler(CommandHandler("explore", explore))
+        application.add_handler(CommandHandler("nuke", owner_reset))
+        application.add_handler(CommandHandler("start", start_character_selection))
+        application.add_handler(CommandHandler("monitor", owner_monitor))
+
+        # Add callback handlers
+        
+        application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
+        application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
+        application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
+        application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
+        application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
+        application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
+        application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
+        application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
+        application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
+        application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+        application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
+        application.add_handler(CommandHandler("button", button_callback))
+        # Add error handler
+        application.add_error_handler(error_handler)
+        
+        # Initialize the application
+        await application.initialize()
+        
+        logger.info("Application setup completed successfully")
+        return application
+    except Exception as e:
+        logger.error(f"Failed to setup application: {e}")
+        if application:
+            try:
+                await application.shutdown()
+            except Exception as shutdown_error:
+                logger.error(f"Error during application shutdown: {shutdown_error}")
+        raise
+
+async def get_or_create_application():
+    """Get or create the application instance"""
+    global application
+    if application is None:
+        await initialize_database()
+        application = await setup_application()
+    return application
+
+async def shutdown(signal=None):
+    """Clean shutdown procedure"""
+    global application, loop
+    
+    logger.info("Shutting down gracefully...")
+    
+    if application:
+        try:
+            logger.info("Stopping application...")
+            if hasattr(application, 'updater') and application.updater.running:
+                await application.updater.stop()
+            if hasattr(application, 'running') and application.running:
+                await application.stop()
+            await application.shutdown()
+        except Exception as e:
+            logger.error(f"Error stopping application: {e}")
+    
+    try:
+        logger.info("Closing database connections...")
+        await close_connection()
+    except Exception as e:
+        logger.error(f"Error closing database connection: {e}")
+    
+    # Cancel all running tasks
+    try:
+        current_loop = loop or asyncio.get_running_loop()
+        tasks = [t for t in asyncio.all_tasks(current_loop) if not t.done()]
+        if tasks:
+            logger.info(f"Cancelling {len(tasks)} outstanding tasks")
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception as e:
+        logger.error(f"Error cancelling tasks: {e}")
+    
+    logger.info("Shutdown complete")
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Handle Telegram webhook updates"""
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
         return Response(status=403)
         
     try:
         json_data = request.get_json()
-        if application and application.bot:
-            update = Update.de_json(json_data, application.bot)
-            
-            async def process_update():
-                try:
-                    if application:
-                        await application.process_update(update)
-                    return True
-                except Exception as e:
-                    logger.error(f"Error processing update: {str(e)}")
-                    return False
-
-            asyncio.run(process_update())
-            return Response(status=200)
-        else:
-            logger.error("Application or bot not initialized")
-            return Response(status=500)
+        
+        # Process in a separate event loop
+        async def process_update_async():
+            app_instance = await get_or_create_application()
+            update = Update.de_json(json_data, app_instance.bot)
+            await app_instance.process_update(update)
+        
+        # Create a new event loop for this request
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        new_loop.run_until_complete(process_update_async())
+        new_loop.close()
+        
+        return Response(status=200)
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return Response(status=500)
 
-
 @app.route('/')
 def health_check():
     """Health check endpoint"""
-    return jsonify({
-        "status": "healthy"
-    })
+    return jsonify({"status": "healthy"})
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Global exception handler"""
+    logger.error(f"Unhandled exception: {e}")
+    return jsonify({"error": "Internal server error"}), 500
 
-async def setup_application():
-    """Initialize and configure the bot application with all handlers"""
-    global application
-    # Ensure TOKEN is not None before using it
-    if TOKEN:
-        application = Application.builder().token(TOKEN).build()
-    else:
-        raise ValueError("TELEGRAM_TOKEN is required")
-
-    # Corrected shop system handlers
-    application.add_handler(CommandHandler("shop", lambda update, context: asyncio.create_task(shop_system.show_shop(update.effective_user.id)) if update.effective_user else None))
-    # Replace with proper handler if shop_system.buy exists
-    # application.add_handler(CommandHandler("buy", lambda update, context: shop_system.buy(update.effective_user.id if update.effective_user else None)))
-    application.add_handler(CommandHandler("profile", profile))
-    application.add_handler(CommandHandler("explore", explore))
-    application.add_handler(CommandHandler("nuke", owner_reset))
-
-    # Character and team handlers
-    application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
-    application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
-    application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
-    application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
-    application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
-    application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
-    application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
-    application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
-    application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
-    application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
-    application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
-    
-async def initialize_database():
-    """Initialize the database connection"""
-    try:
-        db = await get_database()
-        # Database might not have explicit connect method
-        # Just log success and continue
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-        return
-    
-
-async def main():
-    """Main function to run the application"""
-    global application
+async def run_application():
+    """Run the application with proper event loop management"""
+    global application, loop
     
     try:
-        # Initialize application
-        await setup_application()
+        loop = asyncio.get_running_loop()
+        
+        # Set up signal handlers
+        try:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                if sys.platform == 'win32':
+                    signal.signal(sig, lambda s, _: asyncio.create_task(shutdown(s)))
+                else:
+                    loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+        except Exception as e:
+            logger.warning(f"Failed to set up signal handlers: {e}")
+        
         await initialize_database()
+        application = await setup_application()
         
         if IS_VERCEL:
-            # Vercel deployment - set webhook
-            webhook_url = f"https://{os.getenv('VERCEL_URL')}/webhook"
-            if application and application.bot:
-                await application.bot.set_webhook(
-                    url=webhook_url,
-                    secret_token=SECRET_TOKEN
-                )
-                logger.info(f"Webhook set to {webhook_url}")
-        else:
-            # Local development - start polling
-            if application and application.bot:
-                await application.bot.delete_webhook()
-                # Use the correct method for polling
-                await application.initialize()
-                await application.start_polling()
+            vercel_url = os.getenv('VERCEL_URL')
+            if not vercel_url:
+                raise ValueError("VERCEL_URL environment variable not set")
                 
-                # Keep the app running
-                while True:
-                    await asyncio.sleep(3600)
-    except Exception as e:
-        logger.error(f"Error in main function: {e}")
-
-if __name__ == "__main__":
-    try:
-        if IS_VERCEL:
-            # Vercel deployment - use Flask
-            # Initialize application before starting Flask
-            try:
-                asyncio.run(setup_application())
-                asyncio.run(initialize_database())
-                app.run(host="0.0.0.0", port=PORT)
-            except Exception as e:
-                logger.error(f"Failed to start in Vercel mode: {e}")
+            webhook_url = f"https://{vercel_url}/webhook"
+            await application.bot.set_webhook(
+                url=webhook_url,
+                secret_token=SECRET_TOKEN
+            )
+            logger.info(f"Webhook set to {webhook_url}")
+            
+            # In Vercel, we just keep the app alive
+            while True:
+                await asyncio.sleep(3600)
         else:
-            # Local development - use asyncio
-            asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+            # In local development, use polling mode
+            logger.info("Running in polling mode for local development")
+            await application.bot.delete_webhook()
+            await application.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                close_loop=False
+            )
+
+    except asyncio.CancelledError:
+        logger.info("Main task cancelled")
     except Exception as e:
         logger.error(f"Fatal error: {e}")
+        raise
     finally:
-        logger.info("Bot shutdown complete")
-            
+        await shutdown()
+
+def run_bot():
+    try:
+        if IS_VERCEL:
+            app.run(host="0.0.0.0", port=PORT)
+        else:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(initialize_database())
+            app_instance = loop.run_until_complete(setup_application())
+            logger.info("Running in polling mode for local development")
+            app_instance.run_polling()
+    except Exception as e:
+        logger.error(f"Fatal startup error: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    run_bot()
+
+
