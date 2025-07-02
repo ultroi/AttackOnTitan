@@ -163,22 +163,29 @@ def set_webhook():
 
 # For local/production deployment
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    # Auto-set webhook on startup
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        app_instance = loop.run_until_complete(setup_bot())
-        public_url = os.environ.get("PUBLIC_URL")
-        if public_url:
-            webhook_url = f"{public_url}/webhook"
-        else:
-            webhook_url = f"http://localhost:{port}/webhook"
-        loop.run_until_complete(app_instance.bot.set_webhook(
-            url=webhook_url,
-            secret_token=SECRET_TOKEN
-        ))
-        logger.info(f"Webhook auto-set to {webhook_url}")
-    except Exception as e:
-        logger.error(f"Failed to auto-set webhook: {e}")
-    app.run(debug=False, port=port, host="0.0.0.0")
+    # port = int(os.environ.get("PORT", 5000))
+    # # Auto-set webhook on startup
+    # try:
+    #     loop = asyncio.new_event_loop()
+    #     asyncio.set_event_loop(loop)
+    #     app_instance = loop.run_until_complete(setup_bot())
+    #     public_url = os.environ.get("PUBLIC_URL")
+    #     if public_url:
+    #         webhook_url = f"{public_url}/webhook"
+    #     else:
+    #         webhook_url = f"http://localhost:{port}/webhook"
+    #     loop.run_until_complete(app_instance.bot.set_webhook(
+    #         url=webhook_url,
+    #         secret_token=SECRET_TOKEN
+    #     ))
+    #     logger.info(f"Webhook auto-set to {webhook_url}")
+    # except Exception as e:
+    #     logger.error(f"Failed to auto-set webhook: {e}")
+    # app.run(debug=False, port=port, host="0.0.0.0")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    app_instance = loop.run_until_complete(setup_bot())
+    logger.info("Starting bot in polling mode...")
+    loop.run_until_complete(app_instance.start())
+    loop.run_until_complete(app_instance.updater.start_polling())
+    loop.run_forever()
