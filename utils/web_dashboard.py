@@ -6,8 +6,6 @@ from utils.monitor import resource_monitor
 from database.db_instance import get_database
 import os
 import logging
-from pyngrok import ngrok
-from config import PORT, DEBUG
 import time
 import requests
 import asyncio
@@ -50,8 +48,19 @@ def validate_url(url: str) -> bool:
     except Exception:
         return False
 
+# Try importing pyngrok for local development, but don't fail if not available
+try:
+    from pyngrok import ngrok
+    PYNGROK_AVAILABLE = True
+except ImportError:
+    PYNGROK_AVAILABLE = False
+
 def get_ngrok_tunnel_url(max_retries=5, retry_delay=2):
     """Get ngrok tunnel URL with retries"""
+    if not PYNGROK_AVAILABLE:
+        logger.warning("pyngrok is not available - this function only works in development")
+        return None
+        
     for attempt in range(max_retries):
         try:
             tunnels = ngrok.get_tunnels()
@@ -69,6 +78,10 @@ def get_ngrok_tunnel_url(max_retries=5, retry_delay=2):
 
 def find_ngrok_path():
     """Find ngrok executable path"""
+    if not PYNGROK_AVAILABLE:
+        logger.warning("pyngrok is not available - this function only works in development")
+        return None
+        
     # Check environment variable first
     env_path = os.getenv("PYNGROK_NGROK_PATH")
     if env_path and os.path.exists(env_path):
