@@ -1,156 +1,81 @@
 import os
 import logging
-import signal
-import sys
-from functools import partial
 import asyncio
-from flask import Flask, jsonify, request, Response
+from flask import Flask, request, Response
 from dotenv import load_dotenv
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes
-)
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.constants import ParseMode
-from database.db_instance import get_database, close_connection
-from game.character_system import (
-    profile,
-    show_character_profile,
-    add_to_team,
-    save_team,
-    clear_team,
-    manage_team,
-    show_character_selection,
-    show_character_details,
-    confirm_character_selection,
-    create_character,
-    show_team,
-    back_to_selection
-)
-from game.explore import explore
-from game.callback_handlers import button_callback
-from utils.web_dashboard import owner_monitor
-from game.shop_system import ShopSystem
-from config import PORT, DEBUG
+from telegram import Update
+from telegram.ext import Application
 
-# Load environment variables and config
+# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1] if TOKEN else "")
+
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 
-IS_VERCEL = bool(os.getenv('VERCEL_URL'))
-
-# Initialize logging
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO if not DEBUG else logging.DEBUG
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
+# Initialize Flask app
+app = Flask(__name__)
 
-# Only try to import web_dashboard in development environment
-if not IS_VERCEL:
-    try:
-        from utils.web_dashboard import owner_monitor
-        logger.info("Web dashboard available in development mode")
-    except (ImportError, ModuleNotFoundError) as e:
-        owner_monitor = None  # Create a dummy fallback
-        logger.warning(f"Web dashboard not available - {str(e)}")
-else:
-    owner_monitor = None
-
-# Initialize application and loop as None at module level
+# Global application instance
 application = None
-loop = None
 
-OWNERS = {5956598856, 5845254367}
-ADMIN_LOG_CHANNEL = -1002848899456
-
-async def initialize_database():
-    """Initialize database connection with retry logic"""
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            db = await get_database()
-            if db is None:
-                raise ConnectionError("Failed to get database instance")
-            
-            await db.command('ping')
-            logger.info("Database initialized successfully")
-            return True
-        except Exception as e:
-            logger.error(f"Database initialization attempt {attempt + 1} failed: {e}")
-            if attempt == max_retries - 1:
-                raise RuntimeError(f"Failed to initialize database after {max_retries} attempts")
-            await asyncio.sleep(2)
-
-async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user and update.message:
-        user_id = update.effective_user.id
-        await show_character_selection(update, context, user_id)
-
-async def owner_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Owner command to reset/nuke data."""
-    if update.effective_user and update.message:
-        user_id = update.effective_user.id
-        if user_id not in OWNERS:
-            await update.message.reply_text("⛔ This command is only available to bot owners.")
-            return
-        
-        # Add your reset logic here
-        await update.message.reply_text("🔄 Reset command acknowledged.")
-        # Use context to avoid linting error
-        if context:
-            logger.info(f"Reset command executed by {user_id}")
-
-async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user:
-            user_id = update.effective_user.id
-            await ShopSystem.show_shop(update, context, user_id)
-        
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors and send a message to admin channel."""
-    logger.error("Invalid update in owner_reset")
-    logger.error(f"Update {update} caused error {context.error}")
-    
-    error_text = f"❌ Error in update {update}:\n{context.error}"
-    if ADMIN_LOG_CHANNEL:
-        try:
-            await context.bot.send_message(
-                chat_id=ADMIN_LOG_CHANNEL,
-                text=error_text,
-                parse_mode=ParseMode.HTML
-            )
-        except Exception as e:
-            logger.error(f"Failed to send error to admin channel: {e}")
-
-async def setup_application():
-    """Initialize and configure the bot application"""
+async def setup_bot():
+    """Setup the Telegram bot with all handlers"""
     global application
     
-    if not TOKEN:
-        raise ValueError("TELEGRAM_TOKEN is required")
-
-    try:
-        # Build and initialize the application
-        builder = Application.builder()
-        builder.token(TOKEN)
-        application = builder.build()
+    if application is None:
+        # Create application
+        application = Application.builder().token(TOKEN).build()
+        
+        # Import and add all your handlers here
+        from game.character_system import (
+            show_character_selection, profile, show_character_profile,
+            add_to_team, save_team, clear_team, manage_team,
+            show_character_details, confirm_character_selection,
+            create_character, show_team, back_to_selection,
+            show_equipment, show_achievements, explore_map, fill_gas
+        )
+        from game.explore import explore
+        from game.callback_handlers import button_callback
+        from game.shop_system import ShopSystem
+        from utils.performance_monitor import (
+            performance_command, performance_callback_handler, 
+            track_command_performance
+        )
         
         # Add command handlers
-        application.add_handler(CommandHandler("shop", shop_command))
+        application.add_handler(CommandHandler("start", show_character_selection))
         application.add_handler(CommandHandler("profile", profile))
-        application.add_handler(CommandHandler("explore", explore))
-        application.add_handler(CommandHandler("nuke", owner_reset))
-        application.add_handler(CommandHandler("start", start_character_selection))
-        application.add_handler(CommandHandler("monitor", owner_monitor))
-
-        # Add callback handlers
+        application.add_handler(CommandHandler("explore", track_command_performance("explore")(explore)))
+        application.add_handler(CommandHandler("performance", performance_command))
         
+        # Shop command with proper async handling
+        @track_command_performance("shop")
+        async def shop_command(update: Update, context):
+            if not update.effective_user or not update.message:
+                return
+            shop_system = ShopSystem()
+            await shop_system.check_daily_refresh()
+            message, reply_markup = await shop_system.show_shop(update.effective_user.id)
+            await update.message.reply_text(
+                text=message,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        
+        application.add_handler(CommandHandler("shop", shop_command))
+        
+        # Add callback handlers
+        application.add_handler(CallbackQueryHandler(button_callback))
+        application.add_handler(CallbackQueryHandler(performance_callback_handler, pattern="^perf_"))
         application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
         application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
         application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -162,190 +87,106 @@ async def setup_application():
         application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
         application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
         application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
-        application.add_handler(CommandHandler("button", button_callback))
-        # Add error handler
+        application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
+        application.add_handler(CallbackQueryHandler(show_equipment, pattern="^show_equipment$"))
+        application.add_handler(CallbackQueryHandler(show_achievements, pattern="^show_achievements$"))
+        application.add_handler(CallbackQueryHandler(explore_map, pattern="^explore_map$"))
+        application.add_handler(CallbackQueryHandler(fill_gas, pattern="^fill_gas$"))
+        
+        # Error handler
+        async def error_handler(update: object, context):
+            logger.error(f"Update {update} caused error {context.error}")
+        
         application.add_error_handler(error_handler)
         
-        # Initialize the application
+        # Initialize application
         await application.initialize()
-        
-        logger.info("Application setup completed successfully")
-        return application
-    except Exception as e:
-        logger.error(f"Failed to setup application: {e}")
-        if application:
-            try:
-                await application.shutdown()
-            except Exception as shutdown_error:
-                logger.error(f"Error during application shutdown: {shutdown_error}")
-        raise
-
-async def get_or_create_application():
-    """Get or create the application instance"""
-    global application
-    if application is None:
-        await initialize_database()
-        application = await setup_application()
+        logger.info("Bot application initialized successfully")
+    
     return application
-
-async def shutdown(signal=None):
-    """Clean shutdown procedure"""
-    global application, loop
-    
-    logger.info("Shutting down gracefully...")
-    
-    if application:
-        try:
-            logger.info("Stopping application...")
-            if hasattr(application, 'updater') and application.updater.running:
-                await application.updater.stop()
-            if hasattr(application, 'running') and application.running:
-                await application.stop()
-            await application.shutdown()
-        except Exception as e:
-            logger.error(f"Error stopping application: {e}")
-    
-    try:
-        logger.info("Closing database connections...")
-        await close_connection()
-    except Exception as e:
-        logger.error(f"Error closing database connection: {e}")
-    
-    # Cancel all running tasks
-    try:
-        current_loop = loop or asyncio.get_running_loop()
-        tasks = [t for t in asyncio.all_tasks(current_loop) if not t.done()]
-        if tasks:
-            logger.info(f"Cancelling {len(tasks)} outstanding tasks")
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
-        logger.error(f"Error cancelling tasks: {e}")
-    
-    logger.info("Shutdown complete")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Handle Telegram webhook updates"""
+    """Handle incoming webhook requests from Telegram"""
+    # Verify secret token
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
+        logger.warning("Invalid secret token received")
         return Response(status=403)
-        
+    
     try:
+        # Get update data
         json_data = request.get_json()
+        if not json_data:
+            return Response(status=400)
         
-        # Process in a separate event loop
-        async def process_update_async():
-            app_instance = await get_or_create_application()
-            update = Update.de_json(json_data, app_instance.bot)
-            await app_instance.process_update(update)
+        # Process update asynchronously
+        async def process_update():
+            try:
+                app_instance = await setup_bot()
+                update = Update.de_json(json_data, app_instance.bot)
+                await app_instance.process_update(update)
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
         
-        # Create a new event loop for this request
-        new_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(new_loop)
-        new_loop.run_until_complete(process_update_async())
-        new_loop.close()
+        # Run the async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(process_update())
+        finally:
+            loop.close()
         
         return Response(status=200)
+    
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return Response(status=500)
 
-# Initialize Flask app without static folder
-app = Flask(__name__, static_folder=None)
-
-# Flask routes
 @app.route('/')
 def index():
-    """Root route handler"""
-    return jsonify({
+    """Health check endpoint"""
+    return {
         "status": "ok",
-        "message": "Attack on Titan Bot API is running"
-    })
+        "message": "Attack on Titan Bot is running on Vercel"
+    }
 
-@app.route('/favicon.ico')
-@app.route('/favicon.png')
-def favicon():
-    """Handle favicon requests"""
-    return '', 204  # Always return no content for favicon requests
-
-@app.errorhandler(404)
-def not_found_error(error):
-    """Handle 404 errors gracefully"""
-    logger.info(f"404 error: {error}")
-    return jsonify({"error": "Not found"}), 404
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    """Global exception handler"""
-    logger.error(f"Unhandled exception: {e}")
-    return jsonify({"error": "Internal server error"}), 500
-
-async def run_application():
-    """Run the application with proper event loop management"""
-    global application, loop
-    
+@app.route('/set_webhook', methods=['GET', 'POST'])
+async def set_webhook():
+    """Set webhook URL for the bot"""
     try:
-        loop = asyncio.get_running_loop()
+        app_instance = await setup_bot()
+        webhook_url = f"https://{request.host}/webhook"
         
-        # Set up signal handlers
+        await app_instance.bot.set_webhook(
+            url=webhook_url,
+            secret_token=SECRET_TOKEN
+        )
+        
+        return {
+            "status": "success",
+            "message": f"Webhook set to {webhook_url}"
+        }
+    except Exception as e:
+        logger.error(f"Failed to set webhook: {e}")
+        return {"status": "error", "message": str(e)}, 500
+
+# Vercel serverless function handler
+def handler(request):
+    """Main handler for Vercel"""
+    with app.test_request_context(
+        path=request.url.path,
+        method=request.method,
+        headers=dict(request.headers),
+        data=request.body
+    ):
         try:
-            for sig in (signal.SIGTERM, signal.SIGINT):
-                if sys.platform == 'win32':
-                    signal.signal(sig, lambda s, _: asyncio.create_task(shutdown(s)))
-                else:
-                    loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+            response = app.full_dispatch_request()
+            return response
         except Exception as e:
-            logger.warning(f"Failed to set up signal handlers: {e}")
-        
-        await initialize_database()
-        application = await setup_application()
-        
-        if IS_VERCEL:
-            webhook_url = "https://attack-on-titan-nxyw7ayce-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
-            await application.bot.set_webhook(
-                url=webhook_url,
-                secret_token=SECRET_TOKEN,
-                allowed_updates=Update.ALL_TYPES
-            )
-            logger.info(f"Webhook set to {webhook_url}")
-            
-            # In Vercel, we just keep the app alive
-            while True:
-                await asyncio.sleep(3600)
-        else:
-            # In local development, use polling mode
-            logger.info("Running in polling mode for local development")
-            await application.bot.delete_webhook()
-            application.run_polling(
-                allowed_updates=Update.ALL_TYPES,
-                close_loop=False
-            )
+            logger.error(f"Handler error: {e}")
+            return Response(status=500)
 
-    except asyncio.CancelledError:
-        logger.info("Main task cancelled")
-    except Exception as e:
-        logger.error(f"Fatal error: {e}")
-        raise
-    finally:
-        await shutdown()
-
-def run_bot():
-    try:
-        if IS_VERCEL:
-            app.run(host="0.0.0.0", port=PORT)
-        else:
-            loop = asyncio.get_event_loop()
-            loop.run_until_complete(initialize_database())
-            app_instance = loop.run_until_complete(setup_application())
-            logger.info("Running in polling mode for local development")
-            app_instance.run_polling()
-    except Exception as e:
-        logger.error(f"Fatal startup error: {e}")
-        sys.exit(1)
-
+# For local testing
 if __name__ == "__main__":
-    run_bot()
-
-
+    app.run(debug=True, port=5000)
