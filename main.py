@@ -106,6 +106,7 @@ def webhook():
     try:
         # Get update data
         json_data = request.get_json()
+        logger.info(f"Webhook payload: {json_data}")
         if not json_data:
             return Response(status=400)
         
