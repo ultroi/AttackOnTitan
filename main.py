@@ -257,9 +257,12 @@ app = Flask(__name__, static_folder=None)
 
 # Flask routes
 @app.route('/')
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy"})
+def index():
+    """Root route handler"""
+    return jsonify({
+        "status": "ok",
+        "message": "Attack on Titan Bot API is running"
+    })
 
 @app.route('/favicon.ico')
 @app.route('/favicon.png')
