@@ -264,7 +264,11 @@ def health_check():
 @app.route('/favicon.png')
 def favicon():
     """Handle favicon requests"""
-    return '', 204  # Return empty response with 204 No Content
+    try:
+        return '', 204  # Return empty response with 204 No Content
+    except Exception as e:
+        logger.info(f"Favicon request handled: {e}")
+        return '', 204  # Still return 204 even if there's an error
 
 @app.errorhandler(404)
 def not_found_error(error):
@@ -299,10 +303,11 @@ async def run_application():
         application = await setup_application()
         
         if IS_VERCEL:
-            webhook_url = "https://attack-on-titan-six.vercel.app/webhook"
+            webhook_url = "https://attack-on-titan-mk64b8b4f-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
             await application.bot.set_webhook(
                 url=webhook_url,
-                secret_token=SECRET_TOKEN
+                secret_token=SECRET_TOKEN,
+                allowed_updates=Update.ALL_TYPES
             )
             logger.info(f"Webhook set to {webhook_url}")
             
@@ -313,7 +318,7 @@ async def run_application():
             # In local development, use polling mode
             logger.info("Running in polling mode for local development")
             await application.bot.delete_webhook()
-            await application.run_polling(
+            application.run_polling(
                 allowed_updates=Update.ALL_TYPES,
                 close_loop=False
             )
