@@ -1196,3 +1196,108 @@ async def battle_timeout(user_id: int, query, battle: BattleSystem):
     except Exception as e:
         logger.error(f"Error in battle_timeout for user {user_id}: {e}")
         cleanup_battle(user_id, "timeout_error", battle)
+
+    async def handle_victory(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle victory and reward EXP"""
+        db = get_database()
+        
+        # Calculate Character Combat EXP
+        damage_taken = self.character_hp < self.character.stats.HP
+        overkill_damage = abs(self.titan_hp) if self.titan_hp < 0 else 0
+        
+        # Check if this is the first time killing this type of titan
+        is_first_kill = False
+        if self.player:
+            killed_titans = self.player.inventory.get('killed_titans', {})
+            if str(self.titan.titan_id) not in killed_titans:
+                is_first_kill = True
+                killed_titans[str(self.titan.titan_id)] = 1
+                self.player.inventory['killed_titans'] = killed_titans
+                await db.update_player(
+                    user_id=self.player.user_id,
+                    update_data={"inventory": self.player.inventory}
+                )
+
+        # Calculate and award Character EXP
+        combat_exp = self.character.calculate_combat_exp(
+            turns=self.turn,
+            damage_taken=damage_taken,
+            overkill_damage=overkill_damage,
+            is_first_kill=is_first_kill
+        )
+        
+        self.character.xp += combat_exp
+        self.character.total_xp += combat_exp
+        
+        # Level up the character if needed
+        level_ups = 0
+        while self.character.xp >= self.character.xp_to_next_level and self.character.level < 125:
+            self.character.level_up()
+            level_ups += 1
+        
+        # Calculate and award Player EXP if applicable
+        player_exp = 0
+        player_level_ups = 0
+        if self.player:
+            player_exp = self.player.calculate_exp_gain('titan_kill')
+            self.player.xp += player_exp
+            self.player.total_xp += player_exp
+            
+            # Level up the player if needed
+            while self.player.xp >= self.player.xp_to_next_level:
+                self.player.level_up()
+                player_level_ups += 1
+            
+            if player_level_ups > 0:
+                await db.update_player(
+                    user_id=self.player.user_id,
+                    update_data={
+                        "level": self.player.level,
+                        "xp": self.player.xp,
+                        "total_xp": self.player.total_xp
+                    }
+                )
+        
+        # Update character in database
+        await db.update_character(
+            user_id=self.character.user_id,
+            character_name=self.character.name,
+            update_data={
+                "level": self.character.level,
+                "xp": self.character.xp,
+                "total_xp": self.character.total_xp,
+                "stats": self.character.stats.dict()
+            }
+        )
+        
+        # Prepare victory message
+        victory_text = (
+            f"Victory! 🎉\n"
+            f"Character EXP gained: {combat_exp:,}"
+        )
+        
+        if level_ups > 0:
+            victory_text += f"\nCharacter leveled up {level_ups} times! 🆙"
+            
+        if self.player and player_exp > 0:
+            victory_text += f"\nPlayer EXP gained: {player_exp:,}"
+            if player_level_ups > 0:
+                victory_text += f"\nPlayer leveled up {player_level_ups} times! ⭐"
+        
+        # Send message with proper error handling
+        try:
+            if update.callback_query and update.callback_query.message:
+                await update.callback_query.message.edit_text(
+                    victory_text,
+                    reply_markup=None
+                )
+        except Exception as e:
+            logger.error(f"Failed to send victory message: {e}")
+            # Try sending as new message if edit fails
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=victory_text
+                )
+            except Exception as e:
+                logger.error(f"Failed to send new victory message: {e}")

@@ -24,6 +24,7 @@ from game.character_system import (
     show_character_profile,
     add_to_team,
     save_team,
+    clear_team,
     manage_team,
     show_character_selection,
     show_character_details,
@@ -52,6 +53,7 @@ from utils.web_dashboard import (
     set_application,
     WEBHOOK_SECRET_PATH
 )
+from urllib.parse import urljoin
 
 # Load environment variables and config
 load_dotenv()
@@ -200,12 +202,51 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start_character_selection(update, context)
 
 async def error_handler(update, context):
-    logger.error(f"Update {update} caused error {context.error}")
+    """Handle errors and notify owners"""
+    error_text = f"⚠️ ERROR REPORT ⚠️\n\n"
     
+    # Get user info if available
+    user_info = ""
     if update and hasattr(update, 'effective_user') and update.effective_user:
         user_id = update.effective_user.id
-        logger.error(f"Error for user {user_id}: {context.error}")
-        
+        username = update.effective_user.username or "No username"
+        name = update.effective_user.first_name or "No name"
+        user_info = f"👤 User: {name} (@{username})\n🆔 ID: `{user_id}`\n"
+    
+    # Get command/action info
+    action_info = ""
+    if update and update.message:
+        action_info = f"💭 Message: {update.message.text}\n"
+    elif update and update.callback_query:
+        action_info = f"🎮 Callback: {update.callback_query.data}\n"
+    
+    # Format error details
+    error_details = f"❌ Error: `{str(context.error)}`\n"
+    if hasattr(context.error, '__traceback__'):
+        import traceback
+        tb_list = traceback.format_tb(context.error.__traceback__)
+        error_details += f"\n🔍 Traceback:\n`{''.join(tb_list[-2:])}`"  # Last 2 frames
+    
+    # Combine all info
+    error_text += f"{user_info}{action_info}{error_details}"
+    
+    # Log the error
+    logger.error(f"Update {update} caused error {context.error}")
+    
+    # Notify owners
+    for owner_id in OWNERS:
+        try:
+            await application.bot.send_message(
+                chat_id=owner_id,
+                text=error_text,
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify owner {owner_id}: {e}")
+    
+    # Clean up if needed
+    if update and hasattr(update, 'effective_user') and update.effective_user:
+        user_id = update.effective_user.id
         if "battle" in str(context.error).lower() or "explore" in str(context.error).lower():
             try:
                 from game.explore import force_cleanup_user
@@ -214,15 +255,15 @@ async def error_handler(update, context):
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup user {user_id}: {cleanup_error}")
     
+    # Notify user
     try:
+        error_message = "❌ An error occurred. The development team has been notified."
         if update and update.message:
-            await update.message.reply_text("❌ An error occurred. Please try again or contact support.")
+            await update.message.reply_text(error_message)
         elif update and update.callback_query and update.callback_query.message:
-            await update.callback_query.message.reply_text("❌ An error occurred. Please try again or contact support.")
-        else:
-            logger.error("Cannot send error message - no valid message context")
+            await update.callback_query.message.reply_text(error_message)
     except Exception as e:
-        logger.error(f"Failed to send error message: {e}")
+        logger.error(f"Failed to send error message to user: {e}")
 
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle currency purchases and exchanges"""
@@ -357,6 +398,36 @@ async def notify_owner_dashboard_url():
                 logger.info(f"📨 Dashboard URL sent to owner {owner_id}")
             except Exception as e:
                 logger.error(f"Failed to notify owner {owner_id} about dashboard: {e}")
+
+# Environment setup
+VERCEL_URL = os.getenv('VERCEL_URL')
+IS_VERCEL = bool(VERCEL_URL)
+BASE_URL = f"https://{VERCEL_URL}" if IS_VERCEL else f"http://localhost:{PORT}"
+
+async def setup_webhook():
+    """Set up webhook based on environment"""
+    if IS_VERCEL:
+        webhook_url = urljoin(BASE_URL, "webhook")
+        await application.bot.set_webhook(
+            url=webhook_url,
+            secret_token=SECRET_TOKEN,
+            drop_pending_updates=True
+        )
+        logger.info(f"✅ Webhook set to: {webhook_url}")
+    else:
+        # Development environment with ngrok
+        ngrok_url = await setup_ngrok_dashboard()
+        if not ngrok_url:
+            raise RuntimeError("Failed to get ngrok URL")
+            
+        webhook_url = f"{ngrok_url}/webhook"
+        await application.bot.set_webhook(
+            url=webhook_url,
+            secret_token=SECRET_TOKEN,
+            drop_pending_updates=True
+        )
+        logger.info(f"✅ Webhook set to: {webhook_url}")
+
 async def setup_application():
     """Initialize and configure the bot application with all handlers"""
 
@@ -384,6 +455,7 @@ async def setup_application():
     application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
     application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
     application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
+    application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$")) 
     application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
     application.add_handler(CallbackQueryHandler(handle_battle_start, pattern=r"^battle_"))
     application.add_handler(CallbackQueryHandler(handle_battle_action, pattern=r"^ability_"))
@@ -434,46 +506,39 @@ async def main():
         # 2. Initialize the application components
         await initialize_application()
 
-        # 3. Start the Flask app
-        flask_thread = Thread(target=run_flask, daemon=True)
-        flask_thread.start()
+        # 3. Start the server based on environment
+        if not IS_VERCEL:
+            # Development environment
+            flask_thread = Thread(target=run_flask, daemon=True)
+            flask_thread.start()
+            
+            # Wait for Flask to be ready
+            if not await wait_for_flask():
+                raise RuntimeError("Flask server failed to start")
 
-        # Wait for Flask to be ready
-        if not await wait_for_flask():
-            raise RuntimeError("Flask server failed to start")
-
-        # 4. Initialize ngrok and get URLs
-        ngrok_url = await setup_ngrok_dashboard()
-        if not ngrok_url:
-            raise RuntimeError("Failed to get ngrok URL")
-
-        # 5. Set up webhook using the ngrok URL
-        webhook_url = f"{ngrok_url}/webhook"
-        await application.bot.set_webhook(
-            url=webhook_url,
-            secret_token=SECRET_TOKEN,
-            drop_pending_updates=True
-        )
-        logger.info(f"✅ Webhook set to: {webhook_url}")
+        # 4. Set up webhook
+        await setup_webhook()
         
-        # 6. Initialize database and other components
+        # 5. Initialize database and other components
         await initialize_app()
         
-        # 7. Notify owners about the dashboard URL
-        await notify_owner_dashboard_url()
+        # 6. Notify owners about the dashboard URL
+        if not IS_VERCEL:
+            await notify_owner_dashboard_url()
         
         # Notify about successful setup
         logger.info("🚀 Bot is fully initialized and ready to receive commands")
 
-        # Keep the event loop running
-        while True:
-            await asyncio.sleep(3600)  # Sleep for an hour
+        # Keep the event loop running if not on Vercel
+        if not IS_VERCEL:
+            while True:
+                await asyncio.sleep(3600)  # Sleep for an hour
 
     except Exception as e:
         logger.error(f"Error in main function: {e}")
         raise
     finally:
-        if 'application' in globals() and application:
+        if not IS_VERCEL and 'application' in globals() and application:
             await application.stop()
             await application.shutdown()
         logger.info("Bot shutdown complete")

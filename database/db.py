@@ -251,6 +251,14 @@ class Database:
             logger.error(f"Failed to get character abilities: {e}")
             raise
 
+    async def get_character_level(self, user_id: int, character_name: str) -> int:
+        """Get the level of a specific character."""
+        character = await self.characters.find_one(
+            {"user_id": user_id, "name": character_name},
+            {"level": 1}
+        )
+        return character.get('level', 1) if character else 1
+
     # Titan operations
     def create_new_titan(self, level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
         """Create a completely new titan with anime-accurate features and varied stats"""

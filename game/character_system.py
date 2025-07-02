@@ -187,7 +187,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
 async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manage the character team."""
+    """Manage the character team with an improved interface."""
     user_id = update.effective_user.id
     db = await get_database()
     player = await db.get_player(user_id)
@@ -197,82 +197,191 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     owned_characters = player.owned_characters
     if not owned_characters:
-        await update.callback_query.edit_message_text("You have no unlocked characters to form a team.")
+        await update.callback_query.edit_message_text(
+            "You have no unlocked characters to form a team.\n"
+            "Complete missions and events to unlock more characters!"
+        )
         return
 
     # Initialize team in context
     context.user_data['team'] = [member.dict() for member in player.team] if player.team else []
-
-    team_text = "Current Team:\n" + "\n".join(
-        f"{member['position']}. {member['character_name']}" 
-        for member in context.user_data['team']
-    ) if context.user_data['team'] else "Current Team: None\n\n"
     
-    team_text += "\nSelect characters to form your team (max 3):\n"
+    # Get character data for each team member
+    team_details = []
+    for member in context.user_data['team']:
+        char_data = get_character_data(member['character_name'])
+        if char_data:
+            team_details.append({
+                'position': member['position'],
+                'name': member['character_name'],
+                'role': char_data.role,
+                'level': await db.get_character_level(user_id, member['character_name'])
+            })
     
+    # Sort team by position
+    team_details.sort(key=lambda x: x['position'])
+    
+    # Create team display text
+    team_text = "🎭 <b>Team Management</b>\n"
+    team_text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if team_details:
+        team_text += "<b>Current Team:</b>\n"
+        for member in team_details:
+            team_text += (
+                f"{get_position_emoji(member['position'])} "
+                f"<b>{member['name']}</b> (Lv.{member['level']})\n"
+                f"└ Role: {member['role']}\n"
+            )
+    else:
+        team_text += "No team members selected yet.\n"
+    
+    team_text += "\n<i>Select characters to form your team (max 3):</i>\n"
+    
+    # Create keyboard with character selection and team management options
     keyboard = []
+    
+    # Add character selection buttons
+    char_buttons = []
     for char in owned_characters:
+        char_data = get_character_data(char)
+        if not char_data:
+            continue
+            
         current_position = next(
             (member['position'] 
             for member in context.user_data['team'] 
             if member['character_name'] == char
         ), None)
-        button_text = f"{char} (Pos: {current_position})" if current_position else char
-        keyboard.append([InlineKeyboardButton(button_text, callback_data=f"add_to_team_{char}")])
+        
+        if current_position:
+            button_text = f"✅ {char} (#{current_position})"
+        else:
+            button_text = f"⭕ {char}"
+            
+        char_buttons.append(InlineKeyboardButton(button_text, callback_data=f"add_to_team_{char}"))
+        
+        # Create rows of 2 buttons each
+        if len(char_buttons) == 2:
+            keyboard.append(char_buttons)
+            char_buttons = []
+            
+    # Add any remaining buttons
+    if char_buttons:
+        keyboard.append(char_buttons)
     
-    keyboard.append([InlineKeyboardButton("Save Team", callback_data="save_team")])
-    await update.callback_query.edit_message_text(team_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    # Add team management buttons
+    keyboard.append([
+        InlineKeyboardButton("🔄 Clear Team", callback_data="clear_team"),
+        InlineKeyboardButton("💾 Save Team", callback_data="save_team")
+    ])
+    
+    # Add navigation buttons
+    keyboard.append([
+        InlineKeyboardButton("👤 Profile", callback_data="show_character_profile"),
+        InlineKeyboardButton("❌ Exit", callback_data="exit_profile")
+    ])
+    
+    await update.callback_query.edit_message_text(
+        team_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
+    )
+
+def get_position_emoji(position: int) -> str:
+    """Get emoji for team position."""
+    return {
+        1: "1️⃣",
+        2: "2️⃣",
+        3: "3️⃣"
+    }.get(position, "❓")
 
 async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Add a character to the team with a position."""
+    """Add or remove a character from the team."""
     query = update.callback_query
     char_name = query.data.replace("add_to_team_", "")
-    user_id = update.effective_user.id
-    db = await get_database()
+    
     context.user_data.setdefault('team', [])
-
-    # Remove character if already in team
-    context.user_data['team'] = [
-        member for member in context.user_data['team'] 
-        if member['character_name'] != char_name
-    ]
-
-    # Add character with next available position
-    if len(context.user_data['team']) < 3:
-        used_positions = {member['position'] for member in context.user_data['team']}
-        next_position = min({1, 2, 3} - used_positions, default=1)
-        context.user_data['team'].append({"character_name": char_name, "position": next_position})
-        await query.answer(f"{char_name} added to position {next_position}!")
+    
+    # Check if character is already in team
+    existing_member = next(
+        (member for member in context.user_data['team'] 
+         if member['character_name'] == char_name), 
+        None
+    )
+    
+    if existing_member:
+        # Remove character if already in team
+        context.user_data['team'] = [
+            member for member in context.user_data['team'] 
+            if member['character_name'] != char_name
+        ]
+        await query.answer(f"Removed {char_name} from team")
     else:
-        await query.answer("Team is full! Remove a character first.")
+        # Add character if team isn't full
+        if len(context.user_data['team']) < 3:
+            used_positions = {member['position'] for member in context.user_data['team']}
+            next_position = min({1, 2, 3} - used_positions, default=1)
+            context.user_data['team'].append({
+                "character_name": char_name,
+                "position": next_position
+            })
+            await query.answer(f"Added {char_name} to position {next_position}")
+        else:
+            await query.answer("Team is full! Remove a character first.")
+    
+    # Refresh team management view
+    await manage_team(update, context)
+
+async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Clear all members from the team."""
+    context.user_data['team'] = []
+    await update.callback_query.answer("Team cleared!")
+    await manage_team(update, context)
 
 async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Save the selected team to the database."""
+    """Save the current team composition."""
     user_id = update.effective_user.id
     db = await get_database()
     team = context.user_data.get('team', [])
     
     if not team:
-        await update.callback_query.edit_message_text("You have not selected any characters for your team.")
+        await update.callback_query.answer("Please add members to your team first!")
         return
-
-    # Ensure positions are sequential (1, 2, 3)
+        
+    # Ensure positions are sequential
     team = sorted(team, key=lambda x: x['position'])
     for i, member in enumerate(team, 1):
         member['position'] = i
-
+        
     # Update player with the new team
     await db.players.update_one(
         {"user_id": user_id},
         {"$set": {"team": team}}
     )
-
-    team_text = "Current Team:\n" + "\n".join(
-        f"{member['position']}. {member['character_name']}" 
-        for member in team
-    )
+    
+    # Create success message with team details
+    team_text = "✅ Team saved successfully!\n\n"
+    team_text += "<b>Final Team Composition:</b>\n"
+    
+    for member in team:
+        char_data = get_character_data(member['character_name'])
+        position_emoji = get_position_emoji(member['position'])
+        team_text += f"{position_emoji} <b>{member['character_name']}</b>"
+        if char_data:
+            team_text += f" - {char_data.role}\n"
+        else:
+            team_text += "\n"
+            
+    keyboard = [
+        [InlineKeyboardButton("🔄 Edit Team", callback_data="manage_team")],
+        [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]
+    ]
+    
     await update.callback_query.edit_message_text(
-        f"Your team has been saved successfully! 🎉\n\n{team_text}"
+        team_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML"
     )
 
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):

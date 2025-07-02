@@ -71,6 +71,47 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db = await get_database()
     
+    # Get player data
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You need to create a profile first with /start")
+        return
+        
+    # Check if this explore should award daily EXP (first 125 explores)
+    current_date = datetime.utcnow()
+    daily_explores_count = player.get_daily_explores_count(current_date)
+    
+    if daily_explores_count < 125:
+        # Calculate and award daily explore EXP
+        explore_exp = player.calculate_exp_gain('daily_explore')
+        player.xp += explore_exp
+        player.total_xp += explore_exp
+        
+        # Increment daily explores count
+        daily_explores_count = player.increment_daily_explores(current_date)
+        
+        # Check for level up
+        level_ups = 0
+        while player.xp >= player.xp_to_next_level:
+            player.level_up()
+            level_ups += 1
+            
+        # Update player in database
+        update_data = {
+            "xp": player.xp,
+            "total_xp": player.total_xp,
+            "level": player.level,
+            "daily_explores": [d.dict() for d in player.daily_explores]  # Convert to dict for storage
+        }
+        await db.update_player(user_id=player.user_id, update_data=update_data)
+        
+        # Prepare EXP message
+        exp_message = f"\nDaily explore EXP: +{explore_exp:,}"
+        if level_ups > 0:
+            exp_message += f"\nLevel up! You're now level {player.level}!"
+    else:
+        exp_message = ""  # No EXP message if over daily limit
+    
     try:
         player_data = await db.players.find_one({"user_id": user_id})
         if not player_data:

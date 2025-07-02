@@ -447,7 +447,7 @@ class ShopSystem:
             "═══════════════════════\n\n"
             "💰 *Your Resources*\n"
             f"🎯 Marks: `{marks:,}`\n"
-            f"💎 Crystals: `{crystal:,}`\n"
+            f"💎 Crystals: `{crystals:,}`\n"
             f"⚡ Valor: `{valor:,}`\n"
             f"🛢️ Gas: `{gas:,}`\n\n"
             "� *Currency Exchange*\n"
@@ -602,113 +602,75 @@ class ShopSystem:
         })
         return purchases
     
-    async def purchase_item(self, user_id: int, item_key: str) -> str:
-        """Handle item purchase"""
+    async def purchase_item(self, user_id: int, item_name: str, quantity: int = 1) -> Dict[str, Any]:
+        """Purchase an item from the shop"""
         db = await self._get_db()
-        player = await db.players.find_one({"user_id": user_id})
+        player = await db.get_player(user_id)
+        
         if not player:
-            return "❌ Character not found!"
-        
-        # Check if item exists
-        item = self.shop_items.get(item_key) or self.hidden_items.get(item_key)
+            return {"success": False, "message": "Player not found"}
+            
+        item = self.shop_items.get(item_name)
         if not item:
-            return "❌ Item not found!"
-        
-        # Check unlock conditions
-        if not self._check_unlock_conditions(player, item):
-            return "❌ You don't meet the requirements for this item!"
-        
-        # Check affordability
-        if not await self._can_afford(player, item):
-            return f"❌ Insufficient {item.currency}! You need {item.price:,} {item.currency}."
-        
-        # Check stock limits
-        if item.stock_limit > 0:
-            purchases_today = await self._get_daily_purchases(user_id, item_key)
-            if purchases_today >= item.stock_limit:
-                return f"❌ Daily purchase limit reached for {item.name}!"
-        
-        # Check cooldowns
-        if item.cooldown_hours > 0:
-            last_purchase = await db.shop_purchases.find_one({
-                "user_id": user_id,
-                "item_key": item_key
-            }, sort=[("purchase_date", -1)])
+            return {"success": False, "message": "Item not found"}
             
-            if last_purchase:
-                cooldown_end = last_purchase["purchase_date"] + timedelta(hours=item.cooldown_hours)
-                if datetime.utcnow() < cooldown_end:
-                    remaining = cooldown_end - datetime.utcnow()
-                    hours = int(remaining.total_seconds() // 3600)
-                    minutes = int((remaining.total_seconds() % 3600) // 60)
-                    return f"❌ Item on cooldown! {hours}h {minutes}m remaining."
+        total_cost = item.price * quantity
         
-        # Process purchase
-        update_data = {}
+        # Check if player has enough currency
         if item.currency == "marks":
-            update_data["marks"] = player.get("marks", 0) - item.price
-        elif item.currency == "crystals":
-            update_data["crystals"] = player.get("crystal", 0) - item.price
+            if player.marks < total_cost:
+                return {"success": False, "message": "Not enough marks"}
+            player.marks -= total_cost
         elif item.currency == "valor":
-            update_data["valor"] = player.get("valor", 0) - item.price
-        
-        # Add item to inventory
-        if item.item_type in ["weapon", "gear"]:
-            # Create equipment entry
-            equipment = Equipment(
-                name=item.name,
-                type=item.item_type,
-                rarity=item.rarity,
-                durability=item.durability,
-                weight=item.weight,
-                attributes=item.attributes
-            )
+            if player.valor < total_cost:
+                return {"success": False, "message": "Not enough valor"}
+            player.valor -= total_cost
+        elif item.currency == "crystal":
+            if player.crystal < total_cost:
+                return {"success": False, "message": "Not enough crystals"}
+            player.crystal -= total_cost
             
-            # Add to player's equipment
-            if "equipment" not in player:
-                player["equipment"] = []
-            player["equipment"].append(equipment.dict())
-            update_data["equipment"] = player["equipment"]
+        # Add item to inventory
+        player.inventory[item_name] = player.inventory.get(item_name, 0) + quantity
         
-        elif item.item_type == "echo_shard":
-            update_data["echo_shards"] = player.get("echo_shards", 0) + 1
+        # Calculate and award shop EXP
+        shop_exp = player.calculate_exp_gain('shop_purchase', quantity)
+        player.xp += shop_exp
+        player.total_xp += shop_exp
         
-        elif item.item_type == "utility":
-            # Add to utility items
-            if "utility_items" not in player:
-                player["utility_items"] = {}
-            player["utility_items"][item_key] = player["utility_items"].get(item_key, 0) + 1
-            update_data["utility_items"] = player["utility_items"]
-        
-        # Update player data
-        await db.players.update_one(
-            {"user_id": user_id},
-            {"$set": update_data}
+        # Check for level up
+        level_ups = 0
+        while player.xp >= player.xp_to_next_level:
+            player.level_up()
+            level_ups += 1
+            
+        # Update player in database
+        await db.update_player(
+            user_id=player.user_id,
+            update_data={
+                "marks": player.marks,
+                "valor": player.valor,
+                "crystal": player.crystal,
+                "inventory": player.inventory,
+                "xp": player.xp,
+                "total_xp": player.total_xp,
+                "level": player.level
+            }
         )
         
-        # Record purchase
-        await db.shop_purchases.insert_one({
-            "user_id": user_id,
-            "item_key": item_key,
-            "item_name": item.name,
-            "price": item.price,
-            "currency": item.currency,
-            "purchase_date": datetime.utcnow()
-        })
-        
-        success_msg = f"✅ **Purchase Successful!**\n\n"
-        success_msg += f"🛒 **Item:** {item.name}\n"
-        success_msg += f"💰 **Cost:** {item.price:,} {item.currency.title()}\n"
-        
-        if item.damage_range:
-            success_msg += f"⚔️ **Damage:** {item.damage_range}\n"
-        
-        if item.cooldown_hours > 0:
-            success_msg += f"⏰ **Cooldown:** {item.cooldown_hours} hours\n"
-        
-        success_msg += f"\n📝 *{item.description}*"
-        
-        return success_msg
+        # Prepare success message
+        message = f"Successfully purchased {quantity}x {item_name}"
+        if shop_exp > 0:
+            message += f"\nEXP gained: {shop_exp:,}"
+            if level_ups > 0:
+                message += f"\nLevel up! You're now level {player.level}!"
+                
+        return {
+            "success": True,
+            "message": message,
+            "exp_gained": shop_exp,
+            "level_ups": level_ups
+        }
     
     async def exchange_currency(self, user_id: int, from_currency: str, to_currency: str, amount: int) -> str:
         """Handle currency exchange"""
@@ -847,7 +809,7 @@ class ShopSystem:
 
             elif currency_type == "marks":
                 # Convert crystals to marks (1 crystal = 50000 marks)
-                if crystal < amount:  # Updated variable name to match
+                if crystals < amount:  # Updated variable name to match
                     return f"❌ Insufficient crystals! You need {amount:,} crystals."
                 marks_gained = amount * 50000
                 updates["$inc"] = {"crystal": -amount, "marks": marks_gained}  # Fixed field name to match database

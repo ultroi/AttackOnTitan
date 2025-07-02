@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
@@ -61,13 +61,43 @@ class Character(BaseModel):
 
     @property
     def xp_to_next_level(self) -> int:
-        """Calculate XP needed for next level"""
+        """Calculate XP needed for next level based on the new system"""
         if self.level < 50:
-            return self.level * 1000
+            base = 500 + (self.level * 100)  # Start at 600, increase by 100 per level
+            return int(base * (1 + (self.level // 10) * 0.5))  # 50% increase every 10 levels
         elif self.level < 100:
-            return 50000 + (self.level - 50) * 2000
+            # Mid levels need tens of thousands
+            base = 10000 + ((self.level - 50) * 500)
+            return int(base * (1 + ((self.level - 50) // 10) * 0.2))
         else:
-            return 150000 + (self.level - 100) * 3000
+            # High levels need over 100,000
+            return int(100000 + ((self.level - 100) * 2000))
+
+    def calculate_combat_exp(self, turns: int, damage_taken: bool, overkill_damage: int, is_first_kill: bool) -> int:
+        """Calculate combat EXP with bonuses"""
+        # Base EXP (40-60)
+        base_exp = random.randint(40, 60)
+        
+        # Apply bonuses
+        total_exp = base_exp
+        
+        # Fast kill bonus (under 5 turns)
+        if turns <= 5:
+            total_exp *= 1.20  # +20%
+            
+        # No damage bonus
+        if not damage_taken:
+            total_exp *= 1.15  # +15%
+            
+        # Overkill bonus
+        if overkill_damage > 0:
+            total_exp *= 1.10  # +10%
+            
+        # First kill bonus
+        if is_first_kill:
+            total_exp *= 1.25  # +25%
+            
+        return int(total_exp)
 
     def get_abilities(self) -> Dict[str, Dict[str, 'Ability']]:
         character_data = get_character_data(self.character_type)
@@ -185,6 +215,11 @@ class TeamMember(BaseModel):
     position: int
 
 
+class DailyExplores(BaseModel):
+    """Model to track daily explores with dates"""
+    date: str  # ISO format date string
+    count: int
+
 class Player(BaseModel):
     user_id: int
     username: str
@@ -202,20 +237,46 @@ class Player(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     daily_streak: int = 0
     last_daily_claim: Optional[datetime] = None
-    inventory: Dict[str, int] = Field(default_factory=dict)
+    inventory: Dict[str, Any] = Field(default_factory=dict)  # Changed from Dict[str, int] to Dict[str, Any]
     unlocked_areas: List[str] = Field(default_factory=list)
     completed_quests: List[str] = Field(default_factory=list)
     team: List[TeamMember] = Field(default_factory=list)
+    guild_id: Optional[int] = None
+    double_exp_end: Optional[datetime] = None
+    daily_explores: List[DailyExplores] = Field(default_factory=list)  # New field for tracking daily explores
 
     @property
     def xp_to_next_level(self) -> int:
-        """Calculate XP needed for next level"""
-        if self.level < 50:
-            return self.level * 1000
-        elif self.level < 100:
-            return 50000 + (self.level - 50) * 2000
+        """Calculate XP needed for next level (no cap)"""
+        if self.level < 100:
+            return 500 + (self.level * 50)  # Start at 550, increase by 50 per level
+        elif self.level < 1000:
+            return 5000 + (self.level * 100)  # Start at ~15k, increase by 100 per level
         else:
-            return 150000 + (self.level - 100) * 3000
+            return 50000 + (self.level * 200)  # Start at ~250k, increase by 200 per level
+
+    def calculate_exp_gain(self, action: str, amount: int = 1) -> int:
+        """Calculate EXP gain from various actions"""
+        base_exp = {
+            'titan_kill': random.randint(10, 20),
+            'pvp_win': 30,
+            'shop_purchase': random.randint(10, 15),
+            'daily_explore': 50,
+            'achievement': random.randint(100, 500)
+        }.get(action, 0) * amount
+        
+        # Apply boosts
+        total_exp = base_exp
+        
+        # Double EXP weekend
+        if self.double_exp_end and datetime.utcnow() < self.double_exp_end:
+            total_exp *= 2
+            
+        # Guild bonus
+        if self.guild_id is not None:
+            total_exp *= 1.15  # +15%
+            
+        return int(total_exp)
 
     def level_up(self) -> None:
         self.level += 1
@@ -260,6 +321,35 @@ class Player(BaseModel):
     def remove_character(self, character_name: str) -> None:
         if character_name in self.owned_characters:
             self.owned_characters.remove(character_name)
+
+    def get_daily_explores_count(self, date: datetime) -> int:
+        """Get the number of explores for a specific date"""
+        date_str = date.strftime('%Y-%m-%d')
+        for daily in self.daily_explores:
+            if daily.date == date_str:
+                return daily.count
+        return 0
+
+    def increment_daily_explores(self, date: datetime) -> int:
+        """Increment the daily explores count and return the new count"""
+        date_str = date.strftime('%Y-%m-%d')
+        
+        # Find existing record
+        for daily in self.daily_explores:
+            if daily.date == date_str:
+                daily.count += 1
+                return daily.count
+        
+        # Create new record if not found
+        new_daily = DailyExplores(date=date_str, count=1)
+        self.daily_explores.append(new_daily)
+        
+        # Clean up old records (keep only last 7 days)
+        current_date = datetime.utcnow()
+        cutoff_date = (current_date - timedelta(days=7)).strftime('%Y-%m-%d')
+        self.daily_explores = [d for d in self.daily_explores if d.date >= cutoff_date]
+        
+        return 1
 
 class Titan(BaseModel):
     name: str
