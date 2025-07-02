@@ -72,7 +72,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = await get_database()
     
     # Get player data
-    player = await db.get_player(user_id)
+    player_data = await db.players.find_one({"user_id": user_id})
     if not player:
         await update.message.reply_text("You need to create a profile first with /start")
         return
