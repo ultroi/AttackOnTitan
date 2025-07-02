@@ -252,13 +252,14 @@ def webhook():
         logger.error(f"Webhook error: {e}")
         return Response(status=500)
 
+# Initialize Flask app without static folder
+app = Flask(__name__, static_folder=None)
+
+# Flask routes
 @app.route('/')
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
-
-# Initialize Flask app without static folder
-app = Flask(__name__, static_folder=None)
 
 @app.route('/favicon.ico')
 @app.route('/favicon.png')
@@ -299,7 +300,7 @@ async def run_application():
         application = await setup_application()
         
         if IS_VERCEL:
-            webhook_url = "https://attack-on-titan-4vxv4stum-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
+            webhook_url = "https://attack-on-titan-nxyw7ayce-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
             await application.bot.set_webhook(
                 url=webhook_url,
                 secret_token=SECRET_TOKEN,
