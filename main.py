@@ -43,15 +43,15 @@ load_dotenv()
 from config import PORT, DEBUG
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-IS_VERCEL = bool(os.getenv('VERCEL_URL'))
-
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
+
+IS_VERCEL = bool(os.getenv('VERCEL_URL'))
 
 # Initialize logging early
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO if not DEBUG else logging.DEBUG
 )
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,14 @@ SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Only import web_dashboard in development environment
+if not IS_VERCEL:
+    try:
+        from utils.web_dashboard import app as dashboard_app
+        logger.info("Web dashboard available in development mode")
+    except ImportError:
+        logger.warning("Web dashboard not available - some features will be disabled")
 
 # Application state tracking
 app_state = {
@@ -115,9 +123,9 @@ async def setup_application():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("explore", explore))
-    application.add_handler(CommandHandler("nuke", owner_reset))
-    application.add_handler(CommandHandler("shop", show_shop))
-    application.add_handler(CommandHandler("buy", buy))
+    # application.add_handler(CommandHandler("nuke", owner_reset))
+    # application.add_handler(CommandHandler("shop", shop_system))
+    # application.add_handler(CommandHandler("buy", shop_system))
 
     # Character and team handlers
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
