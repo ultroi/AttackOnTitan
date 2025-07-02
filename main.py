@@ -260,6 +260,18 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
+@app.route('/favicon.ico')
+@app.route('/favicon.png')
+def favicon():
+    """Handle favicon requests"""
+    return '', 204  # Return empty response with 204 No Content
+
+@app.errorhandler(404)
+def not_found_error(error):
+    """Handle 404 errors gracefully"""
+    logger.info(f"404 error: {error}")
+    return jsonify({"error": "Not found"}), 404
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Global exception handler"""
@@ -287,11 +299,7 @@ async def run_application():
         application = await setup_application()
         
         if IS_VERCEL:
-            vercel_url = os.getenv('VERCEL_URL')
-            if not vercel_url:
-                raise ValueError("VERCEL_URL environment variable not set")
-                
-            webhook_url = f"https://{vercel_url}/webhook"
+            webhook_url = "https://attack-on-titan-six.vercel.app/webhook"
             await application.bot.set_webhook(
                 url=webhook_url,
                 secret_token=SECRET_TOKEN
