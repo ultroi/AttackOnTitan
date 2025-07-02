@@ -56,21 +56,20 @@ SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 # Initialize Flask app
 app = Flask(__name__)
 
-# Only import web_dashboard in development environment
+# Only try to import web_dashboard in development environment
+dashboard_available = False
 if not IS_VERCEL:
     try:
-        from utils.web_dashboard import app as dashboard_app
-# Only import web_dashboard in development environment
-if not IS_VERCEL:
-    try:
-        # Import dashboard but don't use variable name to avoid lint warnings
-        from utils.web_dashboard import app as _
+        # Import but don't use the module in Vercel environment
+        import utils.web_dashboard
+        dashboard_available = True
         logger.info("Web dashboard available in development mode")
-    except ImportError:
-        logger.warning("Web dashboard not available - some features will be disabled")
+    except ImportError as e:
+        logger.warning(f"Web dashboard not available - {str(e)}")
     except ModuleNotFoundError as e:
         logger.warning(f"Web dashboard dependency missing: {e}")
-    
+else:
+    logger.info("Web dashboard disabled in Vercel environment")
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user and update.message:
