@@ -260,22 +260,14 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
-def add_static_handlers(app):
-    """Add static file handlers to the Flask app"""
-    @app.route('/favicon.ico')
-    @app.route('/favicon.png')
-    def favicon():
-        """Handle favicon requests"""
-        return app.send_static_file('favicon.ico') if os.path.exists('static/favicon.ico') else ('', 204)
+# Initialize Flask app
+app = Flask(__name__)
 
-# Initialize static folder
-static_folder = os.path.join(os.path.dirname(__file__), 'static')
-if not os.path.exists(static_folder):
-    os.makedirs(static_folder)
-
-# Initialize Flask app with static folder
-app = Flask(__name__, static_folder=static_folder)
-add_static_handlers(app)
+@app.route('/favicon.ico')
+@app.route('/favicon.png')
+def favicon():
+    """Handle favicon requests"""
+    return '', 204  # Always return no content for favicon requests
 
 @app.errorhandler(404)
 def not_found_error(error):
@@ -310,7 +302,7 @@ async def run_application():
         application = await setup_application()
         
         if IS_VERCEL:
-            webhook_url = "https://attack-on-titan-64e4x295q-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
+            webhook_url = "https://attack-on-titan-3girgmffw-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
             await application.bot.set_webhook(
                 url=webhook_url,
                 secret_token=SECRET_TOKEN,
