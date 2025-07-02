@@ -141,17 +141,17 @@ def index():
     }
 
 @app.route('/set_webhook', methods=['GET', 'POST'])
-async def set_webhook():
+def set_webhook():
     """Set webhook URL for the bot"""
     try:
-        app_instance = await setup_bot()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        app_instance = loop.run_until_complete(setup_bot())
         webhook_url = f"https://{request.host}/webhook"
-        
-        await app_instance.bot.set_webhook(
+        loop.run_until_complete(app_instance.bot.set_webhook(
             url=webhook_url,
             secret_token=SECRET_TOKEN
-        )
-        
+        ))
         return {
             "status": "success",
             "message": f"Webhook set to {webhook_url}"
