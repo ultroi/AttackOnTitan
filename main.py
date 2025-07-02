@@ -52,9 +52,6 @@ logger = logging.getLogger(__name__)
 
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 
-# Initialize Flask app
-app = Flask(__name__)
-
 # Only try to import web_dashboard in development environment
 if not IS_VERCEL:
     try:
@@ -260,8 +257,8 @@ def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy"})
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize Flask app without static folder
+app = Flask(__name__, static_folder=None)
 
 @app.route('/favicon.ico')
 @app.route('/favicon.png')
@@ -302,7 +299,7 @@ async def run_application():
         application = await setup_application()
         
         if IS_VERCEL:
-            webhook_url = "https://attack-on-titan-3girgmffw-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
+            webhook_url = "https://attack-on-titan-4vxv4stum-fakeryukshinigami-gmailcoms-projects.vercel.app/webhook"
             await application.bot.set_webhook(
                 url=webhook_url,
                 secret_token=SECRET_TOKEN,
