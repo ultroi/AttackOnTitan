@@ -11,7 +11,7 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 SECRET_TOKEN = os.getenv("SECRET_TOKEN")
 
-if not TOKEN:
+if TOKEN is None or TOKEN.strip() == "":
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 
 if not SECRET_TOKEN:
@@ -45,8 +45,7 @@ async def initialize_bot():
                     show_character_selection, profile, show_character_profile,
                     add_to_team, save_team, clear_team, manage_team,
                     show_character_details, confirm_character_selection,
-                    create_character, show_team, back_to_selection,
-                    show_equipment, show_achievements, explore_map, fill_gas
+                    create_character, show_team, back_to_selection
                 )
                 from game.explore import explore
                 from game.callback_handlers import button_callback

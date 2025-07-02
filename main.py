@@ -5,6 +5,7 @@ from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application
+from telegram.ext import CommandHandler, CallbackQueryHandler
 
 # Load environment variables
 load_dotenv()
@@ -41,24 +42,17 @@ async def setup_bot():
             add_to_team, save_team, clear_team, manage_team,
             show_character_details, confirm_character_selection,
             create_character, show_team, back_to_selection,
-            show_equipment, show_achievements, explore_map, fill_gas
         )
         from game.explore import explore
         from game.callback_handlers import button_callback
         from game.shop_system import ShopSystem
-        from utils.performance_monitor import (
-            performance_command, performance_callback_handler, 
-            track_command_performance
-        )
         
         # Add command handlers
         application.add_handler(CommandHandler("start", show_character_selection))
         application.add_handler(CommandHandler("profile", profile))
-        application.add_handler(CommandHandler("explore", track_command_performance("explore")(explore)))
-        application.add_handler(CommandHandler("performance", performance_command))
+        application.add_handler(CommandHandler("explore", explore))
         
         # Shop command with proper async handling
-        @track_command_performance("shop")
         async def shop_command(update: Update, context):
             if not update.effective_user or not update.message:
                 return
@@ -75,7 +69,6 @@ async def setup_bot():
         
         # Add callback handlers
         application.add_handler(CallbackQueryHandler(button_callback))
-        application.add_handler(CallbackQueryHandler(performance_callback_handler, pattern="^perf_"))
         application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
         application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
         application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -88,10 +81,6 @@ async def setup_bot():
         application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
         application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
         application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
-        application.add_handler(CallbackQueryHandler(show_equipment, pattern="^show_equipment$"))
-        application.add_handler(CallbackQueryHandler(show_achievements, pattern="^show_achievements$"))
-        application.add_handler(CallbackQueryHandler(explore_map, pattern="^explore_map$"))
-        application.add_handler(CallbackQueryHandler(fill_gas, pattern="^fill_gas$"))
         
         # Error handler
         async def error_handler(update: object, context):
@@ -171,22 +160,7 @@ async def set_webhook():
         logger.error(f"Failed to set webhook: {e}")
         return {"status": "error", "message": str(e)}, 500
 
-# Vercel serverless function handler
-def handler(request):
-    """Main handler for Vercel"""
-    with app.test_request_context(
-        path=request.url.path,
-        method=request.method,
-        headers=dict(request.headers),
-        data=request.body
-    ):
-        try:
-            response = app.full_dispatch_request()
-            return response
-        except Exception as e:
-            logger.error(f"Handler error: {e}")
-            return Response(status=500)
-
-# For local testing
+# For local/production deployment
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, port=port)
