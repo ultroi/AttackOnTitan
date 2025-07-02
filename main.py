@@ -96,7 +96,7 @@ async def setup_bot():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Handle incoming webhook requests from Telegram"""
+    logger.info("Received a webhook POST from Telegram")
     # Verify secret token
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
