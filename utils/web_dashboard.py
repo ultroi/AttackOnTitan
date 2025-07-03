@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify, redirect, render_template, Response, 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.monitor import resource_monitor
-from database.db_instance import get_database
+from database.db import Database
 import os
 import logging
 import time

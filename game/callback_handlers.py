@@ -1,6 +1,9 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from database.db_instance import get_database
+from telegram.error import BadRequest
+from pymongo.errors import PyMongoError
+from database.db import Database
+from database.models import Player, Character
 from game.explore import active_battles
 from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
 from game.shop_system import shop_system
@@ -12,192 +15,164 @@ from game.character_system import (
     profile,
     show_character_profile
 )
+import logging
 
-async def update_battle_status(query, battle, message):
+logger = logging.getLogger(__name__)
+
+async def update_battle_status(query: Update.callback_query, battle: BattleSystem, message: str):
     """Update the battle status message with current state."""
-    status = battle.get_battle_status()
-    
-    # Generate action buttons for available abilities
-    keyboard = []
-    for ability_type in ["active", "ultimate"]:
-        for ability_name, ability in battle.character.get_abilities().get(ability_type, {}).items():
-            if (battle.character.unlocked_abilities.get(ability_name, False) and
-                not ability.disabled_against_titans and
-                battle.ability_cooldowns.get(ability_name, 0) == 0):
-                keyboard.append([InlineKeyboardButton(
-                    f"{ability.name} ({ability.gas_cost} gas)",
-                    callback_data=f"ability_{ability.name}"
-                )])
-    keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await query.edit_message_text(
-        f"{message}\n\n"
-        f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
-        f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
-        f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
-        f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
-        f"Gas: {status['gas']}/{battle.character.gas}\n\n"
-        f"{status['status_message']}\n"
-        f"Choose your action:",
-        reply_markup=reply_markup
-    )
+    try:
+        status = battle.get_battle_status()
+        keyboard = []
+        for ability_type in ["active", "ultimate"]:
+            for ability_name, ability in battle.character.get_abilities().get(ability_type, {}).items():
+                if (battle.character.unlocked_abilities.get(ability_name, False) and
+                    not ability.disabled_against_titans and
+                    battle.ability_cooldowns.get(ability_name, 0) == 0):
+                    keyboard.append([InlineKeyboardButton(
+                        f"{ability.name} ({ability.gas_cost} gas)",
+                        callback_data=f"ability_{ability.name}"
+                    )])
+        keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            f"{message}\n\n"
+            f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
+            f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
+            f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
+            f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+            f"Gas: {status['gas']}/{battle.character.gas}\n\n"
+            f"{status['status_message']}\n"
+            f"Choose your action:",
+            reply_markup=reply_markup
+        )
+    except BadRequest as e:
+        logger.error(f"Error updating battle status: {e}")
+        await query.answer("Error updating battle status.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    db = await get_database()
+    """Handle callback queries for shop, character, and battle actions."""
     query = update.callback_query
-    if not query:
+    if not query or not update.effective_user:
+        logger.warning("No query or user information available")
         return
     await query.answer()
-    
-    # Handle shop-related callbacks
-    if query.data and query.data.startswith("shop_"):
-        category = query.data.split("_")[1]
-        message_text, reply_markup = await shop_system.show_shop(query.from_user.id, category)
-        await query.edit_message_text(
-            text=message_text,
-            reply_markup=reply_markup,
-            parse_mode='MARKDOWN'
-        )
-    
-    # Handle buy item callbacks
-    elif query.data and query.data.startswith("buy_"):
-        item_key = query.data.split("_", 1)[1]
-        result = await shop_system.purchase_item(query.from_user.id, item_key)
-        
-        # After purchase, refresh the current shop category
-        category = "main"  # Default to main if we can't determine the category
-        if context.user_data and 'message_history' in context.user_data:
-            for prev_msg in reversed(context.user_data.get('message_history', [])):
-                if isinstance(prev_msg, str) and prev_msg.startswith("shop_"):
-                    category = prev_msg.split("_")[1]
-                    break
-                
-        message_text, reply_markup = await shop_system.show_shop(query.from_user.id, category)
-        
-        # Show purchase result first
-        await query.answer(text=result[:200])  # Show first 200 chars in popup
-        
-        # Then update the shop view
-        await query.edit_message_text(
-            text=f"{result}\n\n{message_text}",
-            reply_markup=reply_markup,
-            parse_mode='MARKDOWN'
-        )
-    
-    elif query.data == "show_character_profile":
-        await show_character_profile(update, context)
-    
-    elif query.data == "back_to_profile":
-        await profile(update, context)
-    
-    elif query.data == "exit_profile":
-        try:
-            if query.message:
-                await query.message.delete()
-            else:
-                await query.edit_message_text("Profile closed.")
-        except Exception:
-            # If message can't be deleted, edit it instead
+    user_id = str(update.effective_user.id)
+    try:
+        db = context.bot_data.get("db")
+        if not db:
+            logger.error("Database not initialized in context.bot_data")
+            await query.edit_message_text("Internal error: Database not initialized.")
+            return
+
+        # Initialize context.user_data if needed
+        if not context.user_data:
+            context.user_data.update({"message_history": []})
+
+        # Dispatch table for callbacks
+        handlers = {
+            "shop_": lambda data: handle_shop_category(db, query, data.split("_")[1], context),
+            "buy_": lambda data: handle_buy_item(db, query, data.split("_", 1)[1], context),
+            "show_character_profile": lambda data: show_character_profile(update, context),
+            "back_to_profile": lambda data: profile(update, context),
+            "exit_profile": lambda data: handle_exit_profile(query),
+            "fill_gas": lambda data: handle_fill_gas(db, query, user_id),
+            "select_": lambda data: handle_select_character(query, context, data.split("_")[1]),
+            "confirm_": lambda data: confirm_character_selection(update, context),
+            "back_to_selection": lambda data: show_character_selection(update, context),
+            "cancel_selection": lambda data: show_character_selection(update, context),
+            "birthplace_": lambda data: create_character(update, context),
+            "ability_": lambda data: handle_battle_action(update, context),
+            "action_run": lambda data: handle_battle_action(update, context),
+            "battle_": lambda data: handle_battle_start(update, context),
+        }
+
+        # Handle callback based on prefix
+        for prefix, handler in handlers.items():
+            if query.data and query.data.startswith(prefix):
+                result = await handler(query.data)
+                if result:
+                    message, reply_markup = result
+                    await query.edit_message_text(
+                        text=message,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML"
+                    )
+                return
+
+        await query.edit_message_text("Unknown action.")
+    except (BadRequest, PyMongoError) as e:
+        logger.error(f"Error in button_callback for user {user_id}: {e}")
+        await query.edit_message_text(f"Error processing action: {str(e)}")
+
+async def handle_shop_category(db: Database, query: Update.callback_query, category: str, context: ContextTypes.DEFAULT_TYPE):
+    """Handle shop category callbacks."""
+    user_id = str(query.from_user.id)
+    message_text, reply_markup = await shop_system.show_shop(context, user_id, category)
+    context.user_data["message_history"].append(f"shop_{category}")
+    return message_text, reply_markup
+
+async def handle_buy_item(db: Database, query: Update.callback_query, item_key: str, context: ContextTypes.DEFAULT_TYPE):
+    """Handle item purchase callbacks."""
+    user_id = str(query.from_user.id)
+    result = await shop_system.purchase_item(context, user_id, item_key)
+    category = "main"
+    for prev_msg in reversed(context.user_data.get("message_history", [])):
+        if prev_msg.startswith("shop_"):
+            category = prev_msg.split("_")[1]
+            break
+    message_text, reply_markup = await shop_system.show_shop(context, user_id, category)
+    return f"{result['message']}\n\n{message_text}", reply_markup
+
+async def handle_exit_profile(query: Update.callback_query):
+    """Handle profile exit callback."""
+    try:
+        if query.message:
+            await query.message.delete()
+        else:
             await query.edit_message_text("Profile closed.")
-    
-    elif query.data == "fill_gas":
-        if not update.effective_user:
-            await query.edit_message_text("User information not available.")
-            return
-        
-        player = await db.get_player(update.effective_user.id)
-        if not player:
-            await query.edit_message_text("Player data not found!")
-            return
-            
-        character_name = ""
-        if query.message and hasattr(query.message, 'text') and query.message.text:
-            character_name = query.message.text.split('\n')[0].strip('*')  # Remove markdown
-        else:
-            await query.edit_message_text("Message information not available.")
-            return
-            
-        character = await db.get_character(update.effective_user.id, character_name)
-    
-        if not character:
-            await query.edit_message_text("Character not found!")
-            return
+    except BadRequest:
+        await query.edit_message_text("Profile closed.")
+    return None
 
-        max_gas = 5000
-        current_gas = character.gas
-        gas_needed = max_gas - current_gas
-        
-        if gas_needed <= 0:
-            await query.edit_message_text(
-                f"⛽ {character.name}'s gas tank is already full!\n"
-                f"Gas: {current_gas}/{max_gas}"
-            )
-            return
+async def handle_fill_gas(db: Database, query: Update.callback_query, user_id: str):
+    """Handle gas refill callback."""
+    player = await db.get_player(user_id)
+    if not player:
+        return "Player data not found!", None
+    if not player.team or not player.owned_characters:
+        return "You haven't created a character yet! Use /start to begin.", None
+    character_name = player.team[0].character_name if player.team else player.owned_characters[0]
+    character = await db.get_character(user_id, character_name)
+    if not character:
+        return "Character not found!", None
+    if character.gas >= character.max_gas:
+        return (
+            f"⛽ {character.name}'s gas tank is already full!\n"
+            f"Gas: {character.gas}/{character.max_gas}",
+            None
+        )
+    gas_needed = character.max_gas - character.gas
+    if player.gas <= 0:
+        return (
+            "❌ Your personal gas reserves are empty!\n"
+            "You need to buy gas from shop.",
+            None
+        )
+    available_gas = min(player.gas, gas_needed)
+    player.gas -= available_gas
+    character.gas += available_gas
+    await db.update_character(character)
+    await db.update_player(user_id, {"gas": player.gas})
+    return (
+        f"⛽ Gas tank refilled! (-{available_gas} from reserves)\n"
+        f"✅ {character.name} gas: {character.gas}/{character.max_gas}\n"
+        f"🏪 Your remaining gas: {player.gas}",
+        None
+    )
 
-        if player.gas <= 0:
-            await query.edit_message_text(
-                "❌ Your personal gas reserves are empty!\n"
-                "You need to buy gas from shop."
-            )
-            return
-
-        if player.gas >= gas_needed:
-            # Refill only what's needed
-            player.gas -= gas_needed
-            character.gas = max_gas
-
-            await db.update_character(character)
-            await db.update_player(update.effective_user.id, {
-                "gas": player.gas
-            })
-
-            await query.edit_message_text(
-                f"⛽ Gas tank refilled! (-{gas_needed} from reserves)\n"
-                f"✅ {character.name} gas: {character.gas}/{max_gas}\n"
-                f"🏪 Your remaining gas: {player.gas}"
-            )
-        else:
-            # Partial refill with available gas
-            available_gas = player.gas
-            player.gas = 0
-            character.gas = min(max_gas, current_gas + available_gas)
-    elif query.data and query.data.startswith("select_"):
-        char_name = query.data.split("_")[1]
-        if context.user_data is not None:
-            context.user_data['selected_character'] = char_name
-        await show_character_details(update, context)
-    
-    elif query.data and query.data.startswith("confirm_"):
-        await confirm_character_selection(update, context)
-    
-    elif query.data and query.data == "back_to_selection":
-        await show_character_selection(update, context)
-    
-    elif query.data and query.data == "cancel_selection":
-        await show_character_selection(update, context)
-    
-    elif query.data and query.data.startswith("birthplace_"):
-        await create_character(update, context)
-    
-    elif query.data and (query.data.startswith("ability_") or query.data == "action_run"):
-        await handle_battle_action(update, context)
-        char_name = query.data.split("_")[1]
-        if context.user_data is not None:
-            context.user_data['selected_character'] = char_name
-        await show_character_details(update, context)
-    
-    elif query.data and query.data.startswith("confirm_"):
-        await confirm_character_selection(update, context)
-    
-    elif query.data and query.data == "back_to_selection":
-        await show_character_selection(update, context)
-    
-    elif query.data and query.data == "cancel_selection":
-        await show_character_selection(update, context)
-    
-    elif query.data and query.data.startswith("birthplace_"):
-        await create_character(update, context)
-    
-    elif query.data and (query.data.startswith("ability_") or query.data == "action_run"):
-        await handle_battle_action(update, context)
+async def handle_select_character(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE, char_name: str):
+    """Handle character selection callback."""
+    context.user_data["selected_character"] = char_name
+    await show_character_details(query, context)
+    return None

@@ -112,3 +112,15 @@ Combat Rewards:
   - Birthplace
   - Currencies
   - Exploration Count 
+
+## Environment Variables
+
+You must create a `.env` file in the project root with the following variables for MongoDB connection:
+
+```
+MONGODB_URI=mongodb://localhost:27017
+DB_NAME=attackontitan
+```
+
+- If you use MongoDB Atlas or a remote server, replace the URI accordingly.
+- The bot will not work if these are missing or incorrect. 

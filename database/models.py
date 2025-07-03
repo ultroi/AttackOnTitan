@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import random
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
-from database.characters import CharacterData, get_character_data, Ability, AbilityEffect
+from database.characters import CharacterData, get_character_data, AbilityEffect
+from database.schemas import Ability, CharacterStats
 
 class CharacterStats(BaseModel):
     ATK: int = 10
@@ -14,7 +15,7 @@ class CharacterStats(BaseModel):
 
 class AbilityInfo(BaseModel):
     name: str
-    type: str  # "active" or "passive"
+    type: str  # "active", "passive", or "ultimate"
     description: str
     level_required: int
     unlocked: bool = False
@@ -26,11 +27,11 @@ class Equipment(BaseModel):
     durability: int
     weight: float
     attributes: Dict[str, float]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Character(BaseModel):
-    user_id: int
+    user_id: str
     name: str
     character_type: str
     birthplace: str
@@ -41,15 +42,17 @@ class Character(BaseModel):
     rank: str = "Cadet"
     stats: CharacterStats = Field(default_factory=CharacterStats)
     gas: int = 5000
+    max_gas: int = 5000  # Added max_gas attribute
     crystals: int = 0
     valor: int = 0
     marks: int = 0
     explore_count: int = 0
     active_abilities: List[AbilityInfo] = Field(default_factory=list)
     passive_abilities: List[AbilityInfo] = Field(default_factory=list)
+    ultimate_abilities: List[AbilityInfo] = Field(default_factory=list)
     unlocked_abilities: Dict[str, bool] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -99,11 +102,15 @@ class Character(BaseModel):
             
         return int(total_exp)
 
-    def get_abilities(self) -> Dict[str, Dict[str, 'Ability']]:
+    def get_abilities(self) -> Dict[str, Dict[str, Any]]:
         character_data = get_character_data(self.character_type)
         if character_data is None:
             return {}
-        return character_data.abilities
+        return {
+            "active": {a.name: a for a in getattr(character_data, "active_abilities", [])},
+            "passive": {a.name: a for a in getattr(character_data, "passive_abilities", [])},
+            "ultimate": {a.name: a for a in getattr(character_data, "ultimate_abilities", [])},
+        }
 
     def level_up(self) -> None:
         if self.level < 125:
@@ -127,7 +134,7 @@ class Character(BaseModel):
             self._check_ability_unlocks()
 
     def _check_ability_unlocks(self) -> None:
-        for ability in self.active_abilities + self.passive_abilities:
+        for ability in self.active_abilities + self.passive_abilities + self.ultimate_abilities:
             if not ability.unlocked and self.level >= ability.level_required:
                 ability.unlocked = True
                 self.unlocked_abilities[ability.name] = True
@@ -180,7 +187,6 @@ class Character(BaseModel):
     
     def _get_hp_increase(self, old_level: int, new_level: int) -> int:
         """Calculate HP increase from level up."""
-        from database.characters import get_character_data
         character_data = get_character_data(self.character_type)
         if character_data:
             old_hp = character_data.get_max_hp(old_level)
@@ -189,31 +195,32 @@ class Character(BaseModel):
         return 0
 
     def unlock_abilities(self) -> None:
-        # Unlock abilities based on level requirements for both passive and active
+        # Unlock abilities based on level requirements for all types
         abilities = self.get_abilities()
         
-        # Check passive abilities
-        for ability_name, ability in abilities.get("passive", {}).items():
-            level_required = getattr(ability, 'level_required', 1)
-            if self.level >= level_required:
-                self.unlocked_abilities[ability_name] = True
-
-        # Check active abilities
-        for ability_name, ability in abilities.get("active", {}).items():
-            level_required = getattr(ability, 'level_required', 1)
-            if self.level >= level_required:
-                self.unlocked_abilities[ability_name] = True
-
-        # Finally unlock ultimate abilities
-        for ability in self.get_abilities().get("ultimate", {}).values():
-            if self.level >= ability.level_required and not ability.is_unlocked:
-                ability.is_unlocked = True  # Unlock the ultimate ability
-
+        for ability_type in ["passive", "active", "ultimate"]:
+            for ability_name, ability in abilities.get(ability_type, {}).items():
+                level_required = getattr(ability, 'level_required', 1)
+                if self.level >= level_required:
+                    self.unlocked_abilities[ability_name] = True
+                    # Add to appropriate ability list if not already present
+                    ability_info = AbilityInfo(
+                        name=ability_name,
+                        type=ability_type,
+                        description=ability.description,
+                        level_required=level_required,
+                        unlocked=True
+                    )
+                    if ability_type == "passive" and ability_info not in self.passive_abilities:
+                        self.passive_abilities.append(ability_info)
+                    elif ability_type == "active" and ability_info not in self.active_abilities:
+                        self.active_abilities.append(ability_info)
+                    elif ability_type == "ultimate" and ability_info not in self.ultimate_abilities:
+                        self.ultimate_abilities.append(ability_info)
 
 class TeamMember(BaseModel):
     character_name: str
     position: int
-
 
 class DailyExplores(BaseModel):
     """Model to track daily explores with dates"""
@@ -221,7 +228,7 @@ class DailyExplores(BaseModel):
     count: int
 
 class Player(BaseModel):
-    user_id: int
+    user_id: str
     username: str
     name: str
     level: int = 1
@@ -233,17 +240,19 @@ class Player(BaseModel):
     marks: int = 0
     explore_count: int = 0
     owned_characters: List[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     daily_streak: int = 0
     last_daily_claim: Optional[datetime] = None
-    inventory: Dict[str, Any] = Field(default_factory=dict)  # Changed from Dict[str, int] to Dict[str, Any]
+    inventory: Dict[str, Any] = Field(default_factory=dict)
     unlocked_areas: List[str] = Field(default_factory=list)
     completed_quests: List[str] = Field(default_factory=list)
     team: List[TeamMember] = Field(default_factory=list)
     guild_id: Optional[int] = None
     double_exp_end: Optional[datetime] = None
-    daily_explores: List[DailyExplores] = Field(default_factory=list)  # New field for tracking daily explores
+    daily_explores: List[DailyExplores] = Field(default_factory=list)
+    shop_refresh_date: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    shop_refresh_count: int = 0  # Added to track manual shop refreshes
 
     @property
     def xp_to_next_level(self) -> int:
@@ -269,7 +278,7 @@ class Player(BaseModel):
         total_exp = base_exp
         
         # Double EXP weekend
-        if self.double_exp_end and datetime.utcnow() < self.double_exp_end:
+        if self.double_exp_end and datetime.now(timezone.utc) < self.double_exp_end:
             total_exp *= 2
             
         # Guild bonus
@@ -345,7 +354,7 @@ class Player(BaseModel):
         self.daily_explores.append(new_daily)
         
         # Clean up old records (keep only last 7 days)
-        current_date = datetime.utcnow()
+        current_date = datetime.now(timezone.utc)
         cutoff_date = (current_date - timedelta(days=7)).strftime('%Y-%m-%d')
         self.daily_explores = [d for d in self.daily_explores if d.date >= cutoff_date]
         
@@ -362,6 +371,8 @@ class Titan(BaseModel):
     spawn_areas: List[str]
     min_level_requirement: int = 1
     internal_name: Optional[str] = None
+    drop_table: Dict[str, Any] = Field(default_factory=dict)
+    xp_reward: int = 0
 
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
@@ -425,8 +436,6 @@ HP_RANGES = {
 
 def generate_titan_name(difficulty: str) -> str:
     """Generate a unique titan name based on difficulty with anime-accurate names."""
-    import random
-    
     # 60% chance for basic titan name, 25% chance for descriptive prefix, 15% chance for unique combination
     rand = random.random()
     
@@ -458,8 +467,6 @@ def generate_titan_name(difficulty: str) -> str:
 
 def generate_titan_hp(level: int, difficulty: str) -> int:
     """Generate HP within specified ranges with level scaling and randomization"""
-    import random
-    
     min_hp, max_hp = HP_RANGES[difficulty]
     
     # Better level scaling formula - more moderate

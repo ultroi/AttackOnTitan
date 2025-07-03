@@ -1,61 +1,82 @@
-# db_instance.py
 import asyncio
 import motor.motor_asyncio
-from config import MONGO_URI, DB_NAME  
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from config import MONGO_URI, DB_NAME
 import logging
+from typing import Optional
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Global database instance
-_db_instance = None
-_initialized = False
+_db_instance: Optional[AsyncIOMotorDatabase] = None
+_initialized: bool = False
 _init_lock = asyncio.Lock()
 
-async def initialize_database():
+async def initialize_database() -> AsyncIOMotorDatabase:
     """Initialize the database connection with proper error handling."""
     global _db_instance, _initialized
     
     async with _init_lock:
         if not _initialized:
             try:
-                # Initialize the connection
-                client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
-                _db_instance = client[DB_NAME]  # Use the configured database name
+                # Initialize the connection with explicit options
+                client = motor.motor_asyncio.AsyncIOMotorClient(
+                    MONGO_URI,
+                    maxPoolSize=10,  # Limit connection pool size
+                    connectTimeoutMS=10000,  # 10-second timeout for connection
+                    serverSelectionTimeoutMS=10000  # 10-second timeout for server selection
+                )
+                _db_instance = client[DB_NAME]
                 
                 # Test the connection
                 await _db_instance.command('ping')
-                logger.info("Database connection established successfully")
+                logger.info(f"Database connection established successfully to {DB_NAME}")
+                
+                # Optional: Verify key collection exists (e.g., 'characters')
+                collections = await _db_instance.list_collection_names()
+                if 'characters' not in collections:
+                    logger.warning("Characters collection not found; may need initialization")
                 
                 _initialized = True
                 return _db_instance
                 
+            except motor.motor_asyncio.ServerSelectionTimeoutError as e:
+                logger.error(f"Server selection timeout: {str(e)}")
+                _initialized = False
+                _db_instance = None
+                raise ConnectionError(f"Database initialization failed: {str(e)}")
+            except motor.motor_asyncio.ConnectionFailure as e:
+                logger.error(f"Connection failure: {str(e)}")
+                _initialized = False
+                _db_instance = None
+                raise ConnectionError(f"Database initialization failed: {str(e)}")
             except Exception as e:
-                logger.error(f"Failed to initialize database: {str(e)}")
+                logger.error(f"Unexpected error during database initialization: {str(e)}")
                 _initialized = False
                 _db_instance = None
                 raise ConnectionError(f"Database initialization failed: {str(e)}")
     
     return _db_instance
 
-async def get_database():
+async def get_database() -> Optional[AsyncIOMotorDatabase]:
     """Get the database instance, initializing if necessary."""
     global _db_instance, _initialized
     
     if _db_instance is None or not _initialized:
         try:
             _db_instance = await initialize_database()
-        except Exception as e:
+        except ConnectionError as e:
             logger.error(f"Error getting database instance: {str(e)}")
             return None
             
     return _db_instance
 
-async def close_connection():
+async def close_connection() -> None:
     """Close the database connection."""
     global _db_instance, _initialized
     if _db_instance is not None:
         _db_instance.client.close()
+        logger.info("Database connection closed successfully")
         _db_instance = None
         _initialized = False
-        logger.info("Database connection closed")
