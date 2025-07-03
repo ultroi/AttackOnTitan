@@ -53,18 +53,17 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     user_last_explore[user_id] = current_time
-    await db.update_player(user_id, {"last_explore": current_time})
-
+    
+    db = await get_database()
+    
+    # Get player data
     player = await db.get_player(user_id)
     if not player:
-        await _reply_error(update, "You need to create a profile first with /start")
-        try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
+        await update.message.reply_text("You need to create a profile first with /start")
         return
-
-    current_date = datetime.now(timezone.utc)
+        
+    # Check if this explore should award daily EXP (first 125 explores)
+    current_date = datetime.utcnow()
     daily_explores_count = player.get_daily_explores_count(current_date)
 
     if daily_explores_count >= DAILY_EXPLORE_LIMIT:
