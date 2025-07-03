@@ -54,8 +54,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_last_explore[user_id] = current_time
     
-    db = await get_database()
-    
     # Get player data
     player = await db.get_player(user_id)
     if not player:

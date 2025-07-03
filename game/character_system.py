@@ -295,6 +295,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = str(query.from_user.id)
     db = Database()
+    await db.init_db()  # Ensure DB is initialized before use
     team = context.user_data.get("team", [])
     if not team:
         await query.answer("⚠️ Add members first!")

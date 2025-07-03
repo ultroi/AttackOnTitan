@@ -148,23 +148,23 @@ class ShopSystem:
         refresh_cost = await self._get_refresh_cost(context, user_id=player.user_id)
 
         header = (
-            "🏪 *ATTACK ON TITAN SHOP*\n"
+            "<b>ATTACK ON TITAN SHOP</b>\n"
             "═══════════════════════\n\n"
-            "💰 *Your Resources*\n"
-            f"🎯 Marks: `{player.marks:,}`\n"
-            f"💎 Crystals: `{player.crystal:,}`\n"
-            f"⚡ Valor: `{player.valor:,}`\n"
-            f"🛢️ Gas: `{player.gas:,}`\n\n"
-            "💱 *Currency Exchange*\n"
+            "<b> Your Resources</b>\n"
+            f"🎯 Marks: <code>{player.marks:,}</code>\n"
+            f"💎 Crystals: <code>{player.crystal:,}</code>\n"
+            f"⚡ Valor: <code>{player.valor:,}</code>\n"
+            f"🛢️ Gas: <code>{player.gas:,}</code>\n\n"
+            "<b>💱 Exchange</b>\n"
             "• 2 Marks ➜ 1 Gas\n"
             "• 50000 Marks ➜ 1 Crystal\n"
             "• 1250 Marks ➜ 1 Valor\n"
             "• 1 Crystal ➜ 40 Valor\n\n"
-            "`/buy item_name quantity`\n E.g., /buy gas 20 or /buy crystal 100\n\n"
-            "⏰ *Shop Information*\n"
+            "<code>/buy item_name quantity</code>\nE.g., /buy gas 20 or /buy crystal 100\n\n"
+            "<b>⏰ Shop Information</b>\n"
             f"• Next Free Refresh: {hours}h {minutes}m\n"
             f"• Manual Refresh Cost: {refresh_cost} Valor\n\n"
-            "🛍️ *SHOP CATEGORIES*\n"
+            "<b>🛍️ SHOP CATEGORIES</b>\n"
             "═══════════════════════\n"
         )
         keyboard = [
@@ -195,39 +195,39 @@ class ShopSystem:
             "barracks": "🏛️ Barracks Quartermaster",
             "hollow": "💀 Hollow Exchange"
         }
-        message = f"🏪 **{category_names.get(category, category.title())}**\n═══════════════════════\n\n"
+        message = f" <b>{category_names.get(category, category.title())}</b>\n═══════════════════════\n\n"
         keyboard = []
         db = await self._get_db(context)
 
         for item_key, item in available_items:
-            price_str = f"{item.price:,} {item.currency.title()}"
-            damage_info = f" | DMG: {item.damage_range}" if item.damage_range else ""
+            price_str = f"{getattr(item, 'price', 0):,} {getattr(item, 'currency', '').title()}"
+            damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
             rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
             purchases_today = await db.get_daily_purchases(player.user_id, item_key)
-            remaining = max(0, item.stock_limit - purchases_today) if item.stock_limit > 0 else None
+            remaining = max(0, getattr(item, 'stock_limit', 0) - purchases_today) if getattr(item, 'stock_limit', 0) > 0 else None
             last_purchase = await db.shop_purchases_collection.find_one(
                 {"user_id": player.user_id, "item_key": item_key},
                 sort=[("purchase_date", -1)]
             )
             can_purchase = True
-            if item.cooldown_hours > 0 and last_purchase:
+            if getattr(item, 'cooldown_hours', 0) > 0 and last_purchase:
                 last_time = last_purchase["purchase_date"]
-                if (datetime.now(timezone.utc) - last_time).total_seconds() < item.cooldown_hours * 3600:
+                if (datetime.now(timezone.utc) - last_time).total_seconds() < getattr(item, 'cooldown_hours', 0) * 3600:
                     can_purchase = False
 
             item_text = (
-                f"{rarity_emoji.get(item.rarity, '⚪')} **{item.name}**\n"
-                f"💰 {price_str}{damage_info}\n"
-                f"📝 {item.description}\n"
+                f"{rarity_emoji.get(getattr(item, 'rarity', ''), '⚪')} <b>{getattr(item, 'name', '')}</b>\n"
+                f"💰 <b>{price_str}</b>{damage_info}\n"
+                f"📝 {getattr(item, 'description', '')}\n"
             )
             if remaining is not None:
-                item_text += f"📦 Stock: {remaining}/{item.stock_limit}\n"
+                item_text += f"📦 Stock: {remaining}/{getattr(item, 'stock_limit', 0)}\n"
             if not can_purchase:
-                item_text += f"⏳ Cooldown: Wait {(item.cooldown_hours * 3600 - (datetime.now(timezone.utc) - last_time).total_seconds()) / 3600:.1f} hours\n"
+                item_text += f"⏳ Cooldown: Wait {(getattr(item, 'cooldown_hours', 0) * 3600 - (datetime.now(timezone.utc) - last_time).total_seconds()) / 3600:.1f} hours\n"
 
             message += item_text + "\n"
-            if await self._can_afford(player, item) and can_purchase and (item.stock_limit == -1 or remaining > 0):
-                keyboard.append([InlineKeyboardButton(f"🛒 Buy {item.name}", callback_data=f"buy_{item_key}")])
+            if await self._can_afford(player, item) and can_purchase and (getattr(item, 'stock_limit', 0) == -1 or (remaining is not None and remaining > 0)):
+                keyboard.append([InlineKeyboardButton(f"🛒 Buy {getattr(item, 'name', '')}", callback_data=f"buy_{item_key}")])
 
         keyboard.append([InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")])
         return message, InlineKeyboardMarkup(keyboard)
@@ -235,15 +235,15 @@ class ShopSystem:
     def _get_category_items(self, category: str) -> Dict[str, Equipment]:
         """Get items for a specific category."""
         if category == "weapons":
-            return {k: v for k, v in self.shop_items.items() if v.item_type == "weapon"}
+            return {k: v for k, v in self.shop_items.items() if v.type == "weapon"}
         elif category == "echo_shards":
-            return {k: v for k, v in self.shop_items.items() if v.item_type == "echo_shard"}
+            return {k: v for k, v in self.shop_items.items() if v.type == "echo_shard"}
         elif category == "gear":
-            return {k: v for k, v in self.shop_items.items() if v.item_type == "gear"}
+            return {k: v for k, v in self.shop_items.items() if v.type == "gear"}
         elif category == "utilities":
-            return {k: v for k, v in self.shop_items.items() if v.item_type == "utility"}
+            return {k: v for k, v in self.shop_items.items() if v.type == "utility"}
         elif category == "barracks":
-            return {k: v for k, v in self.shop_items.items() if v.item_type in ["weapon", "gear"] and v.rarity in ["common", "uncommon"]}
+            return {k: v for k, v in self.shop_items.items() if v.type in ["weapon", "gear"] and v.rarity in ["common", "uncommon"]}
         elif category == "hollow":
             regular_items = {k: v for k, v in self.shop_items.items() if v.rarity in ["rare", "epic", "legendary"]}
             regular_items.update(self.hidden_items)
@@ -327,7 +327,7 @@ class ShopSystem:
                 player.level_up()
                 level_ups += 1
 
-            await db.update_player(user_id, {
+            await db.update_player(player.user_id, {
                 "marks": player.marks,
                 "valor": player.valor,
                 "crystal": player.crystal,

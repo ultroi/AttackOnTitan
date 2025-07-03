@@ -23,10 +23,17 @@ class AbilityInfo(BaseModel):
 class Equipment(BaseModel):
     name: str
     type: str
+    item_type: str = ""  # Add item_type for shop filtering compatibility
     rarity: str
     durability: int
     weight: float
     attributes: Dict[str, float]
+    currency: str = "marks"  # Default currency
+    price: int = 0  # Default price
+    stock_limit: int = -1  # -1 means unlimited
+    cooldown_hours: int = 0  # Default no cooldown
+    description: str = ""  # Default empty description
+    unlock_conditions: Dict[str, Any] = Field(default_factory=dict)  # Ensure unlock_conditions always exists
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

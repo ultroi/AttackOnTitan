@@ -18,6 +18,7 @@ from game.character_system import (
     create_character, show_team, back_to_selection,
     remove_from_team, start_character_selection
 )
+from utils.extra import buy_command
 from game.explore import explore
 from game.callback_handlers import button_callback
 from game.shop_system import ShopSystem
@@ -104,7 +105,7 @@ async def create_application():
 
             application.add_handler(CommandHandler("shop", shop_command))
             application.add_handler(CommandHandler("status", status_command))
-
+            application.add_handler(CommandHandler("buy", buy_command))
             # Add callback handlers
             application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
             application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
@@ -121,36 +122,7 @@ async def create_application():
             application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
             application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))  # Register battle action handler
             application.add_handler(CallbackQueryHandler(button_callback))
-
-            async def buy_command(update: Update, context):
-                try:
-                    if not update.effective_user or not update.message:
-                        if update.message:
-                            await update.message.reply_text("User or message information not available.")
-                        return
-                    await init_user_data(update, context)
-                    shop_system = context.bot_data["shop_system"]
-                    args = context.args
-                    if len(args) < 1:
-                        await update.message.reply_text("Usage: /buy item_name [quantity]\nE.g., /buy gas 20 or /buy crystal 1")
-                        return
-                    item_name = args[0].lower()
-                    quantity = 1
-                    if len(args) > 1:
-                        try:
-                            quantity = int(args[1])
-                        except ValueError:
-                            await update.message.reply_text("Quantity must be a number. Usage: /buy item_name [quantity]")
-                            return
-                    result = await shop_system.purchase_item(context, str(update.effective_user.id), item_name, quantity)
-                    await update.message.reply_text(result["message"])
-                except (BadRequest, PyMongoError) as e:
-                    user_id = update.effective_user.id if update.effective_user else "unknown"
-                    logger.error(f"Error in buy_command for user {user_id}: {e}")
-                    if update.message:
-                        await update.message.reply_text(f"Error purchasing item: {str(e)}")
-
-            application.add_handler(CommandHandler("buy", buy_command))
+            
 
             async def error_handler(update: object, context):
                 """Handle errors in the application."""

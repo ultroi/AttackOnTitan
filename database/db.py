@@ -26,6 +26,7 @@ class Database:
         self.titans = None
         self.equipment = None
         self.shop_purchases = None
+        self.shop_purchases_collection = None  # For shop_system compatibility
 
     async def init_db(self):
         try:
@@ -37,7 +38,7 @@ class Database:
             self.titans = self.db.titans
             self.equipment = self.db.equipment
             self.shop_purchases = self.db.shop_purchases
-            
+            self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
             # Test the connection
             await self.db.command('ping')
             logger.info("Database connection verified (Motor)")
