@@ -73,9 +73,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Get player data
     player_data = await db.players.find_one({"user_id": user_id})
-    if not player:
+    if not player_data:
         await update.message.reply_text("You need to create a profile first with /start")
         return
+
+    player = Player(**player_data)
+    
         
     # Check if this explore should award daily EXP (first 125 explores)
     current_date = datetime.utcnow()
