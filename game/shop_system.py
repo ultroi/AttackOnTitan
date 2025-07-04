@@ -372,45 +372,6 @@ class ShopSystem:
             logger.error(f"Error in purchase_item for user {user_id}: {e}")
             return {"success": False, "message": f"Error purchasing {item_name}: {str(e)}"}
 
-    async def exchange_currency(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, from_currency: str, to_currency: str, amount: int) -> str:
-        """Handle currency exchange."""
-        try:
-            if amount <= 0:
-                raise ValueError("Amount must be positive")
-            db = await self._get_db(context)
-            player = await db.get_player(user_id)
-            if not player:
-                return "❌ Player not found!"
-
-            rates = {
-                ("crystal", "valor"): 40,  # 1 Crystal = 40 Valor
-                ("valor", "marks"): 1250,  # 1 Valor = 1250 Marks
-                ("crystal", "marks"): 50000,  # 1 Crystal = 50000 Marks
-                ("marks", "gas"): 0.5  # 2 Marks = 1 Gas
-            }
-            if (from_currency, to_currency) not in rates:
-                return "❌ Invalid currency exchange!"
-
-            rate = rates[(from_currency, to_currency)]
-            if getattr(player, from_currency, 0) < amount:
-                return f"❌ Insufficient {from_currency}! You need {amount:,}."
-
-            received = int(amount * rate)
-            update_data = {
-                from_currency: getattr(player, from_currency) - amount,
-                to_currency: getattr(player, to_currency, 0) + received
-            }
-            await db.update_player(user_id, update_data)
-            return (
-                f"✅ **Exchange Successful!**\n\n"
-                f"📤 **Exchanged:** {amount:,} {from_currency.title()}\n"
-                f"📥 **Received:** {received:,} {to_currency.title()}\n"
-                f"💱 **Rate:** 1 {from_currency} = {rate:,} {to_currency}"
-            )
-        except (ValueError, PyMongoError) as e:
-            logger.error(f"Error in exchange_currency for user {user_id}: {e}")
-            return f"❌ Error exchanging currency: {str(e)}"
-
     async def buy_currency(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, currency_type: str, amount: int) -> str:
         """Handle currency purchases and exchanges."""
         try:
