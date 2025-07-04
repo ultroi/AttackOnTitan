@@ -4,6 +4,7 @@ from telegram.constants import ParseMode
 from game.battle_system import cleanup_battle, active_battles
 from database.models import Player, Character, Titan, DailyExplores
 from database.db import Database
+from game.travel_map import TRAVEL_MAP  # Add this import at the top
 
 from datetime import datetime, timezone
 from typing import Dict
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 # Rate limiting for explore command
 user_last_explore: Dict[str, float] = {}
-EXPLORE_COOLDOWN = 5  # 5 seconds between explores
+EXPLORE_COOLDOWN = 3 
 DAILY_EXPLORE_LIMIT = 125  # Configurable daily limit
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,6 +147,33 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "An error occurred while updating your character.")
         return
 
+    # --- TRAVEL/DECISION POINT HANDLING ---
+    travel = getattr(player, "travel", {})
+    location = getattr(player, "location", None)
+    # If at a decision point, only show direction options, do not spawn titan
+    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+        directions = TRAVEL_MAP[location]
+        # Log button creation for debugging
+        logger.info(f"[EXPLORE] Creating travel decision buttons: {[f'travel_decision_{dir.strip().lower()}' for dir in directions.keys()]}")
+        keyboard = [
+            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")] for dir in directions.keys()
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await update.message.reply_text(
+                f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to send decision point reply: {e}")
+        finally:
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+        return
+
     titan = await db.generate_titan(player_character.level, player.unlocked_areas)
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
@@ -246,6 +274,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             remove_player_activity(user_id)
         except NameError:
             pass
+
+    # Travel progress increment and arrival logic moved to battle end handler
+    # (No travel progress or arrival logic here anymore)
 
 async def _reply_error(update: Update, message: str):
     """Helper to reply with error messages."""

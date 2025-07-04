@@ -246,6 +246,7 @@ class Player(BaseModel):
     explore_count: int = 0
     owned_characters: List[str] = Field(default_factory=list)
     location: str = ""  # Add location to Player, set on creation
+    travel: dict = Field(default_factory=dict)  # Add travel state
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     daily_streak: int = 0

@@ -934,6 +934,64 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         
         await db.delete_titan(user_id)
         
+        # --- Travel Progress Integration ---
+        travel = player_data.get("travel", {})
+        location = player_data.get("location", None)
+        arrived = False
+        decision_point = False
+        if travel.get("in_progress"):
+            travel["progress"] += 1
+            if travel["progress"] >= travel["required"]:
+                new_location = travel["to"]
+                from game.travel_map import TRAVEL_MAP
+                if new_location.startswith("Decision_") and new_location in TRAVEL_MAP:
+                    # At a decision point: update player location and clear travel
+                    await db.players.update_one(
+                        {"user_id": user_id},
+                        {"$set": {"location": new_location, "travel": {}}}
+                    )
+                    decision_point = True
+                    location = new_location
+                else:
+                    # Arrived at normal location
+                    await db.players.update_one(
+                        {"user_id": user_id},
+                        {"$set": {"location": new_location, "travel": {}}}
+                    )
+                    arrived = True
+            else:
+                # Save updated travel progress
+                await db.players.update_one(
+                    {"user_id": user_id},
+                    {"$set": {"travel": travel}}
+                )
+            # If at a decision point, prompt for direction
+            if decision_point:
+                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                directions = TRAVEL_MAP[location]
+                keyboard = [
+                    [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir}")] for dir in directions.keys()
+                ]
+                msg = f"<b>Decision Point Reached:</b> {location}\nChoose a direction to continue your journey:"
+                try:
+                    await query.edit_message_text(
+                        msg,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    await query.edit_message_text(msg)
+                return
+            elif arrived:
+                # Optionally notify arrival
+                try:
+                    await query.edit_message_text(
+                        f"You have arrived at <b>{location}</b>!",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+        # --- End Travel Progress Integration ---
         cleanup_battle(user_id, "completed", battle)
         
     except Exception as e:

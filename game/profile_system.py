@@ -33,20 +33,19 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👨‍💼 <b>Name:</b> <a href='tg://user?id={user_id}'>{first_name}</a>\n"
         f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-        f"⭐ <b>Level:</b> {player_level}\n"
+        f"🎖️ <b>Level:</b> {player_level}\n"
         f"⚡ <b>XP:</b> {player.xp} / {player_xp_to_next}\n"
-        f"🔋 <b>Total Gas:</b> {player.gas}\n"
-        f"🏠 <b>Current Location:</b> {escape(getattr(player, 'location', 'Unknown'))}\n\n"
+        f"🌪️ <b>Total Gas:</b> {player.gas}\n"
+        f"🏠 <b>Location:</b> {escape(getattr(player, 'location', 'Unknown'))}\n\n"
         f"💰 <b>Resources</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔮 <b>Titan Crystals:</b> <code>{player.crystal}</code>\n"
-        f"🏅 <b>Valor:</b> <code>{player.valor}</code>\n"
-        f"🎯 <b>Marks:</b> <code>{player.marks}</code>\n"
+        f"💠 <b>Titan Crystals:</b> <code>{player.crystal}</code>\n"
+        f"⚔️ <b>Valor:</b> <code>{player.valor}</code>\n"
+        f"🪙   <b>Marks:</b> <code>{player.marks}</code>\n"
         f"🗺️ <b>Explore:</b> <code>{player.explore_count}</code>\n"
     )
     keyboard = [
-        [InlineKeyboardButton("🎭 Character", callback_data="show_character_profile"),
-         InlineKeyboardButton("👥 Team", callback_data="manage_team")],
+        [InlineKeyboardButton("👥 Team", callback_data="manage_team")],
         [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]
     ]
     await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)

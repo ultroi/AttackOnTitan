@@ -9,6 +9,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
+from game.map_system import show_map, MAP_IMAGE_URL
 
 # Import handlers
 from game.character_system import (
@@ -23,10 +24,11 @@ from game.profile_system import (
 )
 from utils.extra import buy_command
 from game.explore import explore
-from game.callback_handlers import button_callback
+from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from database.db import Database
-from game.battle_system import handle_battle_action  # Import the battle action handler
+from game.battle_system import handle_battle_action, active_battles  # Import active_battles
+from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 
 # Load environment variables
 load_dotenv()
@@ -68,9 +70,11 @@ async def create_application():
                     context.user_data.update({"message_history": []})
 
             # Add command handlers
-            application.add_handler(CommandHandler("start", start_character_selection))
+            application.add_handler(CommandHandler("start", start_and_clear_memory))
             application.add_handler(CommandHandler("profile", profile))
             application.add_handler(CommandHandler("explore", explore))
+            application.add_handler(CommandHandler("map", show_map))
+            application.add_handler(CommandHandler("travel", travel_command))
 
             async def shop_command(update: Update, context):
                 try:
@@ -124,8 +128,12 @@ async def create_application():
             application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
             application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
             application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))  # Register battle action handler
+            application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)") )  # Register travel direction handler (exclude travel_decision_)
+            application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$") )  # Register cancel travel handler
+            application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_") )
+            # The catch-all handler must be last
             application.add_handler(CallbackQueryHandler(button_callback))
-            
+
 
             async def error_handler(update: object, context):
                 """Handle errors in the application."""
@@ -215,6 +223,24 @@ async def set_webhook():
     except (BadRequest, PyMongoError) as e:
         logger.error(f"Failed to set webhook: {e}")
         return {"status": "error", "message": str(e)}, 500
+
+# Wrap start_character_selection to clear all temporary memory for the user
+async def start_and_clear_memory(update: Update, context):
+    user_id = str(update.effective_user.id) if update.effective_user else None
+    # Clear user_data
+    if hasattr(context, 'user_data'):
+        context.user_data.clear()
+    # Remove from active_battles if present
+    if user_id and user_id in active_battles:
+        try:
+            battle = active_battles.pop(user_id)
+            if hasattr(battle, 'dispose'):
+                battle.dispose()
+        except Exception:
+            pass
+    # Optionally clear other temp memory here
+    # Call the original start handler
+    await start_character_selection(update, context)
 
 async def main():
     """Main entry point for the bot."""

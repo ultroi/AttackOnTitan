@@ -14,6 +14,7 @@ from game.character_system import (
     confirm_character_selection,
     create_character,
 )
+from game.travel_map import TRAVEL_MAP
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,13 @@ async def update_battle_status(query: Update.callback_query, battle: BattleSyste
         await query.answer("Error updating battle status.")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle callback queries for shop, character, and battle actions."""
     query = update.callback_query
+    logger.info(f"[HANDLER] button_callback got callback: {query.data}")
     if not query or not update.effective_user:
         logger.warning("No query or user information available")
         return
+    # Log every callback data received here for debugging
+    logger.info(f"[BUTTON_CALLBACK] Received callback data: {query.data}")
     await query.answer()
     user_id = str(update.effective_user.id)
     try:
@@ -201,3 +204,47 @@ async def handle_shop_refresh(context: ContextTypes.DEFAULT_TYPE, query, user_id
     await query.answer("All items refreshed!", show_alert=True)
     # UI does not change except for new items and cost, so no edit_message_text here
     return None
+
+async def handle_travel_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle travel decision point direction selection with robust debug logging and direction validation."""
+    query = update.callback_query
+    await query.answer()
+    db = context.bot_data.get("db")
+    user_id = str(query.from_user.id)
+    player = await db.get_player(user_id)
+    location = getattr(player, "location", "Unknown")
+    # Debug logging for troubleshooting
+    logger.info(f"[TRAVEL_DECISION] Callback data: {query.data}, Player location: {location}")
+    if not location.startswith("Decision_") or location not in TRAVEL_MAP:
+        logger.warning(f"[TRAVEL_DECISION] Not at a valid decision point. (location: {location})")
+        await query.edit_message_text(f"Not at a valid decision point. (location: {location})")
+        return
+    directions = TRAVEL_MAP[location]
+    logger.info(f"[TRAVEL_DECISION] Available directions: {list(directions.keys())}")
+    dir_selected = query.data.replace("travel_decision_", "").replace("travel_decision:", "").strip().lower()
+    # Normalize direction keys for comparison
+    normalized_directions = {k.strip().lower(): k for k in directions.keys()}
+    logger.info(f"[TRAVEL_DECISION] Normalized directions: {normalized_directions}, Selected: {dir_selected}")
+    # Extra debug log for failure
+    if dir_selected not in normalized_directions:
+        logger.error(f"[TRAVEL_DECISION] dir_selected: {dir_selected}, normalized_directions: {normalized_directions}, directions.keys(): {list(directions.keys())}, location: {location}")
+        logger.warning(f"[TRAVEL_DECISION] Invalid direction: {dir_selected}. Available: {list(directions.keys())}")
+        await query.edit_message_text(f"Invalid direction: {dir_selected}. Available: {list(directions.keys())}")
+        return
+    real_key = normalized_directions[dir_selected]
+    to, required = directions[real_key]
+    travel_state = {
+        "in_progress": True,
+        "direction": real_key,  # Always use the original map key
+        "from": location,
+        "to": to,
+        "progress": 0,
+        "required": required
+    }
+    # Update both travel and location so the user moves forward
+    await db.update_player(user_id, {"travel": travel_state, "location": to})
+    msg = f"You continue your journey <b>{real_key}</b> ({location} → {to}) [0/{required} explores]"
+    if query.message and getattr(query.message, "photo", None):
+        await query.edit_message_caption(msg, parse_mode="HTML")
+    else:
+        await query.edit_message_text(msg, parse_mode="HTML")
