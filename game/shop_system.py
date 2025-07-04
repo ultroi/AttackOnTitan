@@ -17,6 +17,7 @@ class ShopSystem:
         self.shop_items = self._initialize_shop_items()
         self.hidden_items = {}  # Items that appear under special conditions
         self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        self.last_refresh_times = {}  # Track last refresh times per user
 
     async def _get_db(self, context: ContextTypes.DEFAULT_TYPE) -> Database:
         """Get database instance from context."""
@@ -129,7 +130,7 @@ class ShopSystem:
 
     async def show_shop(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, category: str = "main") -> tuple[str, InlineKeyboardMarkup]:
         """Display the shop interface."""
-        await self.check_daily_refresh()
+        await self._check_daily_refresh(user_id)
         db = await self._get_db(context)
         player = await db.get_player(user_id)
         if not player:
@@ -196,7 +197,7 @@ class ShopSystem:
             "gear": "🛡️ Gear",
             "utilities": "🌀 Utilities",
             "barracks": "🏛️ Barracks Quartermaster",
-            "hollow": "💀 Hollow Exchange"
+            "hollow": "💀 Black Market"
         }
         message = f" <b>{category_names.get(category, category.title())}</b>\n═══════════════════════\n\n"
         keyboard = []
@@ -238,21 +239,7 @@ class ShopSystem:
         if row:
             keyboard.append(row)
         keyboard.append([InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")])
-        new_markup = InlineKeyboardMarkup(keyboard)
-        # Check for duplicate message and markup to avoid Telegram 400 error
-        if context.user_data is None:
-            context.user_data = {}
-        last_text = context.user_data.get(f"last_shop_text_{category}", None)
-        last_markup = context.user_data.get(f"last_shop_markup_{category}", None)
-        if last_text == message and str(last_markup) == str(new_markup):
-            # No change, do not edit
-            return message, new_markup
-        context.user_data[f"last_shop_text_{category}"] = message
-        context.user_data[f"last_shop_markup_{category}"] = str(new_markup)
-        # Ensure message is not empty before returning
-        if not message.strip():
-            message = "🚫 No items available in this category or you don't meet the requirements."
-        return message, new_markup
+        return message, InlineKeyboardMarkup(keyboard)
 
     def _get_category_items(self, category: str) -> Dict[str, Equipment]:
         """Get items for a specific category."""
@@ -293,7 +280,7 @@ class ShopSystem:
         """Check if player can afford the item."""
         if item.currency == "marks":
             return player.marks >= item.price
-        elif item.currency == "crystals":
+        elif item.currency == "crystal":
             return player.crystal >= item.price
         elif item.currency == "valor":
             return player.valor >= item.price
@@ -473,9 +460,13 @@ class ShopSystem:
 
             await db.update_player(user_id, {"valor": player.valor - refresh_cost})
             await db.store_shop_refresh(user_id, (await db.get_shop_refresh_count(user_id)) + 1)
-            self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Update last refresh time for this user
+            self.last_refresh_times[user_id] = datetime.now(timezone.utc)
+            
             # Clear the user's random shop selection so new items are shown
             self._clear_random_shop_items(str(user_id), context)
+            
             next_cost = refresh_cost + 50
             return f"✅ Shop refreshed successfully!\nSpent: {refresh_cost} valor\nNext refresh will cost: {next_cost} valor"
         except (ValueError, PyMongoError) as e:
@@ -487,20 +478,8 @@ class ShopSystem:
         try:
             if callback_data == "shop_refresh":
                 refresh_result = await self.refresh_shop(context, user_id)
-                # Always show the same shop UI after refresh, but send a popup alert
-                update = getattr(context, 'update', None)
-                callback_query = getattr(update, 'callback_query', None) if update else None
-                if "✅" in refresh_result:
-                    # Send popup alert (show_alert=True)
-                    if hasattr(context, 'bot') and callback_query:
-                        await context.bot.answer_callback_query(
-                            callback_query.id,
-                            text="All items refreshed!",
-                            show_alert=True
-                        )
-                    # Show the same shop UI (items will be randomized)
-                    return await self.show_shop(context, user_id)
-                return refresh_result, InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]])
+                # Show the same shop UI (items will be randomized)
+                return await self.show_shop(context, user_id)
             elif callback_data.startswith("buy_"):
                 item_key = callback_data.replace("buy_", "")
                 result = await self.purchase_item(context, user_id, item_key)
@@ -514,31 +493,44 @@ class ShopSystem:
             logger.error(f"Error in handle_callback for user {user_id}: {e}")
             return f"❌ Error handling shop action: {str(e)}", InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]])
 
-    async def check_daily_refresh(self):
-        """Check and handle daily shop refresh."""
+    async def _check_daily_refresh(self, user_id: str):
+        """Check and handle daily shop refresh for a specific user."""
         current_time = datetime.now(timezone.utc)
         midnight = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Check if we need to do a daily refresh (after midnight)
         if current_time >= midnight and self.rotation_date < midnight:
             self.rotation_date = midnight
+            # Clear the user's random shop selection
+            self._clear_random_shop_items(user_id)
             # Reset refresh counts in database (handled by get_shop_refresh_count)
 
     def _get_random_shop_items(self, category: str, user_id: str, context: ContextTypes.DEFAULT_TYPE) -> list:
-        """Get a randomized list of 12 items for the user and category, store in user_data."""
+        """Get a randomized list of items for the user and category, store in user_data."""
         all_items = list(self._get_category_items(category).items())
-        if len(all_items) <= 12:
-            return all_items
-        # Use user_data to persist the random selection per user per category
+        all_keys = set(k for k, _ in all_items)
         user_data = context.user_data if context.user_data is not None else {}
         key = f"shop_random_{category}_{user_id}"
+        # For all categories (including hollow), persist selection until refresh
         if key in user_data:
             selected_keys = user_data[key]
-            selected = [item for item in all_items if item[0] in selected_keys]
-            # If for some reason not enough items, re-randomize
-            if len(selected) == 12:
+            # Only use if all keys are still valid and length is correct
+            expected_len = 6 if category == "hollow" else 12
+            if (
+                len(selected_keys) == expected_len and
+                all(k in all_keys for k in selected_keys)
+            ):
+                selected = [item for item in all_items if item[0] in selected_keys]
+                selected.sort(key=lambda x: selected_keys.index(x[0]))
                 return selected
-        # Randomly select 12 unique items
-        selected = random.sample(all_items, 12)
-        user_data[key] = [item[0] for item in selected]  # Only update the key, do not reassign user_data
+        # If not present or invalid, randomize and store
+        if category == "hollow":
+            pick_count = min(6, len(all_items))
+            selected = random.sample(all_items, pick_count)
+        else:
+            pick_count = min(12, len(all_items))
+            selected = random.sample(all_items, pick_count)
+        user_data[key] = [item[0] for item in selected]
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: ContextTypes.DEFAULT_TYPE):

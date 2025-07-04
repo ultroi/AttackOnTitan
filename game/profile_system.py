@@ -6,6 +6,7 @@ from database.db import Database
 from database.models import Player, TeamMember
 from database.characters import get_character_data
 from html import escape
+from game.shop_system import ShopSystem
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,15 +16,24 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = Database()
     player = await db.get_player(user_id)
     if not player:
-        await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        if update.message:
+            await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text("You haven't created a player account yet! Use /start to begin.")
         return
     character_name = player.team[0].character_name if player.team else None
     if not character_name:
-        await update.message.reply_text("You haven't created a character yet! Use /start to begin.")
+        if update.message:
+            await update.message.reply_text("You haven't created a character yet! Use /start to begin.")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text("You haven't created a character yet! Use /start to begin.")
         return
     character = await db.get_character(user_id, character_name)
     if not character:
-        await update.message.reply_text(f"Error: Character {character_name} not found.")
+        if update.message:
+            await update.message.reply_text(f"Error: Character {character_name} not found.")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(f"Error: Character {character_name} not found.")
         return
     player_level = player.level
     player_xp_to_next = player.xp_to_next_level
@@ -45,10 +55,14 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗺️ <b>Explore:</b> <code>{player.explore_count}</code>\n"
     )
     keyboard = [
-        [InlineKeyboardButton("👥 Team", callback_data="manage_team")],
+        [InlineKeyboardButton("👥 Team", callback_data="manage_team"),
+        InlineKeyboardButton("🧳 Items", callback_data="show_inventory")],
         [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]
     ]
-    await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    if update.message:
+        await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -70,7 +84,6 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Complete missions to unlock more!"
         )
         return
-    
     context.user_data.setdefault(
         "team",
         [m if isinstance(m, TeamMember) else TeamMember(**m) for m in player.team] if player.team else []
@@ -84,34 +97,35 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
             role = char_data.role if char_data else "Unknown"
             team_text += (
                 f"{get_position_emoji(member.position)} "
-                f"<b>{escape(member.character_name)}</b> (Role: {escape(role)})\n"
+                f"<b>{escape(member.character_name)}</b> (Role: {escape(role)}) "
+                f"<i>[Remove]</i>"
+                "\n"
             )
     else:
         team_text += "No members selected yet.\n"
     team_text += "\n<i>Select up to 3 characters:</i>"
-    keyboard = []
-    row = []
+    # Add buttons for adding characters not in team
+    add_buttons = []
     for char in owned_characters:
-        in_team = any(m.character_name == char for m in team)
-        if in_team:
-            label = f"✅ {char}"
-            cb_data = f"remove_from_team_{char}"
-        else:
-            label = f"➕ {char}"
-            cb_data = f"add_to_team_{char}"
-        row.append(InlineKeyboardButton(label, callback_data=cb_data))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
+        if not any(m.character_name == char for m in team):
+            add_buttons.append(InlineKeyboardButton(f"➕ {char}", callback_data=f"add_to_team_{char}"))
+    # Remove buttons for characters in team
+    remove_buttons = []
+    for member in team:
+        remove_buttons.append(InlineKeyboardButton(f"❌ {member.character_name}", callback_data=f"remove_from_team_{member.character_name}"))
+    keyboard = []
+    # Add add_buttons in rows of 2
+    for i in range(0, len(add_buttons), 2):
+        keyboard.append(add_buttons[i:i+2])
+    # Add remove_buttons in rows of 2
+    for i in range(0, len(remove_buttons), 2):
+        keyboard.append(remove_buttons[i:i+2])
     keyboard.append([
         InlineKeyboardButton("🔄 Clear", callback_data="clear_team"),
         InlineKeyboardButton("💾 Save", callback_data="save_team")
     ])
     keyboard.append([
-        InlineKeyboardButton("👤 Profile", callback_data="show_character_profile"),
-        InlineKeyboardButton("❌ Exit", callback_data="exit_profile")
+        InlineKeyboardButton("Back", callback_data="show_profile")
     ])
     await query.edit_message_text(
         team_text,
@@ -281,3 +295,86 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]),
         parse_mode=ParseMode.HTML
     )
+
+async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = player.inventory or {}
+    weapons = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "weapon"]
+    gear = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "gear"]
+    utilities = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "utility"]
+    echo_shards = inv.get("echo_shard", 0)
+    inv_text = (
+        "🧳 <b>Your Inventory:</b>\n"
+        f"- Weapons: <b>{len(weapons)}</b>\n"
+        f"- Gear: <b>{len(gear)}</b>\n"
+        f"- Utilities: <b>{len(utilities)}</b>\n"
+        f"- Echo Shards: <b>{echo_shards}</b>\n\n"
+        "<i>View details:</i>"
+    )
+    keyboard = [
+        [InlineKeyboardButton("View Weapons", callback_data="view_weapons"),
+         InlineKeyboardButton("View Gear", callback_data="view_gear")],
+        [InlineKeyboardButton("View Utilities", callback_data="view_utilities"),
+        InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards")],
+        [InlineKeyboardButton("Back", callback_data="show_profile")]
+    ]
+    await query.edit_message_text(inv_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = player.inventory or {}
+    weapons = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "weapon"]
+    text = "<b>Weapons:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in weapons) if weapons else "No weapons.")
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = player.inventory or {}
+    gear = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "gear"]
+    text = "<b>Gear:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in gear) if gear else "No gear.")
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = player.inventory or {}
+    utilities = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "utility"]
+    text = "<b>Utilities:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in utilities) if utilities else "No utilities.")
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    inv = player.inventory or {}
+    echo_shards = inv.get("echo_shard", 0)
+    text = f"<b>Echo Shards:</b>\n- {echo_shards}"
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)

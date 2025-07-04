@@ -35,6 +35,7 @@ class Database:
                 raise ConnectionError("Failed to get database instance")
             self.characters = self.db.characters
             self.players = self.db.players
+            self.players_collection = self.players 
             self.titans = self.db.titans
             self.equipment = self.db.equipment
             self.shop_purchases = self.db.shop_purchases
@@ -382,3 +383,11 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get connection stats: {e}")
             return None
+
+    async def record_purchase(self, user_id: str, item_key: str):
+        """Record a shop purchase for tracking stock/cooldown."""
+        await self.shop_purchases_collection.insert_one({
+            "user_id": user_id,
+            "item_key": item_key,
+            "purchase_date": datetime.now(timezone.utc)
+        })

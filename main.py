@@ -5,12 +5,12 @@ import uvicorn
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
 from game.map_system import show_map, MAP_IMAGE_URL
-
+from database.db import Database
 # Import handlers
 from game.character_system import (
     show_character_selection,
@@ -20,13 +20,18 @@ from game.character_system import (
 )
 from game.profile_system import (
     profile, show_character_profile,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team
+    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
+    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards
 )
 from utils.extra import buy_command
 from game.explore import explore
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
-from database.db import Database
+from game.profile_system import (
+    profile, show_character_profile,
+    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
+    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards
+)
 from game.battle_system import handle_battle_action, active_battles  # Import active_battles
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 
@@ -84,8 +89,9 @@ async def create_application():
                         return
                     await init_user_data(update, context)
                     shop_system = context.bot_data["shop_system"]
-                    await shop_system.check_daily_refresh()
-                    message, reply_markup = await shop_system.show_shop(context, str(update.effective_user.id))
+                    user_id = str(update.effective_user.id)
+                    # ShopSystem now handles daily refresh internally
+                    message, reply_markup = await shop_system.show_shop(context, user_id)
                     await update.message.reply_text(
                         text=message,
                         reply_markup=reply_markup,
@@ -113,7 +119,7 @@ async def create_application():
             application.add_handler(CommandHandler("shop", shop_command))
             application.add_handler(CommandHandler("status", status_command))
             application.add_handler(CommandHandler("buy", buy_command))
-            # Add callback handlers
+            # Add only specific non-shop callback handlers
             application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
             application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
             application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -127,11 +133,18 @@ async def create_application():
             application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
             application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
             application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
-            application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))  # Register battle action handler
-            application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)") )  # Register travel direction handler (exclude travel_decision_)
-            application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$") )  # Register cancel travel handler
-            application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_") )
-            # The catch-all handler must be last
+            application.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
+            application.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
+            application.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
+            application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
+            application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
+            application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
+            application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)") )
+            application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$") )
+            application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
+            # The catch-all handler must be last and should match all shop-related callbacks
+            application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+            # Absolute last fallback for anything else
             application.add_handler(CallbackQueryHandler(button_callback))
 
 

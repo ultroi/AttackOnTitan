@@ -7,6 +7,7 @@ from database.models import Player, Character
 from game.explore import active_battles
 from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
 from game.shop_system import ShopSystem
+from database.db import Database
 from game.profile_system import show_character_profile, profile
 from game.character_system import (
     show_character_selection,
@@ -56,30 +57,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query or not update.effective_user:
         logger.warning("No query or user information available")
         return
-    # Log every callback data received here for debugging
-    logger.info(f"[BUTTON_CALLBACK] Received callback data: {query.data}")
-    await query.answer()
     user_id = str(update.effective_user.id)
     try:
-        db = context.bot_data.get("db")
-        if not db:
-            logger.error("Database not initialized in context.bot_data")
-            await query.edit_message_text("Internal error: Database not initialized.")
+        shop_system = context.bot_data.get("shop_system")
+        if not shop_system:
+            logger.error("Shop system not initialized in context.bot_data")
+            await query.edit_message_text("Internal error: Shop system not initialized.")
             return
-
+        # Use ShopSystem's handle_callback for shop-related actions
+        if query.data and (query.data.startswith("shop_") or query.data.startswith("buy_") or query.data == "shop_refresh"):
+            result = await shop_system.handle_callback(context, user_id, query.data)
+            if result is not None:
+                message, reply_markup = result
+                await query.edit_message_text(
+                    text=message,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+            return
         # Initialize context.user_data if needed
         if not context.user_data:
             context.user_data.update({"message_history": []})
-
         # Dispatch table for callbacks
         handlers = {
-            "shop_": lambda data: handle_shop_category(db, query, data.split("_")[1], context),
-            "buy_": lambda data: handle_buy_item(db, query, data.split("_", 1)[1], context),
-            "shop_refresh": lambda data: handle_shop_refresh(context, query, user_id),
             "show_character_profile": lambda data: show_character_profile(update, context),
             "back_to_profile": lambda data: profile(update, context),
             "exit_profile": lambda data: handle_exit_profile(query),
-            "fill_gas": lambda data: handle_fill_gas(db, query, user_id),
+            "fill_gas": lambda data: handle_fill_gas(context.bot_data.get("db"), query, user_id),
             "select_": lambda data: handle_select_character(query, context, data.split("_")[1]),
             "confirm_": lambda data: confirm_character_selection(update, context),
             "back_to_selection": lambda data: show_character_selection(update, context),
@@ -90,12 +94,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "battle_": lambda data: handle_battle_start(update, context),
             "location_": lambda data: create_character(update, context),
         }
-
         # Handle callback based on prefix
         for prefix, handler in handlers.items():
             if query.data and query.data.startswith(prefix):
                 result = await handler(query.data)
-                if result:
+                if result is not None:
                     message, reply_markup = result
                     await query.edit_message_text(
                         text=message,
@@ -103,42 +106,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="HTML"
                     )
                 return
-
         await query.edit_message_text("Unknown action.")
     except (BadRequest, PyMongoError) as e:
         logger.error(f"Error in button_callback for user {user_id}: {e}")
         await query.edit_message_text(f"Error processing action: {str(e)}")
-
-async def handle_shop_category(db: Database, query: Update.callback_query, category: str, context: ContextTypes.DEFAULT_TYPE):
-    """Handle shop category callbacks."""
-    user_id = str(query.from_user.id)
-    if context.user_data is None:
-        context.user_data = {}
-    shop_system = context.bot_data.get("shop_system")
-    if not shop_system:
-        await query.answer("Shop system not initialized.")
-        return None
-    message_text, reply_markup = await shop_system.show_shop(context, user_id, category)
-    context.user_data.setdefault("message_history", []).append(f"shop_{category}")
-    return message_text, reply_markup
-
-async def handle_buy_item(db: Database, query: Update.callback_query, item_key: str, context: ContextTypes.DEFAULT_TYPE):
-    """Handle item purchase callbacks."""
-    user_id = str(query.from_user.id)
-    if context.user_data is None:
-        context.user_data = {}
-    shop_system = context.bot_data.get("shop_system")
-    if not shop_system:
-        await query.answer("Shop system not initialized.")
-        return None
-    result = await shop_system.purchase_item(context, user_id, item_key)
-    category = "main"
-    for prev_msg in reversed(context.user_data.get("message_history", [])):
-        if prev_msg.startswith("shop_"):
-            category = prev_msg.split("_")[1]
-            break
-    message_text, reply_markup = await shop_system.show_shop(context, user_id, category)
-    return f"{result['message']}\n\n{message_text}", reply_markup
 
 async def handle_exit_profile(query: Update.callback_query):
     """Handle profile exit callback."""
@@ -194,16 +165,6 @@ async def handle_select_character(query: Update.callback_query, context: Context
     await show_character_details(query, context)
     return None
 
-async def handle_shop_refresh(context: ContextTypes.DEFAULT_TYPE, query, user_id: str):
-    """Handle shop refresh callback: randomize items, increase cost, and show popup alert."""
-    shop_system = context.bot_data.get("shop_system")
-    if not shop_system:
-        await query.answer("Shop system not initialized.")
-        return None
-    await shop_system.refresh_shop(context, user_id)
-    await query.answer("All items refreshed!", show_alert=True)
-    # UI does not change except for new items and cost, so no edit_message_text here
-    return None
 
 async def handle_travel_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle travel decision point direction selection with robust debug logging and direction validation."""
