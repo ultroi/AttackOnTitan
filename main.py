@@ -12,11 +12,14 @@ from telegram import Update as TelegramUpdate
 
 # Import handlers
 from game.character_system import (
-    show_character_selection, profile, show_character_profile,
-    add_to_team, save_team, clear_team, manage_team,
+    show_character_selection,
     show_character_details, confirm_character_selection,
-    create_character, show_team, back_to_selection,
-    remove_from_team, start_character_selection
+    create_character, back_to_selection,
+    start_character_selection
+)
+from game.profile_system import (
+    profile, show_character_profile,
+    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team
 )
 from utils.extra import buy_command
 from game.explore import explore
@@ -130,9 +133,10 @@ async def create_application():
 
                 if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                     try:
-                        await update.effective_message.reply_text(
-                            f"An error occurred: {str(context.error)}"
-                        )
+                        if update.effective_message:
+                            await update.effective_message.reply_text(
+                                "An error occurred while processing your request. Please try again later."
+                            )
                     except BadRequest:
                         pass
 
@@ -160,6 +164,7 @@ async def webhook():
     """Handle incoming webhook updates."""
     logger.info("Received a webhook POST from Telegram")
     client_ip = request.remote_addr
+
     if not any(client_ip.startswith(ip.strip()) for ip in ALLOWED_IPS):
         logger.warning(f"Unauthorized IP: {client_ip}")
         return Response(status=403)

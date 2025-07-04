@@ -6,14 +6,13 @@ from database.db import Database
 from database.models import Player, Character
 from game.explore import active_battles
 from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
-from game.shop_system import shop_system
+from game.shop_system import ShopSystem
+from game.profile_system import show_character_profile, profile
 from game.character_system import (
     show_character_selection,
     show_character_details,
     confirm_character_selection,
     create_character,
-    profile,
-    show_character_profile
 )
 import logging
 
@@ -73,6 +72,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         handlers = {
             "shop_": lambda data: handle_shop_category(db, query, data.split("_")[1], context),
             "buy_": lambda data: handle_buy_item(db, query, data.split("_", 1)[1], context),
+            "shop_refresh": lambda data: handle_shop_refresh(context, query, user_id),
             "show_character_profile": lambda data: show_character_profile(update, context),
             "back_to_profile": lambda data: profile(update, context),
             "exit_profile": lambda data: handle_exit_profile(query),
@@ -85,6 +85,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "ability_": lambda data: handle_battle_action(update, context),
             "action_run": lambda data: handle_battle_action(update, context),
             "battle_": lambda data: handle_battle_start(update, context),
+            "location_": lambda data: create_character(update, context),
         }
 
         # Handle callback based on prefix
@@ -108,13 +109,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_shop_category(db: Database, query: Update.callback_query, category: str, context: ContextTypes.DEFAULT_TYPE):
     """Handle shop category callbacks."""
     user_id = str(query.from_user.id)
+    if context.user_data is None:
+        context.user_data = {}
+    shop_system = context.bot_data.get("shop_system")
+    if not shop_system:
+        await query.answer("Shop system not initialized.")
+        return None
     message_text, reply_markup = await shop_system.show_shop(context, user_id, category)
-    context.user_data["message_history"].append(f"shop_{category}")
+    context.user_data.setdefault("message_history", []).append(f"shop_{category}")
     return message_text, reply_markup
 
 async def handle_buy_item(db: Database, query: Update.callback_query, item_key: str, context: ContextTypes.DEFAULT_TYPE):
     """Handle item purchase callbacks."""
     user_id = str(query.from_user.id)
+    if context.user_data is None:
+        context.user_data = {}
+    shop_system = context.bot_data.get("shop_system")
+    if not shop_system:
+        await query.answer("Shop system not initialized.")
+        return None
     result = await shop_system.purchase_item(context, user_id, item_key)
     category = "main"
     for prev_msg in reversed(context.user_data.get("message_history", [])):
@@ -172,7 +185,19 @@ async def handle_fill_gas(db: Database, query: Update.callback_query, user_id: s
     )
 
 async def handle_select_character(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE, char_name: str):
-    """Handle character selection callback."""
+    if context.user_data is None:
+        context.user_data = {}
     context.user_data["selected_character"] = char_name
     await show_character_details(query, context)
+    return None
+
+async def handle_shop_refresh(context: ContextTypes.DEFAULT_TYPE, query, user_id: str):
+    """Handle shop refresh callback: randomize items, increase cost, and show popup alert."""
+    shop_system = context.bot_data.get("shop_system")
+    if not shop_system:
+        await query.answer("Shop system not initialized.")
+        return None
+    await shop_system.refresh_shop(context, user_id)
+    await query.answer("All items refreshed!", show_alert=True)
+    # UI does not change except for new items and cost, so no edit_message_text here
     return None

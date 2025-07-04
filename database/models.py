@@ -3,7 +3,6 @@ import random
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from database.characters import CharacterData, get_character_data, AbilityEffect
-from database.schemas import Ability, CharacterStats
 
 class CharacterStats(BaseModel):
     ATK: int = 10
@@ -41,7 +40,6 @@ class Character(BaseModel):
     user_id: str
     name: str
     character_type: str
-    birthplace: str
     current_hp: int
     level: int = 1
     xp: int = 0
@@ -247,6 +245,7 @@ class Player(BaseModel):
     marks: int = 0
     explore_count: int = 0
     owned_characters: List[str] = Field(default_factory=list)
+    location: str = ""  # Add location to Player, set on creation
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     daily_streak: int = 0

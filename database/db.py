@@ -129,7 +129,7 @@ class Database:
             raise
 
     # Character operations
-    async def create_character(self, user_id: str, name: str, character_type: str, birthplace: str, current_hp: int) -> Character:
+    async def create_character(self, user_id: str, name: str, character_type: str, current_hp: int) -> Character:
         """Create a new character."""
         try:
             char_data = get_character_data(character_type)
@@ -145,7 +145,6 @@ class Database:
                 user_id=user_id,
                 name=name,
                 character_type=character_type,
-                birthplace=birthplace,
                 current_hp=current_hp,
                 level=1,
                 xp=0,
@@ -366,7 +365,7 @@ class Database:
             existing_char = await self.get_character(user_id, character_name)
             if existing_char:
                 return False
-            await self.create_character(user_id, character_name, character_name, birthplace=char_data.birthplace, current_hp=char_data.base_stats.get("current_hp", 100))
+            await self.create_character(user_id, character_name, character_name, current_hp=char_data.base_stats.get("current_hp", 100))
             return True
         except Exception as e:
             logger.error(f"Failed to add new character to player: {e}")

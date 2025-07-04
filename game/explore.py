@@ -59,6 +59,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await update.message.reply_text("You need to create a profile first with /start")
         return
+    # MIGRATION: If player.location missing, set from first character's birthplace if available
+    if not getattr(player, "location", None):
+        chars = await db.get_player_characters(user_id)
+        if chars and hasattr(chars[0], "birthplace"):
+            player.location = chars[0].birthplace
+            await db.update_player(user_id, {"location": player.location})
         
     # Check if this explore should award daily EXP (first 125 explores)
     current_date = datetime.utcnow()
