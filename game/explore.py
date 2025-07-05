@@ -103,8 +103,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     exp_message = f"You gained {explore_exp} EXP for exploring!"
     if level_ups > 0:
-        exp_message += f"\nLevel up! You're now level {player.level}!"
-
+        level_up_info = player.add_xp(0)  # Get level up data without adding more XP
+        rewards = level_up_info["level_ups"][-1]["rewards"]  # Get last level's rewards
+    
+        reward_text = [
+            f"✨ LEVEL UP! ({player.level-level_ups} → {player.level}) ✨",
+            "═══════════════════════",
+            f"🎯 Marks: +{rewards['marks']}",
+            f"⚡ Valor: +{rewards['valor']}",
+            f"💎 Crystals: +{rewards['crystals']}"
+        ]
+    
+        if rewards["unlocks"]:
+            reward_text.append("\n🔓 UNLOCKS:")
+            reward_text.extend(f"• {item}" for item in rewards["unlocks"])
+    
+        exp_message += "\n\n" + "\n".join(reward_text)
+    
     if not player.team:
         await _reply_error(update, "You need to have at least one character in your team. Use /team to manage your team.")
         try:
