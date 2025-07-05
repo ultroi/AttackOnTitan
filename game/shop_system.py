@@ -146,10 +146,13 @@ class ShopSystem:
         time_until_refresh = next_midnight - now
         hours = int(time_until_refresh.total_seconds() // 3600)
         minutes = int((time_until_refresh.total_seconds() % 3600) // 60)
+
+        #cslculate time left 
         total_seconds = int(time_until_refresh.total_seconds())
-        hours = total_seconds // 3600
-        minutes = (total_seconds % 3600) // 60
-        seconds = total_seconds % 60
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        time_left = f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
+
     
         refresh_cost = await self._get_refresh_cost(context, user_id=player.user_id)
 
@@ -169,7 +172,7 @@ class ShopSystem:
             "• 1 Crystal ➜ 40 Valor\n\n"
             "<code>/buy item_name quantity</code>\nE.g., /buy gas 20 or /buy crystal 100\n\n"
             "<b>⏰ Shop Information</b>\n"
-            f"• <b>Next Free Refresh:</b> {hours:02d}h {minutes:02d}m {seconds:02d}s Left\n"
+            f"• <b>Next Free Refresh:</b> {time_left} Left\n"
             f"• <b>Manual Refresh Cost:</b> {refresh_cost} Valor\n\n"
             "═══════════════════════\n"
         )
