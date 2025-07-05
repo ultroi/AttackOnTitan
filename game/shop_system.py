@@ -146,9 +146,15 @@ class ShopSystem:
         time_until_refresh = next_midnight - now
         hours = int(time_until_refresh.total_seconds() // 3600)
         minutes = int((time_until_refresh.total_seconds() % 3600) // 60)
+        total_seconds = int(time_until_refresh.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+    
         refresh_cost = await self._get_refresh_cost(context, user_id=player.user_id)
 
         header = (
+            "═══════════════════════\n"
             "<b>ATTACK ON TITAN SHOP</b>\n"
             "═══════════════════════\n\n"
             "<b> Your Resources</b>\n"
@@ -163,9 +169,8 @@ class ShopSystem:
             "• 1 Crystal ➜ 40 Valor\n\n"
             "<code>/buy item_name quantity</code>\nE.g., /buy gas 20 or /buy crystal 100\n\n"
             "<b>⏰ Shop Information</b>\n"
-            f"• Next Free Refresh: {hours}h {minutes}m\n"
-            f"• Manual Refresh Cost: {refresh_cost} Valor\n\n"
-            "<b>🛍️ SHOP CATEGORIES</b>\n"
+            f"• <b>Next Free Refresh:</b> {hours:02d}h {minutes:02d}m {seconds:02d}s Left\n"
+            f"• <b>Manual Refresh Cost:</b> {refresh_cost} Valor\n\n"
             "═══════════════════════\n"
         )
         keyboard = [
