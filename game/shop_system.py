@@ -495,12 +495,12 @@ class ShopSystem:
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-    """Clear the user's random shop selection for all categories."""
-    user_data = context.user_data if context is not None and context.user_data is not None else {}
-    for category in ["weapons", "echo_shards", "gear", "utilities", "barracks", "hollow"]:
-        key = f"shop_random_{category}_{user_id}"
-        if key in user_data:
-            del user_data[key]
+        """Clear the user's random shop selection for all categories."""
+        user_data = context.user_data if context is not None and context.user_data is not None else {}
+        for category in ["weapons", "echo_shards", "gear", "utilities", "barracks", "hollow"]:
+            key = f"shop_random_{category}_{user_id}"
+            if key in user_data:
+                del user_data[key]
             
 
 shop_system = ShopSystem()
