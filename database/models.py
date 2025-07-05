@@ -295,33 +295,40 @@ class Player(BaseModel):
         return int(total_exp)
 
     def level_up(self) -> None:
+        old_level = self.level
         self.level += 1
         self.xp -= self.xp_to_next_level
+    
+        # Apply rewards
+        rewards = self.get_level_up_rewards(self.level)
+        self.marks += rewards["marks"]
+        self.valor += rewards["valor"]
+        self.crystal += rewards["crystals"]
+    
+        # Update rank
+        if self.level >= 25:
+            self.rank = "Veteran"
+        elif self.level >= 15:
+            self.rank = "Elite"
+        elif self.level >= 5:
+            self.rank = "Soldier"
+    
+        return {
+            "old_level": old_level,
+            "new_level": self.level,
+            "rewards": rewards
+        }
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
         self.xp += amount
         self.total_xp += amount
-        
+    
         level_ups = []
         while self.xp >= self.xp_to_next_level:
-            old_level = self.level
-            self.level_up()
-            new_level = self.level
-            
-            # Calculate level up rewards
-            bonus_marks = new_level * 50  # 50 marks per level
-            bonus_crystals = 1 if new_level % 5 == 0 else 0  # Crystal every 5 levels
-            bonus_valor = 1 if new_level % 10 == 0 else 0  # Valor every 10 levels
-            
-            level_ups.append({
-                "old_level": old_level,
-                "new_level": new_level,
-                "bonus_marks": bonus_marks,
-                "bonus_crystals": bonus_crystals,
-                "bonus_valor": bonus_valor
-            })
-        
+            level_up_data = self.level_up()
+            level_ups.append(level_up_data)
+    
         return {
             "level_ups": level_ups,
             "total_level_ups": len(level_ups),
@@ -329,6 +336,82 @@ class Player(BaseModel):
             "current_xp": self.xp,
             "xp_to_next": self.xp_to_next_level
         }
+
+    def get_level_up_rewards(self, new_level: int) -> dict:
+        """Calculate rewards based on player's new level tier"""
+        rewards = {
+            "marks": 0,
+            "valor": 0,
+            "crystals": 0,
+            "unlocks": []
+        }
+    
+        # Tier 1: Onboarding Phase (1-10)
+        if 1 <= new_level <= 10:
+            rewards["marks"] = random.randint(250, 500)
+            if new_level % 2 == 0:
+                rewards["valor"] = random.randint(1, 2)
+        
+            if new_level == 5:
+                rewards["unlocks"].append("First Echo Trait Slot")
+            elif new_level == 8:
+                rewards["unlocks"].append("Second Weapon Slot")
+
+        # Tier 2: Core Progression (11-20)
+        elif 11 <= new_level <= 20:
+            rewards["marks"] = random.randint(600, 1000)
+            rewards["valor"] = 2
+            if new_level == 15:
+                rewards["crystals"] = 1
+            
+            if new_level == 12:
+                rewards["unlocks"].append("Hollow Exchange")
+            elif new_level == 18:
+                rewards["unlocks"].append("Second Echo Trait Slot")
+
+        # Tier 3: Customization (21-30)
+        elif 21 <= new_level <= 30:
+            rewards["marks"] = random.randint(1500, 2000)
+            rewards["valor"] = 3
+            if new_level % 2 == 0:
+                rewards["crystals"] = 1
+            
+            if new_level == 22:
+                rewards["unlocks"].append("Respec Token")
+            elif new_level == 25:
+                rewards["unlocks"].append("Echo Shard Crafting")
+
+        # Tier 4: Prestige (31-40)
+        elif 31 <= new_level <= 40:
+            rewards["marks"] = random.randint(2000, 2500)
+            rewards["valor"] = 5
+            rewards["crystals"] = random.randint(1, 2)
+        
+            if new_level == 35:
+                rewards["unlocks"].append("Echo Trait Enhancement")
+            elif new_level == 40:
+                rewards["unlocks"].append("Legacy Hall")
+
+        # Tier 5: Apex (41+)
+        else:
+            rewards["marks"] = 3000 + (min(new_level, 50) * 100)
+            rewards["valor"] = 6
+            rewards["crystals"] = 2
+        
+            if new_level == 45:
+                rewards["unlocks"].append("Elite Clan Access")
+            elif new_level == 50:
+                rewards["unlocks"].append("Titan Lord Title")
+
+
+        if new_level > 50:
+            # Progressive scaling (2% increase per level beyond 50)
+            scale = 1 + (new_level - 50) * 0.02
+            rewards["marks"] = int(rewards["marks"] * scale)
+            rewards["valor"] = max(rewards["valor"], int(6 * scale))
+            rewards["crystals"] = min(rewards["crystals"], 5)  # Cap crystals at 5
+            
+        return rewards
 
     def add_character(self, character_name: str) -> None:
         if character_name not in self.owned_characters:
