@@ -264,12 +264,14 @@ class Player(BaseModel):
     @property
     def xp_to_next_level(self) -> int:
         """Calculate XP needed for next level (no cap)"""
-        if self.level < 100:
-            return 500 + (self.level * 50)  # Start at 550, increase by 50 per level
-        elif self.level < 1000:
-            return 5000 + (self.level * 100)  # Start at ~15k, increase by 100 per level
+        if self.level < 50:
+            return 2400 + (self.level * 150)  # Start at 550, increase by 50 per level
+        elif self.level < 100:
+            return 20000 + (self.level * 300)  # Start at ~15k, increase by 100 per level
+        elif self.level < 500:
+            return 50000 + (self.level * 500
         else:
-            return 50000 + (self.level * 200)  # Start at ~250k, increase by 200 per level
+            return 90000 + (self.level * 1000)  # Start at ~250k, increase by 200 per level
 
     def calculate_exp_gain(self, action: str, amount: int = 1) -> int:
         """Calculate EXP gain from various actions"""
