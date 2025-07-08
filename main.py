@@ -218,8 +218,7 @@ async def webhook(request: Request):
         await app_instance.start()
         update = Update.de_json(json_data, app_instance.bot)
         await app_instance.process_update(update)
-        await app_instance.stop()
-        await app_instance.shutdown()
+        # Do NOT call stop() or shutdown() here to avoid event loop issues on Vercel
         return Response(status_code=200)
     except Exception as e:
         logger.error(f"Webhook processing error: {e}")
