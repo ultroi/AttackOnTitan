@@ -378,3 +378,33 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"<b>Echo Shards:</b>\n- {echo_shards}"
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    db = Database()
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        return
+    bot_username = "Attackon_TitanBot"  # Your bot's username without @
+    referral_code = player.referral_code or user_id
+    referral_link = f"https://t.me/{bot_username}?start=referral_{referral_code}"
+    referred_by = player.referred_by or "None"
+    referral_count = player.referral_count if hasattr(player, 'referral_count') else 0
+    text = (
+        "<b>[©] Referral System</b>\n\n"
+        "<b>[©] Your Referral Link:</b>\n"
+        f"<a href='{referral_link}'>{referral_link}</a>\n\n"
+        f"➳ <b>Your Referral Count:</b> <code>{referral_count}</code>\n"
+        f"➳ <b>Referred By:</b> <code>{referred_by}</code>\n\n"
+        "<b>[©] Starter Rewards</b>\n"
+        "For New Players: 25,000 Marks, 25 Valor, 2 Titan Crystals\n"
+        "For Referrers: 40 Valor\n\n"
+        "<b>[©] Level Up Rewards</b>\n"
+        "• When Referee reaches level 20, Referrer gets 50 Valor.\n"
+        "• When Referee reaches level 50, Referrer gets 2 Titan Crystals.\n\n"
+        "<b>[©] Mass Share Milestones</b>\n"
+        "• 2 Titan Crystals for 10 referrals.\n"
+        "• 20 Titan Crystals for 50 referrals.\n"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)

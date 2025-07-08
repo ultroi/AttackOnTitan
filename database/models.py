@@ -296,7 +296,7 @@ class Player(BaseModel):
             
         return int(total_exp)
 
-    def level_up(self) -> None:
+    def level_up(self) -> dict:
         old_level = self.level
         self.level += 1
         self.xp -= self.xp_to_next_level

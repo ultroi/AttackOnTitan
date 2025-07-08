@@ -78,6 +78,13 @@ async def get_database() -> Optional[AsyncIOMotorDatabase]:
         logger.error(f"Error getting database instance: {str(e)}")
         return None
 
+async def get_persistent_database() -> Optional[AsyncIOMotorDatabase]:
+    """Get the persistent global database instance (for persistent servers)."""
+    global _db_instance, _initialized
+    if not _initialized or _db_instance is None:
+        await initialize_database()
+    return _db_instance
+
 async def close_connection() -> None:
     """Close the database connection."""
     global _db_instance, _initialized
