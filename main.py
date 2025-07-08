@@ -9,8 +9,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
+from ipaddress import ip_network, ip_address
 from game.map_system import show_map, MAP_IMAGE_URL
 from database.db import Database
+
 # Import handlers
 from game.character_system import (
     show_character_selection,
@@ -27,12 +29,7 @@ from utils.extra import buy_command
 from game.explore import explore
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
-from game.profile_system import (
-    profile, show_character_profile,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards
-)
-from game.battle_system import handle_battle_action, active_battles  # Import active_battles
+from game.battle_system import handle_battle_action, active_battles
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 
 # Load environment variables
@@ -42,11 +39,15 @@ if TOKEN is None:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 ENV = os.getenv("ENV", "development")
+
+# Updated ALLOWED_IPS with proper CIDR ranges and specific IPs
 ALLOWED_IPS = [
-    "91.108.4.0/22",
-    "91.108.56.0/22",
-    "149.154.160.0/20",
-    "95.161.64.0/20"
+    "91.108.4.0/22",      # Telegram IP range
+    "91.108.5.82",        # Specific Telegram IP that was being blocked
+    "91.108.56.0/22",     # Telegram IP range
+    "149.154.160.0/20",   # Telegram IP range
+    "95.161.64.0/20",     # Telegram IP range
+    "64.29.17.131"        # Your Vercel IP
 ]
 
 # Configure logging
@@ -61,6 +62,17 @@ app = Flask(__name__)
 
 # Global application instance
 application = None
+
+def is_ip_allowed(client_ip: str) -> bool:
+    """Check if client IP is in allowed list."""
+    try:
+        ip = ip_address(client_ip)
+        for net in ALLOWED_IPS:
+            if ip in ip_network(net):
+                return True
+        return False
+    except ValueError:
+        return False
 
 async def create_application():
     """Create and configure the Telegram bot application."""
@@ -95,7 +107,6 @@ async def create_application():
                     await init_user_data(update, context)
                     shop_system = context.bot_data["shop_system"]
                     user_id = str(update.effective_user.id)
-                    # ShopSystem now handles daily refresh internally
                     message, reply_markup = await shop_system.show_shop(context, user_id)
                     await update.message.reply_text(
                         text=message,
@@ -124,7 +135,8 @@ async def create_application():
             application.add_handler(CommandHandler("shop", shop_command))
             application.add_handler(CommandHandler("status", status_command))
             application.add_handler(CommandHandler("buy", buy_command))
-            # Add only specific non-shop callback handlers
+            
+            # Add callback handlers
             application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
             application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
             application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -144,12 +156,10 @@ async def create_application():
             application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
             application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
             application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
-            application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)") )
-            application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$") )
+            application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
+            application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
             application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
-            # The catch-all handler must be last and should match all shop-related callbacks
             application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-            # Absolute last fallback for anything else
             application.add_handler(CallbackQueryHandler(button_callback))
 
             async def error_handler(update: object, context):
@@ -173,17 +183,18 @@ async def create_application():
             raise
     return application
 
-# Webhook endpoints
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Handle incoming webhook updates."""
-    logger.info("Received a webhook POST from Telegram")
     client_ip = request.remote_addr
+    logger.info(f"Received webhook request from IP: {client_ip}")
 
-    if not any(client_ip.startswith(ip.strip()) for ip in ALLOWED_IPS):
-        logger.warning(f"Unauthorized IP: {client_ip}")
+    # IP verification
+    if not is_ip_allowed(client_ip):
+        logger.warning(f"Unauthorized IP blocked: {client_ip}")
         return Response(status=403)
 
+    # Secret token verification
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
         logger.warning("Invalid secret token received")
@@ -191,16 +202,17 @@ async def webhook():
 
     try:
         json_data = request.get_json()
-        logger.info(f"Webhook payload: {json_data}")
         if not json_data:
+            logger.warning("Empty webhook payload received")
             return Response(status=400)
 
-        application = await create_application()
-        update = Update.de_json(json_data, application.bot)
-        await application.process_update(update)
+        logger.debug(f"Webhook payload: {json_data}")
+        app = await create_application()
+        update = Update.de_json(json_data, app.bot)
+        await app.process_update(update)
         return Response(status=200)
-    except (BadRequest, PyMongoError) as e:
-        logger.error(f"Webhook error: {e}")
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
         return Response(status=500)
 
 @app.route('/')
@@ -208,55 +220,74 @@ def index():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "message": "Attack on Titan Bot is running"
+        "message": "Attack on Titan Bot is running",
+        "environment": ENV
     }
 
 @app.route('/favicon.ico')
 def favicon():
-    return Response(status=204) 
+    return Response(status=204)
 
 @app.route('/set_webhook', methods=['GET', 'POST'])
 async def set_webhook():
     """Set webhook URL for the bot."""
     try:
         webhook_url = f"https://{request.host}/webhook"
+        logger.info(f"Attempting to set webhook to: {webhook_url}")
+        
         if not webhook_url.startswith("https://"):
             return {"status": "error", "message": "Webhook URL must use HTTPS"}, 400
-        application = await create_application()
-        await application.bot.set_webhook(
+        
+        app = await create_application()
+        await app.bot.set_webhook(
             url=webhook_url,
-            secret_token=SECRET_TOKEN
+            secret_token=SECRET_TOKEN,
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"]
         )
+        
+        # Verify webhook was set
+        webhook_info = await app.bot.get_webhook_info()
+        logger.info(f"Webhook info: {webhook_info}")
+        
         return {
             "status": "success",
-            "message": f"Webhook set to {webhook_url}"
+            "message": f"Webhook set to {webhook_url}",
+            "webhook_info": webhook_info.to_dict()
         }
-    except (BadRequest, PyMongoError) as e:
+    except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
         return {"status": "error", "message": str(e)}, 500
 
-# Wrap start_character_selection to clear all temporary memory for the user
 async def start_and_clear_memory(update: Update, context):
+    """Clear all temporary memory for the user and start fresh."""
     user_id = str(update.effective_user.id) if update.effective_user else None
+    
     # Clear user_data
     if hasattr(context, 'user_data'):
         context.user_data.clear()
+    
     # Remove from active_battles if present
     if user_id and user_id in active_battles:
         try:
             battle = active_battles.pop(user_id)
             if hasattr(battle, 'dispose'):
                 battle.dispose()
-        except Exception:
-            pass
-    # Optionally clear other temp memory here
+        except Exception as e:
+            logger.error(f"Error clearing battle for user {user_id}: {e}")
+    
     # Call the original start handler
     await start_character_selection(update, context)
 
 async def main():
     """Main entry point for the bot."""
     try:
-        logger.info("Starting in webhook mode")
+        logger.info(f"Starting bot in {ENV} environment")
+        
+        # Initialize application before starting server
+        app_instance = await create_application()
+        
+        # Configure and start server
         config = uvicorn.Config(
             app=app,
             host="0.0.0.0",
@@ -264,7 +295,6 @@ async def main():
             log_level="info"
         )
         server = uvicorn.Server(config)
-        await create_application()  # Ensure application is initialized
         await server.serve()
     except Exception as e:
         logger.error(f"Bot crashed with error: {e}")
