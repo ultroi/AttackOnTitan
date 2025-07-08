@@ -37,7 +37,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Rate limiting check
     current_time = datetime.now(timezone.utc).timestamp()
     db = context.bot_data.get("db")
-    if not db:
+    if db is None:
         logger.error("Database not initialized in context.bot_data")
         await _reply_error(update, "Internal error: Database not initialized.")
         return
@@ -291,8 +291,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Failed to cleanup expired titan for user {user_id}: {e}")
     titan_timeout_task = asyncio.create_task(titan_encounter_timeout())
     context.bot_data[f"titan_timeout_{user_id}"] = titan_timeout_task
-    # --- End titan encounter expiration logic ---
-# ...existing code...
+
+
 async def _reply_error(update: Update, message: str):
     """Helper to reply with error messages."""
     try:

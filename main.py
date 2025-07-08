@@ -113,6 +113,11 @@ async def initialize_application():
             await application.start()
             app_initialized = True
             logger.info("Bot application initialized and started successfully")
+            # Send startup message to group
+            try:
+                await application.bot.send_message(chat_id=-1002848899456, text="Started !!")
+            except Exception as e:
+                logger.error(f"Failed to send startup message: {e}")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}", exc_info=True)
         app_initialized = False
