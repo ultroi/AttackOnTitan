@@ -92,6 +92,9 @@ async def initialize_application():
         application.bot_data["db"] = db
         application.bot_data["shop_system"] = ShopSystem()
 
+        # Register handlers in one place
+        register_handlers(application)
+
         # Initialize user_data for all updates
         async def init_user_data(update: Update, context):
             if not context.user_data:
@@ -100,74 +103,6 @@ async def initialize_application():
 
         # Add command handlers
         application.add_handler(CommandHandler("start", start_and_clear_memory))
-        application.add_handler(CommandHandler("profile", profile))
-        application.add_handler(CommandHandler("explore", explore))
-        application.add_handler(CommandHandler("map", show_map))
-        application.add_handler(CommandHandler("travel", travel_command))
-
-        async def shop_command(update: Update, context):
-            try:
-                if not update.effective_user or not update.message:
-                    if update.message:
-                        await update.message.reply_text("User or message information not available.")
-                    return
-                await init_user_data(update, context)
-                shop_system = context.bot_data["shop_system"]
-                user_id = str(update.effective_user.id)
-                message, reply_markup = await shop_system.show_shop(context, user_id)
-                await update.message.reply_text(
-                    text=message,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML"
-                )
-            except (BadRequest, PyMongoError) as e:
-                user_id = update.effective_user.id if update.effective_user else "unknown"
-                logger.error(f"Error in shop_command for user {user_id}: {e}")
-                if update.message:
-                    await update.message.reply_text(f"Error accessing shop: {str(e)}")
-
-        async def status_command(update: Update, context):
-            try:
-                if update.message:
-                    await update.message.reply_text(
-                        "🛠 Attack on Titan Bot is running!\n"
-                        f"Environment: {ENV}\n"
-                        "Use /start to begin your journey."
-                    )
-            except BadRequest as e:
-                logger.error(f"Error in status_command: {e}")
-                if update.message:
-                    await update.message.reply_text("Error checking bot status.")
-
-        application.add_handler(CommandHandler("shop", shop_command))
-        application.add_handler(CommandHandler("status", status_command))
-        application.add_handler(CommandHandler("buy", buy_command))
-        
-        # Add callback handlers
-        application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
-        application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
-        application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
-        application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
-        application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
-        application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
-        application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
-        application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
-        application.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
-        application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
-        application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
-        application.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
-        application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
-        application.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
-        application.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
-        application.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
-        application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
-        application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
-        application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
-        application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
-        application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
-        application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
-        application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-        application.add_handler(CallbackQueryHandler(button_callback))
 
         async def error_handler(update: object, context):
             """Handle errors in the application."""
@@ -254,12 +189,37 @@ async def webhook(request: Request):
             return Response(status_code=400)
 
         logger.debug(f"Webhook payload: {json_data}")
-        app_instance = await initialize_application()
-        if not app_initialized:
-            logger.error("Application not initialized properly")
-            return Response(content="Service unavailable", status_code=503)
+
+        # Per-request Application instance (no global usage)
+        app_instance = Application.builder().token(TOKEN).build()
+        db = Database()
+        await db.init_db()
+        app_instance.bot_data["db"] = db
+        app_instance.bot_data["shop_system"] = ShopSystem()
+        # Register handlers in one place
+        register_handlers(app_instance)
+
+        async def error_handler(update: object, context):
+            if isinstance(context.error, asyncio.CancelledError):
+                logger.warning(f"Task cancelled for update {update}")
+                return
+            logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+            if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
+                try:
+                    if update.effective_message:
+                        await update.effective_message.reply_text(
+                            "An error occurred !! Please report to mods"
+                        )
+                except BadRequest:
+                    pass
+        app_instance.add_error_handler(error_handler)
+
+        await app_instance.initialize()
+        await app_instance.start()
         update = Update.de_json(json_data, app_instance.bot)
         await app_instance.process_update(update)
+        await app_instance.stop()
+        await app_instance.shutdown()
         return Response(status_code=200)
     except Exception as e:
         logger.error(f"Webhook processing error: {e}")
@@ -279,21 +239,17 @@ async def health_check():
     try:
         return {
             "status": "ok",
-            "initialized": app_initialized,
-            "bot_username": application.bot.username if application and application.bot else None
+            "initialized": True,
+            "bot_username": None
         }
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
-
-@app.get("/favicon.ico")
-async def favicon():
-    return Response(status_code=204)
 
 @app.get("/status")
 async def status():
     return {
         "status": "running",
-        "initialized": app_initialized,
+        "initialized": True,
         "last_update": datetime.now().isoformat(),
         "active_battles": len(active_battles)
     }
@@ -323,6 +279,40 @@ async def set_webhook(request: Request):
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+def register_handlers(app_instance):
+    app_instance.add_handler(CommandHandler("start", start_and_clear_memory))
+    app_instance.add_handler(CommandHandler("profile", profile))
+    app_instance.add_handler(CommandHandler("explore", explore))
+    app_instance.add_handler(CommandHandler("map", show_map))
+    app_instance.add_handler(CommandHandler("travel", travel_command))
+    app_instance.add_handler(CommandHandler("shop", buy_command))
+    app_instance.add_handler(CommandHandler("status", profile))
+    app_instance.add_handler(CommandHandler("buy", buy_command))
+    app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
+    app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
+    app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
+    app_instance.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
+    app_instance.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
+    app_instance.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
+    app_instance.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
+    app_instance.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
+    app_instance.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
+    app_instance.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
+    app_instance.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+    app_instance.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
+    app_instance.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
+    app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
+    app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
+    app_instance.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
+    app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
+    app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
+    app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
+    app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
+    app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
+    app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
+    app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+    app_instance.add_handler(CallbackQueryHandler(button_callback))
 
 async def start_and_clear_memory(update: Update, context):
     """Clear all temporary memory for the user and start fresh."""
