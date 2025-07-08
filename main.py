@@ -106,10 +106,11 @@ async def initialize_application():
                 except BadRequest:
                     pass
         application.add_error_handler(error_handler)
-        await application.initialize()
-        await application.start()
-        app_initialized = True
-        logger.info("Bot application initialized and started successfully")
+        if not app_initialized:
+            await application.initialize()
+            await application.start()
+            app_initialized = True
+            logger.info("Bot application initialized and started successfully")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}", exc_info=True)
         app_initialized = False
