@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import uvicorn
+from datetime import datetime
 from flask import Flask, request, Response
 from dotenv import load_dotenv
 from telegram import Update
@@ -203,13 +204,14 @@ async def shutdown_application():
     """Gracefully shutdown the application."""
     global application, app_initialized
     if application and app_initialized:
-        logger.info("Starting application shutdown...")
+        logger.info("Starting graceful shutdown...")
         try:
-            await asyncio.wait_for(application.stop(), timeout=10)
-            await asyncio.wait_for(application.shutdown(), timeout=5)
-            logger.info("Application shutdown completed successfully")
-        except asyncio.TimeoutError:
-            logger.warning("Application shutdown timed out")
+            # Stop receiving updates first
+            await application.updater.stop()
+            # Then stop the application
+            await application.stop()
+            await application.shutdown()
+            logger.info("Shutdown completed successfully")
         except Exception as e:
             logger.error(f"Error during shutdown: {e}", exc_info=True)
         finally:
@@ -222,10 +224,13 @@ def handle_shutdown(signum, frame):
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(shutdown_application())
+    except Exception as e:
+        logger.error(f"Error during shutdown handling: {e}")
     finally:
         loop.close()
         if loop.is_running():
             loop.stop()
+
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
@@ -291,6 +296,15 @@ async def health_check():
 def favicon():
     return Response(status=204)
 
+@app.route('/status')
+async def status():
+    return {
+        "status": "running",
+        "initialized": app_initialized,
+        "last_update": datetime.now().isoformat(),
+        "active_battles": len(active_battles)
+    }
+
 @app.route('/set_webhook', methods=['GET', 'POST'])
 async def set_webhook():
     """Set webhook URL for the bot."""
@@ -342,22 +356,10 @@ async def start_and_clear_memory(update: Update, context):
     # Call the original start handler
     await start_character_selection(update, context)
 
-def handle_shutdown(signum, frame):
-    """Handle shutdown signals."""
-    logger.info(f"Received shutdown signal {signum}")
-    if application and app_initialized:
-        # Create a new event loop for shutdown if needed
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(application.stop())
-            loop.run_until_complete(application.shutdown())
-        finally:
-            loop.close()
 
 async def main():
-    """Main entry point for the bot."""
     try:
+        await asyncio.sleep(2)
         logger.info(f"Starting bot in {ENV} environment")
         
         # Set up signal handlers
