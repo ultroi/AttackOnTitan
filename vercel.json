@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/main.py",
+      "src": "main.py",       # Now points to root-level file
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "15mb",
@@ -13,10 +13,7 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/main.py"
+      "dest": "main.py"       # Routes all traffic to root-level file
     }
-  ],
-  "env": {
-    "PYTHONUNBUFFERED": "1"
-  }
+  ]
 }
