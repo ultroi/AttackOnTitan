@@ -800,29 +800,24 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     asyncio.create_task(battle_timeout(user_id, query, battle))
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE):
-    """Handle battle end with rewards or defeat message."""
+    user_id = str(user_id)
     try:
         if battle.timeout_task and not battle.timeout_task.done():
             battle.timeout_task.cancel()
-        
         db = Database()
         await db.init_db()
-
         player_data = await db.players.find_one({"user_id": user_id})
         if not player_data:
             await query.edit_message_text("❌ Player data not found!")
             cleanup_battle(user_id, "error", battle)
             return
-
         explore_count = player_data.get("explore_count", 0)
         await db.players.update_one(
             {"user_id": user_id},
             {"$inc": {"explore_count": 1}}
         )
-        
         send = context.bot.send_message
         chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
-
         if battle.titan_hp <= 0:
             rewards = battle.calculate_rewards(
                 titan=battle.titan,
@@ -832,14 +827,11 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 valor=0,
                 crystal=0
             )
-
             character_xp = rewards["xp"] // 2
             player_xp = rewards["xp"] - character_xp
-            
             char_level_info = battle.character.add_xp(character_xp)
             player_obj = Player(**player_data)
             player_level_info = player_obj.add_xp(player_xp)
-            
             reward_updates = {
                 "$inc": {
                     "crystal": rewards["crystal"],
@@ -853,12 +845,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     "updated_at": datetime.now(timezone.utc)
                 }
             }
-            
             await db.players.update_one(
                 {"user_id": user_id},
                 reward_updates
             )
-            
             battle.character.current_hp = battle.character.stats.HP
             battle.character.gas = battle.character_gas
             await db.update_character(battle.character)
@@ -959,7 +949,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             del context.bot_data[f"last_titan_{user_id}"]
         if f"last_titan_data_{user_id}" in context.bot_data:
             del context.bot_data[f"last_titan_data_{user_id}"]
-        
         await db.delete_titan(user_id)
         
         # --- Travel Progress Integration ---
@@ -1014,7 +1003,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     pass
         # --- End Travel Progress Integration ---
         cleanup_battle(user_id, "completed", battle)
-        
     except Exception as e:
         logger.error(f"Error in handle_battle_end for user {user_id}: {e}")
         try:
@@ -1024,15 +1012,13 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         cleanup_battle(user_id, "error", battle)
 
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem'):
-    """Handle battle timeout after 1 minute of inactivity."""
+    user_id = str(user_id)
     try:
         battle.timeout_task = asyncio.current_task()
         await asyncio.sleep(60)
-        
         if user_id in active_battles:
             db = Database()
             await db.init_db()
-            
             try:
                 await db.characters.update_one(
                     {"user_id": user_id, "name": battle.character.name},
@@ -1044,7 +1030,6 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem'):
                 )
             except Exception as e:
                 logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
-            
             try:
                 await query.edit_message_text(
                     "⏰ Battle Expired ⏰\n\n"
@@ -1053,16 +1038,13 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem'):
                 )
             except Exception as e:
                 logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
-
             # --- Titan cleanup on timeout ---
             try:
                 await db.delete_titan(user_id)
             except Exception as e:
                 logger.error(f"Failed to delete titan on timeout for user {user_id}: {e}")
             # --- End titan cleanup ---
-            
             cleanup_battle(user_id, "timeout", battle)
-            
     except asyncio.CancelledError:
         logger.debug(f"Battle timeout cancelled for user {user_id}")
     except Exception as e:
