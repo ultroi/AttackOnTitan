@@ -147,7 +147,6 @@ async def create_application():
             # Absolute last fallback for anything else
             application.add_handler(CallbackQueryHandler(button_callback))
 
-
             async def error_handler(update: object, context):
                 """Handle errors in the application."""
                 logger.error(f"Update {update} caused error {context.error}")
@@ -168,16 +167,6 @@ async def create_application():
             logger.error(f"Failed to initialize application: {e}")
             raise
     return application
-
-async def run_polling():
-    """Run the bot in polling mode."""
-    try:
-        application = await create_application()
-        logger.info("Starting bot in polling mode...")
-        await application.run_polling()
-    except RuntimeError as e:
-        logger.error(f"Polling error: {e}")
-        raise
 
 # Webhook endpoints
 @app.route('/webhook', methods=['POST'])
@@ -258,22 +247,16 @@ async def start_and_clear_memory(update: Update, context):
 async def main():
     """Main entry point for the bot."""
     try:
-        if ENV == "production":
-            logger.info("Starting in production mode with webhook")
-            config = uvicorn.Config(
-                app=app,
-                host="0.0.0.0",
-                port=int(os.environ.get('PORT', 5000)),
-                log_level="info"
-            )
-            server = uvicorn.Server(config)
-            await create_application()  # Ensure application is initialized
-            await server.serve()
-        else:
-            logger.info("Starting in development mode with polling")
-            await run_polling()
-    except (RuntimeError, KeyboardInterrupt) as e:
-        logger.info(f"Bot stopped: {e}")
+        logger.info("Starting in webhook mode")
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=int(os.environ.get('PORT', 5000)),
+            log_level="info"
+        )
+        server = uvicorn.Server(config)
+        await create_application()  # Ensure application is initialized
+        await server.serve()
     except Exception as e:
         logger.error(f"Bot crashed with error: {e}")
         raise
@@ -281,10 +264,4 @@ async def main():
 if __name__ == "__main__":
     if os.name == "nt":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    if ENV != "production":
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        application = loop.run_until_complete(create_application())
-        application.run_polling()
-    else:
-        asyncio.run(main())
+    asyncio.run(main())
