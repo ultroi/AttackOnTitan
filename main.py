@@ -3,7 +3,8 @@ import logging
 import asyncio
 import uvicorn
 from datetime import datetime
-from flask import Flask, request, Response
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -59,8 +60,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
-app = Flask(__name__)
+# Initialize FastAPI app
+app = FastAPI()
 
 # Global application instance
 application = None
@@ -232,47 +233,40 @@ def handle_shutdown(signum, frame):
             loop.stop()
 
 
-@app.route('/webhook', methods=['POST'])
-async def webhook():
-    """Handle incoming webhook updates."""
-    client_ip = request.remote_addr
+@app.post("/webhook")
+async def webhook(request: Request):
+    client_ip = request.client.host
     logger.info(f"Received webhook request from IP: {client_ip}")
 
-    # IP verification
     if not is_ip_allowed(client_ip):
         logger.warning(f"Unauthorized IP blocked: {client_ip}")
-        return Response(status=403)
+        return Response(status_code=403)
 
-    # Secret token verification
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
         logger.warning("Invalid secret token received")
-        return Response(status=403)
+        return Response(status_code=403)
 
     try:
-        json_data = request.get_json()
+        json_data = await request.json()
         if not json_data:
             logger.warning("Empty webhook payload received")
-            return Response(status=400)
+            return Response(status_code=400)
 
         logger.debug(f"Webhook payload: {json_data}")
-        
-        # Ensure application is initialized
         app_instance = await initialize_application()
         if not app_initialized:
             logger.error("Application not initialized properly")
-            return Response("Service unavailable", status=503)
-            
+            return Response(content="Service unavailable", status_code=503)
         update = Update.de_json(json_data, app_instance.bot)
         await app_instance.process_update(update)
-        return Response(status=200)
+        return Response(status_code=200)
     except Exception as e:
         logger.error(f"Webhook processing error: {e}")
-        return Response(status=500)
+        return Response(status_code=500)
 
-@app.route('/')
-def index():
-    """Health check endpoint."""
+@app.get("/")
+async def index():
     return {
         "status": "ok",
         "message": "Attack on Titan Bot is running",
@@ -280,9 +274,8 @@ def index():
         "initialized": app_initialized
     }
 
-@app.route('/health')
+@app.get("/health")
 async def health_check():
-    """Detailed health check endpoint."""
     try:
         return {
             "status": "ok",
@@ -290,13 +283,13 @@ async def health_check():
             "bot_username": application.bot.username if application and application.bot else None
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
-@app.route('/favicon.ico')
-def favicon():
-    return Response(status=204)
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(status_code=204)
 
-@app.route('/status')
+@app.get("/status")
 async def status():
     return {
         "status": "running",
@@ -305,16 +298,14 @@ async def status():
         "active_battles": len(active_battles)
     }
 
-@app.route('/set_webhook', methods=['GET', 'POST'])
-async def set_webhook():
-    """Set webhook URL for the bot."""
+@app.get("/set_webhook")
+async def set_webhook(request: Request):
     try:
-        webhook_url = f"https://{request.host}/webhook"
+        host = request.headers.get("host")
+        webhook_url = f"https://{host}/webhook"
         logger.info(f"Attempting to set webhook to: {webhook_url}")
-        
         if not webhook_url.startswith("https://"):
-            return {"status": "error", "message": "Webhook URL must use HTTPS"}, 400
-        
+            return JSONResponse({"status": "error", "message": "Webhook URL must use HTTPS"}, status_code=400)
         app_instance = await initialize_application()
         await app_instance.bot.set_webhook(
             url=webhook_url,
@@ -322,11 +313,8 @@ async def set_webhook():
             drop_pending_updates=True,
             allowed_updates=["message", "callback_query"]
         )
-        
-        # Verify webhook was set
         webhook_info = await app_instance.bot.get_webhook_info()
         logger.info(f"Webhook info: {webhook_info}")
-        
         return {
             "status": "success",
             "message": f"Webhook set to {webhook_url}",
@@ -334,7 +322,7 @@ async def set_webhook():
         }
     except Exception as e:
         logger.error(f"Failed to set webhook: {e}")
-        return {"status": "error", "message": str(e)}, 500
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 async def start_and_clear_memory(update: Update, context):
     """Clear all temporary memory for the user and start fresh."""
