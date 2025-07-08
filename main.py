@@ -193,10 +193,13 @@ async def index():
 @app.get("/health")
 async def health_check():
     try:
+        bot_username = None
+        if app_initialized and application and application.bot:
+            bot_username = (await application.bot.get_me()).username
         return {
             "status": "ok",
-            "initialized": True,
-            "bot_username": None
+            "initialized": app_initialized,
+            "bot_username": bot_username
         }
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
@@ -238,11 +241,11 @@ async def set_webhook(request: Request):
 
 def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("start", start_and_clear_memory))
-    app_instance.add_handler(CommandHandler("profile", profile))
+    app_instance.add_handler(CommandHandler("inv", profile))
     app_instance.add_handler(CommandHandler("explore", explore))
     app_instance.add_handler(CommandHandler("map", show_map))
     app_instance.add_handler(CommandHandler("travel", travel_command))
-    app_instance.add_handler(CommandHandler("shop", buy_command))
+    app_instance.add_handler(CommandHandler("shop", shop_command))
     app_instance.add_handler(CommandHandler("status", profile))
     app_instance.add_handler(CommandHandler("buy", buy_command))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
@@ -269,6 +272,20 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
     app_instance.add_handler(CallbackQueryHandler(button_callback))
+
+# Shop command handler for /shop
+async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    try:
+        shop_system = context.bot_data.get("shop_system")
+        if not shop_system:
+            await update.message.reply_text("Shop system not initialized. Please try again later.")
+            return
+        text, reply_markup = await shop_system.show_shop(context, user_id)
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error in shop_command: {e}")
+        await update.message.reply_text("An error occurred while showing the shop.")
 
 async def start_and_clear_memory(update: Update, context):
     """Clear all temporary memory for the user and start fresh."""
