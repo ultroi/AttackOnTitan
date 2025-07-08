@@ -27,7 +27,7 @@ from game.character_system import (
 from game.profile_system import (
     profile, show_character_profile,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards
+    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info
 )
 from utils.extra import buy_command
 from game.explore import explore
@@ -248,6 +248,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("shop", shop_command))
     app_instance.add_handler(CommandHandler("status", profile))
     app_instance.add_handler(CommandHandler("buy", buy_command))
+    app_instance.add_handler(CommandHandler("referral", referral_info))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
