@@ -42,7 +42,12 @@ if TOKEN is None:
     raise ValueError("TELEGRAM_TOKEN environment variable is not set")
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", TOKEN.split(":")[1])
 ENV = os.getenv("ENV", "development")
-ALLOWED_IPS = os.getenv("ALLOWED_IPS", "149.154.160.0/20").split(",")
+ALLOWED_IPS = [
+    "91.108.4.0/22",
+    "91.108.56.0/22",
+    "149.154.160.0/20",
+    "95.161.64.0/20"
+]
 
 # Configure logging
 logging.basicConfig(
