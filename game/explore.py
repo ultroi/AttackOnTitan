@@ -251,24 +251,24 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎮 <b>Ready to engage?</b>"
         )
 
-    sent_message = None
-    try:
-        if update.message:
-            sent_message = await update.message.reply_text(
-                text=reply_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-        elif update.callback_query:
-            sent_message = await update.callback_query.message.edit_text(
-                text=reply_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-    except Exception as e:
-        logger.error(f"Failed to send reply for user {user_id}: {e}")
-        await _reply_error(update, "An error occurred while displaying the titan.")
         sent_message = None
+        try:
+            if update.message:
+                sent_message = await update.message.reply_text(
+                    text=reply_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            elif update.callback_query:
+                sent_message = await update.callback_query.message.edit_text(
+                    text=reply_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+        except Exception as e:
+            logger.error(f"Failed to send reply for user {user_id}: {e}")
+            await _reply_error(update, "An error occurred while displaying the titan.")
+            sent_message = None
 
 
     async def titan_encounter_timeout():
