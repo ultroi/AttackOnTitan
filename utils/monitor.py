@@ -3,6 +3,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from game.explore import active_battles, user_last_explore
+from telegram import Update
+from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
@@ -243,3 +245,12 @@ def get_system_health_stats() -> Dict[str, Any]:
             "health_status": "error",
             "error": str(e)
         }
+
+async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Telegram command handler for /monitor - sends live status as a message."""
+    try:
+        status = resource_monitor.get_formatted_live_status()
+        await update.message.reply_text(status, parse_mode="HTML", disable_web_page_preview=True)
+    except Exception as e:
+        logger.error(f"Error in /monitor command: {e}")
+        await update.message.reply_text("Failed to fetch live monitor status.")

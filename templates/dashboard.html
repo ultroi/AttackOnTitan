@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AoT Bot Live Dashboard</title>
+  <style>
+    body { background: #181c24; color: #f1f1f1; font-family: Arial, sans-serif; margin: 0; }
+    .container { max-width: 700px; margin: 40px auto; background: #23283a; border-radius: 10px; box-shadow: 0 2px 8px #0006; padding: 32px; }
+    h1 { color: #ffb347; }
+    .active-list { margin-bottom: 24px; }
+    .active-list table { width: 100%; border-collapse: collapse; }
+    .active-list th, .active-list td { padding: 8px 6px; border-bottom: 1px solid #333; }
+    .active-list th { color: #ffb347; text-align: left; }
+    .log-container { background: #181c24; border-radius: 8px; padding: 16px; max-height: 350px; overflow-y: auto; font-size: 1em; }
+    .log-entry { margin-bottom: 8px; border-left: 3px solid #ffb347; padding-left: 8px; }
+    .status-exploring { color: #4ecdc4; }
+    .status-battling { color: #ff6b6b; }
+    .status-ended { color: #ffe66d; }
+    .copy-id { cursor: pointer; color: #ffb347; }
+    .copy-id:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AoT Bot Live Dashboard</h1>
+    <div class="active-list">
+      <h2>Active Players</h2>
+      <table id="active-players-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>User ID</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="active-players-body">
+          <tr><td colspan="3">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h2>Live Player Logs</h2>
+      <div class="log-container" id="log-container">
+        Loading logs...
+      </div>
+    </div>
+  </div>
+  <script>
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text);
+      alert("Copied: " + text);
+    }
+
+    function fetchAndUpdate() {
+      fetch('/monitor')
+        .then(response => response.json())
+        .then(data => {
+          // --- Active Players Table ---
+          const players = (data.live_players && data.live_players.players) ? data.live_players.players : [];
+          const tbody = document.getElementById('active-players-body');
+          tbody.innerHTML = '';
+          if (players.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3">No active players</td></tr>';
+          } else {
+            players.forEach(player => {
+              let status = '';
+              let statusClass = '';
+              if (player.action.includes('exploring')) {
+                status = 'Exploring';
+                statusClass = 'status-exploring';
+              } else if (player.action.includes('Battle') || player.action.includes('battle') || player.action === '🔥 In Battle') {
+                status = 'Battling';
+                statusClass = 'status-battling';
+              } else if (player.action.startsWith('🏁')) {
+                status = 'Ended';
+                statusClass = 'status-ended';
+              } else {
+                status = player.action;
+              }
+              const name = player.username || 'Unknown';
+              const id = player.user_id;
+              tbody.innerHTML += `<tr>
+                <td>${name}</td>
+                <td><span class="copy-id" onclick="copyToClipboard('${id}')">${id}</span></td>
+                <td class="${statusClass}">${status}</td>
+              </tr>`;
+            });
+          }
+
+          // --- Live Logs ---
+          // We'll use the players array as a log source, sorted by most recent activity
+          const logDiv = document.getElementById('log-container');
+          let logs = [];
+          players
+            .sort((a, b) => (b.duration || 0) - (a.duration || 0))
+            .forEach(player => {
+              let status = '';
+              let statusClass = '';
+              if (player.action.includes('exploring')) {
+                status = 'Exploring';
+                statusClass = 'status-exploring';
+              } else if (player.action.includes('Battle') || player.action.includes('battle') || player.action === '🔥 In Battle') {
+                status = 'Battling';
+                statusClass = 'status-battling';
+              } else if (player.action.startsWith('🏁')) {
+                status = 'Ended';
+                statusClass = 'status-ended';
+              } else {
+                status = player.action;
+              }
+              const name = player.username || 'Unknown';
+              const id = player.user_id;
+              const timeAgo = Math.round(player.duration || 0);
+              logs.push(`<div class="log-entry ${statusClass}">
+                <b>${name}</b> (<span class="copy-id" onclick="copyToClipboard('${id}')">${id}</span>) - <span class="${statusClass}">${status}</span>
+                <span style="float:right; color:#888;">${timeAgo}s ago</span>
+              </div>`);
+            });
+          if (logs.length === 0) {
+            logDiv.innerHTML = 'No recent player activity.';
+          } else {
+            logDiv.innerHTML = logs.join('');
+          }
+        })
+        .catch(err => {
+          document.getElementById('active-players-body').innerHTML = '<tr><td colspan="3">Error loading data</td></tr>';
+          document.getElementById('log-container').innerText = 'Error loading logs';
+        });
+    }
+    setInterval(fetchAndUpdate, 2000); // Update every 2 seconds
+    fetchAndUpdate();
+  </script>
+</body>
+</html>

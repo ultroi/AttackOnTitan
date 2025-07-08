@@ -16,6 +16,8 @@ from game.map_system import show_map, MAP_IMAGE_URL
 from database.db import Database
 from database.db_instance import get_persistent_database
 import signal
+from utils.monitor import resource_monitor
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 # Import handlers
 from game.character_system import (
@@ -29,6 +31,7 @@ from game.profile_system import (
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info
 )
+from utils.monitor import monitor_command
 from utils.extra import buy_command
 from game.explore import explore
 from game.callback_handlers import button_callback, handle_travel_decision
@@ -248,6 +251,14 @@ async def set_webhook(request: Request):
         logger.error(f"Failed to set webhook: {e}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
+@app.get("/monitor_dashboard")
+async def monitor_dashboard():
+    try:
+        stats = resource_monitor.get_formatted_live_status()
+        return JSONResponse({"status": "ok", "html": stats})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
 def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("start", start_and_clear_memory))
     app_instance.add_handler(CommandHandler("inv", profile))
@@ -258,6 +269,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("status", profile))
     app_instance.add_handler(CommandHandler("buy", buy_command))
     app_instance.add_handler(CommandHandler("referral", referral_info))
+    app_instance.add_handler(CommandHandler("monitor", monitor_command))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
