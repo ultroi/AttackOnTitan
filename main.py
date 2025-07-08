@@ -92,6 +92,8 @@ async def initialize_application():
         application.bot_data["db"] = global_db
         application.bot_data["shop_system"] = ShopSystem()
         register_handlers(application)
+
+        
         async def error_handler(update: object, context):
             if isinstance(context.error, asyncio.CancelledError):
                 logger.warning(f"Task cancelled for update {update}")

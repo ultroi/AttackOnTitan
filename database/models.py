@@ -3,6 +3,7 @@ import random
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from database.characters import CharacterData, get_character_data, AbilityEffect
+from motor.motor_asyncio import AsyncIOMotorClient
 
 class CharacterStats(BaseModel):
     ATK: int = 10
@@ -69,17 +70,12 @@ class Character(BaseModel):
 
     @property
     def xp_to_next_level(self) -> int:
-        """Calculate XP needed for next level based on the new system"""
-        if self.level < 50:
-            base = 500 + (self.level * 100)  # Start at 600, increase by 100 per level
-            return int(base * (1 + (self.level // 10) * 0.5))  # 50% increase every 10 levels
-        elif self.level < 100:
-            # Mid levels need tens of thousands
-            base = 10000 + ((self.level - 50) * 500)
-            return int(base * (1 + ((self.level - 50) // 10) * 0.2))
-        else:
-            # High levels need over 100,000
-            return int(100000 + ((self.level - 100) * 2000))
+        max_level = 125
+        level = min(self.level, max_level)
+        base_exp = 3500
+        multiplier = 1.35 ** (level - 1)
+        xp = int(base_exp * multiplier)
+        return min(xp, 125000)
 
     def calculate_combat_exp(self, turns: int, damage_taken: bool, overkill_damage: int, is_first_kill: bool) -> int:
         """Calculate combat EXP with bonuses"""
@@ -137,6 +133,18 @@ class Character(BaseModel):
                 self.rank = "Soldier"
             # Check for ability unlocks
             self._check_ability_unlocks()
+
+            # Auto-create Central Bank account at level 15
+            if self.level == 15:
+                # Use sync pymongo for now (since models.py is sync)
+                try:
+                    client = AsyncIOMotorClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
+                    db = client[os.getenv("DB_NAME", "aot")]
+                    if not db.central_bank_accounts.find_one({'user_id': self.user_id}):
+                        account = CentralBankAccount(user_id=self.user_id)
+                        db.central_bank_accounts.insert_one(account.model_dump())
+                except Exception as e:
+                    pass
 
     def _check_ability_unlocks(self) -> None:
         for ability in self.active_abilities + self.passive_abilities + self.ultimate_abilities:
@@ -260,14 +268,19 @@ class Player(BaseModel):
     daily_explores: List[DailyExplores] = Field(default_factory=list)
     shop_refresh_date: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     shop_refresh_count: int = 0  # Added to track manual shop refreshes
+    referral_code: Optional[str] = None  # Unique code for sharing
+    referred_by: Optional[str] = None    # Referral code of the referrer
+    referral_count: int = 0              # Number of successful referrals
+    referral_milestones: Dict[str, bool] = Field(default_factory=dict)  # Track milestone rewards
 
     @property
+
     def xp_to_next_level(self) -> int:
         """Calculate XP needed for next level (no cap)"""
         if self.level < 50:
-            return 2400 + (self.level * 150)  # Start at 550, increase by 50 per level
+            return 2400 + (self.level * 150)  
         elif self.level < 100:
-            return 20000 + (self.level * 300)  # Start at ~15k, increase by 100 per level
+            return 20000 + (self.level * 300) 
         elif self.level < 500:
             return 50000 + (self.level * 500)
         else:
@@ -300,6 +313,18 @@ class Player(BaseModel):
         old_level = self.level
         self.level += 1
         self.xp -= self.xp_to_next_level
+
+        # Auto-create Central Bank account at level 15
+        if self.level == 15:
+            # Use sync pymongo for now (since models.py is sync)
+            try:
+                client = AsyncIOMotorClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
+                db = client[os.getenv("DB_NAME", "aot")]
+                if not db.central_bank_accounts.find_one({'user_id': self.user_id}):
+                    account = CentralBankAccount(user_id=self.user_id)
+                    db.central_bank_accounts.insert_one(account.model_dump())
+            except Exception as e:
+                pass
     
         # Apply rewards
         rewards = self.get_level_up_rewards(self.level)
