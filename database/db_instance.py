@@ -60,17 +60,23 @@ async def initialize_database() -> AsyncIOMotorDatabase:
     return _db_instance
 
 async def get_database() -> Optional[AsyncIOMotorDatabase]:
-    """Get the database instance, initializing if necessary."""
-    global _db_instance, _initialized
-    
-    if _db_instance is None or not _initialized:
-        try:
-            _db_instance = await initialize_database()
-        except ConnectionError as e:
-            logger.error(f"Error getting database instance: {str(e)}")
-            return None
-            
-    return _db_instance
+    """Always create a new database client per call (for serverless compatibility)."""
+    try:
+        from config import MONGO_URI, DB_NAME
+        import motor.motor_asyncio
+        client = motor.motor_asyncio.AsyncIOMotorClient(
+            MONGO_URI,
+            maxPoolSize=10,
+            connectTimeoutMS=10000,
+            serverSelectionTimeoutMS=10000
+        )
+        db = client[DB_NAME]
+        await db.command('ping')
+        logger.info(f"Database connection established successfully to {DB_NAME}")
+        return db
+    except Exception as e:
+        logger.error(f"Error getting database instance: {str(e)}")
+        return None
 
 async def close_connection() -> None:
     """Close the database connection."""
