@@ -83,10 +83,22 @@ def create_effect(**kwargs) -> AbilityEffect:
 
 def civilian_shell_effect(ctx: BattleContext) -> AbilityEffect:
     """Enhanced Civilian Shell with Wake-Up Protocol and Titan-specific reactions"""
-    spd_bonus = ctx.character_stats.SPD * 0.02
-    
-    if not ctx.first_damage_taken:
-        damage_reduction = 0.7 if ctx.titan_hp > 75 else 0.5
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        spd = character_stats.get("SPD", 0)
+        first_damage_taken = ctx.get("first_damage_taken", False)
+        titan_hp = ctx.get("titan_hp", 0)
+        acc = character_stats.get("ACC", 0)
+    else:
+        spd = ctx.character_stats.SPD
+        acc = ctx.character_stats.ACC
+        first_damage_taken = ctx.first_damage_taken
+        titan_hp = ctx.titan_hp
+
+    spd_bonus = spd * 0.02
+    if not first_damage_taken:
+        damage_reduction = 0.7 if titan_hp > 75 else 0.5
         aggro_avoidance = 0.5 + spd_bonus
         return create_effect(
             message=f"Civilian Shell: {int(aggro_avoidance*100)}% aggro avoidance, {int(damage_reduction*100)}% damage reduction",
@@ -98,18 +110,18 @@ def civilian_shell_effect(ctx: BattleContext) -> AbilityEffect:
         )
     else:
         buffs = {
-            "SPD": 1.25 + (ctx.character_stats.SPD * 0.01),
-            "ACC": 1.15 + (ctx.character_stats.ACC * 0.005),
+            "SPD": 1.25 + (spd * 0.01),
+            "ACC": 1.15 + (acc * 0.005),
             "wake_up_active": 1.0
         }
-        message = f"Wake-Up Protocol: +{int((1.25 + ctx.character_stats.SPD * 0.01 - 1)*100)}% Speed, +{int((1.15 + ctx.character_stats.ACC * 0.005 - 1)*100)}% Awareness"
-        if ctx.titan_hp < 50:
+        message = f"Wake-Up Protocol: +{int((1.25 + spd * 0.01 - 1)*100)}% Speed, +{int((1.15 + acc * 0.005 - 1)*100)}% Awareness"
+        if titan_hp < 50:
             buffs["crit_rate"] = 1.25
             message += ", +25% Crit Rate vs Easy Titans"
-        elif ctx.titan_hp < 100:
+        elif titan_hp < 100:
             buffs["auto_dodge_counter"] = 1.0
             message += ", Auto-Dodge first counterattack vs Normal Titans"
-        elif ctx.titan_hp < 125:
+        elif titan_hp < 125:
             message += ", Applies Dazed Focus to enemy"
             return create_effect(
                 message=message,
@@ -120,8 +132,19 @@ def civilian_shell_effect(ctx: BattleContext) -> AbilityEffect:
 
 def mocking_delay_effect(ctx: BattleContext) -> AbilityEffect:
     """Enhanced Mocking Delay with morale stagger for Difficult Titans"""
-    int_bonus = int(ctx.character_stats.INT * 0.1)
-    is_intelligent = ctx.is_intelligent_titan or ctx.titan_hp > 90
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        int_ = character_stats.get("INT", 0)
+        acc = character_stats.get("ACC", 0)
+        is_intelligent = ctx.get("is_intelligent_titan", False) or ctx.get("titan_hp", 0) > 90
+        titan_hp = ctx.get("titan_hp", 0)
+    else:
+        int_ = ctx.character_stats.INT
+        acc = ctx.character_stats.ACC
+        is_intelligent = ctx.is_intelligent_titan or ctx.titan_hp > 90
+        titan_hp = ctx.titan_hp
+    int_bonus = int(int_ * 0.1)
     base_delay = 1
     if is_intelligent:
         delay = 3 + int_bonus
@@ -130,43 +153,55 @@ def mocking_delay_effect(ctx: BattleContext) -> AbilityEffect:
         delay = base_delay + int_bonus
         message = f"Mocking Delay: Enemy action delayed by {delay} turn (+{int_bonus} from INT)"
     debuffs = {"delay": delay}
-    if ctx.titan_hp > 100:
-        spd_reduction = 15 + (ctx.character_stats.ACC * 0.5)
+    if titan_hp > 100:
+        spd_reduction = 15 + (acc * 0.5)
         debuffs["SPD"] = int(spd_reduction)
         debuffs["morale_stagger"] = 3
-        message += f", applies morale stagger (-{int(spd_reduction)} SPD for 3 turns, +{ctx.character_stats.ACC*0.5:.1f} from ACC)"
+        message += f", applies morale stagger (-{int(spd_reduction)} SPD for 3 turns, +{acc*0.5:.1f} from ACC)"
     return create_effect(message=message, debuffs=debuffs)
 
 def arc_net_trap_effect(ctx: BattleContext) -> AbilityEffect:
     """Enhanced Arc Net Trap with variable effects based on Titan difficulty"""
-    if ctx.titan_hp < 50:
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        int_ = character_stats.get("INT", 0)
+        spd = character_stats.get("SPD", 0)
+        base_damage = ctx.get("base_damage", 0)
+        titan_hp = ctx.get("titan_hp", 0)
+    else:
+        int_ = ctx.character_stats.INT
+        spd = ctx.character_stats.SPD
+        base_damage = ctx.base_damage
+        titan_hp = ctx.titan_hp
+    if titan_hp < 50:
         stun_duration = 2
-        agility_penalty = 0.3 + (ctx.character_stats.INT * 0.01)
+        agility_penalty = 0.3 + (int_ * 0.01)
         tier = "Easy"
-    elif ctx.titan_hp < 100:
-        stun_duration = 1 + int(ctx.character_stats.INT * 0.05)
-        agility_penalty = 0.4 + (ctx.character_stats.INT * 0.01)
+    elif titan_hp < 100:
+        stun_duration = 1 + int(int_ * 0.05)
+        agility_penalty = 0.4 + (int_ * 0.01)
         tier = "Normal"
     else:
-        stun_duration = 1 + int(ctx.character_stats.INT * 0.03)
-        agility_penalty = 0.5 + (ctx.character_stats.INT * 0.01)
+        stun_duration = 1 + int(int_ * 0.03)
+        agility_penalty = 0.5 + (int_ * 0.01)
         tier = "Difficult"
-    base_damage = ctx.base_damage * 1.2
-    dodge_bonus = 0.2 + (ctx.character_stats.SPD * 0.005)
+    base_damage_val = base_damage * 1.2
+    dodge_bonus = 0.2 + (spd * 0.005)
     buffs = {
         "dodge_rate": dodge_bonus,
-        "crit_evasion": 0.05 + (ctx.character_stats.SPD * 0.002)
+        "crit_evasion": 0.05 + (spd * 0.002)
     }
     debuffs = {"SPD": agility_penalty}
     if tier == "Difficult":
-        miss_chance = 0.2 + (ctx.character_stats.INT * 0.005)
+        miss_chance = 0.2 + (int_ * 0.005)
         debuffs["entangled_core"] = miss_chance
-        message = f"Arc Net Trap ({tier}): {stun_duration} turn stun, -{int(agility_penalty*100):.1f}% Agility, {int(miss_chance*100):.1f}% Entangled Core (INT: +{ctx.character_stats.INT*0.005*100:.1f}%)"
+        message = f"Arc Net Trap ({tier}): {stun_duration} turn stun, -{int(agility_penalty*100):.1f}% Agility, {int(miss_chance*100):.1f}% Entangled Core (INT: +{int_*0.005*100:.1f}%)"
     else:
-        message = f"Arc Net Trap ({tier}): {stun_duration} turn stun, -{int(agility_penalty*100):.1f}% Agility (INT: +{ctx.character_stats.INT*0.01*100:.1f}%)"
+        message = f"Arc Net Trap ({tier}): {stun_duration} turn stun, -{int(agility_penalty*100):.1f}% Agility (INT: +{int_*0.01*100:.1f}%)"
     return create_effect(
         message=message,
-        damage=int(base_damage),
+        damage=int(base_damage_val),
         stun_duration=stun_duration,
         debuffs=debuffs,
         buffs=buffs
@@ -174,17 +209,26 @@ def arc_net_trap_effect(ctx: BattleContext) -> AbilityEffect:
 
 def stimulant_injection_effect(ctx: BattleContext) -> AbilityEffect:
     """Enhanced Stimulant Injection with Cold Edge and Titan-tier scaling"""
-    if ctx.target_is_self:
-        heal_amount = int(ctx.character_max_hp * 0.1)
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_max_hp = ctx.get("character_max_hp", 100)
+        titan_hp = ctx.get("titan_hp", 0)
+        target_is_self = ctx.get("target_is_self", False)
+    else:
+        character_max_hp = ctx.character_max_hp
+        titan_hp = ctx.titan_hp
+        target_is_self = ctx.target_is_self
+    if target_is_self:
+        heal_amount = int(character_max_hp * 0.1)
         buffs = {"cold_edge_active": 1.0}
         message = f"Stimulant Injection (Self): {heal_amount} HP healed, Cold Edge activated"
-        if ctx.titan_hp < 50:
+        if titan_hp < 50:
             buffs.update({
                 "crit_chance": 2.0,
                 "morale_damage": 0.1
             })
             message += " (vs Easy: 2x Crit, +10% morale damage)"
-        elif ctx.titan_hp < 100:
+        elif titan_hp < 100:
             buffs.update({
                 "crit_chance": 2.0,
                 "morale_damage": 0.05
@@ -217,7 +261,7 @@ def stimulant_injection_effect(ctx: BattleContext) -> AbilityEffect:
             clear_debuffs=True
         )
     else:
-        heal_amount = int(ctx.character_max_hp * 0.15)
+        heal_amount = int(character_max_hp * 0.15)
         return create_effect(
             message=f"Stimulant Injection (Ally): {heal_amount} HP healed, all debuffs cleared",
             healed=heal_amount,
@@ -226,7 +270,14 @@ def stimulant_injection_effect(ctx: BattleContext) -> AbilityEffect:
 
 def bunker_descent_effect(ctx: BattleContext) -> AbilityEffect:
     """Enhanced Bunker Descent - Ultimate battlefield control ability"""
-    heal_amount = int(ctx.character_max_hp * 0.25)
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_max_hp = ctx.get("character_max_hp", 100)
+        titan_hp = ctx.get("titan_hp", 0)
+    else:
+        character_max_hp = ctx.character_max_hp
+        titan_hp = ctx.titan_hp
+    heal_amount = int(character_max_hp * 0.25)
     buffs = {
         "stealth": 1.0,
         "evasion": 0.5,
@@ -235,7 +286,7 @@ def bunker_descent_effect(ctx: BattleContext) -> AbilityEffect:
         "bunker_descent_duration": 3
     }
     message = f"Bunker Descent: All allies healed {heal_amount} HP, gain Stealth, +50% Evasion, +30% Morale Resistance, enemy accuracy halved for 3 turns"
-    if ctx.titan_hp > 100:
+    if titan_hp > 100:
         buffs.update({
             "surveillance_disruption": 0.5,
             "grab_immunity": 1.0
@@ -280,8 +331,16 @@ def panic_engine_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def cowards_fortitude_effect(ctx: BattleContext) -> AbilityEffect:
-    if ctx.turns_not_focused >= 2:
-        heal_boost = ctx.character_stats.INT * 0.1
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        int_ = character_stats.get("INT", 0)
+        turns_not_focused = ctx.get("turns_not_focused", 0)
+    else:
+        int_ = ctx.character_stats.INT
+        turns_not_focused = ctx.turns_not_focused
+    if turns_not_focused >= 2:
+        heal_boost = int_ * 0.1
         return create_effect(
             message="Coward's Fortitude: +30% Healing, Cover Aura active",
             buffs={
@@ -295,10 +354,20 @@ def cowards_fortitude_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def field_patch_effect(ctx: BattleContext) -> AbilityEffect:
-    base_heal = ctx.character_stats.INT * 0.5
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        int_ = character_stats.get("INT", 0)
+        def_ = character_stats.get("DEF", 0)
+        target_hp_percent = ctx.get("target_hp_percent", 1.0)
+    else:
+        int_ = ctx.character_stats.INT
+        def_ = ctx.character_stats.DEF
+        target_hp_percent = ctx.target_hp_percent
+    base_heal = int_ * 0.5
     healed = int(base_heal * 3)
-    if ctx.target_hp_percent < 0.3:
-        shield_amount = 500 + ctx.character_stats.DEF * 2
+    if target_hp_percent < 0.3:
+        shield_amount = 500 + def_ * 2
         return create_effect(
             message=f"Field Patch: {healed} HP healed, Survivor's Shield ({shield_amount}) granted",
             healed=healed,
@@ -310,6 +379,11 @@ def field_patch_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def supply_dump_effect(ctx: BattleContext) -> AbilityEffect:
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        base_damage = ctx.get("base_damage", 0)
+    else:
+        base_damage = ctx.base_damage
     items = ["Gas Canister", "Blades", "Ration Pack", "Repair Kit", "Fear Syringe"]
     selected_item = random.choice(items)
     effect = create_effect(
@@ -318,7 +392,7 @@ def supply_dump_effect(ctx: BattleContext) -> AbilityEffect:
     )
     if selected_item == "Fear Syringe":
         effect.stun_duration = 2
-        effect.damage = ctx.base_damage * 0.8
+        effect.damage = base_damage * 0.8
     elif selected_item == "Gas Canister":
         effect.buffs = {"gas_regen": 50}
     elif selected_item == "Blades":
@@ -338,24 +412,38 @@ def survival_override_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def golden_hour_reflex_effect(ctx: BattleContext) -> AbilityEffect:
-    if ctx.attack_count <= 1:
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        character_stats = ctx.get("character_stats", {})
+        atk = character_stats.get("ATK", 0)
+        attack_count = ctx.get("attack_count", 0)
+        titan_hp = ctx.get("titan_hp", 0)
+        just_dodged = ctx.get("just_dodged", False)
+        just_killed = ctx.get("just_killed", False)
+    else:
+        atk = ctx.character_stats.ATK
+        attack_count = ctx.attack_count
+        titan_hp = ctx.titan_hp
+        just_dodged = ctx.just_dodged
+        just_killed = ctx.just_killed
+    if attack_count <= 1:
         buffs = {
             "dodge": 1.0,
             "crit_rate": 1.1,
             "reflex_counter": 2
         }
         message = "⚡ Golden Reflex! Dodged attack! +10% Crit for next 2 moves"
-        if 75 < ctx.titan_hp <= 100:
+        if 75 < titan_hp <= 100:
             buffs["bonus_dash"] = 1.0
             message += ", gained Bonus Dash to weak spot"
-        elif ctx.titan_hp > 100:
+        elif titan_hp > 100:
             buffs["defense_ignore"] = 0.15
             message += ", Strike Window activated (15% Defense ignore)"
         return create_effect(
             message=message,
             buffs=buffs,
             counter_attack={
-                "damage": ctx.character_stats.ATK * 1.5,
+                "damage": atk * 1.5,
                 "type": "slash",
                 "message": "🔥 Mina strikes back instantly!"
             }
@@ -366,19 +454,28 @@ def golden_hour_reflex_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def rookie_courage_effect(ctx: BattleContext) -> AbilityEffect:
-    if ctx.ally_died_in_range:
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        ally_died_in_range = ctx.get("ally_died_in_range", False)
+        titan_hp = ctx.get("titan_hp", 0)
+        allies_died_this_turn = ctx.get("allies_died_this_turn", 0)
+    else:
+        ally_died_in_range = ctx.ally_died_in_range
+        titan_hp = ctx.titan_hp
+        allies_died_this_turn = ctx.allies_died_this_turn
+    if ally_died_in_range:
         buffs = {
             "actions_per_turn": 2.0,
             "titan_damage": 1.2
         }
         message = "Rookie Courage: Rapid Focus Mode - Double action, +20% titan damage"
-        if ctx.titan_hp > 100:
+        if titan_hp > 100:
             buffs.update({
                 "crit_rate": 1.15,
                 "INT": 10
             })
             message += ", +15% Crit Rate, +10 INT vs Strong Titan"
-        if ctx.allies_died_this_turn > 1:
+        if allies_died_this_turn > 1:
             buffs["reset_odm_cooldowns"] = 1.0
             message += ", ODM cooldowns reset"
         return create_effect(
@@ -391,16 +488,31 @@ def rookie_courage_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def nape_cutter_dash_effect(ctx: BattleContext) -> AbilityEffect:
-    base_dmg = ctx.base_damage * (2.0 if ctx.gas_full else 1.0)
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        base_damage = ctx.get("base_damage", 0)
+        gas_full = ctx.get("gas_full", False)
+        titan_hp = ctx.get("titan_hp", 0)
+        titan_hp_percent = ctx.get("titan_hp_percent", 1.0)
+        just_dodged = ctx.get("just_dodged", False)
+        just_killed = ctx.get("just_killed", False)
+    else:
+        base_damage = ctx.base_damage
+        gas_full = ctx.gas_full
+        titan_hp = ctx.titan_hp
+        titan_hp_percent = ctx.titan_hp_percent
+        just_dodged = ctx.just_dodged
+        just_killed = ctx.just_killed
+    base_dmg = base_damage * (2.0 if gas_full else 1.0)
     message = "Nape Cutter Dash"
     debuffs = {}
-    if ctx.titan_hp < 50 and ctx.titan_hp_percent < 0.25:
+    if titan_hp < 50 and titan_hp_percent < 0.25:
         base_dmg *= 2.0
         message += " (Auto-Critical vs Low HP Easy Titan)"
-    elif ctx.titan_hp <= 100:
+    elif titan_hp <= 100:
         debuffs["SPD"] = 10
         message += " (-10 Agility)"
-    elif ctx.titan_hp > 100 and (ctx.just_dodged or ctx.just_killed):
+    elif titan_hp > 100 and (just_dodged or just_killed):
         base_dmg *= 1.5
         message += " (+50% damage after dodge/kill)"
     return create_effect(
@@ -410,6 +522,13 @@ def nape_cutter_dash_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def emergency_pulse_beacon_effect(ctx: BattleContext) -> AbilityEffect:
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        titan_hp = ctx.get("titan_hp", 0)
+        rapid_focus_active = ctx.get("rapid_focus_active", False)
+    else:
+        titan_hp = ctx.titan_hp
+        rapid_focus_active = ctx.rapid_focus_active
     buffs = {
         "DEF": 1.2,
         "ACC": 1.15
@@ -417,11 +536,11 @@ def emergency_pulse_beacon_effect(ctx: BattleContext) -> AbilityEffect:
     debuffs = {}
     message = "Emergency Pulse Beacon: +20% DEF, +15% ACC to allies"
     if random.random() < 0.25:
-        if ctx.titan_hp < 75:
+        if titan_hp < 75:
             debuffs["unstable"] = 1.0
             message += ", Titan became Unstable (no charge/grapple)"
         message += ", target switched"
-    if ctx.rapid_focus_active:
+    if rapid_focus_active:
         buffs["clear_fear"] = 1.0
         message += ", cleared Fear debuffs"
     return create_effect(
@@ -432,24 +551,32 @@ def emergency_pulse_beacon_effect(ctx: BattleContext) -> AbilityEffect:
     )
 
 def flicker_instinct_effect(ctx: BattleContext) -> AbilityEffect:
-    base_dmg = ctx.base_damage
+    # Support both BattleContext object and dict
+    if isinstance(ctx, dict):
+        base_damage = ctx.get("base_damage", 0)
+        titan_hp = ctx.get("titan_hp", 0)
+        titan_hp_percent = ctx.get("titan_hp_percent", 1.0)
+    else:
+        base_damage = ctx.base_damage
+        titan_hp = ctx.titan_hp
+        titan_hp_percent = ctx.titan_hp_percent
     total_dmg = 0
     bleed_count = 0
     buffs = {"evasion": 0.8}
     debuffs = {}
     message = []
     for i in range(3):
-        attack_dmg = base_dmg * (0.9 + random.random() * 0.2)
+        attack_dmg = base_damage * (0.9 + random.random() * 0.2)
         total_dmg += attack_dmg
         if random.random() < 0.4:
             bleed_count += 1
-    if ctx.titan_hp < 50:
-        if ctx.titan_hp_percent < 0.35:
+    if titan_hp < 50:
+        if titan_hp_percent < 0.35:
             total_dmg *= 1.5
-            if ctx.titan_hp_percent < 0.15:
+            if titan_hp_percent < 0.15:
                 total_dmg *= 2.0
                 message.append("Execution strike!")
-    elif ctx.titan_hp <= 100:
+    elif titan_hp <= 100:
         if bleed_count > 0:
             debuffs.update({
                 "DEF": 0.9,
