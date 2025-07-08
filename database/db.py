@@ -145,9 +145,11 @@ class Database:
                 raise ValueError(f"Character type {character_type} not found")
             
             # Ensure stats are properly dumped
-            stats_dict = char_data.base_stats
-            if hasattr(stats_dict, 'model_dump'):  # If it's a Pydantic model
-                stats_dict = stats_dict.dict()
+            stats_obj = char_data.base_stats
+            if hasattr(stats_obj, 'dict'):
+                stats_dict = stats_obj.dict()
+            else:
+                stats_dict = stats_obj
             
             character = Character(
                 user_id=user_id,
