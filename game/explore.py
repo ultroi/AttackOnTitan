@@ -11,25 +11,13 @@ from typing import Dict
 import random
 import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-from telegram.constants import ParseMode
-from game.battle_system import cleanup_battle, active_battles
-from database.models import Player, Character, Titan, DailyExplores
-from database.db import Database
-from game.travel_map import TRAVEL_MAP  # Add this import at the top
-
-from datetime import datetime, timezone
-from typing import Dict
-import random
-import logging
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 # Rate limiting for explore command
 user_last_explore: Dict[str, float] = {}
 EXPLORE_COOLDOWN = 3 
+DAILY_EXPLORE_LIMIT = 125  # Configurable daily limit
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -83,6 +71,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_date = datetime.utcnow()
     daily_explores_count = player.get_daily_explores_count(current_date)
 
+    if daily_explores_count >= DAILY_EXPLORE_LIMIT:
+        await _reply_error(update, f"You've reached the daily exploration limit ({DAILY_EXPLORE_LIMIT}). Try again tomorrow!")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
     explore_exp = player.calculate_exp_gain("daily_explore")
     player.xp += explore_exp
     player.total_xp += explore_exp
@@ -102,28 +98,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.update_player(player.user_id, update_data)
     except Exception as e:
         logger.error(f"Failed to update player {user_id}: {e}")
-        await _reply_error(update, "An error occurred while updating your profile.", error=e)
+        await _reply_error(update, "An error occurred while updating your profile.")
         return
 
-    exp_message = f"You gained {explore_exp} EXP for exploring!"
-    if level_ups > 0:
-        level_up_info = player.add_xp(0)  # Get level up data without adding more XP
-        rewards = level_up_info["level_ups"][-1]["rewards"]  # Get last level's rewards
-    
-        reward_text = [
-            f"✨ LEVEL UP! ({player.level-level_ups} → {player.level}) ✨",
-            "═══════════════════════",
-            f"🎯 Marks: +{rewards['marks']}",
-            f"⚡ Valor: +{rewards['valor']}",
-            f"💎 Crystals: +{rewards['crystals']}"
-        ]
-    
-        if rewards["unlocks"]:
-            reward_text.append("\n🔓 UNLOCKS:")
-            reward_text.extend(f"• {item}" for item in rewards["unlocks"])
-    
-        exp_message += "\n\n" + "\n".join(reward_text)
-    
     if not player.team:
         await _reply_error(update, "You need to have at least one character in your team. Use /team to manage your team.")
         try:
@@ -163,8 +140,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.update_character(player_character)
     except Exception as e:
         logger.error(f"Failed to update character {player_character_name} for user {user_id}: {e}")
-        await _reply_error(update, "An error occurred while updating your character.", error=e)
+        await _reply_error(update, "An error occurred while updating your character.")
         return
+
+    # Show EXP gain message for explore
+    exp_message = f"🧭 EXP gained: {explore_exp}"
 
     # --- TRAVEL/DECISION POINT HANDLING ---
     travel = getattr(player, "travel", {})
@@ -274,34 +254,48 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if update.message:
-            await update.message.reply_text(
+            sent_message = await update.message.reply_text(
                 text=reply_text,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
         elif update.callback_query:
-            await update.callback_query.message.edit_text(
+            sent_message = await update.callback_query.message.edit_text(
                 text=reply_text,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
+        else:
+            sent_message = None
     except Exception as e:
         logger.error(f"Failed to send reply for user {user_id}: {e}")
         await _reply_error(update, "An error occurred while displaying the titan.")
-    finally:
-        try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
+        sent_message = None
 
-    # Travel progress increment and arrival logic moved to battle end handler
-    # (No travel progress or arrival logic here anymore)
-
-async def _reply_error(update: Update, message: str, error: Exception = None):
-    """Helper to reply with error messages. Shows error details if provided."""
+    # --- Titan encounter expiration logic ---
+    async def titan_encounter_timeout():
+        await asyncio.sleep(60)
+        titan_in_db = await db.get_titan(user_id)
+        if titan_in_db:
+            try:
+                await db.delete_titan(user_id)
+                if sent_message:
+                    try:
+                        await sent_message.edit_text(
+                            "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.error(f"Failed to cleanup expired titan for user {user_id}: {e}")
+    titan_timeout_task = asyncio.create_task(titan_encounter_timeout())
+    context.bot_data[f"titan_timeout_{user_id}"] = titan_timeout_task
+    # --- End titan encounter expiration logic ---
+# ...existing code...
+async def _reply_error(update: Update, message: str):
+    """Helper to reply with error messages."""
     try:
-        if error:
-            message = f"{message}\n\nError details: {error}"
         if update.message:
             await update.message.reply_text(message)
         elif update.callback_query:
