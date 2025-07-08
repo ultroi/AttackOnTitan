@@ -269,7 +269,7 @@ class Player(BaseModel):
         elif self.level < 100:
             return 20000 + (self.level * 300)  # Start at ~15k, increase by 100 per level
         elif self.level < 500:
-            return 50000 + (self.level * 500
+            return 50000 + (self.level * 500)
         else:
             return 90000 + (self.level * 1000)  # Start at ~250k, increase by 200 per level
 
