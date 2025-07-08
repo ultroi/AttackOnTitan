@@ -56,7 +56,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
                 return
 
-        user_last_explore[user_id] = current_time
+        user_last_explore[str(user_id)] = current_time
         # Get player data
         player = await db.get_player(user_id)
         if not player:
@@ -270,26 +270,35 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_error(update, "An error occurred while displaying the titan.")
             sent_message = None
 
-    async def titan_encounter_timeout():
-        await asyncio.sleep(60)
-        if db is not None:
-            titan_in_db = await db.get_titan(user_id)
-            if titan_in_db:
-                try:
-                    await db.delete_titan(str(user_id))
-                    if sent_message:
-                        try:
-                            if hasattr(sent_message, "edit_text") and callable(getattr(sent_message, "edit_text", None)):
-                                await sent_message.edit_text(
-                                    "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
-                                    parse_mode=ParseMode.HTML
-                                )
-                        except Exception:
-                            pass
-                except Exception as e:
-                    logger.error(f"Failed to cleanup expired titan for user {user_id}: {e}")
-    titan_timeout_task = asyncio.create_task(titan_encounter_timeout())
-    context.bot_data[f"titan_timeout_{user_id}"] = titan_timeout_task
+        async def titan_encounter_timeout():
+            await asyncio.sleep(60)
+            if db is not None:
+                titan_in_db = await db.get_titan(user_id)
+                if titan_in_db:
+                    try:
+                        await db.delete_titan(str(user_id))
+                        if sent_message:
+                            try:
+                                if hasattr(sent_message, "edit_text") and callable(getattr(sent_message, "edit_text", None)):
+                                    await sent_message.edit_text(
+                                        "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
+                                        parse_mode=ParseMode.HTML
+                                    )
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.error(f"Failed to cleanup expired titan for user {user_id}: {e}")
+
+        titan_timeout_task = asyncio.create_task(titan_encounter_timeout())
+        context.bot_data[f"titan_timeout_{user_id}"] = titan_timeout_task
+
+    except Exception as e:
+        logger.error(f"Error in explore command: {e}")
+        await _reply_error(update, "An error occurred while exploring. Please try again.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
 
 
 async def _reply_error(update: Update, message: str):
