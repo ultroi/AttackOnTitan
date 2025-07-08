@@ -270,7 +270,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_error(update, "An error occurred while displaying the titan.")
             sent_message = None
 
-
     async def titan_encounter_timeout():
         await asyncio.sleep(60)
         if db is not None:
