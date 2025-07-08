@@ -227,7 +227,13 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<b>Initial Resources:</b>\n{reward_text}\n\n"
             "Use /profile to view your character details and /explore to start your adventure!"
         )
-        await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+        # Only edit the message if the content is different to avoid Telegram 'message is not modified' error
+        try:
+            current_message = query.message.text if hasattr(query, 'message') and query.message else None
+            if current_message != welcome_text:
+                await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+        except Exception as edit_err:
+            logger.error(f"Error editing welcome message: {edit_err}")
         # Send log to channel for new user
         try:
             log_channel_id = -1002873117075

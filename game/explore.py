@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Rate limiting for explore command
 user_last_explore: Dict[str, float] = {}
 EXPLORE_COOLDOWN = 3 
-DAILY_EXPLORE_LIMIT = 125  # Configurable daily limit
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -71,17 +70,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Check if this explore should award daily EXP (first 125 explores)
         current_date = datetime.utcnow()
         daily_explores_count = player.get_daily_explores_count(current_date)
-        if daily_explores_count >= DAILY_EXPLORE_LIMIT:
-            await _reply_error(update, f"You've reached the daily exploration limit ({DAILY_EXPLORE_LIMIT}). Try again tomorrow!")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
         explore_exp = player.calculate_exp_gain("daily_explore")
         player.xp += explore_exp
         player.total_xp += explore_exp
-        daily_explores_count = player.increment_daily_explores(current_date)
         level_ups = 0
         while player.xp >= player.xp_to_next_level:
             player.level_up()
