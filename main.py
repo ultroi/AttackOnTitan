@@ -206,6 +206,10 @@ def index():
         "message": "Attack on Titan Bot is running"
     }
 
+@app.route('/favicon.ico')
+def favicon():
+    return Response(status=204) 
+
 @app.route('/set_webhook', methods=['GET', 'POST'])
 async def set_webhook():
     """Set webhook URL for the bot."""
