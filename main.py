@@ -12,6 +12,7 @@ from telegram import Update as TelegramUpdate
 from ipaddress import ip_network, ip_address
 from game.map_system import show_map, MAP_IMAGE_URL
 from database.db import Database
+import signal
 
 # Import handlers
 from game.character_system import (
@@ -168,7 +169,11 @@ async def initialize_application():
 
         async def error_handler(update: object, context):
             """Handle errors in the application."""
-            logger.error(f"Update {update} caused error {context.error}")
+            if isinstance(context.error, asyncio.CancelledError):
+                logger.warning(f"Task cancelled for update {update}")
+                return
+                
+            logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
 
             if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                 try:
@@ -188,11 +193,39 @@ async def initialize_application():
         logger.info("Bot application initialized and started successfully")
         
     except Exception as e:
-        logger.error(f"Failed to initialize application: {e}")
+        logger.error(f"Failed to initialize application: {e}", exc_info=True)
         app_initialized = False
         raise
 
     return application
+
+async def shutdown_application():
+    """Gracefully shutdown the application."""
+    global application, app_initialized
+    if application and app_initialized:
+        logger.info("Starting application shutdown...")
+        try:
+            await asyncio.wait_for(application.stop(), timeout=10)
+            await asyncio.wait_for(application.shutdown(), timeout=5)
+            logger.info("Application shutdown completed successfully")
+        except asyncio.TimeoutError:
+            logger.warning("Application shutdown timed out")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+        finally:
+            app_initialized = False
+
+def handle_shutdown(signum, frame):
+    """Handle shutdown signals."""
+    logger.info(f"Received shutdown signal {signum}")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(shutdown_application())
+    finally:
+        loop.close()
+        if loop.is_running():
+            loop.stop()
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
@@ -309,10 +342,27 @@ async def start_and_clear_memory(update: Update, context):
     # Call the original start handler
     await start_character_selection(update, context)
 
+def handle_shutdown(signum, frame):
+    """Handle shutdown signals."""
+    logger.info(f"Received shutdown signal {signum}")
+    if application and app_initialized:
+        # Create a new event loop for shutdown if needed
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(application.stop())
+            loop.run_until_complete(application.shutdown())
+        finally:
+            loop.close()
+
 async def main():
     """Main entry point for the bot."""
     try:
         logger.info(f"Starting bot in {ENV} environment")
+        
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
         
         # Initialize application before starting server
         await initialize_application()
@@ -331,15 +381,10 @@ async def main():
         except asyncio.CancelledError:
             logger.info("Server shutdown requested")
         finally:
-            # Proper shutdown
-            if application is not None and app_initialized:
-                logger.info("Shutting down application...")
-                await application.stop()
-                await application.shutdown()
-                logger.info("Application shutdown complete")
+            await shutdown_application()
                 
     except Exception as e:
-        logger.error(f"Bot crashed with error: {e}")
+        logger.error(f"Bot crashed with error: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
