@@ -88,7 +88,9 @@ async def initialize_application():
         # Initialize database and other services ONCE
         if global_db is None:
             # Use persistent DB connection for best performance
-            global_db = await get_persistent_database()
+            motor_db = await get_persistent_database()
+            global_db = Database()
+            await global_db.init_db()  # This will set up collections using motor_db internally
         application.bot_data["db"] = global_db
         application.bot_data["shop_system"] = ShopSystem()
         register_handlers(application)
