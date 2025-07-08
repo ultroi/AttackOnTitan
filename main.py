@@ -63,9 +63,10 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI()
 
-# Global application instance
+# Global application and db instance for persistent server
 application = None
 app_initialized = False
+global_db = None
 
 def is_ip_allowed(client_ip: str) -> bool:
     """Check if client IP is in allowed list."""
@@ -79,39 +80,23 @@ def is_ip_allowed(client_ip: str) -> bool:
         return False
 
 async def initialize_application():
-    """Initialize the Telegram bot application with all handlers."""
-    global application, app_initialized
-    
+    global application, app_initialized, global_db
     if application is None:
         application = Application.builder().token(TOKEN).build()
-    
     try:
-        # Initialize database and other services
-        db = Database()
-        await db.init_db()
-        application.bot_data["db"] = db
+        # Initialize database and other services ONCE
+        if global_db is None:
+            db = Database()
+            await db.init_db()
+            global_db = db
+        application.bot_data["db"] = global_db
         application.bot_data["shop_system"] = ShopSystem()
-
-        # Register handlers in one place
         register_handlers(application)
-
-        # Initialize user_data for all updates
-        async def init_user_data(update: Update, context):
-            if not context.user_data:
-                context.user_data.clear()
-                context.user_data.update({"message_history": []})
-
-        # Add command handlers
-        application.add_handler(CommandHandler("start", start_and_clear_memory))
-
         async def error_handler(update: object, context):
-            """Handle errors in the application."""
             if isinstance(context.error, asyncio.CancelledError):
                 logger.warning(f"Task cancelled for update {update}")
                 return
-                
             logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
-
             if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                 try:
                     if update.effective_message:
@@ -120,20 +105,15 @@ async def initialize_application():
                         )
                 except BadRequest:
                     pass
-
         application.add_error_handler(error_handler)
-        
-        # Initialize the application
         await application.initialize()
         await application.start()
         app_initialized = True
         logger.info("Bot application initialized and started successfully")
-        
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}", exc_info=True)
         app_initialized = False
         raise
-
     return application
 
 async def shutdown_application():
@@ -190,35 +170,11 @@ async def webhook(request: Request):
 
         logger.debug(f"Webhook payload: {json_data}")
 
-        # Per-request Application instance (no global usage)
-        app_instance = Application.builder().token(TOKEN).build()
-        db = Database()
-        await db.init_db()
-        app_instance.bot_data["db"] = db
-        app_instance.bot_data["shop_system"] = ShopSystem()
-        # Register handlers in one place
-        register_handlers(app_instance)
-
-        async def error_handler(update: object, context):
-            if isinstance(context.error, asyncio.CancelledError):
-                logger.warning(f"Task cancelled for update {update}")
-                return
-            logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
-            if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
-                try:
-                    if update.effective_message:
-                        await update.effective_message.reply_text(
-                            "An error occurred !! Please report to mods"
-                        )
-                except BadRequest:
-                    pass
-        app_instance.add_error_handler(error_handler)
-
-        await app_instance.initialize()
-        await app_instance.start()
-        update = Update.de_json(json_data, app_instance.bot)
-        await app_instance.process_update(update)
-        # Do NOT call stop() or shutdown() here to avoid event loop issues on Vercel
+        # Use global application and db
+        if not app_initialized:
+            await initialize_application()
+        update = Update.de_json(json_data, application.bot)
+        await application.process_update(update)
         return Response(status_code=200)
     except Exception as e:
         logger.error(f"Webhook processing error: {e}")
