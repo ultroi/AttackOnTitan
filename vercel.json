@@ -1,57 +1,22 @@
-# vercel.json
 {
-    "version": 2,
-    "builds": [
-        {
-            "src": "api/index.py",
-            "use": "@vercel/python",
-            "config": {
-                "maxLambdaSize": "15mb",
-                "runtime": "python3.11"
-            }
-        }
-    ],
-    "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "api/main.py"
-        }
-    ],
-    "env": {
-        "PYTHONUNBUFFERED": "1"
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb",
+        "runtime": "python3.11"
+      }
     }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/main.py"
+    }
+  ],
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  }
 }
-
-# api/requirements.txt
-python-telegram-bot==20.7 
-Flask==3.0.2 
-motor==3.3.2 
-pymongo==4.6.0 
-dnspython==2.6.1 
-python-dotenv==1.0.0 
-psutil==5.9.8 
-pydantic==2.7.1 
-aiohttp==3.9.1 
-requests==2.31.0 
-certifi==2024.2.2
-
-# api/runtime.txt
-python-3.11
-
-# .env (create this file)
-TELEGRAM_TOKEN=your_bot_token_here
-SECRET_TOKEN=your_secret_token_here
-MONGODB_URI=your_mongodb_connection_string
-
-# .vercelignore
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-.env
-.DS_Store
-*.log
