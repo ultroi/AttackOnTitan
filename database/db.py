@@ -49,8 +49,11 @@ class Database:
             raise
 
     # Player operations
-    async def create_player(self, user_id: int, username: str, name: str) -> Player:
+    async def create_player(self, user_id: int, username: str, name: str, referral_code: str = None, referred_by: str = None) -> Player:
         try:
+            # Generate a unique referral code if not provided
+            if not referral_code:
+                referral_code = str(user_id)
             player = Player(
                 user_id=str(user_id),
                 username=username,
@@ -64,7 +67,11 @@ class Database:
                 marks=0,
                 explore_count=0,
                 owned_characters=[],
-                team=[]
+                team=[],
+                referral_code=referral_code,
+                referred_by=referred_by,
+                referral_count=0,
+                referral_milestones={},
             )
             logger.info(f"Creating player: {player}")
             await self.players.insert_one(player.model_dump())

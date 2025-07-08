@@ -157,7 +157,11 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         referred_by = context.user_data.get('referred_by')
         if not player:
             # Create player with referral info if available
-            player = await db.create_player(user_id, username, name, referral_code=str(user_id), referred_by=referred_by)
+            # Only pass allowed arguments to create_player
+            if referred_by:
+                player = await db.create_player(user_id, username, name, referred_by=referred_by)
+            else:
+                player = await db.create_player(user_id, username, name)
         existing_char = await db.get_character(user_id, selected_character)
         if existing_char:
             await query.edit_message_text(f"Error: You already have a character named {selected_character}.")
