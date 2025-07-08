@@ -180,7 +180,7 @@ async def initialize_application():
                 try:
                     if update.effective_message:
                         await update.effective_message.reply_text(
-                            "An error occurred while processing your request. Please try again later."
+                            "An error occurred !! Please report to mods"
                         )
                 except BadRequest:
                     pass
