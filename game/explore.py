@@ -26,6 +26,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id  # Use int, not str
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
+    user_id_str = str(user_id)
 
     try:
         from utils.monitor import track_player_action, remove_player_activity
@@ -55,18 +56,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
                 return
 
-        user_last_explore[str(user_id)] = current_time
+        user_last_explore[user_id_str] = current_time
         # Get player data
-        player = await db.get_player(user_id)
+        player = await db.get_player(user_id_str)
         if not player:
             await update.message.reply_text("You need to create a profile first with /start")
             return
         # MIGRATION: If player.location missing, set from first character's birthplace if available
         if not getattr(player, "location", None):
-            chars = await db.get_player_characters(user_id)
+            chars = await db.get_player_characters(user_id_str)
             if chars and hasattr(chars[0], "birthplace"):
                 player.location = chars[0].birthplace
-                await db.update_player(user_id, {"location": player.location})
+                await db.update_player(user_id_str, {"location": player.location})
         # Check if this explore should award daily EXP (first 125 explores)
         current_date = datetime.utcnow()
         daily_explores_count = player.get_daily_explores_count(current_date)
@@ -108,7 +109,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         player_character_name = player.team[0].character_name
-        player_character = await db.get_character(user_id, player_character_name)
+        player_character = await db.get_character(user_id_str, player_character_name)
         if not player_character:
             await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
             try:
