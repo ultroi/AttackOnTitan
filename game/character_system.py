@@ -175,7 +175,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "valor": 250,
             "marks": 12500,
             "explore_count": 0,
-            "team": [TeamMember(character_name=selected_character, position=1).model_dump()],
+            "team": [TeamMember(character_name=selected_character, position=1).dict()],
             "location": location,
             "updated_at": datetime.now(timezone.utc)
         }

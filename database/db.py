@@ -74,7 +74,7 @@ class Database:
                 referral_milestones={},
             )
             logger.info(f"Creating player: {player}")
-            await self.players.insert_one(player.model_dump())
+            await self.players.insert_one(player.dict())
             return player
         except Exception as e:
             logger.error(f"Failed to create player: {e}")
@@ -102,7 +102,7 @@ class Database:
                 update_data['total_xp'] = max(0, update_data['total_xp'])
             if 'team' in update_data:
                 update_data['team'] = [
-                    member.model_dump() if hasattr(member, 'model_dump') else member
+                    member.dict() if hasattr(member, 'dict') else member
                     for member in update_data['team']
                 ]
             update_data["updated_at"] = datetime.now(timezone.utc)
@@ -147,7 +147,7 @@ class Database:
             # Ensure stats are properly dumped
             stats_dict = char_data.base_stats
             if hasattr(stats_dict, 'model_dump'):  # If it's a Pydantic model
-                stats_dict = stats_dict.model_dump()
+                stats_dict = stats_dict.dict()
             
             character = Character(
                 user_id=user_id,
@@ -169,7 +169,7 @@ class Database:
             character.unlock_abilities()
             
             # Ensure the entire character is dumped before saving
-            character_dict = character.model_dump()
+            character_dict = character.dict()
             await self.characters.insert_one(character_dict)
             await self.add_character_to_player(user_id, name)
             return character
@@ -193,7 +193,7 @@ class Database:
     async def update_character(self, character: Character) -> Character:
         try:
             character.updated_at = datetime.now(timezone.utc)
-            character_dict = character.model_dump()  # Convert to dict
+            character_dict = character.dict()  # Convert to dict
             await self.characters.find_one_and_update(
                 {
                     "user_id": character.user_id,
@@ -267,7 +267,7 @@ class Database:
         return titan
 
     async def store_titan(self, user_id: str, titan: Titan):
-        titan_doc = titan.model_dump()
+        titan_doc = titan.dict()
         titan_doc["user_id"] = user_id
         titan_doc["updated_at"] = datetime.now(timezone.utc)
         await self.titans.update_one(
@@ -303,7 +303,7 @@ class Database:
         logger.info(f"Generated new titan: {new_titan.name} (Level {new_titan.level}, HP: {new_titan.max_hp})")
         await self.titans.update_one(
             {"internal_name": new_titan.internal_name},
-            {"$set": new_titan.model_dump()}
+            {"$set": new_titan.dict()}
         )
         return new_titan
 
@@ -319,7 +319,7 @@ class Database:
     # Equipment operations
     async def create_equipment(self, equipment: Equipment) -> Equipment:
         try:
-            await self.equipment.insert_one(equipment.model_dump())
+            await self.equipment.insert_one(equipment.dict())
             return equipment
         except Exception as e:
             logger.error(f"Failed to create equipment: {e}")
