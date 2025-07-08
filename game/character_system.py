@@ -154,36 +154,96 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     try:
         player = await db.get_player(user_id)
+        referred_by = context.user_data.get('referred_by')
         if not player:
-            player = await db.create_player(user_id, username, name)
+            # Create player with referral info if available
+            player = await db.create_player(user_id, username, name, referral_code=str(user_id), referred_by=referred_by)
         existing_char = await db.get_character(user_id, selected_character)
         if existing_char:
             await query.edit_message_text(f"Error: You already have a character named {selected_character}.")
             return
         current_hp = char_data.get_max_hp(1)
         character = await db.create_character(str(user_id), selected_character, selected_character, current_hp=current_hp)
-        # Set player location to selected location
-        await db.update_player(user_id, {
+        # Set player location to selected location and give starter rewards
+        starter_rewards = {
             "gas": 10000,
-            "crystal": 500,
-            "valor": 1000,
-            "marks": 15000,
+            "crystal": 10,
+            "valor": 250,
+            "marks": 12500,
             "explore_count": 0,
             "team": [TeamMember(character_name=selected_character, position=1).model_dump()],
             "location": location,
             "updated_at": datetime.now(timezone.utc)
-        })
+        }
+        # Referral starter rewards
+        referral_rewards = {"marks": 25000, "valor": 25, "crystal": 2}
+        referrer_rewards = {"valor": 40}
+        # If referred, give new user extra rewards and update referrer
+        if referred_by:
+            for k, v in referral_rewards.items():
+                if k in starter_rewards:
+                    starter_rewards[k] += v
+                else:
+                    starter_rewards[k] = v
+            # Update referrer: +40 Valor, +1 referral_count
+            ref_player = await db.players.find_one({"referral_code": referred_by})
+            if ref_player:
+                await db.players.update_one({"referral_code": referred_by}, {"$inc": {"referral_count": 1, "valor": referrer_rewards["valor"]}})
+                # Notify the referrer about their reward
+                try:
+                    from telegram import Bot
+                    bot = context.bot if hasattr(context, 'bot') else None
+                    if bot:
+                        ref_user_id = ref_player.get('user_id') or ref_player.get('_id') or None
+                        if ref_user_id:
+                            ref_message = (
+                                f"🎉 <b>Referral Reward!</b>\n\n"
+                                f"You received <b>+40 Valor</b> because a new player joined using your referral link!\n"
+                                f"Keep sharing to earn more rewards."
+                            )
+                            await bot.send_message(chat_id=ref_user_id, text=ref_message, parse_mode=ParseMode.HTML)
+                except Exception as notify_err:
+                    logger.error(f"Failed to notify referrer {referred_by}: {notify_err}")
+        await db.update_player(user_id, starter_rewards)
+        # Prepare reward summary for welcome message
+        reward_lines = [
+            f"• 🔋 <b>Gas:</b> <code>{starter_rewards['gas']}</code>",
+            f"• 🔮 <b>Titan Crystals:</b> <code>{starter_rewards['crystal']}</code>",
+            f"• 🏅 <b>Valor Points:</b> <code>{starter_rewards['valor']}</code>",
+            f"• 🎯 <b>Marks:</b> <code>{starter_rewards['marks']}</code>"
+        ]
+        reward_text = "\n".join(reward_lines)
+        reward_note = "<b>Starter Rewards Unlocked!</b>\n"
+        if referred_by and ref_player:
+            reward_note += (
+                "<b>Referral Bonus:</b> +25,000 Marks, +25 Valor, +2 Titan Crystals\n"
+            )
+        else:
+            reward_note += "(No referral bonus applied)\n"
         welcome_text = (
             f"👋 <b>Welcome, {escape(name)}!</b>\n\n"
-            f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n"
-            f"Initial Resources:\n"
-            f"• 🔋 <b>Gas:</b> <code>10000</code>\n"
-            f"• 🔮 <b>Titan Crystals:</b> <code>500</code>\n"
-            f"• 🏅 <b>Valor Points:</b> <code>1000</code>\n"
-            f"• 🎯 <b>Marks:</b> <code>15000</code>\n\n"
+            f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n\n"
+            f"{reward_note}"
+            f"<b>Initial Resources:</b>\n{reward_text}\n\n"
             "Use /profile to view your character details and /explore to start your adventure!"
         )
         await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+        # Send log to channel for new user
+        try:
+            log_channel_id = -1002873117075
+            ref_display = referred_by if referred_by else "None"
+            user_link = f"<a href='tg://user?id={user_id}'>{escape(name)}</a>"
+            log_text = (
+                "<b>#New User</b>\n\n"
+                f"<b>Name:</b> {user_link}\n"
+                f"<b>ID:</b> <code>{user_id}</code>\n"
+                f"<b>Referred by:</b> <code>{ref_display}</code>"
+            )
+            bot = context.bot if hasattr(context, 'bot') else None
+            if bot:
+                await bot.send_message(chat_id=log_channel_id, text=log_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        except Exception as log_err:
+            logger.error(f"Failed to log new user to channel: {log_err}")
     except Exception as e:
         logger.error(f"Error creating character for user {user_id}: {e}")
         await query.edit_message_text("An error occurred while creating your character. Please try again.")
