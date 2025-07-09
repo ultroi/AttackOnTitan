@@ -600,7 +600,7 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
         return
-    bot_username = "Attackon_TitanBot"  # Your bot's username without @
+    bot_username = "Attackon_TitanBot"
     referral_code = player.referral_code or user_id
     referral_link = f"https://t.me/{bot_username}?start=referral_{referral_code}"
     referred_by = player.referred_by or "None"

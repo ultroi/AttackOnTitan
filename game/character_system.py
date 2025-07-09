@@ -513,7 +513,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ref_display = referred_by if referred_by else "None"
                 user_link = f"<a href='tg://user?id={user_id}'>{escape(name)}</a>"
                 log_text = (
-                    "<b>#New User</b>\n\n"
+                    "<b>#NewUser</b>\n\n"
                     f"<b>Name:</b> {user_link}\n"
                     f"<b>ID:</b> <code>{user_id}</code>\n"
                     f"<b>Referred by:</b> <code>{ref_display}</code>"

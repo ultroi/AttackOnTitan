@@ -26,7 +26,7 @@ async def send_reset_log(context: ContextTypes.DEFAULT_TYPE, target_user, by_use
     name_link = hlink(target_user.first_name, f"tg://user?id={target_user.id}")
     by_link = hlink(by_user.first_name, f"tg://user?id={by_user.id}")
     log_text = (
-        f"<b>#Reset</b>\n"
+        f"<b>#Reset</b>\n\n"
         f"<b>Name :</b> {name_link}\n"
         f"<b>ID :</b> {hcode(str(target_user.id))}\n"
         f"<b>By :</b> {by_link}\n"
