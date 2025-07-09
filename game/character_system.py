@@ -13,10 +13,23 @@ from game.battle_system import active_battles
 logger = logging.getLogger(__name__)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Always clear user memory at the start
+    # Extract referral code if present in the message
+    if hasattr(update, 'message') and update.message and update.message.text:
+        parts = update.message.text.strip().split()
+        if len(parts) > 1 and parts[1].startswith('referral_'):
+            referral_code = parts[1][len('referral_'):]
+            if context.user_data is None:
+                context.user_data = {}
+            context.user_data['referred_by'] = referral_code
+
+    # Clear all user memory except referral code
     if hasattr(context, 'user_data') and context.user_data is not None:
-        logger.info("Clearing user data for character selection")
+        referred_by = context.user_data.get('referred_by')
         context.user_data.clear()
+        if referred_by:
+            context.user_data['referred_by'] = referred_by
+        logger.info("Cleared user data for character selection (kept referral code if present)")
+
     user_id = str(update.effective_user.id) if update.effective_user and hasattr(update.effective_user, 'id') else None
     # Remove from active_battles if present
     if user_id and user_id in active_battles:

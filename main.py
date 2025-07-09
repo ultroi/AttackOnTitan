@@ -260,7 +260,7 @@ async def monitor_dashboard():
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 def register_handlers(app_instance):
-    app_instance.add_handler(CommandHandler("start", start_and_clear_memory))
+    app_instance.add_handler(CommandHandler("start", start_character_selection))
     app_instance.add_handler(CommandHandler("inv", profile))
     app_instance.add_handler(CommandHandler("explore", explore))
     app_instance.add_handler(CommandHandler("map", show_map))
@@ -308,26 +308,6 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in shop_command: {e}")
         await update.message.reply_text("An error occurred while showing the shop.")
-
-async def start_and_clear_memory(update: Update, context):
-    """Clear all temporary memory for the user and start fresh."""
-    user_id = str(update.effective_user.id) if update.effective_user else None
-    
-    # Clear user_data
-    if hasattr(context, 'user_data'):
-        context.user_data.clear()
-    
-    # Remove from active_battles if present
-    if user_id and user_id in active_battles:
-        try:
-            battle = active_battles.pop(user_id)
-            if hasattr(battle, 'dispose'):
-                battle.dispose()
-        except Exception as e:
-            logger.error(f"Error clearing battle for user {user_id}: {e}")
-    
-    # Call the original start handler
-    await start_character_selection(update, context)
 
 
 async def main():
