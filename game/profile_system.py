@@ -320,9 +320,11 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        return
     await query.answer()
-    user_id = str(query.from_user.id)
+    user_id = str(getattr(query.from_user, 'id', ''))
     # --- Anti-spam: ignore if called again within 1.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_inventory_click', 0)
@@ -339,10 +341,10 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ You have no player account.")
         return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
-    inv = player.inventory or {}
-    weapons = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "weapon"]
-    gear = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "gear"]
-    utilities = [k for k in inv if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "utility"]
+    inv = getattr(player, 'inventory', {}) or {}
+    weapons = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "weapon"]
+    gear = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "gear"]
+    utilities = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "utility"]
     echo_shards = inv.get("echo_shard", 0)
     inv_text = (
         "🧳 <b>Your Inventory:</b>\n"
@@ -362,9 +364,11 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(inv_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        return
     await query.answer()
-    user_id = str(query.from_user.id)
+    user_id = str(getattr(query.from_user, 'id', ''))
     # --- Anti-spam: ignore if called again within 1.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_weapons', 0)
@@ -377,17 +381,26 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
-    inv = player.inventory or {}
-    weapons = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "weapon"]
-    text = "<b>Weapons:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in weapons) if weapons else "No weapons.")
+    inv = getattr(player, 'inventory', {}) or {}
+    weapons = []
+    for k, v in inv.items():
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        if item and getattr(item, 'type', None) == "weapon":
+            weapons.append((k, v))
+    text = "<b>Weapons:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in weapons) if weapons else "No weapons.")
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        return
     await query.answer()
-    user_id = str(query.from_user.id)
+    user_id = str(getattr(query.from_user, 'id', ''))
     # --- Anti-spam: ignore if called again within 1.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_gear', 0)
@@ -400,33 +413,74 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
-    inv = player.inventory or {}
-    gear = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "gear"]
-    text = "<b>Gear:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in gear) if gear else "No gear.")
+    inv = getattr(player, 'inventory', {}) or {}
+    gear = []
+    for k, v in inv.items():
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        if item and getattr(item, 'type', None) == "gear":
+            gear.append((k, v))
+    text = "<b>Gear:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in gear) if gear else "No gear.")
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        return
     await query.answer()
-    user_id = str(query.from_user.id)
+    user_id = str(getattr(query.from_user, 'id', ''))
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_utilities', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_utilities'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
-    inv = player.inventory or {}
-    utilities = [(k, v) for k, v in inv.items() if shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)) and shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).type == "utility"]
-    text = "<b>Utilities:</b>\n" + ("\n".join(f"- {shop_system.shop_items.get(k, shop_system.hidden_items.get(k, None)).name} x{v}" for k, v in utilities) if utilities else "No utilities.")
+    inv = getattr(player, 'inventory', {}) or {}
+    utilities = []
+    for k, v in inv.items():
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        if item and getattr(item, 'type', None) == "utility":
+            utilities.append((k, v))
+    text = "<b>Utilities:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in utilities) if utilities else "No utilities.")
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        return
     await query.answer()
-    user_id = str(query.from_user.id)
+    user_id = str(getattr(query.from_user, 'id', ''))
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_echo_shards', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_echo_shards'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
-    inv = player.inventory or {}
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+    inv = getattr(player, 'inventory', {}) or {}
     echo_shards = inv.get("echo_shard", 0)
     text = f"<b>Echo Shards:</b>\n- {echo_shards}"
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
