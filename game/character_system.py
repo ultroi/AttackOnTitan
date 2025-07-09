@@ -59,6 +59,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     )
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Do NOT send a new photo here; only edit the existing message (text or caption)
     query = update.callback_query
     if not query:
         logger.error("show_character_selection called with no query")
@@ -285,9 +286,13 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         # Only edit the message if the content is different to avoid Telegram 'message is not modified' error
         try:
-            current_message = query.message.text if hasattr(query, 'message') and query.message else None
-            if current_message != welcome_text:
-                await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+            is_photo = query.message and getattr(query.message, "photo", None)
+            current_text = query.message.caption if is_photo else query.message.text if query.message else None
+            if current_text != welcome_text:
+                if is_photo:
+                    await query.edit_message_caption(welcome_text, parse_mode=ParseMode.HTML)
+                else:
+                    await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
         except Exception as edit_err:
             logger.error(f"Error editing welcome message: {edit_err}")
         # Send log to channel for new user
