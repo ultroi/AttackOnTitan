@@ -353,6 +353,21 @@ async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_T
     ]
     await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
+async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
+    await query.answer("Profile closed.")
+    try:
+        await query.edit_message_text("Profile closed. Use /profile to view again.")
+    except Exception as e:
+        logger.error(f"Error closing profile: {e}")
+
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):
         await handle_unauthorized(update)
@@ -370,17 +385,15 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
-    if player.marks < 1000:
-        await query.edit_message_text("Not enough marks to refill gas (requires 1000 marks).")
+    max_gas = getattr(character, 'max_gas', 10000)
+    gas_needed = max_gas - character.gas
+    if gas_needed <= 0:
+        await query.edit_message_text(f"⛽ {character.name}'s gas tank is already full!\nGas: {character.gas}/{max_gas}")
         return
-    character.gas = 10000
+    character.gas += gas_needed
     await db.update_character(character)
-    await db.update_player(user_id, {
-        "marks": player.marks - 1000,
-        "updated_at": datetime.now(timezone.utc)
-    })
     await query.edit_message_text(
-        f"✅ Filled {character_name}'s gas to 10000 for 1000 marks!",
+        f"✅ Filled {character_name}'s gas to {max_gas}!",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
              InlineKeyboardButton("Exit", callback_data="exit_profile")]

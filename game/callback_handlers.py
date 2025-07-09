@@ -8,7 +8,7 @@ from game.explore import active_battles
 from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
 from game.shop_system import ShopSystem
 from database.db import Database
-from game.profile_system import show_character_profile, profile
+from game.profile_system import show_character_profile, profile, exit_profile, fill_gas
 from game.character_system import (
     show_character_selection,
     show_character_details,
@@ -82,8 +82,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         handlers = {
             "show_character_profile": lambda data: show_character_profile(update, context),
             "back_to_profile": lambda data: profile(update, context),
-            "exit_profile": lambda data: handle_exit_profile(query),
-            "fill_gas": lambda data: handle_fill_gas(context.bot_data.get("db"), query, user_id),
+            "exit_profile": lambda data: exit_profile(update, context),
+            "fill_gas": lambda data: fill_gas(update, context),
             "select_": lambda data: handle_select_character(query, context, data.split("_")[1]),
             "confirm_": lambda data: confirm_character_selection(update, context),
             "back_to_selection": lambda data: show_character_selection(update, context),
@@ -110,53 +110,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (BadRequest, PyMongoError) as e:
         logger.error(f"Error in button_callback for user {user_id}: {e}")
         await query.edit_message_text(f"Error processing action: {str(e)}")
-
-async def handle_exit_profile(query: Update.callback_query):
-    """Handle profile exit callback."""
-    try:
-        if query.message:
-            await query.message.delete()
-        else:
-            await query.edit_message_text("Profile closed.")
-    except BadRequest:
-        await query.edit_message_text("Profile closed.")
-    return None
-
-async def handle_fill_gas(db: Database, query: Update.callback_query, user_id: str):
-    """Handle gas refill callback."""
-    player = await db.get_player(user_id)
-    if not player:
-        return "Player data not found!", None
-    if not player.team or not player.owned_characters:
-        return "You haven't created a character yet! Use /start to begin.", None
-    character_name = player.team[0].character_name if player.team else player.owned_characters[0]
-    character = await db.get_character(user_id, character_name)
-    if not character:
-        return "Character not found!", None
-    if character.gas >= character.max_gas:
-        return (
-            f"⛽ {character.name}'s gas tank is already full!\n"
-            f"Gas: {character.gas}/{character.max_gas}",
-            None
-        )
-    gas_needed = character.max_gas - character.gas
-    if player.gas <= 0:
-        return (
-            "❌ Your personal gas reserves are empty!\n"
-            "You need to buy gas from shop.",
-            None
-        )
-    available_gas = min(player.gas, gas_needed)
-    player.gas -= available_gas
-    character.gas += available_gas
-    await db.update_character(character)
-    await db.update_player(user_id, {"gas": player.gas})
-    return (
-        f"⛽ Gas tank refilled! (-{available_gas} from reserves)\n"
-        f"✅ {character.name} gas: {character.gas}/{character.max_gas}\n"
-        f"🏪 Your remaining gas: {player.gas}",
-        None
-    )
 
 async def handle_select_character(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE, char_name: str):
     if context.user_data is None:

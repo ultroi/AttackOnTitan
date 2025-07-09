@@ -211,17 +211,37 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
         for i in range(0, len(birthplaces), 2)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    # Use edit_message_caption if the original message is a photo
-    if query.message and getattr(query.message, "photo", None):
-        await query.edit_message_caption(
-            caption="Choose your starting location:",
-            reply_markup=reply_markup
-        )
-    else:
-        await query.edit_message_text(
-            "Choose your starting location:",
-            reply_markup=reply_markup
-        )
+    # Use a custom image for location selection
+    location_image_url = "https://i.ibb.co/BV70bWdr/image.jpg"
+    location_caption = "Choose your starting location:"
+    # Delete the previous message if it's a photo, then send a new photo with location selection
+    try:
+        if query.message and getattr(query.message, "photo", None):
+            await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
+            await context.bot.send_photo(
+                chat_id=query.message.chat.id,
+                photo=location_image_url,
+                caption=location_caption,
+                reply_markup=reply_markup
+            )
+        else:
+            # If not a photo, just send the image with caption and buttons
+            await context.bot.send_photo(
+                chat_id=query.message.chat.id,
+                photo=location_image_url,
+                caption=location_caption,
+                reply_markup=reply_markup
+            )
+    except Exception as e:
+        logger.error(f"Error sending location selection image: {e}")
+        # Fallback to editing the message text if sending photo fails
+        try:
+            await query.edit_message_text(
+                location_caption,
+                reply_markup=reply_markup
+            )
+        except Exception as edit_err:
+            logger.error(f"Error editing message for location selection: {edit_err}")
 
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
