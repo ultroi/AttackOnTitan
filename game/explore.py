@@ -176,7 +176,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"Generated titan for user {user_id}: {titan.name} (Level {titan.level}, HP: {titan.max_hp})")
 
-        await db.store_titan(user_id, titan)
+        logger.info(f"[STORE_TITAN] Storing titan for user_id: {str(user_id)} (type: {type(user_id)})")
+        await db.store_titan(str(user_id), titan)
 
         battle_id = f"battle_{user_id}"
         keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
