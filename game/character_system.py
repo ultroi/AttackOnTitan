@@ -337,7 +337,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if is_new_player:
                 starter_rewards = STARTER_REWARDS.copy()
                 extra_data = {
-                    "team": [TeamMember(character_name=selected_character, position=1).model_dump()],
+                    "team": [TeamMember(character_name=selected_character, position=1).dict()],
                     "location": location,
                     "updated_at": datetime.now(timezone.utc)
                 }
