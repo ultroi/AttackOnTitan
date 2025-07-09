@@ -80,7 +80,7 @@ class BattleSystem:
             base_damage = ability.base_damage + (self.character.stats.ATK if self.character.stats else 0)
         
         return {
-            "character_stats": self.character.stats.model_dump() if self.character.stats else {},
+            "character_stats": self.character.stats.dict() if self.character.stats else {},
             "character_hp": self.character_hp,
             "character_max_hp": self.character.stats.HP if self.character.stats else 100,
             "titan_hp": self.titan_hp,
@@ -678,8 +678,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.effective_user:
         return
 
-    await cancel_titan_timeout(user_id, context)
-    
     user_id = str(update.effective_user.id)
     if user_id not in active_battles:
         await query.edit_message_text("Titan has run away")
