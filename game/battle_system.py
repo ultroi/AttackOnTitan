@@ -591,19 +591,26 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text("Invalid battle request.")
         return
     
-    user_id = str(update.effective_user.id)
+    user_id = str(update.effective_user.id)  # Always use string
+    logger.info(f"[BATTLE_START] user_id: {user_id} (type: {type(user_id)})")
     # Cancel titan encounter timeout if it exists
     titan_timeout_key = f"titan_timeout_{user_id}"
     titan_timeout_task = context.bot_data.pop(titan_timeout_key, None)
     if titan_timeout_task and not titan_timeout_task.done():
         titan_timeout_task.cancel()
+        logger.info(f"[BATTLE_START] Cancelled titan timeout for user_id: {user_id}")
+    else:
+        logger.info(f"[BATTLE_START] No titan timeout to cancel for user_id: {user_id}")
     # Check if titan still exists in DB
     db = Database()
     await db.init_db()  # Initialize database connection
+    logger.info(f"[BATTLE_START] Fetching titan for user_id: {user_id}")
     titan_obj = await db.get_titan(user_id)
     if not titan_obj:
+        logger.warning(f"[BATTLE_START] No titan found in DB for user_id: {user_id}")
         await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
         return
+    logger.info(f"[BATTLE_START] Titan found for user_id: {user_id}: {getattr(titan_obj, 'name', None)}")
     titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
     if not titan_data:
         # Try to fetch from database if not in memory
@@ -670,6 +677,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if not update.effective_user:
         return
+
+    await cancel_titan_timeout(user_id, context)
     
     user_id = str(update.effective_user.id)
     if user_id not in active_battles:
