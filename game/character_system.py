@@ -219,8 +219,6 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         player = await db.get_player(user_id)
         referred_by = context.user_data.get('referred_by')
         if not player:
-            # Create player with referral info if available
-            # Only pass allowed arguments to create_player
             if referred_by:
                 player = await db.create_player(user_id, username, name, referred_by=referred_by)
             else:
@@ -229,10 +227,43 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         existing_char = await db.get_character(user_id, selected_character)
         logger.info(f"[DEBUG] get_character({user_id}, {selected_character}) returned: {existing_char}")
         if existing_char:
-            if query.message and getattr(query.message, "photo", None):
-                await query.edit_message_caption(f"Error: You already have a character named {selected_character}.")
+            # Character already exists, just show the welcome message again (idempotent)
+            # Use actual player/character values instead of undefined starter_rewards
+            player_gas = getattr(player, 'gas') if player else 0
+            player_crystal = getattr(player, 'crystal') if player else 0
+            player_valor = getattr(player, 'valor') if player else 0
+            player_marks = getattr(player, 'marks') if player else 0
+            reward_lines = [
+                f"• 🔋 <b>Gas:</b> <code>{player_gas}</code>",
+                f"• 🔮 <b>Titan Crystals:</b> <code>{player_crystal}</code>",
+                f"• 🏅 <b>Valor Points:</b> <code>{player_valor}</code>",
+                f"• 🎯 <b>Marks:</b> <code>{player_marks}</code>"
+            ]
+            reward_text = "\n".join(reward_lines)
+            reward_note = "<b>Starter Rewards Unlocked!</b>\n"
+            if referred_by and ref_player:
+                reward_note += (
+                    "<b>Referral Bonus:</b> +25,000 Marks, +25 Valor, +2 Titan Crystals\n"
+                )
             else:
-                await query.edit_message_text(f"Error: You already have a character named {selected_character}.")
+                reward_note += "(No referral bonus applied)\n"
+            welcome_text = (
+                f"👋 <b>Welcome, {escape(name)}!</b>\n\n"
+                f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n\n"
+                f"{reward_note}"
+                f"<b>Initial Resources:</b>\n{reward_text}\n\n"
+                "Use /inv to view your resources details and /explore to start your adventure!"
+            )
+            try:
+                is_photo = query.message and getattr(query.message, "photo", None)
+                current_text = query.message.caption if is_photo else query.message.text if query.message else None
+                if current_text != welcome_text:
+                    if is_photo:
+                        await query.edit_message_caption(welcome_text, parse_mode=ParseMode.HTML)
+                    else:
+                        await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+            except Exception as edit_err:
+                logger.error(f"Error editing welcome message: {edit_err}")
             return
         current_hp = char_data.get_max_hp(1)
         character = await db.create_character(str(user_id), selected_character, selected_character, current_hp=current_hp)
@@ -266,7 +297,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     from telegram import Bot
                     bot = context.bot if hasattr(context, 'bot') else None
                     if bot:
-                        ref_user_id = ref_player.get('user_id') or ref_player.get('_id') or None
+                        ref_user_id = str(ref_player.get('user_id') or ref_player.get('_id') or "")
                         if ref_user_id:
                             ref_message = (
                                 f"🎉 <b>Referral Reward!</b>\n\n"
