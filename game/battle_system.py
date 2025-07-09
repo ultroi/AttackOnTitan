@@ -496,7 +496,7 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
         try:
             from utils.monitor import track_battle_end
             username = getattr(battle_instance.character, 'name', 'Unknown') if battle_instance.character else 'Unknown'
-            track_battle_end(user_id, username, result)
+            track_battle_end(int(user_id), username, result)
         except ImportError:
             pass
         
@@ -512,13 +512,13 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
     else:
         try:
             from utils.monitor import track_battle_end
-            track_battle_end(user_id, "Unknown", result)
+            track_battle_end(int(user_id), "Unknown", result)
         except ImportError:
             pass
     
     try:
         from utils.monitor import remove_player_activity
-        remove_player_activity(user_id)
+        remove_player_activity(int(user_id))
     except ImportError:
         pass
 
@@ -877,7 +877,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 {"user_id": user_id},
                 reward_updates
             )
-            battle.character.current_hp = battle.character.stats.HP
             battle.character.gas = battle.character_gas
             await db.update_character(battle.character)
             
@@ -949,7 +948,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     update_fields["$inc"]["crystal"] = update_fields["$inc"].get("crystal", 0) + total_crystals
                 if all_unlocks:
                     # Add unlocks to a set to avoid duplicates
-                    player_unlocks = set(player_obj.unlocks or [])
+                    player_unlocks = set(getattr(player_obj, 'unlocks', []) or [])
                     player_unlocks.update(all_unlocks)
                     update_fields["$set"] = {"unlocks": list(player_unlocks)}
                 if update_fields["$inc"] or update_fields.get("$set"):
@@ -957,7 +956,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
             try:
                 from utils.monitor import track_battle_end
-                track_battle_end(user_id, battle.character.name, "victory")
+                track_battle_end(int(user_id), battle.character.name, "victory")
             except ImportError:
                 pass
         else:
@@ -969,7 +968,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             
             try:
                 from utils.monitor import track_battle_end
-                track_battle_end(user_id, battle.character.name, "defeat")
+                track_battle_end(int(user_id), battle.character.name, "defeat")
             except ImportError:
                 pass
         
