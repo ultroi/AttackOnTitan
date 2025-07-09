@@ -275,7 +275,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, m in enumerate(team, 1):
         m.position = idx
     await db.update_player(user_id, {
-        "team": [m.model_dump() for m in team],
+        "team": [m.dict() if hasattr(m, "dict") else vars(m) for m in team],
         "updated_at": datetime.now(timezone.utc)
     })
     text = "✅ <b>Team saved!</b>\n\n<b>Composition:</b>\n"
@@ -622,3 +622,16 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• 20 Titan Crystals for 50 referrals.\n"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data['owner_id'] if hasattr(context, 'user_data') and context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
+    await query.answer()
+    # Call the main profile function to show the profile
+    await profile(update, context)
