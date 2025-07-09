@@ -614,7 +614,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
     if not titan_data:
         # Try to fetch from database if not in memory
-        titan_data = titan_obj.model_dump()
+        titan_data = titan_obj.dict()
     titan = Titan(**titan_data)
     
     player_data = await db.players.find_one({"user_id": user_id})
