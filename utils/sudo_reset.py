@@ -38,13 +38,11 @@ async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner_id = get_owner_id()
     user = update.effective_user
     if not user or user.id != owner_id:
-        if update.message:
-            await update.message.reply_text("You are not authorized to use this command.")
         return
     args = context.args
     if not args:
         if update.message:
-            await update.message.reply_text("Usage: /reset <user_id> [reason]")
+            await update.message.reply_text("Usage: /nuke <user_id> [reason]")
         return
     target_id = args[0]
     reason = " ".join(args[1:]) if len(args) > 1 else None
