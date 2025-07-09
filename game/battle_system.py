@@ -25,7 +25,7 @@ class BattleSystem:
         self.character_hp = getattr(character, 'current_hp', 100) or 100
         self.titan_hp = getattr(titan, 'max_hp', 100) or 100
         self.gas = getattr(character, 'gas', 1000) or 1000
-        self.character_gas = self.gas  # Max gas
+        self.character_gas = getattr(character, 'max_gas', self.gas)  # Max gas ab max_gas se set ho
         
         # Ensure character stats are initialized
         if not hasattr(character, 'stats') or character.stats is None:
@@ -671,7 +671,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
             f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
             f"{status['character_bar']}\n"
-            f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
+            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n\n"
             f"{status['status_message']}\n"
             f"<b>Choose your action:</b>"
         ),
@@ -809,7 +809,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
         f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
         f"{status['character_bar']}\n"
-        f"<b>Gas: {status['gas']}/{battle.character.gas}</b>\n\n"
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n\n"
         f"{status['status_message']}\n"
     )
     
