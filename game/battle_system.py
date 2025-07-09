@@ -51,6 +51,7 @@ class BattleSystem:
         self.apply_passives("battle_start")
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed = False
+        self.battle_ended = False  # Flag to prevent post-end actions
     
     def dispose(self):
         """Properly dispose of the battle system and clean up resources"""
@@ -684,16 +685,14 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_id = str(update.effective_user.id)
     if user_id not in active_battles:
-        try:
-            await query.edit_message_text("Titan has run away")
-        except Exception as e:
-            if "Message is not modified" in str(e):
-                pass  # Ignore Telegram API error if message is unchanged
-            else:
-                raise
+        # Do not send any message if battle is not active (already ended)
+        return
+    battle = active_battles[user_id]
+    # Prevent further actions if battle is already ended
+    if getattr(battle, 'battle_ended', False):
+        # Do not send any message if battle is already ended
         return
     
-    battle = active_battles[user_id]
     action = query.data
     if not action:
         return
@@ -755,6 +754,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             full_message.append("Titan is bleeding!")
     
     if battle.titan_hp <= 0:
+        battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
 
@@ -783,6 +783,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     if battle.character_hp <= 0 or battle.titan_hp <= 0:
+        battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
     
@@ -813,6 +814,9 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user_id)
+    # Mark battle as ended to prevent further actions
+    if hasattr(battle, 'battle_ended'):
+        battle.battle_ended = True
     try:
         if battle.timeout_task and not battle.timeout_task.done():
             battle.timeout_task.cancel()

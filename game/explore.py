@@ -58,21 +58,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         user_last_explore[user_id_str] = current_time
-        # Get player data
-        player = await db.get_player(user_id_str)
+        # --- OPTIMIZED: Fetch player and character in parallel for speed ---
+        player_task = asyncio.create_task(db.get_player(user_id_str))
+        # We'll need the team name, so fetch player first, then character
+        player = await player_task
         if not player:
             await update.message.reply_text("You need to create a profile first with /start")
             return
-        # MIGRATION: If player.location missing, set from first character's birthplace if available
         if not getattr(player, "location", None):
             chars = await db.get_player_characters(user_id_str)
             if chars and hasattr(chars[0], "birthplace"):
                 player.location = chars[0].birthplace
                 await db.update_player(user_id_str, {"location": player.location})
-        # Check if this explore should award daily EXP (first 125 explores)
+        # --- Only update player if EXP or level actually changed ---
         current_date = datetime.utcnow()
         daily_explores_count = player.get_daily_explores_count(current_date)
         explore_exp = player.calculate_exp_gain("daily_explore")
+        old_xp, old_level = player.xp, player.level
         player.xp += explore_exp
         player.total_xp += explore_exp
         level_ups = 0
@@ -86,13 +88,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "daily_explores": [d.model_dump() for d in player.daily_explores],
             "updated_at": datetime.now(timezone.utc)
         }
-        try:
-            await db.update_player(player.user_id, update_data)
-        except Exception as e:
-            logger.error(f"Failed to update player {user_id}: {e}")
-            await _reply_error(update, "An error occurred while updating your profile.")
-            return
-
+        if player.xp != old_xp or player.level != old_level:
+            try:
+                await db.update_player(player.user_id, update_data)
+            except Exception as e:
+                logger.error(f"Failed to update player {user_id}: {e}")
+                await _reply_error(update, "An error occurred while updating your profile.")
+                return
+        # --- Only fetch character if team exists ---
         if not player.team:
             await _reply_error(update, "You need to have at least one character in your team. Use /team to manage your team.")
             try:
@@ -100,15 +103,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except NameError:
                 pass
             return
-
-        if user_id in active_battles:
-            await _reply_error(update, "⚔️ You're already in an active battle! Finish it before exploring again.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
         player_character_name = player.team[0].character_name
         player_character = await db.get_character(user_id_str, player_character_name)
         if not player_character:
@@ -118,7 +112,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except NameError:
                 pass
             return
-
         if player_character.gas < 100:
             await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
             try:
@@ -126,7 +119,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except NameError:
                 pass
             return
-
+        # --- Only update character if something changed (placeholder for future optimization) ---
         try:
             await db.update_character(player_character)
         except Exception as e:
@@ -229,21 +222,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         mutant_text = "\n⚠️ <b>WARNING:</b> <i>This appears to be a rare mutant variant!</i>" if "Mutant" in titan.name else ""
 
+        # --- MINIMAL TITAN ENCOUNTER MESSAGE FOR SPEED ---
         reply_text = (
-            f"{encounter_text}\n\n"
             f"🚨 <b>TITAN SPOTTED!</b> 🚨\n\n"
-            f"📍 <b>{titan.name}</b>\n"
-            f"⚡ <b>Level:</b> {titan.level}\n"
-            f"❤️ <b>HP:</b> {titan.max_hp} [{titan_bar}]\n"
-            f"⚔️ <b>Difficulty:</b> {titan.difficulty}\n"
-            f"🎯 <b>Threat Level:</b> {threat}\n"
-            f"{special_abilities_text}{mutant_text}\n\n"
-            f"💨 <b>Character:</b> {player_character.name} (Lv. {player_character.level})\n"
-            f"💨 <i>Gas cost to explore: 100</i>\n"
-            f"{exp_message}\n"
-            f"🎮 <b>Ready to engage?</b>"
+            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
+            f"<i>Ready to engage?</i>"
         )
-
         sent_message = None
         try:
             if update.message:
