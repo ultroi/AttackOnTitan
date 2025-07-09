@@ -154,15 +154,25 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not hasattr(query, "data") or query.data is None:
         logger.error("create_character called with no callback_query.data")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: Invalid callback data.")
+        else:
+            await query.edit_message_text("Error: Invalid callback data.")
         return
     if not update.effective_user or not hasattr(update.effective_user, "id"):
         logger.error("create_character called with no effective_user or id")
-        await query.edit_message_text("Error: Could not identify user.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: Could not identify user.")
+        else:
+            await query.edit_message_text("Error: Could not identify user.")
         return
     await query.answer()
     data_parts = query.data.split("_", 1)
     if len(data_parts) < 2:
-        await query.edit_message_text("Error: Invalid location selection.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: Invalid location selection.")
+        else:
+            await query.edit_message_text("Error: Invalid location selection.")
         return
     location = data_parts[1]
     user_id = str(update.effective_user.id)
@@ -170,17 +180,26 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = getattr(update.effective_user, "first_name", None) or f"Player {user_id}"
     if not hasattr(context, "user_data") or context.user_data is None:
         logger.error("context.user_data is not available")
-        await query.edit_message_text("Error: Internal context error.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: Internal context error.")
+        else:
+            await query.edit_message_text("Error: Internal context error.")
         return
     selected_character = context.user_data.get('selected_character')
     if not selected_character:
         logger.error("No selected character found in context.user_data")
-        await query.edit_message_text("Error: No character selected.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: No character selected.")
+        else:
+            await query.edit_message_text("Error: No character selected.")
         return
     db = context.bot_data.get("db") or Database()
     char_data = get_character_data(selected_character)
     if not char_data:
-        await query.edit_message_text("Error: Character data not found.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Error: Character data not found.")
+        else:
+            await query.edit_message_text("Error: Character data not found.")
         return
     try:
         player = await db.get_player(user_id)
@@ -194,7 +213,10 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 player = await db.create_player(user_id, username, name)
         existing_char = await db.get_character(user_id, selected_character)
         if existing_char:
-            await query.edit_message_text(f"Error: You already have a character named {selected_character}.")
+            if query.message and getattr(query.message, "photo", None):
+                await query.edit_message_caption(f"Error: You already have a character named {selected_character}.")
+            else:
+                await query.edit_message_text(f"Error: You already have a character named {selected_character}.")
             return
         current_hp = char_data.get_max_hp(1)
         character = await db.create_character(str(user_id), selected_character, selected_character, current_hp=current_hp)
@@ -259,7 +281,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n\n"
             f"{reward_note}"
             f"<b>Initial Resources:</b>\n{reward_text}\n\n"
-            "Use /profile to view your character details and /explore to start your adventure!"
+            "Use /inv to view your resources details and /explore to start your adventure!"
         )
         # Only edit the message if the content is different to avoid Telegram 'message is not modified' error
         try:
@@ -286,5 +308,8 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Failed to log new user to channel: {log_err}")
     except Exception as e:
         logger.error(f"Error creating character for user {user_id}: {e}")
-        await query.edit_message_text("An error occurred while creating your character. Please try again.")
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("An error occurred while creating your character. Please try again.")
+        else:
+            await query.edit_message_text("An error occurred while creating your character. Please try again.")
 
