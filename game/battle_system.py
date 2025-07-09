@@ -636,6 +636,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
+    # Ensure current_hp never exceeds max HP and max HP never decreases
+    if hasattr(character, 'current_hp') and hasattr(character, 'stats') and hasattr(character.stats, 'HP'):
+        if character.current_hp is None or character.current_hp > character.stats.HP:
+            character.current_hp = character.stats.HP
     
     player = Player(**player_data) if player_data else None
     battle = BattleSystem(character, titan, player)
@@ -957,10 +961,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             except ImportError:
                 pass
         else:
-            battle.character.current_hp = 0
+            battle.character.current_hp = 0  # Only current_hp is set to 0 on defeat, max HP remains unchanged
             await db.update_character(battle.character)
             await query.edit_message_text(
-                f"💀 {battle.character.name} was defeated by {battle.titan.name}! 💀\n\n"
+                f" {battle.character.name} was defeated by {battle.titan.name}!\n\n"
             )
             
             try:

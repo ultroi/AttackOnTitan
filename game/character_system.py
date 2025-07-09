@@ -134,11 +134,49 @@ async def show_character_details(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("Back to Selection", callback_data="back_to_selection")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    # If the original message is a photo, edit the caption; else, edit the text
-    if query.message and getattr(query.message, "photo", None):
-        await query.edit_message_caption(caption=details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+
+    # Character-specific images
+    char_images = {
+        "Hitch Dreyse": "https://i.ibb.co/BM7pq4z/image.jpg",
+        "Mina Carolina": "https://i.ibb.co/wZN4Zwvd/image.jpg",
+        "Daz": "https://i.ibb.co/B5sPkmZJ/image.jpg"
+    }
+    if char_name in char_images:
+        # Try to edit the existing message's photo/caption first
+        try:
+            if query.message and getattr(query.message, "photo", None):
+                from telegram import InputMediaPhoto
+                await query.edit_message_media(
+                    media=InputMediaPhoto(media=char_images[char_name], caption=details_text, parse_mode=ParseMode.HTML),
+                    reply_markup=reply_markup
+                )
+            else:
+                await query.edit_message_text(details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            return
+        except Exception as e:
+            logger.warning(f"Failed to edit message for character image: {e}")
+            # If editing fails, delete and send a new photo
+            try:
+                if query.message and getattr(query.message, "photo", None):
+                    await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
+            except Exception as del_err:
+                logger.error(f"Failed to delete previous photo message: {del_err}")
+            if query.message and getattr(query.message, "chat", None):
+                await context.bot.send_photo(
+                    chat_id=query.message.chat.id,
+                    photo=char_images[char_name],
+                    caption=details_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                logger.error("Cannot send photo: query.message or query.message.chat is None")
     else:
-        await query.edit_message_text(details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        # If the original message is a photo, edit the caption; else, edit the text
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption(caption=details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        else:
+            await query.edit_message_text(details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 async def back_to_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_character_selection(update, context)
