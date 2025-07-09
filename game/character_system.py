@@ -8,14 +8,17 @@ from database.models import Character, Player, TeamMember
 from html import escape
 from datetime import datetime, timezone
 import logging
+from game.battle_system import active_battles
 
 logger = logging.getLogger(__name__)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if hasattr(context, 'user_data'):
+    # Always clear user memory at the start
+    if hasattr(context, 'user_data') and context.user_data is not None:
         logger.info("Clearing user data for character selection")
         context.user_data.clear()
     user_id = str(update.effective_user.id) if update.effective_user and hasattr(update.effective_user, 'id') else None
+    # Remove from active_battles if present
     if user_id and user_id in active_battles:
         try:
             battle = active_battles.pop(user_id)
@@ -27,7 +30,6 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         logger.error("start_character_selection called with no message")
         return
     db = Database()
-
     if not update.effective_user or not hasattr(update.effective_user, "id"):
         logger.error("start_character_selection called with no effective_user or id")
         await update.message.reply_text("Error: Could not identify user.")
@@ -48,7 +50,12 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         "Your journey begins now, as you choose your path and character.\n\n"
         "Are you ready to join the fight?"
     )
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+    # Send image first, then welcome text with button
+    await update.message.reply_photo(
+        photo="https://i.ibb.co/tpg301ZQ/image.jpg",
+        caption=welcome_text,
+        reply_markup=reply_markup
+    )
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
