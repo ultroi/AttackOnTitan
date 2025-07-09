@@ -885,8 +885,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             reward_msg = [
                 f"🎉 {battle.character.name} defeated {battle.titan.name}! 🎉",
                 f"\nRewards:",
-                f"XP: {rewards['xp']}",
-                f"Marks: {rewards['marks']}"
+                f"⚡ XP: +{rewards['xp']}",
+                f"🪙 Marks: +{rewards['marks']}"
             ]
             if rewards['crystal'] > 0:
                 reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
@@ -918,9 +918,9 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     reward_text = [
                         f"✨ LEVEL UP! ({level_up['old_level']} → {level_up['new_level']}) ✨",
                         "═══════════════════════",
-                        f"🎯 Marks: +{rewards_new['marks']}",
-                        f"⚡ Valor: +{rewards_new['valor']}",
-                        f"💎 Crystals: +{rewards_new['crystals']}"
+                        f"🪙 Marks: +{rewards_new['marks']}",
+                        f"⚔️ Valor: +{rewards_new['valor']}",
+                        f"💠 Crystals: +{rewards_new['crystals']}"
                     ]
                     if rewards_new["unlocks"]:
                         reward_text.append("\n🔓 UNLOCKS:")
