@@ -29,7 +29,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # --- Privacy: Only allow owner to access ---
     if update.callback_query and str(update.callback_query.from_user.id) != user_id:
-        await update.callback_query.edit_message_text("You are not authorized to view this.")
+        await update.callback_query.answer("You are not authorized to view this.", show_alert=True)
         return
     character_name = player.team[0].character_name if player.team else None
     if not character_name:
@@ -89,7 +89,7 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_team_click'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     # --- Optimization: Only fetch player once, use in-memory team for UI updates ---
@@ -377,7 +377,7 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_view_weapons'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -409,7 +409,7 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_view_gear'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -441,7 +441,7 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_view_utilities'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -473,7 +473,7 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_view_echo_shards'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
