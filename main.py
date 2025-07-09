@@ -120,7 +120,7 @@ async def initialize_application():
             logger.info("Bot application initialized and started successfully")
             # Send startup message to group
             try:
-                await application.bot.send_message(chat_id=-1002848899456, text="Started !!")
+                await application.bot.send_message(chat_id=-1002463105932, text="Started !!")
             except Exception as e:
                 logger.error(f"Failed to send startup message: {e}")
     except Exception as e:

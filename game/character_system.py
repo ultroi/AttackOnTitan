@@ -104,7 +104,11 @@ async def show_character_details(update: Update, context: ContextTypes.DEFAULT_T
         [InlineKeyboardButton("Back to Selection", callback_data="back_to_selection")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    # If the original message is a photo, edit the caption; else, edit the text
+    if query.message and getattr(query.message, "photo", None):
+        await query.edit_message_caption(caption=details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    else:
+        await query.edit_message_text(details_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
 async def back_to_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_character_selection(update, context)
