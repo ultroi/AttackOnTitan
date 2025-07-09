@@ -593,6 +593,9 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     user_id = str(update.effective_user.id)  # Always use string
+    if user_id in active_battles:
+        await query.edit_message_text("⚠️ You already have an active battle in progress! Finish it before starting a new one.")
+        return
     logger.info(f"[BATTLE_START] user_id: {user_id} (type: {type(user_id)})")
     # Cancel titan encounter timeout if it exists
     titan_timeout_key = f"titan_timeout_{user_id}"
@@ -671,7 +674,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-    asyncio.create_task(battle_timeout(user_id, query, battle))
+    asyncio.create_task(battle_timeout(user_id, query, battle, context))
 
 async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle battle actions with immediate titan response."""
@@ -719,6 +722,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"[Basic Attack] Before: gas={battle.gas}, titan_hp={battle.titan_hp}")
         if (battle.gas or 0) >= 20:
             battle.gas = (battle.gas or 0) - 20
+            battle.character.gas = battle.gas  # Sync character gas after basic attack
             try:
                 stats = getattr(battle.character, 'stats', None)
                 base_damage = 40
@@ -745,6 +749,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     elif action.startswith("ability_"):
         ability_name = action[8:]
         damage, message, effects = battle.use_ability(ability_name)
+        battle.character.gas = battle.gas  # Sync character gas after ability use
         full_message.append(message)
         if effects.get("items_dropped"):
             full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
@@ -810,7 +815,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode=ParseMode.HTML
     )
     
-    asyncio.create_task(battle_timeout(user_id, query, battle))
+    asyncio.create_task(battle_timeout(user_id, query, battle, context))
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user_id)
@@ -1030,7 +1035,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             pass
         cleanup_battle(user_id, "error", battle)
 
-async def battle_timeout(user_id: str, query, battle: 'BattleSystem'):
+async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context):
     user_id = str(user_id)
     try:
         battle.timeout_task = asyncio.current_task()
