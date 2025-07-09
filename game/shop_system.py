@@ -475,15 +475,18 @@ class ShopSystem:
             # Reset refresh counts in database (handled by get_shop_refresh_count)
 
     def _get_random_shop_items(self, category: str, user_id: str, context: ContextTypes.DEFAULT_TYPE) -> list:
-        """Get a randomized list of items for the user and category, store in user_data."""
+        """Get a randomized list of items for the user and category, store in bot_data for persistence."""
         all_items = list(self._get_category_items(category).items())
         all_keys = set(k for k, _ in all_items)
-        user_data = context.user_data if context.user_data is not None else {}
-        key = f"shop_random_{category}_{user_id}"
+        # Use bot_data for persistence
+        bot_data = context.bot_data if hasattr(context, 'bot_data') else {}
+        if 'shop_random_selections' not in bot_data:
+            bot_data['shop_random_selections'] = {}
+        shop_random_selections = bot_data['shop_random_selections']
+        key = f"{user_id}_{category}"
         # For all categories (including hollow), persist selection until refresh
-        if key in user_data:
-            selected_keys = user_data[key]
-            # Only use if all keys are still valid and length is correct
+        if key in shop_random_selections:
+            selected_keys = shop_random_selections[key]
             expected_len = 6 if category == "hollow" else 12
             if (
                 len(selected_keys) == expected_len and
@@ -499,16 +502,19 @@ class ShopSystem:
         else:
             pick_count = min(12, len(all_items))
             selected = random.sample(all_items, pick_count)
-        user_data[key] = [item[0] for item in selected]
+        shop_random_selections[key] = [item[0] for item in selected]
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-        """Clear the user's random shop selection for all categories."""
-        user_data = context.user_data if context is not None and context.user_data is not None else {}
+        """Clear the user's random shop selection for all categories from bot_data."""
+        bot_data = context.bot_data if context is not None and hasattr(context, 'bot_data') else {}
+        if 'shop_random_selections' not in bot_data:
+            return
+        shop_random_selections = bot_data['shop_random_selections']
         for category in ["weapons", "echo_shards", "gear", "utilities", "barracks", "hollow"]:
-            key = f"shop_random_{category}_{user_id}"
-            if key in user_data:
-                del user_data[key]
+            key = f"{user_id}_{category}"
+            if key in shop_random_selections:
+                del shop_random_selections[key]
             
 
 shop_system = ShopSystem()

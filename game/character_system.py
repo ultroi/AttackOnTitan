@@ -225,7 +225,9 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 player = await db.create_player(user_id, username, name, referred_by=referred_by)
             else:
                 player = await db.create_player(user_id, username, name)
+        # Debug: Log what the DB returns for existing character
         existing_char = await db.get_character(user_id, selected_character)
+        logger.info(f"[DEBUG] get_character({user_id}, {selected_character}) returned: {existing_char}")
         if existing_char:
             if query.message and getattr(query.message, "photo", None):
                 await query.edit_message_caption(f"Error: You already have a character named {selected_character}.")
