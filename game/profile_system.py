@@ -364,7 +364,7 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer("Profile closed.")
     try:
-        await query.edit_message_text("Profile closed. Use /profile to view again.")
+        await query.edit_message_text("Exited")
     except Exception as e:
         logger.error(f"Error closing profile: {e}")
 
