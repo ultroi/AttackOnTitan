@@ -420,7 +420,7 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['last_inventory_click'] = now
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await query.edit_message_text("You are not authorized to view this.")
+        await handle_unauthorized(update)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
