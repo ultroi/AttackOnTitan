@@ -1,16 +1,32 @@
-from typing import Dict, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
-from database.characters import get_character_data, CharacterData, CHARACTERS
-from database.models import Character, Player, TeamMember
+from database.characters import get_character_data, CHARACTERS
+from database.models import TeamMember
 from html import escape
 from datetime import datetime, timezone
 import logging
+import asyncio
 from game.battle_system import active_battles
 
 logger = logging.getLogger(__name__)
+
+# --- Constants for rewards and channel IDs ---
+STARTER_REWARDS = {
+    "gas": 10000,
+    "crystal": 10,
+    "valor": 250,
+    "marks": 12500,
+    "explore_count": 0
+}
+REFERRAL_REWARDS = {"marks": 25000, "valor": 25, "crystal": 2}
+REFERRER_REWARDS = {"valor": 40}
+LOG_CHANNEL_ID = -1002873117075
+
+# Allowed values for validation
+ALLOWED_LOCATIONS = ["Shiganshina", "Karanes", "Trost", "Krolva"]
+ALLOWED_CHARACTERS = set(CHARACTERS)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Extract referral code if present in the message
@@ -133,7 +149,12 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
         logger.error("confirm_character_selection called with no callback query or data")
         return
     await query.answer()
-    char_name = query.data.split("_", 1)[1] if "_" in query.data else ""
+    data_parts = query.data.split("_", 1)
+    if len(data_parts) < 2 or not data_parts[1]:
+        logger.error(f"Malformed callback data for confirm_character_selection: {query.data}")
+        await query.edit_message_text("Error: Invalid character selection. Please try again.")
+        return
+    char_name = data_parts[1]
     if not hasattr(context, "user_data") or context.user_data is None:
         logger.error("context.user_data is not available")
         await query.edit_message_text("Error: Internal context error.")
@@ -146,7 +167,11 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
     user_id = str(update.effective_user.id)
     logger.info(f"User {user_id} selected character: {char_name}")
     birthplaces = ["Shiganshina", "Karanes", "Trost", "Krolva"]
-    keyboard = [[InlineKeyboardButton(place, callback_data=f"location_{place}") for place in birthplaces]]
+    # Arrange buttons 2 per row
+    keyboard = [
+        [InlineKeyboardButton(place, callback_data=f"location_{place}") for place in birthplaces[i:i+2]]
+        for i in range(0, len(birthplaces), 2)
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     # Use edit_message_caption if the original message is a photo
     if query.message and getattr(query.message, "photo", None):
@@ -162,83 +187,221 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
 
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if not update.callback_query:
-        logger.error("create_character called with no callback_query")
-        return
-    query = update.callback_query
-    if not hasattr(query, "data") or query.data is None:
-        logger.error("create_character called with no callback_query.data")
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: Invalid callback data.")
-        else:
-            await query.edit_message_text("Error: Invalid callback data.")
-        return
-    if not update.effective_user or not hasattr(update.effective_user, "id"):
-        logger.error("create_character called with no effective_user or id")
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: Could not identify user.")
-        else:
-            await query.edit_message_text("Error: Could not identify user.")
-        return
-    await query.answer()
-    data_parts = query.data.split("_", 1)
-    if len(data_parts) < 2:
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: Invalid location selection.")
-        else:
-            await query.edit_message_text("Error: Invalid location selection.")
-        return
-    location = data_parts[1]
-    user_id = str(update.effective_user.id)
-    username = getattr(update.effective_user, "username", None) or f"user_{user_id}"
-    name = getattr(update.effective_user, "first_name", None) or f"Player {user_id}"
-    if not hasattr(context, "user_data") or context.user_data is None:
-        logger.error("context.user_data is not available")
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: Internal context error.")
-        else:
-            await query.edit_message_text("Error: Internal context error.")
-        return
-    selected_character = context.user_data.get('selected_character')
-    if not selected_character:
-        logger.error("No selected character found in context.user_data")
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: No character selected.")
-        else:
-            await query.edit_message_text("Error: No character selected.")
-        return
-    db = context.bot_data.get("db") or Database()
-    char_data = get_character_data(selected_character)
-    if not char_data:
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("Error: Character data not found.")
-        else:
-            await query.edit_message_text("Error: Character data not found.")
-        return
+    # --- Prevent button spam: lock per user ---
+    if hasattr(context, "user_data"):
+        if not hasattr(context, "user_data") or context.user_data is None:
+            logger.error("context.user_data is not available")
+            if hasattr(update, "callback_query") and update.callback_query:
+                query = update.callback_query
+                await _safe_edit_message(query, "Error: Internal context error.")
+            return
+        if context.user_data.get("processing_character_creation"):
+            if hasattr(update, "callback_query") and update.callback_query:
+                query = update.callback_query
+                await _safe_edit_message(query, "⏳ Please wait, your character is being created. Don't spam the button.")
+            logger.warning(f"User {getattr(update.effective_user, 'id', None)} tried to spam character creation.")
+            return
+        context.user_data["processing_character_creation"] = True
     try:
-        player = await db.get_player(user_id)
-        referred_by = context.user_data.get('referred_by')
-        if not player:
-            if referred_by:
-                player = await db.create_player(user_id, username, name, referred_by=referred_by)
+        query = getattr(update, "callback_query", None)
+        if not query or not hasattr(query, "data") or query.data is None:
+            logger.error("create_character called with no callback_query.data")
+            if query and hasattr(query, "message") and query.message and getattr(query.message, "photo", None):
+                await query.edit_message_caption("Error: Invalid callback data.")
+            elif query and hasattr(query, "edit_message_text"):
+                await query.edit_message_text("Error: Invalid callback data.")
+            return
+        if not update.effective_user or not hasattr(update.effective_user, "id"):
+            logger.error("create_character called with no effective_user or id")
+            if query and hasattr(query, "message") and query.message and getattr(query.message, "photo", None):
+                await query.edit_message_caption("Error: Could not identify user.")
+            elif query and hasattr(query, "edit_message_text"):
+                await query.edit_message_text("Error: Could not identify user.")
+            return
+        if hasattr(query, "answer") and callable(query.answer):
+            await query.answer()
+        data_parts = query.data.split("_", 1)
+        if len(data_parts) < 2:
+            await _safe_edit_message(query, "Error: Invalid location selection.")
+            return
+        location = data_parts[1]
+        # --- Input validation for location ---
+        if location not in ALLOWED_LOCATIONS:
+            await _safe_edit_message(query, "Error: Invalid location selected.")
+            logger.warning(f"User {getattr(update.effective_user, 'id', None)} tried invalid location: {location}")
+            return
+        user_id = str(update.effective_user.id)
+        username = getattr(update.effective_user, "username", None) or f"user_{user_id}"
+        name = getattr(update.effective_user, "first_name", None) or f"Player {user_id}"
+        if not hasattr(context, "user_data") or context.user_data is None:
+            logger.error("context.user_data is not available")
+            await _safe_edit_message(query, "Error: Internal context error.")
+            return
+        selected_character = context.user_data.get('selected_character')
+        # --- Input validation for character ---
+        if not selected_character or selected_character not in ALLOWED_CHARACTERS:
+            logger.warning(f"User {user_id} tried invalid character: {selected_character}")
+            await _safe_edit_message(query, "Error: Invalid character selected.")
+            return
+        db = context.bot_data.get("db") or Database()
+        char_data = get_character_data(selected_character)
+        if not char_data:
+            await _safe_edit_message(query, "Error: Character data not found.")
+            return      ...
+        try:
+            player = await db.get_player(user_id)
+            referred_by = context.user_data.get('referred_by')
+            ref_player = None
+            is_new_player = False
+            # --- Validate referral code ---
+            if referred_by and referred_by == user_id:
+                logger.warning(f"User {user_id} tried to refer themselves.")
+                referred_by = None
+            if not player:
+                is_new_player = True
+                try:
+                    if referred_by:
+                        player = await db.create_player(user_id, username, name, referred_by=referred_by)
+                    else:
+                        player = await db.create_player(user_id, username, name)
+                except Exception as create_err:
+                    logger.error(f"Failed to create player: {create_err}")
+                    await _safe_edit_message(query, "An error occurred while creating your player. Please try again.")
+                    return
+            existing_char = await db.get_character(user_id, selected_character)
+            if existing_char:
+                # Character already exists, just show the welcome message again (idempotent)
+                # Use actual player/character values instead of undefined starter_rewards
+                player_gas = getattr(player, 'gas') if player else 0
+                player_crystal = getattr(player, 'crystal') if player else 0
+                player_valor = getattr(player, 'valor') if player else 0
+                player_marks = getattr(player, 'marks') if player else 0
+                reward_lines = [
+                    f"• 🔋 <b>Gas:</b> <code>{player_gas}</code>",
+                    f"• 🔮 <b>Titan Crystals:</b> <code>{player_crystal}</code>",
+                    f"• 🏅 <b>Valor Points:</b> <code>{player_valor}</code>",
+                    f"• 🎯 <b>Marks:</b> <code>{player_marks}</code>"
+                ]
+                reward_text = "\n".join(reward_lines)
+                reward_note = "<b>Starter Rewards Unlocked!</b>\n"
+                if referred_by and ref_player:
+                    reward_note += (
+                        "<b>Referral Bonus:</b> +25,000 Marks, +25 Valor, +2 Titan Crystals\n"
+                    )
+                else:
+                    reward_note += "(No referral bonus applied)\n"
+                welcome_text = (
+                    f"👋 <b>Welcome, {escape(name)}!</b>\n\n"
+                    f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n\n"
+                    f"{reward_note}"
+                    f"<b>Initial Resources:</b>\n{reward_text}\n\n"
+                    "Use /inv to view your resources details and /explore to start your adventure!"
+                )
+                try:
+                    is_photo = query.message and getattr(query.message, "photo", None)
+                    current_text = getattr(query.message, "caption", None) if is_photo else getattr(query.message, "text", None) if query.message else None
+                    if current_text != welcome_text:
+                        if is_photo:
+                            await query.edit_message_caption(welcome_text, parse_mode=ParseMode.HTML)
+                        else:
+                            await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+                except Exception as edit_err:
+                    logger.error(f"Error editing welcome message: {edit_err}")
+                return
+            current_hp = char_data.get_max_hp(1)
+            try:
+                # Add DB-level duplicate check for character creation
+                await db.create_character(str(user_id), selected_character, selected_character, current_hp=current_hp)
+            except Exception as char_err:
+                # Handle duplicate character creation gracefully
+                if 'duplicate' in str(char_err).lower() or 'already exists' in str(char_err).lower():
+                    logger.warning(f"Duplicate character creation attempt for user {user_id}, character {selected_character}")
+                    # Fetch the character again and proceed as idempotent
+                    existing_char = await db.get_character(user_id, selected_character)
+                    # ...existing idempotent welcome message logic...
+                    return
+                logger.error(f"Character creation failed for user {user_id}: {char_err}")
+                # Cleanup: If player was just created, delete it to avoid partial data
+                if is_new_player:
+                    try:
+                        await db.delete_player(user_id)
+                    except Exception as del_err:
+                        logger.error(f"Failed to cleanup player after character creation error: {del_err}")
+                if query.message and getattr(query.message, "photo", None):
+                    await query.edit_message_caption("An error occurred while creating your character. Please try again.")
+                else:
+                    await query.edit_message_text("An error occurred while creating your character. Please try again.")
+                return
+            # Set player location to selected location and give starter rewards only if new
+            starter_rewards = None
+            if is_new_player:
+                starter_rewards = STARTER_REWARDS.copy()
+                extra_data = {
+                    "team": [TeamMember(character_name=selected_character, position=1).model_dump()],
+                    "location": location,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+                if referred_by:
+                    try:
+                        ref_player = await db.players.find_one({"referral_code": referred_by})
+                        if ref_player and str(ref_player.get('user_id')) != user_id:
+                            for k, v in REFERRAL_REWARDS.items():
+                                starter_rewards[k] = starter_rewards.get(k, 0) + v
+                            # Update referrer
+                            await db.players.update_one({"referral_code": referred_by}, {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}})
+                            # Notify referrer
+                            try:
+                                bot = context.bot if hasattr(context, 'bot') else None
+                                if bot:
+                                    ref_user_id = str(ref_player.get('user_id') or ref_player.get('_id') or "")
+                                    if ref_user_id:
+                                        ref_message = (
+                                            f"🎉 <b>Referral Reward!</b>\n\n"
+                                            f"You received <b>+40 Valor</b> because a new player joined using your referral link!\n"
+                                            f"Keep sharing to earn more rewards."
+                                        )
+                                        await bot.send_message(chat_id=ref_user_id, text=ref_message, parse_mode=ParseMode.HTML)
+                            except Exception as notify_err:
+                                logger.error(f"Failed to notify referrer {referred_by}: {notify_err}")
+                        else:
+                            logger.warning(f"Invalid or self-referral code used: {referred_by}")
+                            referred_by = None
+                    except Exception as ref_db_err:
+                        logger.error(f"Referral DB update failed: {ref_db_err}")
+                try:
+                    # Merge int rewards and extra data for player update
+                    player_update = {**starter_rewards, **extra_data}
+                    await db.update_player(user_id, player_update)
+                except Exception as update_err:
+                    logger.error(f"Failed to update player with starter rewards: {update_err}")
+                    # Rollback: delete player and character if possible
+                    try:
+                        await db.delete_player(user_id)
+                        await db.delete_character(user_id, selected_character)
+                    except Exception as rollback_err:
+                        logger.error(f"Rollback failed: {rollback_err}")
+                    await _safe_edit_message(query, "An error occurred while assigning your starter rewards. Please try again.")
+                    return
+            # Prepare reward summary for welcome message
+            reward_lines = []
+            if is_new_player and starter_rewards:
+                reward_lines = [
+                    f"• 🔋 <b>Gas:</b> <code>{starter_rewards['gas']}</code>",
+                    f"• 🔮 <b>Titan Crystals:</b> <code>{starter_rewards['crystal']}</code>",
+                    f"• 🏅 <b>Valor Points:</b> <code>{starter_rewards['valor']}</code>",
+                    f"• 🎯 <b>Marks:</b> <code>{starter_rewards['marks']}</code>"
+                ]
             else:
-                player = await db.create_player(user_id, username, name)
-        # Debug: Log what the DB returns for existing character
-        existing_char = await db.get_character(user_id, selected_character)
-        logger.info(f"[DEBUG] get_character({user_id}, {selected_character}) returned: {existing_char}")
-        if existing_char:
-            # Character already exists, just show the welcome message again (idempotent)
-            # Use actual player/character values instead of undefined starter_rewards
-            player_gas = getattr(player, 'gas') if player else 0
-            player_crystal = getattr(player, 'crystal') if player else 0
-            player_valor = getattr(player, 'valor') if player else 0
-            player_marks = getattr(player, 'marks') if player else 0
-            reward_lines = [
-                f"• 🔋 <b>Gas:</b> <code>{player_gas}</code>",
-                f"• 🔮 <b>Titan Crystals:</b> <code>{player_crystal}</code>",
-                f"• 🏅 <b>Valor Points:</b> <code>{player_valor}</code>",
-                f"• 🎯 <b>Marks:</b> <code>{player_marks}</code>"
-            ]
+                player_gas = getattr(player, 'gas', 0) if player else 0
+                player_crystal = getattr(player, 'crystal', 0) if player else 0
+                player_valor = getattr(player, 'valor', 0) if player else 0
+                player_marks = getattr(player, 'marks', 0) if player else 0
+                reward_lines = [
+                    f"• 🔋 <b>Gas:</b> <code>{player_gas}</code>",
+                    f"• 🔮 <b>Titan Crystals:</b> <code>{player_crystal}</code>",
+                    f"• 🏅 <b>Valor Points:</b> <code>{player_valor}</code>",
+                    f"• 🎯 <b>Marks:</b> <code>{player_marks}</code>"
+                ]
             reward_text = "\n".join(reward_lines)
             reward_note = "<b>Starter Rewards Unlocked!</b>\n"
             if referred_by and ref_player:
@@ -254,6 +417,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<b>Initial Resources:</b>\n{reward_text}\n\n"
                 "Use /inv to view your resources details and /explore to start your adventure!"
             )
+            # Only edit the message if the content is different to avoid Telegram 'message is not modified' error
             try:
                 is_photo = query.message and getattr(query.message, "photo", None)
                 current_text = query.message.caption if is_photo else query.message.text if query.message else None
@@ -264,103 +428,45 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
             except Exception as edit_err:
                 logger.error(f"Error editing welcome message: {edit_err}")
-            return
-        current_hp = char_data.get_max_hp(1)
-        character = await db.create_character(str(user_id), selected_character, selected_character, current_hp=current_hp)
-        # Set player location to selected location and give starter rewards
-        starter_rewards = {
-            "gas": 10000,
-            "crystal": 10,
-            "valor": 250,
-            "marks": 12500,
-            "explore_count": 0,
-            "team": [TeamMember(character_name=selected_character, position=1).dict()],
-            "location": location,
-            "updated_at": datetime.now(timezone.utc)
-        }
-        # Referral starter rewards
-        referral_rewards = {"marks": 25000, "valor": 25, "crystal": 2}
-        referrer_rewards = {"valor": 40}
-        # If referred, give new user extra rewards and update referrer
-        if referred_by:
-            for k, v in referral_rewards.items():
-                if k in starter_rewards:
-                    starter_rewards[k] += v
-                else:
-                    starter_rewards[k] = v
-            # Update referrer: +40 Valor, +1 referral_count
-            ref_player = await db.players.find_one({"referral_code": referred_by})
-            if ref_player:
-                await db.players.update_one({"referral_code": referred_by}, {"$inc": {"referral_count": 1, "valor": referrer_rewards["valor"]}})
-                # Notify the referrer about their reward
-                try:
-                    from telegram import Bot
-                    bot = context.bot if hasattr(context, 'bot') else None
-                    if bot:
-                        ref_user_id = str(ref_player.get('user_id') or ref_player.get('_id') or "")
-                        if ref_user_id:
-                            ref_message = (
-                                f"🎉 <b>Referral Reward!</b>\n\n"
-                                f"You received <b>+40 Valor</b> because a new player joined using your referral link!\n"
-                                f"Keep sharing to earn more rewards."
-                            )
-                            await bot.send_message(chat_id=ref_user_id, text=ref_message, parse_mode=ParseMode.HTML)
-                except Exception as notify_err:
-                    logger.error(f"Failed to notify referrer {referred_by}: {notify_err}")
-        await db.update_player(user_id, starter_rewards)
-        # Prepare reward summary for welcome message
-        reward_lines = [
-            f"• 🔋 <b>Gas:</b> <code>{starter_rewards['gas']}</code>",
-            f"• 🔮 <b>Titan Crystals:</b> <code>{starter_rewards['crystal']}</code>",
-            f"• 🏅 <b>Valor Points:</b> <code>{starter_rewards['valor']}</code>",
-            f"• 🎯 <b>Marks:</b> <code>{starter_rewards['marks']}</code>"
-        ]
-        reward_text = "\n".join(reward_lines)
-        reward_note = "<b>Starter Rewards Unlocked!</b>\n"
-        if referred_by and ref_player:
-            reward_note += (
-                "<b>Referral Bonus:</b> +25,000 Marks, +25 Valor, +2 Titan Crystals\n"
-            )
-        else:
-            reward_note += "(No referral bonus applied)\n"
-        welcome_text = (
-            f"👋 <b>Welcome, {escape(name)}!</b>\n\n"
-            f"Your journey begins in <b>{location}</b> as <b>{selected_character}</b>.\n\n"
-            f"{reward_note}"
-            f"<b>Initial Resources:</b>\n{reward_text}\n\n"
-            "Use /inv to view your resources details and /explore to start your adventure!"
-        )
-        # Only edit the message if the content is different to avoid Telegram 'message is not modified' error
+            # Send log to channel for new user
+            try:
+                log_channel_id = -1002873117075
+                ref_display = referred_by if referred_by else "None"
+                user_link = f"<a href='tg://user?id={user_id}'>{escape(name)}</a>"
+                log_text = (
+                    "<b>#New User</b>\n\n"
+                    f"<b>Name:</b> {user_link}\n"
+                    f"<b>ID:</b> <code>{user_id}</code>\n"
+                    f"<b>Referred by:</b> <code>{ref_display}</code>"
+                )
+                bot = context.bot if hasattr(context, 'bot') else None
+                if bot:
+                    await bot.send_message(chat_id=log_channel_id, text=log_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            except Exception as log_err:
+                logger.error(f"Failed to log new user to channel: {log_err}")
+        except Exception as e:
+            logger.error(f"Error creating character for user {getattr(update.effective_user, 'id', None)}: {e}")
+            # Placeholder for critical alerting (e.g., send to admin)
+            # if is_critical(e): alert_admin(e)
+            if query.message and getattr(query.message, "photo", None):
+                await query.edit_message_caption("An error occurred while creating your character. Please try again.")
+            else:
+                await query.edit_message_text("An error occurred while creating your character. Please try again.")
+    finally:
+        # --- Always clear the lock ---
+        if hasattr(context, "user_data"):
+            context.user_data["processing_character_creation"] = False
+
+def _safe_edit_message(query, text):
+    """Helper to safely edit a Telegram message caption or text."""
+    async def inner():
         try:
             is_photo = query.message and getattr(query.message, "photo", None)
-            current_text = query.message.caption if is_photo else query.message.text if query.message else None
-            if current_text != welcome_text:
-                if is_photo:
-                    await query.edit_message_caption(welcome_text, parse_mode=ParseMode.HTML)
-                else:
-                    await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
-        except Exception as edit_err:
-            logger.error(f"Error editing welcome message: {edit_err}")
-        # Send log to channel for new user
-        try:
-            log_channel_id = -1002873117075
-            ref_display = referred_by if referred_by else "None"
-            user_link = f"<a href='tg://user?id={user_id}'>{escape(name)}</a>"
-            log_text = (
-                "<b>#New User</b>\n\n"
-                f"<b>Name:</b> {user_link}\n"
-                f"<b>ID:</b> <code>{user_id}</code>\n"
-                f"<b>Referred by:</b> <code>{ref_display}</code>"
-            )
-            bot = context.bot if hasattr(context, 'bot') else None
-            if bot:
-                await bot.send_message(chat_id=log_channel_id, text=log_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
-        except Exception as log_err:
-            logger.error(f"Failed to log new user to channel: {log_err}")
-    except Exception as e:
-        logger.error(f"Error creating character for user {user_id}: {e}")
-        if query.message and getattr(query.message, "photo", None):
-            await query.edit_message_caption("An error occurred while creating your character. Please try again.")
-        else:
-            await query.edit_message_text("An error occurred while creating your character. Please try again.")
+            if is_photo:
+                await query.edit_message_caption(text, parse_mode=ParseMode.HTML)
+            else:
+                await query.edit_message_text(text, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.error(f"Failed to edit message: {e}")
+    return asyncio.create_task(inner())
 
