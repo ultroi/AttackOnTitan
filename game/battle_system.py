@@ -602,8 +602,12 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         logger.info(f"[BATTLE_START] No titan timeout to cancel for user_id: {user_id}")
     # Check if titan still exists in DB
-    db = Database()
-    await db.init_db()  # Initialize database connection
+    db = context.bot_data.get("db")
+    if db is None:
+        logger.error("Database not initialized in context.bot_data")
+        await query.edit_message_text("Internal error: Database not initialized.")
+        return
+    
     logger.info(f"[BATTLE_START] Fetching titan for user_id: {user_id}")
     titan_obj = await db.get_titan(user_id)
     if not titan_obj:
@@ -680,7 +684,13 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_id = str(update.effective_user.id)
     if user_id not in active_battles:
-        await query.edit_message_text("Titan has run away")
+        try:
+            await query.edit_message_text("Titan has run away")
+        except Exception as e:
+            if "Message is not modified" in str(e):
+                pass  # Ignore Telegram API error if message is unchanged
+            else:
+                raise
         return
     
     battle = active_battles[user_id]
@@ -766,8 +776,12 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     battle.turn += 1
     battle.update_cooldowns()
     
-    db = Database()
-    await db.init_db()
+    db = context.bot_data.get("db")
+    if db is None:
+        logger.error("Database not initialized in context.bot_data")
+        await query.edit_message_text("Internal error: Database not initialized.")
+        return
+    
     await db.characters.update_one(
         {"user_id": user_id, "name": battle.character.name},
         {"$set": {
@@ -811,8 +825,11 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     try:
         if battle.timeout_task and not battle.timeout_task.done():
             battle.timeout_task.cancel()
-        db = Database()
-        await db.init_db()
+        # Use shared db instance from context.bot_data
+        db = context.bot_data.get("db")
+        if db is None:
+            logger.error("Database not initialized in context.bot_data")
+            return
         player_data = await db.players.find_one({"user_id": user_id})
         if not player_data:
             await query.edit_message_text("❌ Player data not found!")
@@ -1024,8 +1041,10 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem'):
         battle.timeout_task = asyncio.current_task()
         await asyncio.sleep(60)
         if user_id in active_battles:
-            db = Database()
-            await db.init_db()
+            db = context.bot_data.get("db")
+            if db is None:
+                logger.error("Database not initialized in context.bot_data")
+                return
             try:
                 await db.characters.update_one(
                     {"user_id": user_id, "name": battle.character.name},
