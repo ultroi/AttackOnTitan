@@ -11,7 +11,38 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def check_authorization(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Check if the user is authorized to access the current interaction."""
+    if not update.effective_user:
+        return False
+    user_id = str(update.effective_user.id)
+    callback_data = getattr(update.callback_query, 'data', None) if update.callback_query else None
+    # For callback queries, verify the user matches
+    if update.callback_query and str(update.callback_query.from_user.id) != user_id:
+        logger.warning(f"Unauthorized access attempt by {update.callback_query.from_user.id} for {user_id}'s data")
+        return False
+    # Check if we have a valid user in context
+    if not context.user_data.get('authorized', False):
+        context.user_data['authorized'] = True  # Mark as authorized for this session
+    return True
+
+async def handle_unauthorized(update: Update):
+    """Handle unauthorized access attempts."""
+    if update.callback_query:
+        try:
+            await update.callback_query.answer("⚠️ You are not authorized to view this!", show_alert=True)
+        except Exception as e:
+            logger.error(f"Error handling unauthorized access: {e}")
+    elif update.message:
+        try:
+            await update.message.reply_text("⚠️ Authorization required!")
+        except Exception as e:
+            logger.error(f"Error sending unauthorized message: {e}")
+
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     user_id = str(update.effective_user.id)
     # --- Anti-spam: ignore if called again within 1.5s ---
     now = datetime.now(timezone.utc).timestamp()
@@ -26,10 +57,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
         elif update.callback_query:
             await update.callback_query.edit_message_text("You haven't created a player account yet! Use /start to begin.")
-        return
-    # --- Privacy: Only allow owner to access ---
-    if update.callback_query and str(update.callback_query.from_user.id) != user_id:
-        await update.callback_query.answer("You are not authorized to view this.", show_alert=True)
         return
     character_name = player.team[0].character_name if player.team else None
     if not character_name:
@@ -75,6 +102,9 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     if not query:
         logger.error("manage_team called without a callback query")
@@ -164,6 +194,9 @@ def get_position_emoji(position: int) -> str:
     }.get(position, "❓")
 
 async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     char_name = query.data.replace("add_to_team_", "")
@@ -179,6 +212,9 @@ async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     char_name = query.data.replace("remove_from_team_", "")
@@ -195,6 +231,9 @@ async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     context.user_data["team"] = []
@@ -202,6 +241,9 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
@@ -233,6 +275,9 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -243,6 +288,9 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(team_text)
 
 async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     user_id = str(update.effective_user.id)
@@ -288,6 +336,9 @@ async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
@@ -320,6 +371,9 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = getattr(update, 'callback_query', None)
     if not query:
         return
@@ -364,6 +418,9 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(inv_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = getattr(update, 'callback_query', None)
     if not query:
         return
@@ -396,6 +453,9 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = getattr(update, 'callback_query', None)
     if not query:
         return
@@ -428,6 +488,9 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = getattr(update, 'callback_query', None)
     if not query:
         return
@@ -460,6 +523,9 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
     query = getattr(update, 'callback_query', None)
     if not query:
         return
