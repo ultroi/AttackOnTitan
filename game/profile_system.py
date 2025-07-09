@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
         if update.message:
@@ -71,7 +71,7 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     await db.init_db()  # Ensure DB is initialized before use
     player = await db.get_player(user_id)
     if not player:
@@ -182,7 +182,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     await db.init_db()  # Ensure DB is initialized before use
     team = context.user_data.get("team", [])
     if not team:
@@ -211,7 +211,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player or not player.team:
         await update.message.reply_text("You have not created a team yet.")
@@ -223,7 +223,7 @@ async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_T
     query = update.callback_query
     await query.answer()
     user_id = str(update.effective_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player or not player.team:
         await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
@@ -268,7 +268,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player or not player.team:
         await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
@@ -300,7 +300,7 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
         await query.edit_message_text("❌ You have no player account.")
@@ -332,7 +332,7 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     inv = player.inventory or {}
@@ -345,7 +345,7 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     inv = player.inventory or {}
@@ -358,7 +358,7 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     inv = player.inventory or {}
@@ -371,7 +371,7 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     inv = player.inventory or {}
     echo_shards = inv.get("echo_shard", 0)
@@ -381,7 +381,7 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
         await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")

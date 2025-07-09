@@ -29,7 +29,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     if not update.message:
         logger.error("start_character_selection called with no message")
         return
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     if not update.effective_user or not hasattr(update.effective_user, "id"):
         logger.error("start_character_selection called with no effective_user or id")
         await update.message.reply_text("Error: Could not identify user.")
@@ -134,7 +134,17 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
     birthplaces = ["Shiganshina", "Karanes", "Trost", "Krolva"]
     keyboard = [[InlineKeyboardButton(place, callback_data=f"location_{place}") for place in birthplaces]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("Choose your starting location:", reply_markup=reply_markup)
+    # Use edit_message_caption if the original message is a photo
+    if query.message and getattr(query.message, "photo", None):
+        await query.edit_message_caption(
+            caption="Choose your starting location:",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            "Choose your starting location:",
+            reply_markup=reply_markup
+        )
 
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -142,39 +152,32 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error("create_character called with no callback_query")
         return
     query = update.callback_query
-
     if not hasattr(query, "data") or query.data is None:
         logger.error("create_character called with no callback_query.data")
         return
-
     if not update.effective_user or not hasattr(update.effective_user, "id"):
         logger.error("create_character called with no effective_user or id")
         await query.edit_message_text("Error: Could not identify user.")
         return
-
     await query.answer()
     data_parts = query.data.split("_", 1)
     if len(data_parts) < 2:
         await query.edit_message_text("Error: Invalid location selection.")
         return
     location = data_parts[1]
-
     user_id = str(update.effective_user.id)
     username = getattr(update.effective_user, "username", None) or f"user_{user_id}"
     name = getattr(update.effective_user, "first_name", None) or f"Player {user_id}"
-
     if not hasattr(context, "user_data") or context.user_data is None:
         logger.error("context.user_data is not available")
         await query.edit_message_text("Error: Internal context error.")
         return
-
     selected_character = context.user_data.get('selected_character')
     if not selected_character:
         logger.error("No selected character found in context.user_data")
         await query.edit_message_text("Error: No character selected.")
         return
-
-    db = Database()
+    db = context.bot_data.get("db") or Database()
     char_data = get_character_data(selected_character)
     if not char_data:
         await query.edit_message_text("Error: Character data not found.")
