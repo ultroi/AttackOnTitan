@@ -883,17 +883,16 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             
             # --- NEW LEVEL-UP REWARD SYSTEM (MATCHES EXPLORE) ---
             reward_msg = [
-                f"🎉 {battle.character.name} defeated {battle.titan.name}! 🎉",
-                f"\nRewards:",
-                f"⚡ XP: +{rewards['xp']}",
-                f"🪙 Marks: +{rewards['marks']}"
+                f"<b>You have defeated {battle.titan.name}!</b>\n",
+                f"⚡ <b>XP: +{rewards['xp']}</b>",
+                f"🪙 <b>Marks: +{rewards['marks']}</b>"
             ]
             if rewards['crystal'] > 0:
                 reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
             if rewards['valor'] > 0:
                 reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
 
-            await query.edit_message_text("\n".join(reward_msg))
+            await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
 
             # Character level up info (send as new messages)
             if char_level_info["total_level_ups"] > 0:
