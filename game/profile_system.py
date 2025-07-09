@@ -13,6 +13,12 @@ logger = logging.getLogger(__name__)
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_profile_click', 0)
+    if now - last < 1.5:
+        return  # Ignore spam clicks silently
+    context.user_data['last_profile_click'] = now
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -20,6 +26,10 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
         elif update.callback_query:
             await update.callback_query.edit_message_text("You haven't created a player account yet! Use /start to begin.")
+        return
+    # --- Privacy: Only allow owner to access ---
+    if update.callback_query and str(update.callback_query.from_user.id) != user_id:
+        await update.callback_query.edit_message_text("You are not authorized to view this.")
         return
     character_name = player.team[0].character_name if player.team else None
     if not character_name:
@@ -71,9 +81,22 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(query.from_user.id)
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_team_click', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_team_click'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
-    await db.init_db()  # Ensure DB is initialized before use
-    player = await db.get_player(user_id)
+    # --- Optimization: Only fetch player once, use in-memory team for UI updates ---
+    player = context.user_data.get('cached_player')
+    if not player:
+        player = await db.get_player(user_id)
+        context.user_data['cached_player'] = player
     if not player:
         await query.edit_message_text("❌ You have no player account.")
         return
@@ -300,6 +323,16 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_inventory_click', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_inventory_click'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -332,6 +365,16 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_weapons', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_weapons'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
@@ -345,6 +388,16 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = str(query.from_user.id)
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_gear', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_gear'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.edit_message_text("You are not authorized to view this.")
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
