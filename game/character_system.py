@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if hasattr(context, 'user_data'):
+        logger.info("Clearing user data for character selection")
         context.user_data.clear()
     user_id = str(update.effective_user.id) if update.effective_user and hasattr(update.effective_user, 'id') else None
     if user_id and user_id in active_battles:
