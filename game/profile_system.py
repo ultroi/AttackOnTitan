@@ -44,6 +44,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     user_id = str(update.effective_user.id)
+    context.user_data['owner_id'] = user_id  # Set owner for this session
     # --- Anti-spam: ignore if called again within 1.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_profile_click', 0)
@@ -106,8 +107,9 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = update.callback_query
-    if not query:
-        logger.error("manage_team called without a callback query")
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(query.from_user.id)
@@ -198,6 +200,10 @@ async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
     await query.answer()
     char_name = query.data.replace("add_to_team_", "")
     context.user_data.setdefault("team", [])
@@ -216,6 +222,10 @@ async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
     await query.answer()
     char_name = query.data.replace("remove_from_team_", "")
     context.user_data.setdefault("team", [])
@@ -235,6 +245,10 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
     await query.answer()
     context.user_data["team"] = []
     await query.answer("Team cleared.")
@@ -245,6 +259,10 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
     await query.answer()
     user_id = str(query.from_user.id)
     db = context.bot_data.get("db") or Database()
@@ -375,7 +393,9 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = getattr(update, 'callback_query', None)
-    if not query:
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -422,7 +442,9 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = getattr(update, 'callback_query', None)
-    if not query:
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -457,7 +479,9 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = getattr(update, 'callback_query', None)
-    if not query:
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -492,7 +516,9 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = getattr(update, 'callback_query', None)
-    if not query:
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -527,7 +553,9 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handle_unauthorized(update)
         return
     query = getattr(update, 'callback_query', None)
-    if not query:
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
