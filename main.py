@@ -16,8 +16,7 @@ from game.map_system import show_map, MAP_IMAGE_URL
 from database.db import Database
 from database.db_instance import get_persistent_database
 import signal
-from utils.monitor import resource_monitor
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from utils.sudo_reset import reset_handler
 
 # Import handlers
 from game.character_system import (
@@ -270,6 +269,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("buy", buy_command))
     app_instance.add_handler(CommandHandler("referral", referral_info))
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
+    app_instance.add_handler(CommandHandler("reset", reset_handler))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
