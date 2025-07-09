@@ -12,6 +12,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if hasattr(context, 'user_data'):
+        context.user_data.clear()
+    user_id = str(update.effective_user.id) if update.effective_user and hasattr(update.effective_user, 'id') else None
+    if user_id and user_id in active_battles:
+        try:
+            battle = active_battles.pop(user_id)
+            if hasattr(battle, 'dispose'):
+                battle.dispose()
+        except Exception as e:
+            logger.error(f"Error clearing battle for user {user_id}: {e}")
     if not update.message:
         logger.error("start_character_selection called with no message")
         return
