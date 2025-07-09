@@ -45,16 +45,17 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     keyboard = [[InlineKeyboardButton("Start Your Journey", callback_data="start_journey")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_text = (
-        "Welcome to Attack on Titan!\n\n"
+        "<b>Welcome to AOT World!</b>\n\n"
         "In this world, humanity fights for survival against the Titans. "
         "Your journey begins now, as you choose your path and character.\n\n"
-        "Are you ready to join the fight?"
+        "<i>Are you ready to join the fight?</i>"
     )
     # Send image first, then welcome text with button
     await update.message.reply_photo(
         photo="https://i.ibb.co/tpg301ZQ/image.jpg",
         caption=welcome_text,
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
     )
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -70,7 +71,11 @@ async def show_character_selection(update: Update, context: ContextTypes.DEFAULT
         "Each character has unique abilities and playstyles. "
         "Select carefully, as this choice will shape your journey."
     )
-    await query.edit_message_text(selection_text, reply_markup=reply_markup)
+    # Use edit_message_caption if the original message is a photo with a caption
+    if query.message and hasattr(query.message, "photo") and getattr(query.message, "photo", None):
+        await query.edit_message_caption(caption=selection_text, reply_markup=reply_markup)
+    else:
+        await query.edit_message_text(selection_text, reply_markup=reply_markup)
 
 async def show_character_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
