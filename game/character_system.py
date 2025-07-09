@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
@@ -211,37 +211,43 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
         for i in range(0, len(birthplaces), 2)
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    # Use a custom image for location selection
     location_image_url = "https://i.ibb.co/BV70bWdr/image.jpg"
     location_caption = "Choose your starting location:"
-    # Delete the previous message if it's a photo, then send a new photo with location selection
+    # Try to edit the existing message first
     try:
         if query.message and getattr(query.message, "photo", None):
-            await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
-            await context.bot.send_photo(
-                chat_id=query.message.chat.id,
-                photo=location_image_url,
-                caption=location_caption,
+            await query.edit_message_media(
+                media=InputMediaPhoto(media=location_image_url, caption=location_caption),
                 reply_markup=reply_markup
             )
         else:
-            # If not a photo, just send the image with caption and buttons
-            await context.bot.send_photo(
-                chat_id=query.message.chat.id,
-                photo=location_image_url,
-                caption=location_caption,
+            await query.edit_message_text(
+                location_caption,
                 reply_markup=reply_markup
             )
-    except Exception as e:
-        logger.error(f"Error sending location selection image: {e}")
+        return
+    except Exception as edit_err:
+        logger.warning(f"Could not edit message for location selection: {edit_err}")
+    # If editing fails, delete the previous message and send a new photo
+    try:
+        if query.message and getattr(query.message, "photo", None):
+            await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
+        await context.bot.send_photo(
+            chat_id=query.message.chat.id,
+            photo=location_image_url,
+            caption=location_caption,
+            reply_markup=reply_markup
+        )
+    except Exception as send_err:
+        logger.error(f"Error sending location selection image: {send_err}")
         # Fallback to editing the message text if sending photo fails
         try:
             await query.edit_message_text(
                 location_caption,
                 reply_markup=reply_markup
             )
-        except Exception as edit_err:
-            logger.error(f"Error editing message for location selection: {edit_err}")
+        except Exception as edit_err2:
+            logger.error(f"Error editing message for location selection: {edit_err2}")
 
 async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -479,11 +485,26 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 is_photo = query.message and getattr(query.message, "photo", None)
                 current_text = query.message.caption if is_photo else query.message.text if query.message else None
-                if current_text != welcome_text:
-                    if is_photo:
-                        await query.edit_message_caption(welcome_text, parse_mode=ParseMode.HTML)
-                    else:
-                        await query.edit_message_text(welcome_text, parse_mode=ParseMode.HTML)
+                image_url = "https://i.ibb.co/tpg301ZQ/image.jpg"
+                if is_photo:
+                    if current_text != welcome_text:
+                        # Always update the image and caption to ensure the correct image is shown
+                        await query.edit_message_media(
+                            media=InputMediaPhoto(media=image_url, caption=welcome_text, parse_mode=ParseMode.HTML)
+                        )
+                else:
+                    # If not a photo, send a new photo with the welcome message and delete the old message
+                    if query.message:
+                        try:
+                            await context.bot.delete_message(chat_id=query.message.chat.id, message_id=query.message.message_id)
+                        except Exception as del_err:
+                            logger.warning(f"Failed to delete previous message: {del_err}")
+                    await context.bot.send_photo(
+                        chat_id=query.message.chat.id,
+                        photo=image_url,
+                        caption=welcome_text,
+                        parse_mode=ParseMode.HTML
+                    )
             except Exception as edit_err:
                 logger.error(f"Error editing welcome message: {edit_err}")
             # Send log to channel for new user
