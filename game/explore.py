@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Rate limiting for explore command
 user_last_explore: Dict[str, float] = {}
 EXPLORE_COOLDOWN = 3 
+TITAN_TIMEOUT_SECONDS = 60
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -263,7 +264,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sent_message = None
 
         async def titan_encounter_timeout():
-            await asyncio.sleep(60)
+            await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
+
+            if user_id in active_battles:
+                    logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
+                    return
+
             if db is not None:
                 titan_in_db = await db.get_titan(user_id)
                 if titan_in_db:
@@ -291,6 +297,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             remove_player_activity(user_id)
         except NameError:
             pass
+
+
+async def cancel_titan_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """Cancel any pending titan timeout for a user."""
+    try:
+        if "titan_timeout_task" in context.user_data:
+            task = context.user_data["titan_timeout_task"]
+            task.cancel()
+            del context.user_data["titan_timeout_task"]
+            logger.info(f"Cancelled titan timeout for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error cancelling titan timeout for user {user_id}: {e}")
 
 
 async def _reply_error(update: Update, message: str):
