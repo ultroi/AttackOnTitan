@@ -127,7 +127,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-        player_character.gas -= 100
         try:
             await db.update_character(player_character)
         except Exception as e:

@@ -57,7 +57,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("👥 Team", callback_data="manage_team"),
         InlineKeyboardButton("🧳 Items", callback_data="show_inventory")],
-        [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]
+        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     if update.message:
         await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)

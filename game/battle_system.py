@@ -782,15 +782,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.edit_message_text("Internal error: Database not initialized.")
         return
     
-    await db.characters.update_one(
-        {"user_id": user_id, "name": battle.character.name},
-        {"$set": {
-            "current_hp": battle.character_hp,
-            "gas": battle.gas,
-            "ability_cooldowns": battle.ability_cooldowns
-        }}
-    )
-    
     if battle.character_hp <= 0 or battle.titan_hp <= 0:
         await handle_battle_end(query, battle, user_id, context)
         return
