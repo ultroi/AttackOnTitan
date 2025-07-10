@@ -25,7 +25,7 @@ REFERRER_REWARDS = {"valor": 40}
 LOG_CHANNEL_ID = -1002873117075
 
 # Allowed values for validation
-ALLOWED_LOCATIONS = ["Shiganshina", "Karanes", "Trost", "Krolva"]
+ALLOWED_LOCATIONS = ["Shiganshina", "Karanes", "Trost", "Orvud"]
 ALLOWED_CHARACTERS = set(CHARACTERS)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
