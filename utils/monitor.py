@@ -2,7 +2,7 @@ import psutil
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
-from game.explore import active_battles, user_last_explore
+from game.explore import user_last_explore  
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -86,6 +86,7 @@ class ResourceMonitor:
     
     def get_battle_stats(self) -> Dict[str, int]:
         """Get active battle statistics"""
+        from game.battle_system import active_battles  # Local import to avoid circular import
         return {
             "active_battles": len(active_battles),
             "memory_per_battle_kb": round(
@@ -117,6 +118,7 @@ class ResourceMonitor:
 
     def get_live_player_stats(self) -> Dict[str, Any]:
         """Get live player activity without DB queries"""
+        from game.battle_system import active_battles  # Local import to avoid circular import
         current_time = datetime.now()
         active_players = []
         
@@ -208,7 +210,8 @@ resource_monitor = ResourceMonitor()
 def get_system_health_stats() -> Dict[str, Any]:
     """Get comprehensive system health statistics"""
     try:
-        from game.explore import active_battles, user_last_explore
+        from game.battle_system import active_battles  # Local import to avoid circular import
+        from game.explore import user_last_explore
         current_time = datetime.now()
         
         # Count active elements
