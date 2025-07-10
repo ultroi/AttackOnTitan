@@ -4,8 +4,13 @@ from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from database.db import Database
 from database.models import Player, Character
-from game.explore import active_battles
-from game.battle_system import BattleSystem, handle_battle_end, handle_battle_start, handle_battle_action
+from game.battle_system import (
+    BattleSystem,
+    handle_battle_end,
+    handle_battle_start,
+    handle_battle_action,
+    active_battles,
+)
 from game.shop_system import ShopSystem
 from database.db import Database
 from game.profile_system import show_character_profile, profile, exit_profile, fill_gas
