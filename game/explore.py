@@ -1,7 +1,7 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from database.models import Player, Character, Titan, DailyExplores
+from database.models import Player, Character, Titan, DailyExplores, TITAN_NAME_VARIANTS
 from database.db import Database
 from game.travel_map import TRAVEL_MAP  # Add this import at the top
 
@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 user_last_explore: Dict[str, float] = {}
 EXPLORE_COOLDOWN = 3 
 TITAN_TIMEOUT_SECONDS = 60
+
+# Titan type to image URL mapping (add URLs for types you have images for)
+TITAN_TYPE_IMAGE_URLS = {
+    "Goofy Grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
+    # Add more titan type to image URL mappings here
+}
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -227,20 +233,50 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
             f"<i>Ready to engage?</i>"
         )
-        sent_message = None
+        titan_image_url = None
+        # Try to match titan type in titan.name for image
+        for difficulty, titan_types in TITAN_NAME_VARIANTS.items():
+            for titan_type in titan_types:
+                if titan_type in titan.name and titan_type in TITAN_TYPE_IMAGE_URLS:
+                    titan_image_url = TITAN_TYPE_IMAGE_URLS[titan_type]
+                    break
+            if titan_image_url:
+                break
         try:
             if update.message:
                 sent_message = await update.message.reply_text(
                     text=reply_text,
-                    reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML
                 )
+                # Send titan image if available
+                if titan_image_url:
+                    await update.message.reply_photo(
+                        photo=titan_image_url,
+                        caption=None,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    # If no image, send battle button below text
+                    await update.message.reply_text(
+                        text=" ",  # single space to force button, since \u200b is not supported
+                        reply_markup=reply_markup
+                    )
             elif update.callback_query:
                 sent_message = await update.callback_query.message.edit_text(
                     text=reply_text,
-                    reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML
                 )
+                if titan_image_url:
+                    await update.callback_query.message.reply_photo(
+                        photo=titan_image_url,
+                        caption=None,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await update.callback_query.message.reply_text(
+                        text="\u200b",
+                        reply_markup=reply_markup
+                    )
         except Exception as e:
             logger.error(f"Failed to send reply for user {user_id}: {e}")
             await _reply_error(update, "An error occurred while displaying the titan.")

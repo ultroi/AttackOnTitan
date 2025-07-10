@@ -659,9 +659,14 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer("Profile closed.")
     try:
-        await query.edit_message_text("Exited")
+        # Try to delete the message (removes both text and image/caption)
+        await query.message.delete()
     except Exception as e:
         try:
-            await query.message.edit_caption("Exited")
+            # If can't delete, fallback to edit caption/text
+            await query.edit_message_text("Exited")
         except Exception as e2:
-            logger.error(f"Error closing profile: {e} / {e2}")
+            try:
+                await query.message.edit_caption("Exited")
+            except Exception as e3:
+                logger.error(f"Error closing profile: {e} / {e2} / {e3}")

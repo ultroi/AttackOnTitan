@@ -522,9 +522,8 @@ TITAN_NAME_VARIANTS = {
         "Cunning", "Hunter", "Stalker", "Lurker", "Predator"
     ],
     "Hard": [
-        "Armored", "Colossal", "Female", "Beast", "Jaw",
-        "Warhammer", "Cart", "Attack", "Founding", "War Chief",
-        "Ancient", "Primal", "Apex", "Elite", "Legendary"
+        "Small Round", "Thin-Legged", "One-Eyed",
+        "Cunning", "Hunter", "Stalker", "Lurker", "Predator"
     ]
 }
 
