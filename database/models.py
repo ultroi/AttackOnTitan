@@ -222,6 +222,14 @@ class Character(BaseModel):
         self.max_gas = 5000
         self.updated_at = datetime.now(timezone.utc)
 
+    def dict(self, *args, **kwargs):
+        # Ensure all abilities in passive_abilities have 'unlocked' or 'is_unlocked' field
+        data = super().dict(*args, **kwargs)
+        for ability in data.get('passive_abilities', []):
+            if 'unlocked' not in ability and 'is_unlocked' not in ability:
+                ability['unlocked'] = False
+        return data
+
 
 class TeamMember(BaseModel):
     character_name: str
