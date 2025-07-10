@@ -53,6 +53,7 @@ class BattleSystem:
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
         self.battle_ended: bool = False
+        self.initial_gas: int = character.gas  # Store initial gas at battle start
 
     def dispose(self) -> None:
         """Clean up battle resources."""
@@ -672,7 +673,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             char_level_info = battle.character.add_xp(character_xp)
             player_obj = Player(**player_data)
             player_level_info = player_obj.add_xp(player_xp)
-            gas_consumed = calculate_gas_consumption(battle.titan)
+            gas_consumed = max(0, battle.initial_gas - battle.character.gas)
             battle.character.gas = max(0, battle.character_gas - gas_consumed)
             battle.character.max_gas = battle.character.gas
             battle.character.current_hp = battle.character_hp
@@ -698,8 +699,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 f"<b>You have defeated {battle.titan.name}!</b>\n",
                 f"⚡ <b>XP: +{rewards['xp']}</b>",
                 f"🪙 <b>Marks: +{rewards['marks']}</b>",
-                f"⛽ <b>Gas Consumed: {gas_consumed}</b>",
-                f"⛽ <b>Remaining Gas: {battle.character.gas}/{battle.character.max_gas}</b>"
             ]
             if rewards['crystal'] > 0:
                 reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
@@ -755,7 +754,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             except ImportError:
                 pass
         else:
-            gas_consumed = calculate_gas_consumption(battle.titan)
+            gas_consumed = max(0, battle.initial_gas - battle.character.gas)
             battle.character.gas = max(0, battle.character_gas - gas_consumed)
             battle.character.max_gas = battle.character.gas
             battle.character.current_hp = 0
