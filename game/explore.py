@@ -42,6 +42,7 @@ async def _reply_error(update: Update, message: str):
     except Exception as e:
         logger.error(f"Failed to send error message: {e}")
 
+
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
     if not update.effective_user:
@@ -50,14 +51,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     user_id_str = str(user_id)
-    # --- Cancel any previous titan timeout for this user ---
-    try:
-        titan_timeout_task = context.bot_data.pop(f"titan_timeout_{user_id}", None)
-        if titan_timeout_task and not titan_timeout_task.done():
-            titan_timeout_task.cancel()
-    except Exception as e:
-        logger.warning(f"Error cancelling previous titan timeout for user {user_id}: {e}")
-
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
     
     # Check for active battle before allowing explore
@@ -352,9 +345,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 pass
                     except Exception as e:
                         logger.error(f"Failed to cleanup expired titan for user {user_id}: {e}")
-
+        # --- Store all titan timeout tasks in a list ---
         titan_timeout_task = asyncio.create_task(titan_encounter_timeout())
-        context.bot_data[f"titan_timeout_{user_id}"] = titan_timeout_task
+        key = f"titan_timeouts_{user_id}"
+        if key not in context.bot_data:
+            context.bot_data[key] = []
+        context.bot_data[key].append(titan_timeout_task)
 
     except Exception as e:
         logger.error(f"Error in explore command: {e}")
