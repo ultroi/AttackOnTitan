@@ -137,6 +137,15 @@ class Database:
             logger.error(f"Failed to add character to player: {e}")
             raise
 
+    async def delete_player(self, user_id: str):
+        """Delete a player by user_id."""
+        try:
+            await self.players.delete_one({"user_id": str(user_id)})
+            logger.info(f"Deleted player with user_id: {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete player: {e}")
+            raise
+
     # Character operations
     async def create_character(self, user_id: str, name: str, character_type: str, current_hp: int) -> Character:
         """Create a new character."""
@@ -173,6 +182,10 @@ class Database:
             
             # Ensure the entire character is dumped before saving
             character_dict = character.dict()
+            # Ensure all passive abilities have 'unlocked' field for DB validation
+            if 'passive_abilities' in character_dict:
+                for ability in character_dict['passive_abilities']:
+                    ability['unlocked'] = ability.get('is_unlocked', False)
             await self.characters.insert_one(character_dict)
             await self.add_character_to_player(user_id, name)
             return character
