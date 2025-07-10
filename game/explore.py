@@ -1,7 +1,6 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from game.battle_system import cleanup_battle, active_battles
 from database.models import Player, Character, Titan, DailyExplores
 from database.db import Database
 from game.travel_map import TRAVEL_MAP  # Add this import at the top
@@ -335,6 +334,7 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
 async def force_cleanup_user(user_id: int, db: Database):
     """Force cleanup of all user-related data."""
     try:
+        from game.battle_system import cleanup_battle, active_battles  # Import here to avoid circular import
         if user_id in active_battles:
             result = cleanup_battle(user_id, "forced_cleanup")
             if asyncio.iscoroutine(result):
