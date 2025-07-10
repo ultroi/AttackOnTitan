@@ -227,14 +227,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         mutant_text = "\n⚠️ <b>WARNING:</b> <i>This appears to be a rare mutant variant!</i>" if "Mutant" in titan.name else ""
 
-        # --- MINIMAL TITAN ENCOUNTER MESSAGE FOR SPEED ---
-        reply_text = (
-            f"🚨 <b>TITAN SPOTTED!</b> 🚨\n\n"
-            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
-            f"<i>Ready to engage?</i>"
-        )
+        # --- MINIMAL TITAN ENCOUNTER MESSAGE WITH EMBEDDED IMAGE ---
         titan_image_url = None
-        # Try to match titan type in titan.name for image
         for difficulty, titan_types in TITAN_NAME_VARIANTS.items():
             for titan_type in titan_types:
                 if titan_type in titan.name and titan_type in TITAN_TYPE_IMAGE_URLS:
@@ -242,41 +236,32 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     break
             if titan_image_url:
                 break
+        if titan_image_url:
+            # Embed image as clickable '?' in the message text
+            image_embed = f'<a href="{titan_image_url}">?</a>'
+        else:
+            image_embed = ""
+        reply_text = (
+            f"🚨 <b>TITAN SPOTTED!</b> 🚨\n\n"
+            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
+            f"<i>Ready to engage?</i>\n"
+            f"{image_embed}"
+        )
         try:
             if update.message:
                 sent_message = await update.message.reply_text(
                     text=reply_text,
-                    parse_mode=ParseMode.HTML
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
                 )
-                # Send titan image if available
-                if titan_image_url:
-                    await update.message.reply_photo(
-                        photo=titan_image_url,
-                        caption=None,
-                        reply_markup=reply_markup
-                    )
-                else:
-                    # If no image, send battle button below text
-                    await update.message.reply_text(
-                        text=" ",  # single space to force button, since \u200b is not supported
-                        reply_markup=reply_markup
-                    )
             elif update.callback_query:
                 sent_message = await update.callback_query.message.edit_text(
                     text=reply_text,
-                    parse_mode=ParseMode.HTML
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
                 )
-                if titan_image_url:
-                    await update.callback_query.message.reply_photo(
-                        photo=titan_image_url,
-                        caption=None,
-                        reply_markup=reply_markup
-                    )
-                else:
-                    await update.callback_query.message.reply_text(
-                        text="\u200b",
-                        reply_markup=reply_markup
-                    )
         except Exception as e:
             logger.error(f"Failed to send reply for user {user_id}: {e}")
             await _reply_error(update, "An error occurred while displaying the titan.")
