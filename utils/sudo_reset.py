@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import CommandHandler, ContextTypes
 from database.db import Database
-from utils.extra import get_owner_id
+from utils.extra import get_owner_ids
 
 
 # Channel for reset logs
@@ -35,7 +35,7 @@ async def send_reset_log(context: ContextTypes.DEFAULT_TYPE, target_user, by_use
     await context.bot.send_message(chat_id=RESET_LOG_CHANNEL, text=log_text, parse_mode=ParseMode.HTML)
 
 async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    owner_id = get_owner_id()
+    owner_id = get_owner_ids()
     user = update.effective_user
     if not user or user.id != owner_id:
         return
