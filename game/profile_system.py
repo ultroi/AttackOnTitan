@@ -591,7 +591,7 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if character.unlocked_abilities.get(ability.name, False):
                 profile_text += (
                     f"• {escape(ability.name)} ({ability_type})\n"
-                    f"  {escape(ability.description)}\n"
+                    f"  <i>{escape(ability.description)}</i>\n"
                     f"  Gas Cost: {ability.gas_cost}\n"
                 )
                 if ability.cooldown:

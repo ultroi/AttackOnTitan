@@ -39,18 +39,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
     user_id_str = str(user_id)
 
-    # Check for active battle before allowing explore
-    active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
-    if active_battle_id:
-        first_name = update.effective_user.first_name or "Player"
-        await _reply_error(update, f"{first_name} is currently battling !!")
-        try:
-            from utils.monitor import remove_player_activity
-            remove_player_activity(user_id)
-        except Exception:
-            pass
-        return
-
     try:
         from utils.monitor import track_player_action, remove_player_activity
         track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
@@ -325,6 +313,21 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             remove_player_activity(user_id)
         except NameError:
             pass
+
+    # Check for active battle before allowing explore
+    try:
+        from game.battle_system import active_battles
+    except ImportError:
+        active_battles = {}
+    if user_id in active_battles:
+        first_name = update.effective_user.first_name or "Player"
+        await _reply_error(update, f"{first_name} is currently battling !!")
+        try:
+            from utils.monitor import remove_player_activity
+            remove_player_activity(user_id)
+        except Exception:
+            pass
+        return
 
 async def cancel_titan_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """Cancel any pending titan timeout for a user."""
