@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from database.characters import CharacterData, get_character_data, AbilityEffect
 from motor.motor_asyncio import AsyncIOMotorClient
+from database.schemas import Ability  # <-- Import Ability
 
 class CharacterStats(BaseModel):
     ATK: int = 10
@@ -13,12 +14,7 @@ class CharacterStats(BaseModel):
     SPD: int = 10
     HP: int = 650  # Increased default max HP for better balance
 
-class AbilityInfo(BaseModel):
-    name: str
-    type: str  # "active", "passive", or "ultimate"
-    description: str
-    level_required: int
-    unlocked: bool = False
+# Removed AbilityInfo, use Ability from schemas.py
 
 class Equipment(BaseModel):
     name: str
@@ -53,9 +49,9 @@ class Character(BaseModel):
     valor: int = 0
     marks: int = 0
     explore_count: int = 0
-    active_abilities: List[AbilityInfo] = Field(default_factory=list)
-    passive_abilities: List[AbilityInfo] = Field(default_factory=list)
-    ultimate_abilities: List[AbilityInfo] = Field(default_factory=list)
+    active_abilities: List[Ability] = Field(default_factory=list)
+    passive_abilities: List[Ability] = Field(default_factory=list)
+    ultimate_abilities: List[Ability] = Field(default_factory=list)
     unlocked_abilities: Dict[str, bool] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -134,18 +130,6 @@ class Character(BaseModel):
             # Check for ability unlocks
             self._check_ability_unlocks()
 
-            # Auto-create Central Bank account at level 15
-            if self.level == 15:
-                # Use sync pymongo for now (since models.py is sync)
-                try:
-                    client = AsyncIOMotorClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
-                    db = client[os.getenv("DB_NAME", "aot")]
-                    if not db.central_bank_accounts.find_one({'user_id': self.user_id}):
-                        account = CentralBankAccount(user_id=self.user_id)
-                        db.central_bank_accounts.insert_one(account.model_dump())
-                except Exception as e:
-                    pass
-
     def _check_ability_unlocks(self) -> None:
         for ability in self.active_abilities + self.passive_abilities + self.ultimate_abilities:
             if not ability.unlocked and self.level >= ability.level_required:
@@ -217,7 +201,7 @@ class Character(BaseModel):
                 if self.level >= level_required:
                     self.unlocked_abilities[ability_name] = True
                     # Add to appropriate ability list if not already present
-                    ability_info = AbilityInfo(
+                    ability_info = Ability(
                         name=ability_name,
                         type=ability_type,
                         description=ability.description,
@@ -230,6 +214,14 @@ class Character(BaseModel):
                         self.active_abilities.append(ability_info)
                     elif ability_type == "ultimate" and ability_info not in self.ultimate_abilities:
                         self.ultimate_abilities.append(ability_info)
+
+    
+    def refill_gas(self) -> None:
+        """Refill character's gas to maximum capacity."""
+        self.gas = 5000
+        self.max_gas = 5000
+        self.updated_at = datetime.now(timezone.utc)
+
 
 class TeamMember(BaseModel):
     character_name: str
