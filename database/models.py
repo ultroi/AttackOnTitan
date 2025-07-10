@@ -113,13 +113,31 @@ class Character(BaseModel):
         if self.level < 125:
             self.level += 1
             self.xp -= self.xp_to_next_level
-            # Update max HP and current HP
             character_data = get_character_data(self.character_type)
             if character_data:
+                # --- Progressive stat scaling toward max_potential ---
+                max_potential = getattr(character_data, 'max_potential', None)
+                base_stats = character_data.base_stats.dict() if hasattr(character_data, 'base_stats') else {}
+                if max_potential:
+                    for stat in ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                        base = base_stats.get(stat, getattr(self.stats, stat, 0))
+                        max_val = max_potential.get(stat, base)
+                        # Linear scaling: stat increases each level to reach max_potential at level 125
+                        stat_increase = (max_val - base) / (125 - 1)
+                        new_val = getattr(self.stats, stat, 0) + stat_increase
+                        # Cap at max_potential
+                        if stat == 'HP':
+                            setattr(self.stats, stat, int(round(min(new_val, max_val))))
+                        else:
+                            setattr(self.stats, stat, int(round(min(new_val, max_val))))
+                # Update max HP and current HP
                 new_max_hp = character_data.get_max_hp(self.level)
                 hp_increase = new_max_hp - self.stats.HP
                 self.stats.HP = new_max_hp
                 self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
+            # --- Max gas increases by 250 per level up ---
+            self.max_gas += 250
+            self.gas = self.max_gas  # refill gas to new max
             # Update rank
             if self.level >= 25:
                 self.rank = "Veteran"

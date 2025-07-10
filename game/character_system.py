@@ -204,7 +204,7 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
         return
     user_id = str(update.effective_user.id)
     logger.info(f"User {user_id} selected character: {char_name}")
-    birthplaces = ["Shiganshina", "Karanes", "Trost", "Krolva"]
+    birthplaces = ["Shiganshina", "Karanes", "Trost", "Orvud"]
     # Arrange buttons 2 per row
     keyboard = [
         [InlineKeyboardButton(place, callback_data=f"location_{place}") for place in birthplaces[i:i+2]]

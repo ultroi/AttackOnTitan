@@ -13,7 +13,7 @@ from game.battle_system import (
 )
 from game.shop_system import ShopSystem
 from database.db import Database
-from game.profile_system import show_character_profile, profile, exit_profile, fill_gas
+from game.profile_system import profile, exit_profile, fill_gas
 from game.character_system import (
     show_character_selection,
     show_character_details,
@@ -85,7 +85,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.update({"message_history": []})
         # Dispatch table for callbacks
         handlers = {
-            "show_character_profile": lambda data: show_character_profile(update, context),
             "back_to_profile": lambda data: profile(update, context),
             "exit_profile": lambda data: exit_profile(update, context),
             "fill_gas": lambda data: fill_gas(update, context),
