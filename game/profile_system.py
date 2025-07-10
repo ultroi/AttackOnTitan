@@ -385,21 +385,19 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
-    max_gas = getattr(character, 'max_gas', 10000)
-    gas_needed = max_gas - character.gas
-    if gas_needed <= 0:
-        await query.edit_message_text(f"⛽ {character.name}'s gas tank is already full!\nGas: {character.gas}/{max_gas}")
-        return
-    character.gas += gas_needed
+    # Always refill both gas and max_gas to 5000
+    character.gas = 5000
+    character.max_gas = 5000
     await db.update_character(character)
     await query.edit_message_text(
-        f"✅ Filled {character_name}'s gas to {max_gas}!",
+        f"✅ Filled {character_name}'s gas to 5000!",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
              InlineKeyboardButton("Exit", callback_data="exit_profile")]
         ]),
         parse_mode=ParseMode.HTML
     )
+    return
 
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):

@@ -25,8 +25,12 @@ class BattleSystem:
         self.titan_hp = getattr(titan, 'max_hp')
         # Always use character's current gas for battle
         self.gas = getattr(character, 'gas') 
-        # Max gas is only for display, not for use in battle
-        self.character_gas = getattr(character, 'max_gas', self.gas)
+        # Ensure max_gas never exceeds 5000 unless intentionally upgraded
+        max_gas = getattr(character, 'max_gas', self.gas)
+        if max_gas > 5000:
+            max_gas = 5000
+            self.character.max_gas = 5000
+        self.character_gas = max_gas
 
         # Ensure character stats are initialized
         if not hasattr(character, 'stats') or character.stats is None:
