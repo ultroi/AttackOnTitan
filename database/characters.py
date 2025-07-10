@@ -815,6 +815,13 @@ CHARACTERS: Dict[str, CharacterData] = {
     )
 }
 
+# Character image URLs
+CHARACTER_IMAGES = {
+    "Hitch Dreyse": "https://i.ibb.co/BM7pq4z/image.jpg",
+    "Mina Carolina": "https://i.ibb.co/wZN4Zwvd/image.jpg",
+    "Daz": "https://i.ibb.co/B5sPkmZJ/image.jpg"
+}
+
 # ======================
 # MANAGEMENT FUNCTIONS
 # ======================

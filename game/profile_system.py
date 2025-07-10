@@ -4,9 +4,10 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
 from database.models import Player, TeamMember
-from database.characters import get_character_data
+from database.characters import get_character_data, CHARACTER_IMAGES
 from html import escape
 from game.shop_system import ShopSystem
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -305,54 +306,6 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     team_text = "Your current team:\n" + "\n".join(f"{m.position}. {m.character_name}" for m in player.team)
     await update.message.reply_text(team_text)
 
-async def show_character_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-    query = update.callback_query
-    await query.answer()
-    user_id = str(update.effective_user.id)
-    db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    if not player or not player.team:
-        await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
-        return
-    character_name = player.team[0].character_name
-    character = await db.get_character(user_id, character_name)
-    if not character:
-        await query.edit_message_text(f"Error: Character {character_name} not found.")
-        return
-    char_data = get_character_data(character.name)
-    if not char_data:
-        await query.edit_message_text("Error: Character data not found.")
-        return
-    profile_text = (
-        f"<b>{escape(character.name)}</b>\n"
-        f"<b>Level:</b> {character.level}\n"
-        f"<b>Rank:</b> {character.rank}\n"
-        f"<b>XP:</b> {character.xp} / {character.xp_to_next_level}\n\n"
-        f"<b>Stats:</b>\n" + "\n".join(f"{stat}: {value}" for stat, value in character.stats.model_dump().items()) + "\n\n"
-        f"<b>Gas:</b> {character.gas}\n"
-        f"<b>Unlocked Abilities:</b>\n"
-    )
-    for ability_type in ["active", "passive", "ultimate"]:
-        abilities = getattr(char_data, f"{ability_type}_abilities")
-        for ability in abilities:
-            if character.unlocked_abilities.get(ability.name, False):
-                profile_text += (
-                    f"• {escape(ability.name)} ({ability_type})\n"
-                    f"  {escape(ability.description)}\n"
-                    f"  Gas Cost: {ability.gas_cost}\n"
-                )
-                if ability.cooldown:
-                    profile_text += f"  Cooldown: {ability.cooldown} turns\n"
-                profile_text += "\n"
-    keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data="fill_gas"),
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
-    ]
-    await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):
         await handle_unauthorized(update)
@@ -633,3 +586,78 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     # Call the main profile function to show the profile
     await profile(update, context)
+
+
+async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /char <character name or partial> - Show full character details if owned by user
+    """
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    user_id = str(update.effective_user.id)
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    if not player or not player.owned_characters:
+        await update.message.reply_text("❌ You have no unlocked characters.")
+        return
+    # Get argument (character name or partial)
+    args = context.args if hasattr(context, 'args') else []
+    if not args:
+        await update.message.reply_text("Usage: /char <character name>")
+        return
+    query_name = " ".join(args).strip().lower()
+    # Find owned character with partial match
+    matched_name: Optional[str] = None
+    for char_name in player.owned_characters:
+        if query_name in char_name.lower():
+            matched_name = char_name
+            break
+    if not matched_name:
+        await update.message.reply_text("❌ Character not found or not owned.")
+        return
+    character = await db.get_character(user_id, matched_name)
+    if not character:
+        await update.message.reply_text(f"Error: Character {matched_name} not found.")
+        return
+    char_data = get_character_data(character.name)
+    if not char_data:
+        await update.message.reply_text("Error: Character data not found.")
+        return
+    # Build detail text (reuse show_character_profile logic)
+    profile_text = (
+        f"<b>{escape(character.name)}</b>\n"
+        f"<b>Level:</b> {character.level}\n"
+        f"<b>Rank:</b> {character.rank}\n"
+        f"<b>XP:</b> {character.xp} / {character.xp_to_next_level}\n\n"
+        f"<b>Stats:</b>\n" + "\n".join(f"{stat}: {value}" for stat, value in character.stats.model_dump().items()) + "\n\n"
+        f"<b>Gas:</b> {character.gas}\n"
+        f"<b>Unlocked Abilities:</b>\n"
+    )
+    for ability_type in ["active", "passive", "ultimate"]:
+        abilities = getattr(char_data, f"{ability_type}_abilities")
+        for ability in abilities:
+            if character.unlocked_abilities.get(ability.name, False):
+                profile_text += (
+                    f"• {escape(ability.name)} ({ability_type})\n"
+                    f"  {escape(ability.description)}\n"
+                    f"  Gas Cost: {ability.gas_cost}\n"
+                )
+                if ability.cooldown:
+                    profile_text += f"  Cooldown: {ability.cooldown} turns\n"
+                profile_text += "\n"
+    keyboard = [
+        [InlineKeyboardButton("Fill Gas", callback_data="fill_gas"),
+         InlineKeyboardButton("Exit", callback_data="exit_profile")]
+    ]
+    # Send image with caption if available
+    image_url = CHARACTER_IMAGES.get(character.name)
+    if image_url:
+        await update.message.reply_photo(
+            photo=image_url,
+            caption=profile_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await update.message.reply_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)

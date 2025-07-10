@@ -26,7 +26,7 @@ from game.character_system import (
     start_character_selection
 )
 from game.profile_system import (
-    profile, show_character_profile,
+    profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info
 )
@@ -270,6 +270,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("referral", referral_info))
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
     app_instance.add_handler(CommandHandler("nuke", reset_handler))
+    app_instance.add_handler(CommandHandler("char", char_detail))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
