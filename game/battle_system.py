@@ -7,6 +7,7 @@ from telegram.constants import ParseMode
 from database.db import Database
 import asyncio
 import random
+from utils.monitor import track_battle_end
 import logging
 from datetime import datetime, timezone
 
@@ -886,6 +887,23 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             battle.character.max_gas = battle.character.gas  # Set max_gas to current gas after battle
             await db.update_character(battle.character)
             
+            # GAS LOGIC: Calculate gas consumption based on battle conditions
+            def calculate_gas_consumption(battle):
+                # Example: base 1000, but can be changed by titan difficulty, etc.
+                base = 1000
+                if getattr(battle.titan, 'difficulty', 'Normal') == 'Hard':
+                    return base + 500
+                elif getattr(battle.titan, 'difficulty', 'Normal') == 'Easy':
+                    return base - 200
+                # Add more conditions as needed
+                return base
+
+            gas_consumed = calculate_gas_consumption(battle)
+            new_gas = max(0, battle.character.gas - gas_consumed)
+            new_max_gas = max(0, battle.character.max_gas - gas_consumed)
+            battle.character.gas = new_gas
+            battle.character.max_gas = new_max_gas
+            await db.update_character(battle.character)
             # --- NEW LEVEL-UP REWARD SYSTEM (MATCHES EXPLORE) ---
             reward_msg = [
                 f"<b>You have defeated {battle.titan.name}!</b>\n",
@@ -960,7 +978,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     await db.players.update_one({"user_id": user_id}, update_fields)
 
             try:
-                from utils.monitor import track_battle_end
                 track_battle_end(int(user_id), battle.character.name, "victory")
             except ImportError:
                 pass
