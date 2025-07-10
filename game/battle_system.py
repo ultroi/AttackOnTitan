@@ -20,13 +20,14 @@ class BattleSystem:
         self.character = character
         self.titan = titan
         self.player = player
-        
-        # Safely initialize stats with defaults if needed
-        self.character_hp = getattr(character, 'current_hp', 100) or 100
-        self.titan_hp = getattr(titan, 'max_hp', 100) or 100
-        self.gas = getattr(character, 'gas', 1000) or 1000
-        self.character_gas = getattr(character, 'max_gas', self.gas)  # Max gas ab max_gas se set ho
-        
+        # Initialize HP and gas
+        self.character_hp = getattr(character, 'current_hp')
+        self.titan_hp = getattr(titan, 'max_hp')
+        # Always use character's current gas for battle
+        self.gas = getattr(character, 'gas') 
+        # Max gas is only for display, not for use in battle
+        self.character_gas = getattr(character, 'max_gas', self.gas)
+
         # Ensure character stats are initialized
         if not hasattr(character, 'stats') or character.stats is None:
             self.character.stats = CharacterStats(HP=650, ATK=25, DEF=10, SPD=10, ACC=10, INT=10)
