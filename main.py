@@ -282,7 +282,6 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     app_instance.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
     app_instance.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
-    app_instance.add_handler(CallbackQueryHandler(show_character_profile, pattern="^show_character_profile$"))
     app_instance.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
     app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
     app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
