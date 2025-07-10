@@ -35,9 +35,9 @@ async def send_reset_log(context: ContextTypes.DEFAULT_TYPE, target_user, by_use
     await context.bot.send_message(chat_id=RESET_LOG_CHANNEL, text=log_text, parse_mode=ParseMode.HTML)
 
 async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    owner_id = get_owner_ids()
+    owner_ids = get_owner_ids()
     user = update.effective_user
-    if not user or user.id != owner_id:
+    if not user or user.id not in owner_ids:
         return
     args = context.args
     if not args:
@@ -47,12 +47,11 @@ async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = args[0]
     reason = " ".join(args[1:]) if len(args) > 1 else None
     try:
-        # Create and initialize a fresh db instance
-        db = Database()
-        await db.init_db()
-        if any(x is None for x in [db.characters, db.players, db.titans, db.equipment, db.shop_purchases_collection]):
+        # Use pre-initialized db instance from bot_data for speed
+        db = context.bot_data.get("db")
+        if db is None:
             if update.message:
-                await update.message.reply_text("Database collections are not initialized. Reset aborted.")
+                await update.message.reply_text("Database instance not found. Reset aborted.")
             return
         await reset_user_data(db, target_id)
         # Try to get user info for logging
