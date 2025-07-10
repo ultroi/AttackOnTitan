@@ -966,7 +966,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 pass
         else:
             battle.character.current_hp = 0  # Only current_hp is set to 0 on defeat, max HP remains unchanged
-            battle.character.max_gas = battle.character.gas  # Set max_gas to current gas after defeat
+            battle.character.gas = battle.gas  
             await db.update_character(battle.character)
             await query.edit_message_text(
                 f" {battle.character.name} was defeated by {battle.titan.name}!\n\n"
