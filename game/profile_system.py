@@ -622,50 +622,30 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query or str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to use this button!", show_alert=True)
         return
-    await query.answer()
     user_id = str(query.from_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player or not player.team:
-        await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
+        await query.answer("You haven't created a team yet! Use /start to begin.", show_alert=True)
         return
     character_name = player.team[0].character_name
     character = await db.get_character(user_id, character_name)
     if not character:
-        await query.edit_message_text(f"Error: Character {character_name} not found.")
+        await query.answer(f"Error: Character {character_name} not found.", show_alert=True)
         return
-    # If already full, show alert
+    # If already full, show alert with current gas
     if getattr(character, "gas", 0) >= 5000:
-        await query.answer(f"{character_name}'s gas is already full!", show_alert=True)
+        await query.answer(f"{character_name}'s gas is already full! (5000/5000)", show_alert=True)
         return
-    # Always refill both gas and max_gas to 5000
+    prev_gas = getattr(character, "gas", 0)
     character.gas = 5000
     character.max_gas = 5000
     await db.update_character(character)
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
-    ])
-    text = f"✅ Filled {character_name}'s gas to 5000!"
-    # Check if the original message is a photo (has caption)
-    if hasattr(query.message, 'photo') and query.message.photo:
-        try:
-            await query.edit_message_caption(
-                caption=text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-        except Exception as e:
-            logger.error(f"Error editing message caption: {e}")
-    else:
-        try:
-            await query.edit_message_text(
-                text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-        except Exception as e:
-            logger.error(f"Error editing message text: {e}")
+    await query.answer(
+        f"{character_name}'s gas was {prev_gas}/5000.\nNow filled to 5000!",
+        show_alert=True
+    )
+    # No message edit, only alert as requested
     return
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -681,4 +661,7 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text("Exited")
     except Exception as e:
-        logger.error(f"Error closing profile: {e}")
+        try:
+            await query.message.edit_caption("Exited")
+        except Exception as e2:
+            logger.error(f"Error closing profile: {e} / {e2}")
