@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Global dictionary to track active battles
 active_battles: Dict[str, 'BattleSystem'] = {}
+active_battles_lock = asyncio.Lock()
 
 # =========================
 # BATTLE SYSTEM CLASS
@@ -413,25 +414,29 @@ def calculate_gas_consumption(titan: Titan) -> int:
 
 def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['BattleSystem'] = None) -> None:
     """Clean up battle state and resources, remove from active battles."""
-    battle_instance = battle or active_battles.get(user_id)
-    if battle_instance:
+    user_id = str(user_id)
+    async def _cleanup():
+        async with active_battles_lock:
+            battle_instance = battle or active_battles.get(user_id)
+            if battle_instance:
+                try:
+                    username = battle_instance.character.name
+                    track_battle_end(int(user_id), username, result)
+                except (ImportError, AttributeError):
+                    pass
+                try:
+                    battle_instance.dispose()
+                except Exception as e:
+                    logger.warning(f"Error disposing battle for user {user_id}: {e}")
+                if user_id in active_battles:
+                    del active_battles[user_id]
+                logger.info(f"Battle {result} for user {user_id}. Active battles: {len(active_battles)}")
         try:
-            username = battle_instance.character.name
-            track_battle_end(int(user_id), username, result)
-        except (ImportError, AttributeError):
+            from utils.monitor import remove_player_activity
+            remove_player_activity(int(user_id))
+        except ImportError:
             pass
-        try:
-            battle_instance.dispose()
-        except Exception as e:
-            logger.warning(f"Error disposing battle for user {user_id}: {e}")
-        if user_id in active_battles:
-            del active_battles[user_id]
-        logger.info(f"Battle {result} for user {user_id}. Active battles: {len(active_battles)}")
-    try:
-        from utils.monitor import remove_player_activity
-        remove_player_activity(int(user_id))
-    except ImportError:
-        pass
+    asyncio.create_task(_cleanup())
 
 
 def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboardButton]]:
@@ -528,7 +533,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         character.current_hp = character.stats.HP
     player = Player(**player_data) if player_data else None
     battle = BattleSystem(character, titan, player)
-    active_battles[user_id] = battle
+    async with active_battles_lock:
+        active_battles[user_id] = battle
     try:
         from utils.monitor import track_player_action
         username = update.effective_user.username or update.effective_user.first_name or "Unknown"
@@ -566,9 +572,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await query.answer()
     user_id = str(update.effective_user.id)
-    if user_id not in active_battles or active_battles[user_id].battle_ended:
-        return
-    battle = active_battles[user_id]
+    async with active_battles_lock:
+        if user_id not in active_battles or active_battles[user_id].battle_ended:
+            return
+        battle = active_battles[user_id]
     action = query.data
     if not action:
         return
@@ -861,33 +868,34 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
     try:
         battle.timeout_task = asyncio.current_task()
         await asyncio.sleep(60)
-        if user_id in active_battles:
-            db = context.bot_data.get("db")
-            if not db:
-                logger.error("Database not initialized")
-                return
-            try:
-                await db.characters.update_one(
-                    {"user_id": user_id, "name": battle.character.name},
-                    {"$set": {
-                        "current_hp": battle.character_hp,
-                        "gas": battle.character_gas,
-                        "max_gas": battle.character.max_gas,
-                        "ability_cooldowns": battle.ability_cooldowns
-                    }}
-                )
-            except Exception as e:
-                logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
-            try:
-                await query.edit_message_text(
-                    "⏰ Battle Expired ⏰\n\n"
-                    "You didn't respond in time. The battle has expired.\n"
-                    "Use /explore to find another titan."
-                )
-            except Exception as e:
-                logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
-            await db.delete_titan(user_id)
-            cleanup_battle(user_id, "timeout", battle)
+        async with active_battles_lock:
+            if user_id in active_battles:
+                db = context.bot_data.get("db")
+                if not db:
+                    logger.error("Database not initialized")
+                    return
+                try:
+                    await db.characters.update_one(
+                        {"user_id": user_id, "name": battle.character.name},
+                        {"$set": {
+                            "current_hp": battle.character_hp,
+                            "gas": battle.character_gas,
+                            "max_gas": battle.character.max_gas,
+                            "ability_cooldowns": battle.ability_cooldowns
+                        }}
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
+                try:
+                    await query.edit_message_text(
+                        "⏰ Battle Expired ⏰\n\n"
+                        "You didn't respond in time. The battle has expired.\n"
+                        "Use /explore to find another titan."
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
+                await db.delete_titan(user_id)
+                cleanup_battle(user_id, "timeout", battle)
     except asyncio.CancelledError:
         logger.debug(f"Battle timeout cancelled for user {user_id}")
     except Exception as e:

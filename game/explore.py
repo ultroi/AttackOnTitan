@@ -29,15 +29,65 @@ TITAN_TYPE_IMAGE_URLS = {
     # Add more titan type to image URL mappings here
 }
 
+# Move _reply_error above all usages
+async def _reply_error(update: Update, message: str):
+    """Helper to reply with error messages."""
+    try:
+        if hasattr(update, "message") and update.message:
+            if hasattr(update.message, "reply_text"):
+                await update.message.reply_text(message)
+        elif hasattr(update, "callback_query") and update.callback_query:
+            if hasattr(update.callback_query, "answer"):
+                await update.callback_query.answer(message)
+    except Exception as e:
+        logger.error(f"Failed to send error message: {e}")
+
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
     if not update.effective_user:
         await _reply_error(update, "Cannot identify user. Please try again.")
         return
 
-    user_id = update.effective_user.id  # Use int, not str
-    username = update.effective_user.username or update.effective_user.first_name or "Unknown"
+    user_id = update.effective_user.id
     user_id_str = str(user_id)
+    # --- Cancel any previous titan timeout for this user ---
+    try:
+        titan_timeout_task = context.bot_data.pop(f"titan_timeout_{user_id}", None)
+        if titan_timeout_task and not titan_timeout_task.done():
+            titan_timeout_task.cancel()
+    except Exception as e:
+        logger.warning(f"Error cancelling previous titan timeout for user {user_id}: {e}")
+
+    username = update.effective_user.username or update.effective_user.first_name or "Unknown"
+    
+    # Check for active battle before allowing explore
+    try:
+        from game.battle_system import active_battles, active_battles_lock
+    except ImportError:
+        active_battles = {}
+        active_battles_lock = None
+    user_id_str = str(user_id)
+    if active_battles_lock:
+        async with active_battles_lock:
+            if user_id_str in active_battles:
+                first_name = update.effective_user.first_name or "Player"
+                await _reply_error(update, f"{first_name} is currently battling !!")
+                try:
+                    from utils.monitor import remove_player_activity
+                    remove_player_activity(user_id)
+                except Exception:
+                    pass
+                return
+    else:
+        if user_id_str in active_battles:
+            first_name = update.effective_user.first_name or "Player"
+            await _reply_error(update, f"{first_name} is currently battling !!")
+            try:
+                from utils.monitor import remove_player_activity
+                remove_player_activity(user_id)
+            except Exception:
+                pass
+            return
 
     try:
         from utils.monitor import track_player_action, remove_player_activity
@@ -275,6 +325,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_error(update, "An error occurred while displaying the titan.")
             sent_message = None
 
+        # Fix: Defensive edit_text for sent_message
         async def titan_encounter_timeout():
             await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
             # Import active_battles here to avoid circular import issues
@@ -285,7 +336,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if user_id in active_battles:
                 logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
                 return
-
             if db is not None:
                 titan_in_db = await db.get_titan(user_id)
                 if titan_in_db:
@@ -314,20 +364,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except NameError:
             pass
 
-    # Check for active battle before allowing explore
+    # --- After explore, cleanup stale explore records for this user ---
     try:
-        from game.battle_system import active_battles
-    except ImportError:
-        active_battles = {}
-    if user_id in active_battles:
-        first_name = update.effective_user.first_name or "Player"
-        await _reply_error(update, f"{first_name} is currently battling !!")
-        try:
-            from utils.monitor import remove_player_activity
-            remove_player_activity(user_id)
-        except Exception:
-            pass
-        return
+        # Remove from user_last_explore if too old or after battle
+        max_age = 24 * 3600  # 24 hours
+        now = datetime.now(timezone.utc).timestamp()
+        for uid in list(user_last_explore.keys()):
+            if now - user_last_explore[uid] > max_age:
+                user_last_explore.pop(uid, None)
+    except Exception as e:
+        logger.warning(f"Error cleaning up user_last_explore: {e}")
 
 async def cancel_titan_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """Cancel any pending titan timeout for a user."""
@@ -341,37 +387,16 @@ async def cancel_titan_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Error cancelling titan timeout for user {user_id}: {e}")
 
 
-async def _reply_error(update: Update, message: str):
-    """Helper to reply with error messages."""
-    try:
-        if update.message:
-            await update.message.reply_text(message)
-        elif update.callback_query:
-            await update.callback_query.answer(message)
-    except Exception as e:
-        logger.error(f"Failed to send error message: {e}")
-
-
 async def cleanup_stale_explore_records(max_age_hours: int = 24):
     """Clean up stale explore records to prevent memory leaks."""
     while True:
         try:
             db = Database()
             current_time = datetime.now(timezone.utc).timestamp()
-            # Use the correct method to get all players
-            players = []
-            if hasattr(db, "get_all_players") and callable(getattr(db, "get_all_players", None)):
-                players = await db.get_all_players()
-            stale_users = [
-                player.user_id for player in players
-                if hasattr(player, "last_explore") and player.last_explore and (current_time - player.last_explore) > (max_age_hours * 3600)
-            ]
-            for user_id in stale_users:
-                await db.update_player(user_id, {"last_explore": None})
-                if user_id in user_last_explore:
-                    del user_last_explore[user_id]
-            if stale_users:
-                logger.info(f"Cleaned up {len(stale_users)} stale explore records")
+            # Prune user_last_explore to avoid unbounded growth
+            for uid in list(user_last_explore.keys()):
+                if current_time - user_last_explore[uid] > (max_age_hours * 3600):
+                    user_last_explore.pop(uid, None)
             await asyncio.sleep(3600)
         except Exception as e:
             logger.error(f"Error in cleanup_stale_explore_records: {e}")
@@ -382,14 +407,16 @@ async def force_cleanup_user(user_id: int, db: Database):
     """Force cleanup of all user-related data."""
     try:
         from game.battle_system import cleanup_battle, active_battles  # Import here to avoid circular import
-        if user_id in active_battles:
-            result = cleanup_battle(user_id, "forced_cleanup")
-            if asyncio.iscoroutine(result):
-                await result
+        user_id_str = str(user_id)
+        if user_id_str in active_battles:
+            try:
+                cleanup_battle(user_id_str, "forced_cleanup")
+            except Exception as e:
+                logger.warning(f"Error cleaning up battle for user {user_id}: {e}")
+            active_battles.pop(user_id_str, None)
+        user_last_explore.pop(user_id_str, None)
         await db.update_player(user_id, {"last_explore": None})
-        await db.delete_titan(user_id)
-        if user_id in user_last_explore:
-            del user_last_explore[user_id]
+        await db.delete_titan(user_id_str)
         try:
             from utils.monitor import remove_player_activity
             remove_player_activity(user_id)
