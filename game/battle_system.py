@@ -14,11 +14,21 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+# =========================
+# GLOBALS & UTILITIES
+# =========================
+
 # Global dictionary to track active battles
 active_battles: Dict[str, 'BattleSystem'] = {}
 
+# =========================
+# BATTLE SYSTEM CLASS
+# =========================
+
 class BattleSystem:
-    """Manages a battle between a character and a titan, handling gas, HP, and abilities."""
+    """
+    Manages a battle between a character and a titan, handling gas, HP, abilities, buffs, debuffs, and turn logic.
+    """
     def __init__(self, character: Character, titan: Titan, player: Optional[Player] = None):
         self.character = character
         self.titan = titan
@@ -55,8 +65,9 @@ class BattleSystem:
         self.battle_ended: bool = False
         self.initial_gas: int = character.gas  # Store initial gas at battle start
 
+    # ---------- Resource Management ----------
     def dispose(self) -> None:
-        """Clean up battle resources."""
+        """Clean up battle resources and reset state."""
         if self._is_disposed:
             return
         self._is_disposed = True
@@ -69,6 +80,7 @@ class BattleSystem:
         self.ability_cooldowns.clear()
         self.trigger_states.clear()
 
+    # ---------- Context & Effects ----------
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
         """Build context for ability effect functions."""
         base_damage = (ability.base_damage + self.character.stats.ATK) if ability and ability.base_damage else 0
@@ -96,7 +108,7 @@ class BattleSystem:
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
-        """Apply passive abilities for a given trigger."""
+        """Apply passive abilities for a given trigger and collect messages."""
         character_data = get_character_data(self.character.character_type)
         messages = []
         if not character_data:
@@ -122,7 +134,7 @@ class BattleSystem:
         return messages
 
     def apply_effect(self, effect: AbilityEffect) -> None:
-        """Apply an ability effect to the battle state."""
+        """Apply an ability effect to the battle state (damage, buffs, debuffs, etc)."""
         if not effect:
             return
         self.titan_hp = max(0, self.titan_hp - (effect.damage or 0))
@@ -155,8 +167,9 @@ class BattleSystem:
         if effect.bleed_applied:
             self.titan_debuffs["bleed"] = max(self.titan_debuffs.get("bleed", 0), 3)
 
+    # ---------- Titan Turn Logic ----------
     def titan_attack(self) -> Tuple[int, str]:
-        """Calculate titan attack damage and effects."""
+        """Calculate titan attack damage and effects for this turn."""
         if self.titan_debuffs.get("stun", 0) > 0:
             self.titan_debuffs["stun"] -= 1
             return 0, f"{self.titan.name} is stunned and cannot attack this turn!"
@@ -171,6 +184,7 @@ class BattleSystem:
         damage_multipliers = {"Easy": 0.7, "Normal": 1.0, "Hard": 1.4}
         base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
         special_messages = []
+        # Titan special abilities
         if self.titan.special_abilities:
             for ability in self.titan.special_abilities:
                 if ability == "Armor Plating" and random.random() < 0.3:
@@ -192,6 +206,7 @@ class BattleSystem:
                 elif ability == "Colossal Explosion" and random.random() < 0.15:
                     base_damage = int(base_damage * 2.0)
                     special_messages.append(f"💥 {self.titan.name} creates a massive explosion!")
+        # Calculate final damage
         damage = int(base_damage * (1 - min(0.75, self.character.stats.DEF / 250)))
         if self.buffs.get("damage_reduction", 0):
             damage = int(damage * (1 - self.buffs["damage_reduction"]))
@@ -202,6 +217,7 @@ class BattleSystem:
             if self.buffs["shield"] <= 0:
                 del self.buffs["shield"]
         self.character_hp = max(0, self.character_hp - damage)
+        # Passive triggers
         if damage > 0 and not self.trigger_states["first_damage_taken"]:
             self.trigger_states["first_damage_taken"] = True
             messages = self.apply_passives("damage_taken")
@@ -215,8 +231,9 @@ class BattleSystem:
         special_messages.extend(messages)
         return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
+    # ---------- Ability Usage ----------
     def use_ability(self, ability_name: str) -> Tuple[int, str, Dict]:
-        """Use a character ability with gas cost."""
+        """Use a character ability with gas cost and apply its effect."""
         logger.info(f"Using ability {ability_name} with gas cost")
         damage = 0
         message = ""
@@ -263,7 +280,7 @@ class BattleSystem:
         return damage, message, effects
 
     def has_usable_abilities(self) -> bool:
-        """Check if character has usable abilities."""
+        """Check if character has any usable (off-cooldown, enough gas) abilities."""
         character_data = get_character_data(self.character.character_type)
         if not character_data:
             return False
@@ -282,8 +299,9 @@ class BattleSystem:
                     return True
         return False
 
+    # ---------- Turn & Status Updates ----------
     def update_cooldowns(self) -> None:
-        """Update ability cooldowns and temporary effects."""
+        """Update ability cooldowns, buffs, debuffs, and apply periodic effects (burn, bleed, etc)."""
         for ability_name in list(self.ability_cooldowns.keys()):
             if self.ability_cooldowns[ability_name] > 0:
                 self.ability_cooldowns[ability_name] -= 1
@@ -298,12 +316,14 @@ class BattleSystem:
                     self.buffs[buff] -= 1
                     if self.buffs[buff] <= 0:
                         del self.buffs[buff]
+        # Burn effect
         if self.debuffs.get("burn", 0) > 0:
             burn_damage = max(5, self.titan.level * 2)
             self.character_hp = max(0, self.character_hp - burn_damage)
             self.debuffs["burn"] -= 1
             if self.debuffs["burn"] <= 0:
                 del self.debuffs["burn"]
+        # Bleed effect
         if self.titan_debuffs.get("bleed", 0) > 0:
             character_atk = self.character.stats.ATK or 10
             bleed_damage = max(10, character_atk // 2)
@@ -313,7 +333,7 @@ class BattleSystem:
                 del self.titan_debuffs["bleed"]
 
     def get_battle_status(self) -> Dict:
-        """Return current battle state."""
+        """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
         character_max_hp = self.character.stats.HP
         titan_max_hp = self.titan.max_hp
         character_hp_percent = self.character_hp / character_max_hp
@@ -348,7 +368,7 @@ class BattleSystem:
         }
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
-        """Calculate rewards for defeating the titan."""
+        """Calculate rewards for defeating the titan (XP, marks, crystals, valor)."""
         base_xp = generate_titan_xp(titan.level, titan.difficulty)
         performance_multiplier = 1.0 + (0.2 if self.turn < 5 else 0) + (0.15 if self.character_hp / character.stats.HP > 0.8 else 0) + (0.3 if titan.difficulty == "Hard" else 0)
         rewards = {
@@ -380,14 +400,19 @@ class BattleSystem:
                 rewards["crystal"] = crystal_amount
         return rewards
 
+# =========================
+# UTILITY FUNCTIONS
+# =========================
+
 def calculate_gas_consumption(titan: Titan) -> int:
     """Calculate gas consumption based on titan difficulty."""
     base_gas = 1000
     difficulty_modifiers = {"Easy": -200, "Normal": 0, "Hard": 500}
     return base_gas + difficulty_modifiers.get(titan.difficulty, 0)
 
+
 def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['BattleSystem'] = None) -> None:
-    """Clean up battle state and resources."""
+    """Clean up battle state and resources, remove from active battles."""
     battle_instance = battle or active_battles.get(user_id)
     if battle_instance:
         try:
@@ -408,8 +433,9 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
     except ImportError:
         pass
 
+
 def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboardButton]]:
-    """Generate keyboard buttons for valid abilities."""
+    """Generate keyboard buttons for valid abilities and actions."""
     keyboard = []
     character_data = get_character_data(battle.character.character_type)
     if not character_data:
@@ -450,6 +476,10 @@ def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboar
         keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Need 20 gas)", callback_data="lowgas_basic_attack")])
     keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
     return keyboard
+
+# =========================
+# ASYNC HANDLERS (TELEGRAM)
+# =========================
 
 async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the start of a battle."""
@@ -521,9 +551,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
             f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
             f"{status['character_bar']}\n"
-            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n\n"
-            f"{status['status_message']}\n"
-            f"<b>Choose your action:</b>"
+            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n"
         ),
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
@@ -626,8 +654,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
         f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
         f"{status['character_bar']}\n"
-        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n\n"
-        f"{status['status_message']}\n"
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n"
     )
     await query.edit_message_text(
         text=battle_message,
@@ -760,9 +787,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             battle.character.current_hp = 0
             await db.update_character(battle.character)
             await query.edit_message_text(
-                f"{battle.character.name} was defeated by {battle.titan.name}!\n\n"
-                f"⛽ <b>Gas Consumed: {gas_consumed}</b>\n"
-                f"⛽ <b>Remaining Gas: {battle.character.gas}/{battle.character.max_gas}</b>"
+                f"{battle.character.name} was defeated by {battle.titan.name}!\n"
             )
             try:
                 track_battle_end(int(user_id), battle.character.name, "defeat")
