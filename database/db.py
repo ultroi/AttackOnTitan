@@ -197,6 +197,11 @@ class Database:
         try:
             character.updated_at = datetime.now(timezone.utc)
             character_dict = character.dict()  # Convert to dict
+            # Ensure all passive abilities have 'unlocked' field for DB validation
+            if 'passive_abilities' in character_dict:
+                for ability in character_dict['passive_abilities']:
+                    # Use 'is_unlocked' if present, else fallback to False
+                    ability['unlocked'] = ability.get('is_unlocked', False)
             await self.characters.find_one_and_update(
                 {
                     "user_id": character.user_id,
