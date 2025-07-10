@@ -3,7 +3,8 @@ import random
 import datetime
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
-from database.models import Character, Player, Titan, Equipment, AbilityInfo, CharacterStats, SPECIAL_ABILITIES, generate_titan_name, generate_titan_hp, generate_titan_xp
+from database.models import Character, Player, Titan, Equipment, CharacterStats, SPECIAL_ABILITIES, generate_titan_name, generate_titan_hp, generate_titan_xp
+from database.schemas import Ability  # Use Ability instead of AbilityInfo
 from database.characters import get_character_data
 from database.db_instance import get_database
 import logging
@@ -209,7 +210,7 @@ class Database:
             logger.error(f"Failed to update character: {e}")
             raise
 
-    async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[AbilityInfo]]:
+    async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[Ability]]:
         try:
             character = await self.get_character(user_id, character_name)
             if not character:
