@@ -21,6 +21,10 @@ TITAN_TIMEOUT_SECONDS = 60
 # Titan type to image URL mapping (add URLs for types you have images for)
 TITAN_TYPE_IMAGE_URLS = {
     "Goofy Grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
+    "Potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
+    "Bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
+    "Gaping Mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
+
     # Add more titan type to image URL mappings here
 }
 
@@ -238,14 +242,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
         if titan_image_url:
             # Embed image as clickable '?' in the message text
-            image_embed = f'<a href="{titan_image_url}">?</a>'
+            image_embed = f'<a href="{titan_image_url}">!</a>'
         else:
             image_embed = ""
         reply_text = (
-            f"🚨 <b>TITAN SPOTTED!</b> 🚨\n\n"
+            f"<code>-------------------------</code>\n"
             f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
-            f"<i>Ready to engage?</i>\n"
-            f"{image_embed}"
+            f"<b>has blocked your way{image_embed}</b>\n"
+            f"<code>-------------------------</code>\n"
         )
         try:
             if update.message:

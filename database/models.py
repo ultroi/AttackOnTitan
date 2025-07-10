@@ -512,9 +512,9 @@ class Titan(BaseModel):
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
     "Easy": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Tiny-Armed", "Long-Nosed",
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth", "Long-Nosed",
         "Small Round", "Thin-Legged", "One-Eyed", "Crawling Lizard-Like", "Tree Hanger",
-        "Gaping Mouth", "Tall Toothless", "Double-Jawed", "Half-Faced", "Wall Climber"
+        "Tiny-Armed", "Tall Toothless", "Double-Jawed", "Half-Faced", "Wall Climber"
     ],
     "Normal": [
         "Abnormal", "Frenzied", "Swift", "Heavy", "Agile",
