@@ -843,6 +843,9 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     await send(chat_id, f"You have arrived at <b>{location}</b>!", parse_mode="HTML")
                 except Exception:
                     pass
+        # Clear active battle id so user can explore again
+        if f"active_battle_id_{user_id}" in context.bot_data:
+            del context.bot_data[f"active_battle_id_{user_id}"]
         cleanup_battle(user_id, "completed", battle)
     except Exception as e:
         logger.error(f"Error in handle_battle_end for user {user_id}: {e}")
