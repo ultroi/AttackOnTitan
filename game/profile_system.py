@@ -634,18 +634,38 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
+    # If already full, show alert
+    if getattr(character, "gas", 0) >= 5000:
+        await query.answer(f"{character_name}'s gas is already full!", show_alert=True)
+        return
     # Always refill both gas and max_gas to 5000
     character.gas = 5000
     character.max_gas = 5000
     await db.update_character(character)
-    await query.edit_message_text(
-        f"✅ Filled {character_name}'s gas to 5000!",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
-             InlineKeyboardButton("Exit", callback_data="exit_profile")]
-        ]),
-        parse_mode=ParseMode.HTML
-    )
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
+         InlineKeyboardButton("Exit", callback_data="exit_profile")]
+    ])
+    text = f"✅ Filled {character_name}'s gas to 5000!"
+    # Check if the original message is a photo (has caption)
+    if hasattr(query.message, 'photo') and query.message.photo:
+        try:
+            await query.edit_message_caption(
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error editing message caption: {e}")
+    else:
+        try:
+            await query.edit_message_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error editing message text: {e}")
     return
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
