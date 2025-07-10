@@ -306,51 +306,6 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     team_text = "Your current team:\n" + "\n".join(f"{m.position}. {m.character_name}" for m in player.team)
     await update.message.reply_text(team_text)
 
-async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-    query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id') if context.user_data else None
-    if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
-        return
-    await query.answer("Profile closed.")
-    try:
-        await query.edit_message_text("Exited")
-    except Exception as e:
-        logger.error(f"Error closing profile: {e}")
-
-async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-    query = update.callback_query
-    await query.answer()
-    user_id = str(query.from_user.id)
-    db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    if not player or not player.team:
-        await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
-        return
-    character_name = player.team[0].character_name
-    character = await db.get_character(user_id, character_name)
-    if not character:
-        await query.edit_message_text(f"Error: Character {character_name} not found.")
-        return
-    # Always refill both gas and max_gas to 5000
-    character.gas = 5000
-    character.max_gas = 5000
-    await db.update_character(character)
-    await query.edit_message_text(
-        f"✅ Filled {character_name}'s gas to 5000!",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
-             InlineKeyboardButton("Exit", callback_data="exit_profile")]
-        ]),
-        parse_mode=ParseMode.HTML
-    )
-    return
 
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):
@@ -589,12 +544,6 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /char <character name or partial> - Show full character details if owned by user
-    """
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -624,6 +573,8 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not char_data:
         await update.message.reply_text("Error: Character data not found.")
         return
+    # Store owner_id for button restriction
+    context.user_data['owner_id'] = user_id
     # Build detail text (reuse show_character_profile logic)
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
@@ -661,3 +612,53 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to use this button!", show_alert=True)
+        return
+    await query.answer()
+    user_id = str(query.from_user.id)
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    if not player or not player.team:
+        await query.edit_message_text("You haven't created a team yet! Use /start to begin.")
+        return
+    character_name = player.team[0].character_name
+    character = await db.get_character(user_id, character_name)
+    if not character:
+        await query.edit_message_text(f"Error: Character {character_name} not found.")
+        return
+    # Always refill both gas and max_gas to 5000
+    character.gas = 5000
+    character.max_gas = 5000
+    await db.update_character(character)
+    await query.edit_message_text(
+        f"✅ Filled {character_name}'s gas to 5000!",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Back to Profile", callback_data="show_character_profile"),
+             InlineKeyboardButton("Exit", callback_data="exit_profile")]
+        ]),
+        parse_mode=ParseMode.HTML
+    )
+    return
+
+async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to use this button!", show_alert=True)
+        return
+    await query.answer("Profile closed.")
+    try:
+        await query.edit_message_text("Exited")
+    except Exception as e:
+        logger.error(f"Error closing profile: {e}")
