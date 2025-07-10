@@ -10,6 +10,7 @@ from typing import Dict
 import random
 import logging
 import asyncio
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"[STORE_TITAN] Storing titan for user_id: {str(user_id)} (type: {type(user_id)})")
         await db.store_titan(str(user_id), titan)
 
-        battle_id = f"battle_{user_id}"
+        # Generate a unique battle_id for this encounter
+        battle_id = f"battle_{user_id}_{uuid4().hex}"
+        # Store the latest battle_id for this user in bot_data
+        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
         keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -310,11 +314,22 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except NameError:
             pass
 
+    # Check for active battle before allowing explore
+    active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+    if active_battle_id:
+        first_name = update.effective_user.first_name or "Player"
+        await _reply_error(update, f"{first_name} is currently battling !!")
+        try:
+            from utils.monitor import remove_player_activity
+            remove_player_activity(user_id)
+        except Exception:
+            pass
+        return
 
 async def cancel_titan_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """Cancel any pending titan timeout for a user."""
     try:
-        if "titan_timeout_task" in context.user_data:
+        if context.user_data is not None and "titan_timeout_task" in context.user_data:
             task = context.user_data["titan_timeout_task"]
             task.cancel()
             del context.user_data["titan_timeout_task"]

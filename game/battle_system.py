@@ -488,12 +488,13 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     await query.answer()
     callback_data = query.data
+    user_id = str(update.effective_user.id)
+    # Only allow the latest battle button to work
+    current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+    if callback_data != current_battle_id:
+        return  # Ignore old/expired battle buttons
     if not callback_data or not callback_data.startswith("battle_"):
         await query.edit_message_text("Invalid battle request.")
-        return
-    user_id = str(update.effective_user.id)
-    if user_id in active_battles:
-        await query.edit_message_text("⚠️ You already have an active battle in progress!")
         return
     logger.info(f"[BATTLE_START] user_id: {user_id}")
     titan_timeout_key = f"titan_timeout_{user_id}"
