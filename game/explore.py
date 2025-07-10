@@ -269,10 +269,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         async def titan_encounter_timeout():
             await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
-
+            # Import active_battles here to avoid circular import issues
+            try:
+                from game.battle_system import active_battles
+            except ImportError:
+                active_battles = {}
             if user_id in active_battles:
-                    logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
-                    return
+                logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
+                return
 
             if db is not None:
                 titan_in_db = await db.get_titan(user_id)
