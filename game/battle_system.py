@@ -674,7 +674,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player_level_info = player_obj.add_xp(player_xp)
             gas_consumed = calculate_gas_consumption(battle.titan)
             battle.character.gas = max(0, battle.character_gas - gas_consumed)
-            battle.character.max_gas = max(0, battle.character.max_gas - gas_consumed)
+            battle.character.max_gas = battle.character.gas
             battle.character.current_hp = battle.character_hp
             await db.update_character(battle.character)
             reward_updates = {
@@ -757,7 +757,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         else:
             gas_consumed = calculate_gas_consumption(battle.titan)
             battle.character.gas = max(0, battle.character_gas - gas_consumed)
-            battle.character.max_gas = max(0, battle.character.max_gas - gas_consumed)
+            battle.character.max_gas = battle.character.gas
             battle.character.current_hp = 0
             await db.update_character(battle.character)
             await query.edit_message_text(
