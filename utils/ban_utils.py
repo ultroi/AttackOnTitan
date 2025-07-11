@@ -1,11 +1,9 @@
-
-
 from typing import Callable, Any
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
 import time
-from utils.extra import get_owner_ids
+from utils.owners import get_owner_ids
 from database.db_instance import get_database
 
 
