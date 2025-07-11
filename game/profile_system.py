@@ -545,6 +545,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user or not hasattr(update.effective_user, "id"):
+        await update.message.reply_text("❌ Unable to get your user ID. Please try again.")
+        return
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)

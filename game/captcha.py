@@ -22,7 +22,7 @@ def generate_captcha():
 
     # Load font
     try:
-        font = ImageFont.truetype("arial.ttf", 40)
+        font = ImageFont.truetype("arial.ttf", size=50)
     except:
         font = ImageFont.load_default()
 

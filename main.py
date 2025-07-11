@@ -298,19 +298,23 @@ def register_handlers(app_instance):
     # Fallback handler, must be last
     app_instance.add_handler(CallbackQueryHandler(button_callback))
 
+
 # Shop command handler for /shop
 async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
+    user_id = str(update.effective_user.id) if update.effective_user else None
     try:
         shop_system = context.bot_data.get("shop_system")
         if not shop_system:
-            await update.message.reply_text("Shop system not initialized. Please try again later.")
+            if update.message:
+                await update.message.reply_text("Shop system not initialized. Please try again later.")
             return
         text, reply_markup = await shop_system.show_shop(context, user_id)
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        if update.message:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
     except Exception as e:
         logger.error(f"Error in shop_command: {e}")
-        await update.message.reply_text("An error occurred while showing the shop.")
+        if update.message:
+            await update.message.reply_text("An error occurred while showing the shop.")
 
 
 async def main():
