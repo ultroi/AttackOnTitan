@@ -675,192 +675,172 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     """Handle the end of a battle, updating gas and rewards."""
     user_id = str(user_id)
     battle.battle_ended = True
-    try:
-        if battle.timeout_task and not battle.timeout_task.done():
-            battle.timeout_task.cancel()
-        db = context.bot_data.get("db")
-        if not db:
-            logger.error("Database not initialized")
-            await query.edit_message_text("❌ Database error!")
-            cleanup_battle(user_id, "error", battle)
-            return
-        player_data = await db.players.find_one({"user_id": user_id})
-        if not player_data:
-            await query.edit_message_text("❌ Player data not found!")
-            cleanup_battle(user_id, "error", battle)
-            return
-        explore_count = player_data.get("explore_count", 0)
-        await db.players.update_one(
-            {"user_id": user_id},
-            {"$inc": {"explore_count": 1}}
-        )
-        send = context.bot.send_message
-        chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
-        if battle.titan_hp <= 0:
-            rewards = battle.calculate_rewards(
-                titan=battle.titan,
-                character=battle.character,
-                player=battle.player,
-                explore_count=explore_count
-            )
-            character_xp = rewards["xp"] // 2
-            player_xp = rewards["xp"] - character_xp
-            char_level_info = battle.character.add_xp(character_xp)
-            player_obj = Player(**player_data)
-            player_level_info = player_obj.add_xp(player_xp)
-            gas_consumed = max(0, battle.initial_gas - battle.character.gas)
-            battle.character.gas = max(0, battle.character_gas - gas_consumed)
-            battle.character.max_gas = battle.character.gas
-            battle.character.current_hp = battle.character_hp
-            await db.update_character(battle.character)
-            reward_updates = {
-                "$inc": {
-                    "crystal": rewards["crystal"],
-                    "valor": rewards["valor"],
-                    "xp": player_xp,
-                    "marks": rewards["marks"],
-                    "total_xp": player_xp
-                },
-                "$set": {
-                    "level": player_obj.level,
-                    "updated_at": datetime.now(timezone.utc)
-                }
-            }
-            await db.players.update_one(
-                {"user_id": user_id},
-                reward_updates
-            )
-            reward_msg = [
-                f"<b>You have defeated {battle.titan.name}!</b>\n",
-                f"⚡ <b>XP: +{rewards['xp']}</b>",
-                f"🪙 <b>Marks: +{rewards['marks']}</b>",
-            ]
-            if rewards['crystal'] > 0:
-                reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
-            if rewards['valor'] > 0:
-                reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
-            await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
-            if char_level_info["total_level_ups"] > 0:
-                for level_up in char_level_info["level_ups"]:
-                    msg = [
-                        f"🎊 {battle.character.name} leveled up! 🎊",
-                        f"Level: {level_up['old_level']} → {level_up['new_level']}"
-                    ]
-                    if level_up['hp_increase'] > 0:
-                        msg.append(f"💖 HP increased by {level_up['hp_increase']}!")
-                    if level_up["newly_unlocked_abilities"]:
-                        msg.append(f"\n🌟 New abilities unlocked:")
-                        for ability in level_up["newly_unlocked_abilities"]:
-                            ability_type = "🔥" if ability["type"] == "ultimate" else "⚡" if ability["type"] == "active" else "🛡️"
-                            msg.append(f"{ability_type} {ability['name']} ({ability['description']})")
-                    await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
-            if player_level_info["total_level_ups"] > 0:
-                total_marks = sum(lvl["rewards"].get("marks", 0) for lvl in player_level_info["level_ups"])
-                total_valor = sum(lvl["rewards"].get("valor", 0) for lvl in player_level_info["level_ups"])
-                total_crystals = sum(lvl["rewards"].get("crystals", 0) for lvl in player_level_info["level_ups"])
-                all_unlocks = []
-                for lvl in player_level_info["level_ups"]:
-                    all_unlocks.extend(lvl["rewards"].get("unlocks", []))
-                reward_text = [
-                    f"✨ LEVEL UP! ({player_level_info['level_ups'][0]['old_level']} → {player_level_info['level_ups'][-1]['new_level']}) ✨",
-                    "═══════════════════════",
-                    f"🪙 Marks: +{total_marks}",
-                    f"⚔️ Valor: +{total_valor}",
-                    f"💠 Crystals: +{total_crystals}"
-                ]
-                if all_unlocks:
-                    reward_text.append("\n🔓 UNLOCKS:")
-                    reward_text.extend(f"• {item}" for item in set(all_unlocks))
-                await send(chat_id, "\n".join(reward_text), parse_mode=ParseMode.HTML)
-                update_fields = {"$inc": {}, "$set": {"level": player_obj.level}}
-                if total_marks:
-                    update_fields["$inc"]["marks"] = total_marks
-                if total_valor:
-                    update_fields["$inc"]["valor"] = total_valor
-                if total_crystals:
-                    update_fields["$inc"]["crystal"] = total_crystals
-                if all_unlocks:
-                    player_unlocks = set(player_data.get("unlocks", []))
-                    player_unlocks.update(all_unlocks)
-                    update_fields["$set"]["unlocks"] = list(player_unlocks)
-                await db.players.update_one({"user_id": user_id}, update_fields)
-            try:
-                track_battle_end(int(user_id), battle.character.name, "victory")
-            except ImportError:
-                pass
-        else:
-            gas_consumed = max(0, battle.initial_gas - battle.character.gas)
-            battle.character.gas = max(0, battle.character_gas - gas_consumed)
-            battle.character.max_gas = battle.character.gas
-            battle.character.current_hp = 0
-            await db.update_character(battle.character)
-            await query.edit_message_text(
-                f"{battle.character.name} was defeated by {battle.titan.name}!\n"
-            )
-            try:
-                track_battle_end(int(user_id), battle.character.name, "defeat")
-            except ImportError:
-                pass
-        if f"last_titan_{user_id}" in context.bot_data:
-            del context.bot_data[f"last_titan_{user_id}"]
-        if f"last_titan_data_{user_id}" in context.bot_data:
-            del context.bot_data[f"last_titan_data_{user_id}"]
-        await db.delete_titan(user_id)
-        travel = player_data.get("travel", {})
-        location = player_data.get("location", None)
-        arrived = False
-        decision_point = False
-        if travel.get("in_progress"):
-            travel["progress"] += 1
-            if travel["progress"] >= travel["required"]:
-                new_location = travel["to"]
-                from game.travel_map import TRAVEL_MAP
-                if new_location.startswith("Decision_") and new_location in TRAVEL_MAP:
-                    await db.players.update_one(
-                        {"user_id": user_id},
-                        {"$set": {"location": new_location, "travel": {}}}
-                    )
-                    decision_point = True
-                    location = new_location
-                else:
-                    await db.players.update_one(
-                        {"user_id": user_id},
-                        {"$set": {"location": new_location, "travel": {}}}
-                    )
-                    arrived = True
-            else:
-                await db.players.update_one(
-                    {"user_id": user_id},
-                    {"$set": {"travel": travel}}
-                )
-            if decision_point:
-                from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-                directions = TRAVEL_MAP[location]
-                keyboard = [
-                    [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir}")] for dir in directions.keys()
-                ]
-                msg = f"<b>Decision Point Reached:</b> {location}\nChoose a direction to continue your journey:"
-                try:
-                    await send(chat_id, msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-                except Exception:
-                    await send(chat_id, msg)
-                return
-            elif arrived:
-                try:
-                    await send(chat_id, f"You have arrived at <b>{location}</b>!", parse_mode="HTML")
-                except Exception:
-                    pass
-        # Clear active battle id so user can explore again
-        if f"active_battle_id_{user_id}" in context.bot_data:
-            del context.bot_data[f"active_battle_id_{user_id}"]
-        cleanup_battle(user_id, "completed", battle)
-    except Exception as e:
-        logger.error(f"Error in handle_battle_end for user {user_id}: {e}")
-        try:
-            await query.edit_message_text("❌ An error occurred ending the battle. Please try /explore again.")
-        except:
-            pass
+    # Cancel timeout immediately
+    if battle.timeout_task and not battle.timeout_task.done():
+        battle.timeout_task.cancel()
+    db = context.bot_data.get("db")
+    if not db:
+        logger.error("Database not initialized")
+        await query.edit_message_text("❌ Database error!")
         cleanup_battle(user_id, "error", battle)
+        return
+    player_data = await db.players.find_one({"user_id": user_id})
+    if not player_data:
+        await query.edit_message_text("❌ Player data not found!")
+        cleanup_battle(user_id, "error", battle)
+        return
+    explore_count = player_data.get("explore_count", 0)
+    await db.players.update_one({"user_id": user_id}, {"$inc": {"explore_count": 1}})
+    send = context.bot.send_message
+    chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
+    # Fast reward calculation and messaging
+    if battle.titan_hp <= 0:
+        rewards = battle.calculate_rewards(
+            titan=battle.titan,
+            character=battle.character,
+            player=battle.player,
+            explore_count=explore_count
+        )
+        character_xp = rewards["xp"] // 2
+        player_xp = rewards["xp"] - character_xp
+        char_level_info = battle.character.add_xp(character_xp)
+        player_obj = Player(**player_data)
+        player_level_info = player_obj.add_xp(player_xp)
+        gas_consumed = max(0, battle.initial_gas - battle.character.gas)
+        battle.character.gas = max(0, battle.character_gas - gas_consumed)
+        battle.character.max_gas = battle.character.gas
+        battle.character.current_hp = battle.character_hp
+        await db.update_character(battle.character)
+        reward_updates = {
+            "$inc": {
+                "crystal": rewards["crystal"],
+                "valor": rewards["valor"],
+                "xp": player_xp,
+                "marks": rewards["marks"],
+                "total_xp": player_xp
+            },
+            "$set": {
+                "level": player_obj.level,
+                "updated_at": datetime.now(timezone.utc)
+            }
+        }
+        await db.players.update_one({"user_id": user_id}, reward_updates)
+        reward_msg = [
+            f"<b>You have defeated {battle.titan.name}!</b>",
+            f"⚡ <b>XP: +{rewards['xp']}</b>",
+            f"🪙 <b>Marks: +{rewards['marks']}</b>",
+        ]
+        if rewards['crystal'] > 0:
+            reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
+        if rewards['valor'] > 0:
+            reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
+        await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
+        # Always send level up messages instantly
+        if char_level_info["total_level_ups"] > 0:
+            for level_up in char_level_info["level_ups"]:
+                msg = [
+                    f"🎊 {battle.character.name} leveled up! 🎊",
+                    f"Level: {level_up['old_level']} → {level_up['new_level']}"
+                ]
+                if level_up['hp_increase'] > 0:
+                    msg.append(f"💖 HP increased by {level_up['hp_increase']}!")
+                if level_up["newly_unlocked_abilities"]:
+                    msg.append(f"\n🌟 New abilities unlocked:")
+                    for ability in level_up["newly_unlocked_abilities"]:
+                        ability_type = "🔥" if ability["type"] == "ultimate" else "⚡" if ability["type"] == "active" else "🛡️"
+                        msg.append(f"{ability_type} {ability['name']} ({ability['description']})")
+                # Send level up message immediately
+                await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
+        if player_level_info["total_level_ups"] > 0:
+            total_marks = sum(lvl["rewards"].get("marks", 0) for lvl in player_level_info["level_ups"])
+            total_valor = sum(lvl["rewards"].get("valor", 0) for lvl in player_level_info["level_ups"])
+            total_crystals = sum(lvl["rewards"].get("crystals", 0) for lvl in player_level_info["level_ups"])
+            all_unlocks = []
+            for lvl in player_level_info["level_ups"]:
+                all_unlocks.extend(lvl["rewards"].get("unlocks", []))
+            reward_text = [
+                f"✨ LEVEL UP! ({player_level_info['level_ups'][0]['old_level']} → {player_level_info['level_ups'][-1]['new_level']}) ✨",
+                "═══════════════════════",
+                f"🪙 Marks: +{total_marks}",
+                f"⚔️ Valor: +{total_valor}",
+                f"💠 Crystals: +{total_crystals}"
+            ]
+            if all_unlocks:
+                reward_text.append("\n🔓 UNLOCKS:")
+                reward_text.extend(f"• {item}" for item in set(all_unlocks))
+            await send(chat_id, "\n".join(reward_text), parse_mode=ParseMode.HTML)
+            update_fields = {"$inc": {}, "$set": {"level": player_obj.level}}
+            if total_marks:
+                update_fields["$inc"]["marks"] = total_marks
+            if total_valor:
+                update_fields["$inc"]["valor"] = total_valor
+            if total_crystals:
+                update_fields["$inc"]["crystal"] = total_crystals
+            if all_unlocks:
+                player_unlocks = set(player_data.get("unlocks", []))
+                player_unlocks.update(all_unlocks)
+                update_fields["$set"]["unlocks"] = list(player_unlocks)
+            await db.players.update_one({"user_id": user_id}, update_fields)
+        try:
+            track_battle_end(int(user_id), battle.character.name, "victory")
+        except ImportError:
+            pass
+    else:
+        gas_consumed = max(0, battle.initial_gas - battle.character.gas)
+        battle.character.gas = max(0, battle.character_gas - gas_consumed)
+        battle.character.max_gas = battle.character.gas
+        battle.character.current_hp = 0
+        await db.update_character(battle.character)
+        await query.edit_message_text(f"{battle.character.name} was defeated by {battle.titan.name}!")
+        try:
+            track_battle_end(int(user_id), battle.character.name, "defeat")
+        except ImportError:
+            pass
+    # Clean up titan and travel state quickly
+    if f"last_titan_{user_id}" in context.bot_data:
+        del context.bot_data[f"last_titan_{user_id}"]
+    if f"last_titan_data_{user_id}" in context.bot_data:
+        del context.bot_data[f"last_titan_data_{user_id}"]
+    await db.delete_titan(user_id)
+    travel = player_data.get("travel", {})
+    location = player_data.get("location", None)
+    arrived = False
+    decision_point = False
+    if travel.get("in_progress"):
+        travel["progress"] += 1
+        if travel["progress"] >= travel["required"]:
+            new_location = travel["to"]
+            from game.travel_map import TRAVEL_MAP
+            if new_location.startswith("Decision_") and new_location in TRAVEL_MAP:
+                await db.players.update_one({"user_id": user_id}, {"$set": {"location": new_location, "travel": {}}})
+                decision_point = True
+                location = new_location
+            else:
+                await db.players.update_one({"user_id": user_id}, {"$set": {"location": new_location, "travel": {}}})
+                arrived = True
+        else:
+            await db.players.update_one({"user_id": user_id}, {"$set": {"travel": travel}})
+        if decision_point:
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            directions = TRAVEL_MAP[location]
+            keyboard = [
+                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir}")] for dir in directions.keys()
+            ]
+            msg = f"<b>Decision Point Reached:</b> {location}\nChoose a direction to continue your journey:"
+            try:
+                await send(chat_id, msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+            except Exception:
+                await send(chat_id, msg)
+            return
+        elif arrived:
+            try:
+                await send(chat_id, f"You have arrived at <b>{location}</b>!", parse_mode="HTML")
+            except Exception:
+                pass
+    # Clear active battle id so user can explore again
+    if f"active_battle_id_{user_id}" in context.bot_data:
+        del context.bot_data[f"active_battle_id_{user_id}"]
+    cleanup_battle(user_id, "completed", battle)
 
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle battle timeout."""
