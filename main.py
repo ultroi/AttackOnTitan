@@ -37,7 +37,7 @@ from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
-from game.captcha import button, verify_captcha
+from game.captcha import button
 
 # Load environment variables
 load_dotenv()
@@ -294,8 +294,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]{5}$"))  # Text captcha buttons
-    app_instance.add_handler(CallbackQueryHandler(verify_captcha, pattern=r"^seq_"))  # Sequence captcha buttons
+    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]{5}$")) 
     app_instance.add_handler(CallbackQueryHandler(button_callback))
 
 # Shop command handler for /shop
