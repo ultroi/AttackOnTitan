@@ -67,18 +67,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         shop_system = context.bot_data.get("shop_system")
         if not shop_system:
             logger.error("Shop system not initialized in context.bot_data")
-            await query.edit_message_text("Internal error: Shop system not initialized.")
+            if query.message.text:
+                await query.edit_message_text("Internal error: Shop system not initialized.")
+            elif query.message.caption:
+                await query.edit_message_caption("Internal error: Shop system not initialized.")
+            else:
+                await query.answer("Internal error: Shop system not initialized.")
             return
         # Use ShopSystem's handle_callback for shop-related actions
         if query.data and (query.data.startswith("shop_") or query.data.startswith("buy_") or query.data == "shop_refresh"):
             result = await shop_system.handle_callback(context, user_id, query.data)
             if result is not None:
                 message, reply_markup = result
-                await query.edit_message_text(
-                    text=message,
-                    reply_markup=reply_markup,
-                    parse_mode="HTML"
-                )
+                if query.message.text:
+                    await query.edit_message_text(
+                        text=message,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML"
+                    )
+                elif query.message.caption:
+                    await query.edit_message_caption(
+                        caption=message,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML"
+                    )
+                else:
+                    await query.answer("Shop action completed.")
             return
         # Initialize context.user_data if needed
         if not context.user_data:
@@ -104,16 +118,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = await handler(query.data)
                 if result is not None:
                     message, reply_markup = result
-                    await query.edit_message_text(
-                        text=message,
-                        reply_markup=reply_markup,
-                        parse_mode="HTML"
-                    )
+                    if query.message.text:
+                        await query.edit_message_text(
+                            text=message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
+                    elif query.message.caption:
+                        await query.edit_message_caption(
+                            caption=message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        await query.answer("Action completed.")
                 return
-        await query.edit_message_text("Unknown action.")
+        # Fix for unknown action error
+        if query.message.text:
+            await query.edit_message_text("Unknown action.")
+        elif query.message.caption:
+            await query.edit_message_caption("Unknown action.")
+        else:
+            await query.answer("Unknown action.")
     except (BadRequest, PyMongoError) as e:
         logger.error(f"Error in button_callback for user {user_id}: {e}")
-        await query.edit_message_text(f"Error processing action: {str(e)}")
+        if query.message.text:
+            await query.edit_message_text(f"Error processing action: {str(e)}")
+        elif query.message.caption:
+            await query.edit_message_caption(f"Error processing action: {str(e)}")
+        else:
+            await query.answer(f"Error processing action: {str(e)}")
 
 async def handle_select_character(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE, char_name: str):
     if context.user_data is None:

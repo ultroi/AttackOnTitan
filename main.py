@@ -294,7 +294,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]{5}$")) 
+    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]{5}$"))
+    # Fallback handler, must be last
     app_instance.add_handler(CallbackQueryHandler(button_callback))
 
 # Shop command handler for /shop
