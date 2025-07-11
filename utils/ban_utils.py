@@ -50,7 +50,6 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
 
 
 # Ban command handler
-@ban_protected
 async def ban_user(update: Update, context: CallbackContext):
     if not update.effective_user or not update.effective_chat:
         return
@@ -131,7 +130,6 @@ async def ban_user(update: Update, context: CallbackContext):
         await update.effective_message.reply_text(f"User {target_id} banned. Time: {time_str}")
 
 # Unban command handler
-@ban_protected
 async def unban_user(update: Update, context: CallbackContext):
     if not update.effective_user or not update.effective_chat:
         return
