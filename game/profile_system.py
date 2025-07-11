@@ -655,7 +655,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player.gas -= gas_needed
     character.gas = 5000
     character.max_gas = 5000
-    await db.update_player(player)
+    await db.update_player(player.user_id, {"gas": player.gas, "updated_at": datetime.now(timezone.utc)})
     await db.update_character(character)
     # Update profile text with new gas value and refill info
     profile_text = context.user_data.get('char_detail_profile_text', '')
