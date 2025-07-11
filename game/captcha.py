@@ -6,50 +6,57 @@ from io import BytesIO
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
+import random
+import string
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from io import BytesIO
+
 def generate_captcha():
+    # Generate random 5-character text
     captcha_text = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+    
+    # Create a blank image with white background
     image = Image.new('RGB', (150, 50), color=(255, 255, 255))
     draw = ImageDraw.Draw(image)
     
+    # Try to load a font (use default if not found)
     try:
         font = ImageFont.truetype("arial.ttf", 24)
     except:
         font = ImageFont.load_default()
     
+    # Draw each character with slight variations
     x = 10
-    for i, char in enumerate(captcha_text):
+    for char in captcha_text:
+        # Use darker colors for better visibility
         color = (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100))
         y = random.randint(0, 15)
+        
+        # Draw the character directly on the main image with slight rotation
         char_image = Image.new('RGBA', (30, 30))
         char_draw = ImageDraw.Draw(char_image)
         char_draw.text((0, 0), char, fill=color, font=font)
-        char_image = char_image.rotate(random.randint(-30, 30), expand=1, fillcolor=(255, 255, 255, 0))
+        char_image = char_image.rotate(random.randint(-15, 15), expand=1, fillcolor=(255, 255, 255, 0))
         image.paste(char_image, (x, y), char_image)
-        x += 25 + random.randint(-5, 5)
+        x += 25 + random.randint(-3, 3)
     
-    for _ in range(8):
-        color = (random.randint(0, 200), random.randint(0, 200), random.randint(0, 200))
-        x1, y1, x2, y2 = random.randint(0, 150), random.randint(0, 50), random.randint(0, 150), random.randint(0, 50)
+    # Add fewer and simpler interference lines
+    for _ in range(5):  # Reduced from 8
+        color = (random.randint(150, 200), random.randint(150, 200), random.randint(150, 200))  # Lighter lines
+        x1, y1 = random.randint(0, 150), random.randint(0, 50)
+        x2, y2 = random.randint(0, 150), random.randint(0, 50)
         draw.line((x1, y1, x2, y2), fill=color, width=1)
-        if random.choice([True, False]):
-            for i in range(1, 10):
-                draw.line(
-                    (
-                        x1 + (x2 - x1)*i/10 + random.randint(-3,3),
-                        y1 + (y2 - y1)*i/10 + random.randint(-3,3),
-                        x1 + (x2 - x1)*(i-1)/10 + random.randint(-3,3),
-                        y1 + (y2 - y1)*(i-1)/10 + random.randint(-3,3)
-                    ),
-                    fill=color, width=1
-                )
     
-    for _ in range(800):
-        color = (random.randint(0,255), random.randint(0,255), random.randint(0,255))
-        x, y = random.randint(0,150), random.randint(0,50)
-        draw.point((x,y), fill=color)
-
-    image = image.filter(ImageFilter.GaussianBlur(radius=0.8))
+    # Reduce the number of noise points significantly
+    for _ in range(100):  # Reduced from 800
+        color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))  # Very light noise
+        x, y = random.randint(0, 150), random.randint(0, 50)
+        draw.point((x, y), fill=color)
     
+    # Use lighter blur or remove it completely
+    image = image.filter(ImageFilter.GaussianBlur(radius=0.3))  # Reduced from 0.8
+    
+    # Convert image to byte array
     img_byte_arr = BytesIO()
     image.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -63,6 +70,7 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     context.user_data['captcha_answer'] = captcha_text
     context.user_data['captcha_tries'] = 3
+    context.user_data['captcha_active'] = True
 
     options = [captcha_text]
     while len(options) < 9:
@@ -100,6 +108,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Correct! You're verified.")
         await query.edit_message_caption(caption="✅ CAPTCHA passed!")
         context.user_data['verified'] = True
+        context.user_data['captcha_active'] = False
     else:
         tries -= 1
         context.user_data['captcha_tries'] = tries
@@ -119,15 +128,25 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for i in range(0, 9, 3)
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_media(
-                media=InputMediaPhoto(captcha_image, has_spoiler=True),
-                reply_markup=reply_markup
-            )
-            await query.edit_message_caption(caption="Please select the correct CAPTCHA text:")
+            try:
+                await query.edit_message_media(
+                    media=InputMediaPhoto(captcha_image, has_spoiler=True),
+                    reply_markup=reply_markup
+                )
+                await query.edit_message_caption(caption="Please select the correct CAPTCHA text:")
+            except Exception:
+                # If edit fails, send a new message
+                await query.message.reply_photo(
+                    photo=captcha_image,
+                    caption="Please select the correct CAPTCHA text:",
+                    reply_markup=reply_markup,
+                    has_spoiler=True
+                )
         else:
             await query.answer("❌ Failed all tries!")
             await query.edit_message_caption(caption=f"❌ CAPTCHA failed. Please try /explore again.")
             context.user_data['verified'] = False
+            context.user_data['captcha_active'] = False
 
 # --- SEQUENCE CAPTCHA WITH TIMER AND TRIES ---
 async def sequence_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -140,6 +159,7 @@ async def sequence_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     context.user_data['captcha'] = {'type': 'sequence', 'answer': sequence, 'tries': 3, 'start_time': None, 'user_sequence': []}
+    context.user_data['captcha_active'] = True
 
     if update.message is not None:
         msg = await update.message.reply_text(
@@ -156,7 +176,6 @@ async def sequence_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(buttons)
         )
     else:
-        # Handle case where update.message is None
         await update.effective_chat.send_message(
             "🧠 Memorize this sequence (1 min):\n" + " ".join(sequence)
         )
@@ -188,6 +207,7 @@ async def verify_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⏰ Time's up! Sequence input expired.")
         await query.edit_message_text("❌ CAPTCHA failed. Please try /explore again.")
         user_data['verified'] = False
+        user_data['captcha_active'] = False
         return
 
     query_data = getattr(query, "data", None)
@@ -215,6 +235,7 @@ async def verify_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("✅ Verification successful!")
         await query.edit_message_text("✅ CAPTCHA passed!")
         user_data['verified'] = True
+        user_data['captcha_active'] = False
     else:
         tries -= 1
         captcha['tries'] = tries
@@ -227,11 +248,16 @@ async def verify_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("❌ Failed all tries!")
             await query.edit_message_text("❌ CAPTCHA failed. Please try /explore again.")
             user_data['verified'] = False
+            user_data['captcha_active'] = False
 
 # --- SPAWN CAPTCHA FOR EXPLORE ---
 async def spawn_captcha(update, context):
+    # Prevent multiple captchas at once
+    if context.user_data.get('captcha_active'):
+        return False
     if random.random() < 0.6:
         captcha_type = random.choice(["text", "sequence"])
+        context.user_data['captcha_active'] = True
         if captcha_type == "text":
             await captcha(update, context)
             context.user_data['captcha_mode'] = 'text'
