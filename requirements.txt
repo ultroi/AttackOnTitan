@@ -11,4 +11,5 @@ certifi==2024.2.2
 uvicorn==0.29.0
 fastapi==0.110.0
 starlette==0.36.3
-# Removed Flask[async] (not needed for FastAPI app)
+Pillow==10.3.0
+
