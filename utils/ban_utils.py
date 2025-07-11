@@ -5,8 +5,8 @@ from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
 import time
-from AttackOnTitan.utils.extra import get_owner_ids
-from AttackOnTitan.database.db_instance import get_database
+from utils.extra import get_owner_ids
+from database.db_instance import get_database
 
 
 # Ban collection name
