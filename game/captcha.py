@@ -158,124 +158,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['verified'] = False
             context.user_data['captcha_active'] = False
 
-# --- SEQUENCE CAPTCHA WITH TIMER AND TRIES ---
-async def sequence_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    symbols = [
-        "⭐","❤️","⚡","🎯","🔔","🌟","🔥","💎","🍀","🎲","🧩","🦄","🌈","🌻","🍎","🍕","🍔","🍟","🍩","🍪",
-        "🍉","🍓","🍒","🍇","🍌","🥑","🥕","🥦","🌶️","🍄","🧀","🥨","🍤","🍣","🍦","🍰","🎂","🍫","🍬",
-        "🦴","🥚","🍳","🧈","🧇","🥞","🥯","🥐","🍞","🥖","🥨","🧀","🥚","🍳","🥓","🥩","🍗","🍖","🦴"
-    ]
-    sequence = random.choices(symbols, k=3)
-    if context.user_data is None:
-        context.user_data = {}
-    context.user_data['captcha'] = {'type': 'sequence', 'answer': sequence, 'tries': 3, 'start_time': None, 'user_sequence': []}
-    context.user_data['captcha_active'] = True
-
-    if update.message is not None:
-        msg = await update.message.reply_text(
-            "🧠 Memorize this sequence (1 min):\n" + " ".join(sequence)
-        )
-        context.user_data['captcha']['start_time'] = asyncio.get_event_loop().time()
-        await asyncio.sleep(60)
-        await msg.delete()
-
-        shuffled = random.sample(symbols, len(symbols))
-        buttons = [[InlineKeyboardButton(s, callback_data=f"seq_{s}") for s in shuffled]]
-        await update.message.reply_text(
-            "Now tap the symbols in correct order (3 min, 3 tries):",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    else:
-        await update.effective_chat.send_message(
-            "🧠 Memorize this sequence (1 min):\n" + " ".join(sequence)
-        )
-        context.user_data['captcha']['start_time'] = asyncio.get_event_loop().time()
-        await asyncio.sleep(60)
-        shuffled = random.sample(symbols, len(symbols))
-        buttons = [[InlineKeyboardButton(s, callback_data=f"seq_{s}") for s in shuffled]]
-        await update.effective_chat.send_message(
-            "Now tap the symbols in correct order (3 min, 3 tries):",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
-async def verify_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = getattr(update, "callback_query", None)
-    user_data = getattr(context, "user_data", None)
-    if query is None or user_data is None:
-        if query:
-            await query.answer("Session expired. Start again with /start")
-        return
-
-    captcha = user_data.get('captcha', {})
-    if not captcha:
-        await query.answer("Session expired. Start again with /start")
-        return
-
-    # Check time limit
-    now = asyncio.get_event_loop().time()
-    if captcha.get('start_time') and now - captcha['start_time'] > 180:
-        await query.answer("⏰ Time's up! Sequence input expired.")
-        await query.edit_message_text("❌ CAPTCHA failed. Please try /explore again.")
-        user_data['verified'] = False
-        user_data['captcha_active'] = False
-        return
-
-    query_data = getattr(query, "data", None)
-    if not query_data or "_" not in query_data:
-        await query.answer("Invalid input.")
-        return
-
-    user_answer = query_data.split('_')[1]
-    captcha_type = captcha.get('type')
-    correct_answer = captcha.get('answer')
-    tries = captcha.get('tries', 3)
-
-    # Special handling for sequence CAPTCHA
-    if captcha_type == 'sequence':
-        captcha['user_sequence'].append(user_answer)
-        if len(captcha['user_sequence']) < len(correct_answer):
-            await query.answer(f"Selected: {user_answer}")
-            return
-        else:
-            is_correct = captcha['user_sequence'] == correct_answer
-    else:
-        is_correct = user_answer == correct_answer
-
-    if is_correct:
-        await query.answer("✅ Verification successful!")
-        await query.edit_message_text("✅ CAPTCHA passed!")
-        user_data['verified'] = True
-        user_data['captcha_active'] = False
-    else:
-        tries -= 1
-        captcha['tries'] = tries
-        if tries > 0:
-            await query.answer(f"❌ Wrong answer! {tries} tries left.")
-            # Reset sequence for retry
-            captcha['user_sequence'] = []
-            await sequence_memory(update, context)
-        else:
-            await query.answer("❌ Failed all tries!")
-            await query.edit_message_text("❌ CAPTCHA failed. Please try /explore again.")
-            user_data['verified'] = False
-            user_data['captcha_active'] = False
-
 # --- SPAWN CAPTCHA FOR EXPLORE ---
 async def spawn_captcha(update, context):
     # Prevent multiple captchas at once
     if context.user_data.get('captcha_active'):
         return False
-    if random.random() < 0.6:
-        captcha_type = random.choice(["text", "sequence"])
-        context.user_data['captcha_active'] = True
-        if captcha_type == "text":
-            await captcha(update, context)
-            context.user_data['captcha_mode'] = 'text'
-        else:
-            await sequence_memory(update, context)
-            context.user_data['captcha_mode'] = 'sequence'
-        context.user_data['verified'] = False
-        return True
-    return False
+    # Always use text captcha now
+    context.user_data['captcha_active'] = True
+    await captcha(update, context)
+    context.user_data['captcha_mode'] = 'text'
+    context.user_data['verified'] = False
+    return True
 
 
