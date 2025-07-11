@@ -49,7 +49,12 @@ class Database:
             if index_name in indexes:
                 await self.players.drop_index(index_name)
             await self.players.create_index("user_id", name=index_name, unique=True, background=True)
-            await self.characters.create_index([("user_id", 1), ("name", 1)])
+            # Fix index conflict for characters collection
+            char_index_name = "user_id_1_name_1"
+            char_indexes = await self.characters.index_information()
+            if char_index_name in char_indexes:
+                await self.characters.drop_index(char_index_name)
+            await self.characters.create_index([("user_id", 1), ("name", 1)], name=char_index_name, unique=True, background=True)
             await self.titans.create_index("user_id")
             logger.info("Database connection verified (Motor) and indexes created")
         except Exception as e:
