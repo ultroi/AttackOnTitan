@@ -94,58 +94,8 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
             if not task.done():
                 task.cancel()
         del context.bot_data[key]
-async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
-    """Handle titan encounter timeout with proper cleanup."""
-    try:
-        await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
-        
-        # Get the latest battle_id for this user
-        battle_id_key = f"active_battle_id_{user_id}"
-        current_battle_id = context.bot_data.get(battle_id_key)
-        
-        # Check if there's an active battle
-        try:
-            from game.battle_system import active_battles
-            if str(user_id) in active_battles:
-                logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
-                return
-        except ImportError:
-            pass
-        
-        # Clean up the titan if no battle is active
-        db = context.bot_data.get("db")
-        if db:
-            titan_in_db = await db.get_titan(str(user_id))
-            if titan_in_db:
-                await db.delete_titan(str(user_id))
-                
-                # Only edit message if no battle has started
-                if sent_message and current_battle_id == context.bot_data.get(battle_id_key):
-                    try:
-                        await sent_message.edit_text(
-                            "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
-                            parse_mode=ParseMode.HTML
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to edit message for user {user_id}: {e}")
-    except Exception as e:
-        logger.error(f"Error in titan_encounter_timeout for user {user_id}: {e}")
-    finally:
-        # Clean up the task reference
-        key = f"titan_timeouts_{user_id}"
-        if key in context.bot_data:
-            tasks = context.bot_data[key]
-            # Remove completed tasks
-            context.bot_data[key] = [t for t in tasks if not t.done()]
 
-async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel and clean up all timeout tasks for a user."""
-    key = f"titan_timeouts_{user_id}"
-    if key in context.bot_data:
-        for task in context.bot_data[key]:
-            if not task.done():
-                task.cancel()
-        del context.bot_data[key]
+
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -227,17 +177,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not player:
             await update.message.reply_text("You need to create a profile first with /start")
             return
-            
-        # Set default location if not set
-            
+
         # Set default location if not set
         if not getattr(player, "location", None):
             chars = await db.get_player_characters(user_id_str)
             if chars and hasattr(chars[0], "birthplace"):
                 player.location = chars[0].birthplace
                 await db.update_player(user_id_str, {"location": player.location})
-
-        # Handle daily explores and XP
 
         # Handle daily explores and XP
         current_date = datetime.utcnow()
@@ -279,8 +225,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         # Check team requirements
-
-        # Check team requirements
         if not player.team:
             await _reply_error(update, "You need to have at least one character in your team. Use /team to manage your team.")
             try:
@@ -313,7 +257,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         exp_message = f"🧭 EXP gained: {explore_exp}"
 
         # Handle travel/decision points
-        # Handle travel/decision points
         travel = getattr(player, "travel", {})
         location = getattr(player, "location", None)
         
@@ -323,9 +266,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if location and location in TRAVEL_MAP and location.startswith("Decision_"):
             directions = TRAVEL_MAP[location]
             keyboard = [
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")] 
-                for dir in directions.keys()
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")] 
+                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
                 for dir in directions.keys()
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -363,23 +304,19 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"Generated titan for user {user_id}: {titan.name} (Level {titan.level}, HP: {titan.max_hp})")
 
-        # Store titan in database
-        await db.store_titan(user_id_str, titan)
+
         # Store titan in database
         await db.store_titan(user_id_str, titan)
 
         # Generate battle ID and store it
-        # Generate battle ID and store it
         battle_id = f"battle_{user_id}_{uuid4().hex}"
         context.bot_data[f"active_battle_id_{user_id}"] = battle_id
         
-        # Create battle button
         
         # Create battle button
         keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Find appropriate titan image
         # Find appropriate titan image
         titan_image_url = None
         for difficulty, titan_types in TITAN_NAME_VARIANTS.items():
@@ -392,17 +329,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Prepare encounter message
         image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
-
-        # Prepare encounter message
-        image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
         reply_text = (
             f"<code>-------------------------</code>\n"
             f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
             f"<b>has blocked your way{image_embed}</b>\n"
             f"<code>-------------------------</code>\n"
         )
-
-        # Send message with battle button
 
         # Send message with battle button
         try:
@@ -452,7 +384,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except NameError:
             pass
 
-    # Clean up stale explore records
     # Clean up stale explore records
     try:
         max_age = 24 * 3600  # 24 hours
