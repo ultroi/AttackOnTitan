@@ -22,7 +22,7 @@ def generate_captcha():
 
     # Load font
     try:
-        font = ImageFont.truetype("arial.ttf", size=50)
+        font = ImageFont.truetype("arial.ttf", size=60)
     except:
         font = ImageFont.load_default()
 
@@ -35,22 +35,15 @@ def generate_captcha():
         y2 = random.randint(0, height)
         draw.line((x1, y1, x2, y2), fill=color, width=2)
 
-    # Draw characters
+    # Draw characters (always black color)
     x = 10
     for char in captcha_text:
-        # Random color and slight y offset
-        color = tuple(random.randint(0, 120) for _ in range(3))
         y = random.randint(10, 25)
-
-        # Create char image larger than before to avoid cropping
         char_img = Image.new('RGBA', (60, 60), (255, 255, 255, 0))
         char_draw = ImageDraw.Draw(char_img)
-        char_draw.text((5, 5), char, font=font, fill=color)
+        char_draw.text((5, 5), char, font=font, fill=(0, 0, 0))  # Black color
 
-        # Rotate character with less aggressive angle
-        rotated = char_img.rotate(random.randint(-25, 25), resample=Image.BICUBIC, expand=1)
-
-        # Paste without too much overlap
+        rotated = char_img.rotate(random.randint(-25, 25), resample=Image.Resampling.BICUBIC, expand=1)
         image.paste(rotated, (x, y), rotated)
         x += 35
 
@@ -64,8 +57,7 @@ def generate_captcha():
     # Slight blur
     image = image.filter(ImageFilter.GaussianBlur(radius=0.8))
 
-    # DO NOT rotate entire image to avoid black corners
-    # Instead, draw more crossing lines for distortion
+    # More crossing lines for distortion
     for _ in range(5):
         color = tuple(random.randint(0, 150) for _ in range(3))
         x1 = random.randint(0, width)

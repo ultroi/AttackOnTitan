@@ -251,8 +251,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         location = getattr(player, "location", None)
         
         # If at a decision point, show direction options
-        
-        # If at a decision point, show direction options
         if location and location in TRAVEL_MAP and location.startswith("Decision_"):
             directions = TRAVEL_MAP[location]
             keyboard = [
@@ -275,8 +273,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
             return
 
-        # Before titan logic, spawn CAPTCHA with 60% probability
-        if random.random() < 0.6:
+        # Spawn CAPTCHA with 6% chance
+        if random.random() < 0.06:
             captcha_triggered = await spawn_captcha(update, context)
             if captcha_triggered:
                 try:
