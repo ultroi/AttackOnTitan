@@ -57,7 +57,7 @@ def generate_captcha():
                     fill=color, width=1
                 )
     # Add heavy noise
-    for _ in range(1200):
+    for _ in range(300):
         color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
         x = random.randint(0, 219)
         y = random.randint(0, 79)
