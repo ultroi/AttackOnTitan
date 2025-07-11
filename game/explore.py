@@ -98,10 +98,11 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
 
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Close the persistent keyboard menu."""
-    await update.message.reply_text(
-        "Closing keyboard...",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    if update.message:
+        await update.message.reply_text(
+            "Closing keyboard...",
+            reply_markup=ReplyKeyboardRemove()
+        )
 
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -114,13 +115,28 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
-    # Show persistent keyboard with a minimal message (if not already present)
-    keyboard = [["/explore", "/close"]]
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True,
-        one_time_keyboard=False
-    )
+    # Show persistent keyboard only the first time
+    if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
+        keyboard = [["/explore", "/close"]]
+        reply_markup = ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+            one_time_keyboard=False
+        )
+        try:
+            if update.message:
+                await update.message.reply_text(
+                    "Opening keyboard...",
+                    reply_markup=reply_markup
+                )
+            elif update.callback_query and update.callback_query.message:
+                await update.callback_query.message.reply_text(
+                    "Opening keyboard...",
+                    reply_markup=reply_markup
+                )
+        except Exception as e:
+            logger.error(f"Failed to send persistent keyboard: {e}")
+        context.user_data["persistent_keyboard_sent"] = True
     
     # Check for active battle before allowing explore
     try:
@@ -188,7 +204,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Get player data
         player = await db.get_player(user_id_str)
         if not player:
-            await update.message.reply_text("You need to create a profile first with /start")
+            if update.message:
+                await update.message.reply_text("You need to create a profile first with /start")
             return
 
         # Set default location if not set
@@ -196,7 +213,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chars = await db.get_player_characters(user_id_str)
             if chars and hasattr(chars[0], "birthplace"):
                 player.location = chars[0].birthplace
-                await db.update_player(user_id_str, {"location": player.location})
+                await db.update_player(user_id, {"location": player.location})
 
         # Handle daily explores and XP
         current_date = datetime.utcnow()
@@ -219,11 +236,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "daily_explores": [d.model_dump() for d in player.daily_explores],
                 "updated_at": datetime.now(timezone.utc)
             }
-
-
             try:
-                await db.update_player(user_id_str, update_data)
-                await db.update_player(user_id_str, update_data)
+                await db.update_player(user_id, update_data)
+                await db.update_player(user_id, update_data)
             except Exception as e:
                 logger.error(f"Failed to update player {user_id}: {e}")
                 await _reply_error(update, "An error occurred while updating your profile.")
@@ -274,11 +289,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             try:
-                await update.message.reply_text(
-                    f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
+                if update.message:
+                    await update.message.reply_text(
+                        f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML
+                    )
             except Exception as e:
                 logger.error(f"Failed to send decision point reply: {e}")
             finally:
@@ -351,13 +367,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=False
                 )
-            elif update.callback_query:
-                sent_message = await update.callback_query.message.edit_text(
-                    text=reply_text,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
-                )
+            elif update.callback_query and update.callback_query.message:
+                # Only call edit_text if message is accessible
+                if hasattr(update.callback_query.message, "edit_text"):
+                    sent_message = await update.callback_query.message.edit_text(
+                        text=reply_text,
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=False
+                    )
         except Exception as e:
             logger.error(f"Failed to send reply for user {user_id}: {e}")
             await _reply_error(update, "An error occurred while displaying the titan.")
@@ -418,7 +436,7 @@ async def force_cleanup_user(user_id: int, db: Database):
                 logger.warning(f"Error cleaning up battle for user {user_id}: {e}")
             active_battles.pop(user_id_str, None)
         user_last_explore.pop(user_id_str, None)
-        await db.update_player(user_id_str, {"last_explore": None})
+        await db.update_player(user_id, {"last_explore": None})
         await db.delete_titan(user_id_str)
         try:
             from utils.monitor import remove_player_activity
