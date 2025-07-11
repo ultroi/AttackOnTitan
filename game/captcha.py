@@ -124,9 +124,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_answer == correct_answer:
         await query.answer("Correct! You're verified.")
         try:
-            await query.edit_message_caption(caption="✅ CAPTCHA passed!")
+            # Delete the original photo message
+            await query.message.delete()
         except Exception:
             pass
+        # Send a new text message to the user
+        await query.message.chat.send_message("✅ CAPTCHA passed!")
         context.user_data['verified'] = True
         context.user_data['captcha_active'] = False
     else:
