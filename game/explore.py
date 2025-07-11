@@ -114,20 +114,22 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
+    # Show persistent keyboard only if not already shown
     keyboard = [
         ["/explore", "/close"]
     ]
     reply_markup = ReplyKeyboardMarkup(
-        keyboard, 
+        keyboard,
         resize_keyboard=True,
         one_time_keyboard=False
     )
-    
-    # Send message with persistent keyboard
-    await update.message.reply_text(
-        "Use the buttons below to explore or close the menu:",
-        reply_markup=reply_markup
-    )
+
+    # Show keyboard only if message is not already using it
+    if not (update.message and update.message.reply_markup == reply_markup):
+        await update.message.reply_text(
+            "",
+            reply_markup=reply_markup
+        )
     
     # Check for active battle before allowing explore
     try:
