@@ -12,77 +12,66 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 
 def generate_captcha():
-    # Generate random 5-character string (uppercase letters and digits)
-    captcha_text = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+    # Generate random 6-character string (uppercase letters and digits)
+    captcha_text = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     
-    # Create image with smaller dimensions
-    image = Image.new('RGB', (150, 50), color=(255, 255, 255))
+    # Create image with white background
+    image = Image.new('RGB', (220, 80), color=(255, 255, 255))
     draw = ImageDraw.Draw(image)
     
     try:
-        # Try to use a nice font if available (smaller size)
-        font = ImageFont.truetype("arial.ttf", 24)
+        font = ImageFont.truetype("arial.ttf", 36)
     except:
-        # Fallback to default font if arial isn't available
         font = ImageFont.load_default()
     
-    # Draw each character with more distortion
-    x = 10
+    # Draw each character with heavy distortion and overlap
+    x = 20
     for i, char in enumerate(captcha_text):
-        # Random dark color for each character
-        color = (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100))
-        
-        # More pronounced random vertical position
-        y = random.randint(0, 15)
-        
-        # Create individual character image for rotation
-        char_image = Image.new('RGBA', (30, 30))
-        char_draw = ImageDraw.Draw(char_image)
+        color = (random.randint(0, 120), random.randint(0, 120), random.randint(0, 120))
+        y = random.randint(5, 25)
+        char_img = Image.new('RGBA', (40, 40), (255, 255, 255, 0))
+        char_draw = ImageDraw.Draw(char_img)
         char_draw.text((0, 0), char, fill=color, font=font)
-        
-        # Random rotation (-30 to 30 degrees)
-        char_image = char_image.rotate(random.randint(-30, 30), expand=1, fillcolor=(255, 255, 255, 0))
-        
-        # Paste character with transparency
-        image.paste(char_image, (x, y), char_image)
-        
-        x += 25 + random.randint(-5, 5)  # Variable spacing
+        # Strong random rotation
+        char_img = char_img.rotate(random.randint(-35, 35), expand=1, fillcolor=(255, 255, 255, 0))
+        # Paste with overlap
+        image.paste(char_img, (x, y), char_img)
+        x += random.randint(25, 35)
     
-    # Add multiple crossing distortion lines (more than before)
-    for _ in range(8):  # Increased from 5 to 8
-        color = (random.randint(0, 200), random.randint(0, 200), random.randint(0, 200))
-        x1 = random.randint(0, 150)
-        y1 = random.randint(0, 50)
-        x2 = random.randint(0, 150)
-        y2 = random.randint(0, 50)
-        draw.line((x1, y1, x2, y2), fill=color, width=1)
-        
-        # Add some wavy lines
+    # Draw multiple colored crossing lines (strong distortion)
+    for _ in range(12):
+        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        x1 = random.randint(0, 220)
+        y1 = random.randint(0, 80)
+        x2 = random.randint(0, 220)
+        y2 = random.randint(0, 80)
+        draw.line((x1, y1, x2, y2), fill=color, width=random.randint(1, 3))
+        # Wavy lines
         if random.choice([True, False]):
-            for i in range(1, 10):
+            for i in range(1, 12):
                 draw.line(
-                    (x1 + (x2-x1)*i/10 + random.randint(-3, 3), 
-                     y1 + (y2-y1)*i/10 + random.randint(-3, 3),
-                     x1 + (x2-x1)*(i-1)/10 + random.randint(-3, 3), 
-                     y1 + (y2-y1)*(i-1)/10 + random.randint(-3, 3)),
+                    (x1 + (x2-x1)*i/12 + random.randint(-4, 4), 
+                     y1 + (y2-y1)*i/12 + random.randint(-4, 4),
+                     x1 + (x2-x1)*(i-1)/12 + random.randint(-4, 4), 
+                     y1 + (y2-y1)*(i-1)/12 + random.randint(-4, 4)),
                     fill=color, width=1
                 )
-    
-    # Add more noise points
-    for _ in range(600):
+    # Add heavy noise
+    for _ in range(1200):
         color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        x = random.randint(0, 150)
-        y = random.randint(0, 50)
+        x = random.randint(0, 219)
+        y = random.randint(0, 79)
         draw.point((x, y), fill=color)
     
-    # Apply slight blur to make it harder for OCR
-    image = image.filter(ImageFilter.GaussianBlur(radius=0.8))
-    
-    # Save to bytes for Telegram
+    # Slight blur
+    image = image.filter(ImageFilter.GaussianBlur(radius=1.2))
+    # Rotate the whole image for final effect
+    angle = random.randint(-25, 25)
+    image = image.rotate(angle, expand=1, fillcolor=(0, 0, 0))
+    # Save to bytes
     img_byte_arr = BytesIO()
     image.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
-    
     return captcha_text, img_byte_arr
 
 # --- TEXT CAPTCHA WITH TRIES ---
