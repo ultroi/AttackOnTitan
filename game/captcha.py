@@ -12,51 +12,73 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 
 def generate_captcha():
-    # Generate random 5-character text
+    # Generate random 5-character string (uppercase letters and digits)
     captcha_text = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
     
-    # Create a blank image with white background
+    # Create image with smaller dimensions
     image = Image.new('RGB', (150, 50), color=(255, 255, 255))
     draw = ImageDraw.Draw(image)
     
-    # Try to load a font (use default if not found)
     try:
+        # Try to use a nice font if available (smaller size)
         font = ImageFont.truetype("arial.ttf", 24)
     except:
+        # Fallback to default font if arial isn't available
         font = ImageFont.load_default()
     
-    # Draw each character with slight variations
+    # Draw each character with more distortion
     x = 10
-    for char in captcha_text:
-        # Use darker colors for better visibility
+    for i, char in enumerate(captcha_text):
+        # Random dark color for each character
         color = (random.randint(0, 100), random.randint(0, 100), random.randint(0, 100))
+        
+        # More pronounced random vertical position
         y = random.randint(0, 15)
         
-        # Draw the character directly on the main image with slight rotation
+        # Create individual character image for rotation
         char_image = Image.new('RGBA', (30, 30))
         char_draw = ImageDraw.Draw(char_image)
         char_draw.text((0, 0), char, fill=color, font=font)
-        char_image = char_image.rotate(random.randint(-15, 15), expand=1, fillcolor=(255, 255, 255, 0))
+        
+        # Random rotation (-30 to 30 degrees)
+        char_image = char_image.rotate(random.randint(-30, 30), expand=1, fillcolor=(255, 255, 255, 0))
+        
+        # Paste character with transparency
         image.paste(char_image, (x, y), char_image)
-        x += 25 + random.randint(-3, 3)
+        
+        x += 25 + random.randint(-5, 5)  # Variable spacing
     
-    # Add fewer and simpler interference lines
-    for _ in range(5):  # Reduced from 8
-        color = (random.randint(150, 200), random.randint(150, 200), random.randint(150, 200))  # Lighter lines
-        x1, y1 = random.randint(0, 150), random.randint(0, 50)
-        x2, y2 = random.randint(0, 150), random.randint(0, 50)
+    # Add multiple crossing distortion lines (more than before)
+    for _ in range(8):  # Increased from 5 to 8
+        color = (random.randint(0, 200), random.randint(0, 200), random.randint(0, 200))
+        x1 = random.randint(0, 150)
+        y1 = random.randint(0, 50)
+        x2 = random.randint(0, 150)
+        y2 = random.randint(0, 50)
         draw.line((x1, y1, x2, y2), fill=color, width=1)
+        
+        # Add some wavy lines
+        if random.choice([True, False]):
+            for i in range(1, 10):
+                draw.line(
+                    (x1 + (x2-x1)*i/10 + random.randint(-3, 3), 
+                     y1 + (y2-y1)*i/10 + random.randint(-3, 3),
+                     x1 + (x2-x1)*(i-1)/10 + random.randint(-3, 3), 
+                     y1 + (y2-y1)*(i-1)/10 + random.randint(-3, 3)),
+                    fill=color, width=1
+                )
     
-    # Reduce the number of noise points significantly
-    for _ in range(100):  # Reduced from 800
-        color = (random.randint(200, 255), random.randint(200, 255), random.randint(200, 255))  # Very light noise
-        x, y = random.randint(0, 150), random.randint(0, 50)
+    # Add more noise points
+    for _ in range(600):
+        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        x = random.randint(0, 150)
+        y = random.randint(0, 50)
         draw.point((x, y), fill=color)
     
-    # Use lighter blur or remove it completely
-    image = image.filter(ImageFilter.GaussianBlur(radius=0.3))  # Reduced from 0.8
+    # Apply slight blur to make it harder for OCR
+    image = image.filter(ImageFilter.GaussianBlur(radius=0.8))
     
-    # Convert image to byte array
+    # Save to bytes for Telegram
     img_byte_arr = BytesIO()
     image.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -85,7 +107,6 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Spoiler image (Telegram supports <spoiler> in HTML for text, not images, so fallback to normal image)
     await update.message.reply_photo(
         photo=captcha_image,
         caption="Please select the correct CAPTCHA text:",

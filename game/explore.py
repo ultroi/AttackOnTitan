@@ -156,8 +156,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user_id_str in user_last_explore:
             time_diff = current_time - user_last_explore[user_id_str]
-        if user_id_str in user_last_explore:
-            time_diff = current_time - user_last_explore[user_id_str]
             if time_diff < EXPLORE_COOLDOWN:
                 remaining = EXPLORE_COOLDOWN - time_diff
                 await _reply_error(update, f"⏳ Please wait {remaining:.1f} seconds before exploring again.")
@@ -207,15 +205,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "updated_at": datetime.now(timezone.utc)
             }
 
-        # Update player data if changed
-        if player.xp != old_xp or player.level != old_level:
-            update_data = {
-                "xp": player.xp,
-                "total_xp": player.total_xp,
-                "level": player.level,
-                "daily_explores": [d.model_dump() for d in player.daily_explores],
-                "updated_at": datetime.now(timezone.utc)
-            }
+
             try:
                 await db.update_player(user_id_str, update_data)
                 await db.update_player(user_id_str, update_data)
@@ -285,12 +275,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
             return
 
-        # Before titan logic, spawn CAPTCHA with probability
-        captcha_triggered = await spawn_captcha(update, context)
-        if captcha_triggered:
-            # CAPTCHA appeared, do not spawn titan
-            await _reply_error(update, "CAPTCHA challenge! Pass it to continue exploring.")
-            return
+        # Before titan logic, spawn CAPTCHA with 60% probability
+        if random.random() < 0.6:
+            captcha_triggered = await spawn_captcha(update, context)
+            if captcha_triggered:
+                try:
+                    remove_player_activity(user_id)
+                except NameError:
+                    pass
+                return
 
         # Generate and display titan
         titan = await db.generate_titan(player_character.level, player.unlocked_areas)
@@ -366,15 +359,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if key not in context.bot_data:
                 context.bot_data[key] = []
             context.bot_data[key].append(titan_timeout_task)
-        # Start timeout task
-        if sent_message:
-            titan_timeout_task = asyncio.create_task(
-                titan_encounter_timeout(user_id, context, sent_message)
-            )
-            key = f"titan_timeouts_{user_id}"
-            if key not in context.bot_data:
-                context.bot_data[key] = []
-            context.bot_data[key].append(titan_timeout_task)
 
     except Exception as e:
         logger.error(f"Error in explore command: {e}")
@@ -400,7 +384,6 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
         try:
             current_time = datetime.now(timezone.utc).timestamp()
             # Prune user_last_explore
-            # Prune user_last_explore
             for uid in list(user_last_explore.keys()):
                 if current_time - user_last_explore[uid] > (max_age_hours * 3600):
                     user_last_explore.pop(uid, None)
@@ -422,7 +405,6 @@ async def force_cleanup_user(user_id: int, db: Database):
                 logger.warning(f"Error cleaning up battle for user {user_id}: {e}")
             active_battles.pop(user_id_str, None)
         user_last_explore.pop(user_id_str, None)
-        await db.update_player(user_id_str, {"last_explore": None})
         await db.update_player(user_id_str, {"last_explore": None})
         await db.delete_titan(user_id_str)
         try:
