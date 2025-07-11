@@ -299,7 +299,8 @@ class Database:
         # Name and HP using models.py logic
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(level, difficulty)
-        abilities = random.sample(self._get_special_abilities(difficulty), k=min(2, len(self._get_special_abilities(difficulty))))
+        abilities_list = self._get_special_abilities(difficulty)
+        abilities = random.sample(abilities_list, k=min(2, len(abilities_list)))
         special_abilities = abilities.copy()
         now = datetime.now(timezone.utc)
         titan = Titan(

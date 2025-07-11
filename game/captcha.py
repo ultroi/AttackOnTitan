@@ -144,6 +144,7 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
     query = update.callback_query
+    db = await get_database()
     if query is None or context.user_data is None:
         if query:
             await query.answer("Session expired. Start again with /start")
@@ -162,7 +163,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         # Give XP reward
         xp_reward = random.randint(100, 150)
-        db = await get_database()
         if db is not None and user_id:
             await db["players"].update_one({"user_id": str(user_id)}, {"$inc": {"xp": xp_reward, "total_xp": xp_reward}})
         await context.bot.send_message(
