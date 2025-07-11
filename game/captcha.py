@@ -102,6 +102,11 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<b>ID</b> : <code>{user_id}</code>"
             )
             await context.bot.send_message(-1002873117075, msg, parse_mode=ParseMode.HTML)
+            # Notify user
+            if update.effective_message is not None:
+                await update.effective_message.reply_text("Captcha timeout! You are banned.")
+            elif update.message is not None:
+                await update.message.reply_text("Captcha timeout! You are banned.")
             context.user_data['captcha_active'] = False
     # Ensure user_data is a dict
     if context.user_data is None:
@@ -201,6 +206,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<b>ID</b> : <code>{user_id}</code>"
             )
             await context.bot.send_message(-1002873117075, msg, parse_mode=ParseMode.HTML)
+            # Notify user
+            if query.message is not None:
+                await query.message.reply_text("You failed to solve captcha. You are banned.")
             context.user_data['verified'] = False
             context.user_data['captcha_active'] = False
             # Cancel timeout task
