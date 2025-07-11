@@ -562,34 +562,25 @@ HP_RANGES = {
 }
 
 def generate_titan_name(difficulty: str) -> str:
-    """Generate a unique titan name based on difficulty with anime-accurate names."""
-    # 60% chance for basic titan name, 25% chance for descriptive prefix, 15% chance for unique combination
     rand = random.random()
-    
+    variants = TITAN_NAME_VARIANTS[difficulty]
+    descriptors = TITAN_DESCRIPTORS[difficulty]
     if rand < 0.60:
-        # Basic titan name
-        titan_type = random.choice(TITAN_NAME_VARIANTS[difficulty])
-        return f"{titan_type} Titan"
+        return f"{random.choice(variants)} Titan"
     elif rand < 0.85:
-        # Descriptive prefix
-        descriptor = random.choice(TITAN_DESCRIPTORS[difficulty])
-        titan_type = random.choice(TITAN_NAME_VARIANTS[difficulty])
-        return f"{descriptor} {titan_type} Titan"
+        return f"{random.choice(descriptors)} {random.choice(variants)} Titan"
     else:
-        # Unique combination (mix difficulties for variety)
-        all_descriptors = TITAN_DESCRIPTORS[difficulty]
+        # Precompute combined descriptors only once per call
         if difficulty != "Easy":
-            all_descriptors += TITAN_DESCRIPTORS["Easy"][:3]  # Add some easier descriptors for variety
-        
+            all_descriptors = descriptors + TITAN_DESCRIPTORS["Easy"][:3]
+        else:
+            all_descriptors = descriptors
         descriptor = random.choice(all_descriptors)
-        titan_type = random.choice(TITAN_NAME_VARIANTS[difficulty])
-        
-        # Small chance for double descriptor
+        titan_type = random.choice(variants)
         if random.random() < 0.3:
-            second_descriptor = random.choice(TITAN_DESCRIPTORS[difficulty])
+            second_descriptor = random.choice(descriptors)
             if second_descriptor != descriptor:
                 return f"{descriptor} {second_descriptor} {titan_type} Titan"
-        
         return f"{descriptor} {titan_type} Titan"
 
 def generate_titan_hp(level: int, difficulty: str) -> int:
