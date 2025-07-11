@@ -123,19 +123,19 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             resize_keyboard=True,
             one_time_keyboard=False
         )
-        try:
-            if update.message:
-                await update.message.reply_text(
+        send_keyboard = None
+        if update.message:
+            send_keyboard = update.message.reply_text
+        elif update.callback_query and update.callback_query.message:
+            send_keyboard = update.callback_query.message.reply_text
+        if send_keyboard:
+            try:
+                await send_keyboard(
                     "Opening keyboard...",
                     reply_markup=reply_markup
                 )
-            elif update.callback_query and update.callback_query.message:
-                await update.callback_query.message.reply_text(
-                    "Opening keyboard...",
-                    reply_markup=reply_markup
-                )
-        except Exception as e:
-            logger.error(f"Failed to send persistent keyboard: {e}")
+            except Exception as e:
+                logger.error(f"Failed to send persistent keyboard: {e}")
         context.user_data["persistent_keyboard_sent"] = True
     
     # Check for active battle before allowing explore
@@ -197,11 +197,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         user_last_explore[user_id_str] = current_time
-        
-        # Get player data
-        player = await db.get_player(user_id_str)
-        
-        # Get player data
+
+        # Get player data (only once)
         player = await db.get_player(user_id_str)
         if not player:
             if update.message:
@@ -238,7 +235,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             try:
                 await db.update_player(user_id, update_data)
-                await db.update_player(user_id, update_data)
             except Exception as e:
                 logger.error(f"Failed to update player {user_id}: {e}")
                 await _reply_error(update, "An error occurred while updating your profile.")
@@ -253,7 +249,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-
         player_character_name = player.team[0].character_name
         player_character = await db.get_character(user_id_str, player_character_name)
         if not player_character:
@@ -263,7 +258,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except NameError:
                 pass
             return
-
 
         if player_character.gas < 100:
             await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
@@ -279,7 +273,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Handle travel/decision points
         travel = getattr(player, "travel", {})
         location = getattr(player, "location", None)
-        
+
         # If at a decision point, show direction options
         if location and location in TRAVEL_MAP and location.startswith("Decision_"):
             directions = TRAVEL_MAP[location]
@@ -326,27 +320,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info(f"Generated titan for user {user_id}: {titan.name} (Level {titan.level}, HP: {titan.max_hp})")
 
-
         # Store titan in database
         await db.store_titan(user_id_str, titan)
 
         # Generate battle ID and store it
         battle_id = f"battle_{user_id}_{uuid4().hex}"
         context.bot_data[f"active_battle_id_{user_id}"] = battle_id
-        
-        
+
         # Create battle button
         keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Find appropriate titan image
+        # Find appropriate titan image (optimized lookup)
         titan_image_url = None
-        for difficulty, titan_types in TITAN_NAME_VARIANTS.items():
-            for titan_type in titan_types:
-                if titan_type in titan.name and titan_type in TITAN_TYPE_IMAGE_URLS:
-                    titan_image_url = TITAN_TYPE_IMAGE_URLS[titan_type]
-                    break
-            if titan_image_url:
+        titan_name_lower = titan.name.lower()
+        for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
+            if titan_type.lower() in titan_name_lower:
+                titan_image_url = url
                 break
 
         # Prepare encounter message
@@ -359,27 +349,25 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Send message with battle button
-        try:
-            if update.message:
-                sent_message = await update.message.reply_text(
+        sent_message = None
+        send_reply = None
+        if update.message:
+            send_reply = update.message.reply_text
+        elif update.callback_query and update.callback_query.message:
+            if hasattr(update.callback_query.message, "edit_text"):
+                send_reply = update.callback_query.message.edit_text
+        if send_reply:
+            try:
+                sent_message = await send_reply(
                     text=reply_text,
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=False
                 )
-            elif update.callback_query and update.callback_query.message:
-                # Only call edit_text if message is accessible
-                if hasattr(update.callback_query.message, "edit_text"):
-                    sent_message = await update.callback_query.message.edit_text(
-                        text=reply_text,
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML,
-                        disable_web_page_preview=False
-                    )
-        except Exception as e:
-            logger.error(f"Failed to send reply for user {user_id}: {e}")
-            await _reply_error(update, "An error occurred while displaying the titan.")
-            sent_message = None
+            except Exception as e:
+                logger.error(f"Failed to send reply for user {user_id}: {e}")
+                await _reply_error(update, "An error occurred while displaying the titan.")
+                sent_message = None
 
         # Start timeout task
         if sent_message:
@@ -426,7 +414,6 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
 async def force_cleanup_user(user_id: int, db: Database):
     """Force cleanup of all user-related data."""
     try:
-        from game.battle_system import cleanup_battle, active_battles
         from game.battle_system import cleanup_battle, active_battles
         user_id_str = str(user_id)
         if user_id_str in active_battles:
