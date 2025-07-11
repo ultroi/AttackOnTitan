@@ -1,10 +1,10 @@
 import logging
 from telegram import Update
-
+from utils.ban_utils import ban_protected
 
 logger = logging.getLogger(__name__)
 
-
+@ban_protected
 async def buy_command(update: Update, context):
                 try:
                     if not update.effective_user or not update.message:

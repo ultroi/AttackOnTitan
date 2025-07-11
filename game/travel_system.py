@@ -3,10 +3,12 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from .travel_map import TRAVEL_MAP
 from game.map_system import MAP_IMAGE_URL
+from utils.ban_utils import ban_protected
 
 import logging
 logger = logging.getLogger(__name__)
 
+@ban_protected
 async def travel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data.get("db")
     user_id = str(update.effective_user.id)

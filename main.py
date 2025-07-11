@@ -17,6 +17,7 @@ from database.db import Database
 from database.db_instance import get_persistent_database
 import signal
 from utils.sudo_reset import reset_handler
+from utils.ban_utils import ban_protected, ban_user, unban_user
 
 # Import handlers
 from game.character_system import (
@@ -273,6 +274,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
     app_instance.add_handler(CommandHandler("nuke", reset_handler))
     app_instance.add_handler(CommandHandler("char", char_detail))
+    app_instance.add_handler(CommandHandler("bfb", ban_user))
+    app_instance.add_handler(CommandHandler("ubfb", unban_user))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -301,6 +304,7 @@ def register_handlers(app_instance):
 
 
 # Shop command handler for /shop
+@ban_protected
 async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id) if update.effective_user else None
     try:

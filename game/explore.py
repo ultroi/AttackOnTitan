@@ -5,7 +5,7 @@ from database.models import Player, Character, Titan, DailyExplores, TITAN_NAME_
 from database.db import Database
 from game.travel_map import TRAVEL_MAP
 from game.captcha import spawn_captcha
-
+from utils.ban_utils import ban_protected
 from datetime import datetime, timezone
 from typing import Dict
 import random
@@ -95,7 +95,7 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
                 task.cancel()
         del context.bot_data[key]
 
-
+@ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Close the persistent keyboard menu."""
     if update.message:
@@ -104,7 +104,7 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardRemove()
         )
 
-
+@ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
     if not update.effective_user:

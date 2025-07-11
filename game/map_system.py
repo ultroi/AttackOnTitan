@@ -1,9 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from utils.ban_utils import ban_protected
 
 MAP_IMAGE_URL = "https://i.ibb.co/ccGtnVsT/IMG-20250704-133117-724.jpg"
 
+
+@ban_protected
 async def show_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data.get("db")
     user_id = str(update.effective_user.id)
