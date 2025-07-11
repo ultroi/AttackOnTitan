@@ -1,9 +1,8 @@
 import logging
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import CommandHandler, ContextTypes
-from database.db import Database
-from AttackOnTitan.utils.owners import get_owner_ids
+from telegram.ext import ContextTypes
+from utils.owners import get_owner_ids
 
 
 # Channel for reset logs
