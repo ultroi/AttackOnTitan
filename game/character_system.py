@@ -88,6 +88,8 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+    
+    
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Do NOT send a new photo here; only edit the existing message (text or caption)
