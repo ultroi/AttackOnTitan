@@ -726,7 +726,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         }
         await db.players.update_one({"user_id": user_id}, reward_updates)
         reward_msg = [
-            f"<b>You have defeated {battle.titan.name}!</b>",
+            f"<b>You have defeated {battle.titan.name}!</b>\n",
             f"⚡ <b>XP: +{rewards['xp']}</b>",
             f"🪙 <b>Marks: +{rewards['marks']}</b>",
         ]
