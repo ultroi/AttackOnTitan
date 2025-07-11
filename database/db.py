@@ -43,7 +43,11 @@ class Database:
             self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
             # Test the connection
             await self.db.command('ping')
-            logger.info("Database connection verified (Motor)")
+            # Create indexes for faster queries
+            await self.players.create_index("user_id")
+            await self.characters.create_index([("user_id", 1), ("name", 1)])
+            await self.titans.create_index("user_id")
+            logger.info("Database connection verified (Motor) and indexes created")
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             logger.info("Continuing with limited functionality - database operations may be slower")
@@ -87,8 +91,13 @@ class Database:
                 await self.init_db()  # Initialize if not already done
             if self.players is None:
                 raise ConnectionError("Database connection failed")
-                
-            player_data = await self.players.find_one({"user_id": user_id})
+            # Use projection to fetch only needed fields for explore
+            player_data = await self.players.find_one({"user_id": user_id}, {
+                "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
+                "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
+                "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
+                "unlocked_areas": 1, "team": 1, "rank": 1, "shop_refresh_date": 1, "shop_refresh_count": 1
+            })
             return Player(**player_data) if player_data else None
         except (PyMongoError, ConnectionError) as e:
             logger.error(f"Failed to get player: {e}")
@@ -195,9 +204,15 @@ class Database:
 
     async def get_character(self, user_id: int, character_name: str) -> Optional[Character]:
         try:
+            # Use projection for faster reads
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
+            }, {
+                "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
+                "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1, "rank": 1,
+                "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
+                "unlocked_abilities": 1
             })
             if character_data:
                 return Character(**character_data)
@@ -254,6 +269,12 @@ class Database:
             raise
 
     # Titan operations
+    _cached_special_abilities = None
+    def _get_special_abilities(self, difficulty):
+        if self._cached_special_abilities is None:
+            self._cached_special_abilities = SPECIAL_ABILITIES
+        return self._cached_special_abilities[difficulty]
+
     async def generate_titan(self, player_level: int, unlocked_areas: List[str]) -> Optional[Titan]:
         # Determine difficulty based on player level
         if player_level < 8:
@@ -269,7 +290,7 @@ class Database:
         # Name and HP using models.py logic
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(level, difficulty)
-        abilities = random.sample(SPECIAL_ABILITIES[difficulty], k=min(2, len(SPECIAL_ABILITIES[difficulty])))
+        abilities = random.sample(self._get_special_abilities(difficulty), k=min(2, len(self._get_special_abilities(difficulty))))
         special_abilities = abilities.copy()
         now = datetime.now(timezone.utc)
         titan = Titan(

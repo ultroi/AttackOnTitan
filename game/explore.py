@@ -185,17 +185,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_error(update, "Internal error: Database not initialized.")
             return
 
-        if user_id_str in user_last_explore:
-            time_diff = current_time - user_last_explore[user_id_str]
-            if time_diff < EXPLORE_COOLDOWN:
-                remaining = EXPLORE_COOLDOWN - time_diff
-                await _reply_error(update, f"⏳ Please wait {remaining:.1f} seconds before exploring again.")
-                try:
-                    remove_player_activity(user_id)
-                except NameError:
-                    pass
-                return
-
         user_last_explore[user_id_str] = current_time
 
         # Get player data (only once)
@@ -242,7 +231,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Check team requirements
         if not player.team:
-            await _reply_error(update, "You need to have at least one character in your team. Use /team to manage your team.")
+            await _reply_error(update, "You need to have at least one character in your team. Use /inv to manage your team.")
             try:
                 remove_player_activity(user_id)
             except NameError:
