@@ -29,41 +29,41 @@ ALLOWED_LOCATIONS = ["Shiganshina", "Karanes", "Trost", "Orvud"]
 ALLOWED_CHARACTERS = set(CHARACTERS)
 
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Extract referral code if present in the message
+    # Step 1: Extract and preserve referral code
+    referral_code = None
     if hasattr(update, 'message') and update.message and update.message.text:
         parts = update.message.text.strip().split()
         if len(parts) > 1 and parts[1].startswith('referral_'):
             referral_code = parts[1][len('referral_'):]
-            if context.user_data is None:
-                context.user_data = {}
-            context.user_data['referred_by'] = referral_code
 
-    # Clear all user memory except referral code
+    # Step 2: FULL MEMORY CLEANUP (except referral)
     if hasattr(context, 'user_data') and context.user_data is not None:
-        referred_by = context.user_data.get('referred_by')
-        context.user_data.clear()
-        if referred_by:
-            context.user_data['referred_by'] = referred_by
-        logger.info("Cleared user data for character selection (kept referral code if present)")
+        context.user_data.clear()  # Clear all first
+        if referral_code:
+            context.user_data['referred_by'] = referral_code  # Restore referral
 
-    user_id = str(update.effective_user.id) if update.effective_user and hasattr(update.effective_user, 'id') else None
-    # Remove from active_battles if present
-    if user_id and user_id in active_battles:
+    # Step 3: Force cleanup battles/timeouts
+    user_id = str(update.effective_user.id) if update.effective_user else None
+    if user_id:
+        # Clean active battles
         try:
-            battle = active_battles.pop(user_id)
-            if hasattr(battle, 'dispose'):
-                battle.dispose()
+            from game.battle_system import active_battles
+            if user_id in active_battles:
+                battle = active_battles.pop(user_id)
+                if hasattr(battle, 'dispose'):
+                    battle.dispose()
         except Exception as e:
-            logger.error(f"Error clearing battle for user {user_id}: {e}")
-    if not update.message:
-        logger.error("start_character_selection called with no message")
-        return
+            logger.error(f"Battle cleanup error: {e}")
+
+        # Cancel titan timeouts
+        timeout_key = f"titan_timeouts_{user_id}"
+        if timeout_key in context.bot_data:
+            for task in context.bot_data[timeout_key]:
+                task.cancel()
+            del context.bot_data[timeout_key]
+
+    # Step 4: Check if player exists
     db = context.bot_data.get("db") or Database()
-    if not update.effective_user or not hasattr(update.effective_user, "id"):
-        logger.error("start_character_selection called with no effective_user or id")
-        await update.message.reply_text("Error: Could not identify user.")
-        return
-    user_id = str(update.effective_user.id)
     player = await db.get_player(user_id)
     if player:
         await update.message.reply_text(
@@ -71,6 +71,8 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
             "Use /explore to continue your adventure."
         )
         return
+
+    # Step 5: Send welcome message
     keyboard = [[InlineKeyboardButton("Start Your Journey", callback_data="start_journey")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_text = (
@@ -79,7 +81,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         "Your journey begins now, as you choose your path and character.\n\n"
         "<i>Are you ready to join the fight?</i>"
     )
-    # Send image first, then welcome text with button
+    
     await update.message.reply_photo(
         photo="https://i.ibb.co/tpg301ZQ/image.jpg",
         caption=welcome_text,
