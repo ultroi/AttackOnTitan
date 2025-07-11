@@ -85,7 +85,7 @@ class Database:
                 referral_code=referral_code,
                 referred_by=referred_by,
                 referral_count=0,
-                referral_milestones={},
+                referral_milestones={}
             )
             logger.info(f"Creating player: {player}")
             await self.players.insert_one(player.dict())
