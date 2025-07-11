@@ -32,7 +32,7 @@ from game.profile_system import (
 )
 from utils.monitor import monitor_command
 from utils.extra import buy_command
-from game.explore import explore
+from game.explore import explore, close_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
@@ -263,6 +263,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("start", start_character_selection))
     app_instance.add_handler(CommandHandler("inv", profile))
     app_instance.add_handler(CommandHandler("explore", explore))
+    app_instance.add_handler(CommandHandler("close", close_keyboard))
     app_instance.add_handler(CommandHandler("map", show_map))
     app_instance.add_handler(CommandHandler("travel", travel_command))
     app_instance.add_handler(CommandHandler("shop", shop_command))

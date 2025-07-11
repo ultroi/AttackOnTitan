@@ -735,6 +735,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         if rewards['valor'] > 0:
             reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
         await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
+
         # Always send level up messages instantly
         if char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
@@ -751,24 +752,33 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                         msg.append(f"{ability_type} {ability['name']} ({ability['description']})")
                 # Send level up message immediately
                 await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
+
         if player_level_info["total_level_ups"] > 0:
+            
+            # Send a message for each player level up
+            for lvl_up in player_level_info["level_ups"]:
+                msg = [
+                    f"🎉 PLAYER LEVEL UP! 🎉",
+                    f"Level: {lvl_up['old_level']} → {lvl_up['new_level']}"
+                ]
+                rewards = lvl_up.get("rewards", {})
+                if rewards.get("marks", 0) > 0:
+                    msg.append(f"🪙 Marks: +{rewards['marks']}")
+                if rewards.get("valor", 0) > 0:
+                    msg.append(f"⚔️ Valor: +{rewards['valor']}")
+                if rewards.get("crystals", 0) > 0:
+                    msg.append(f"💠 Crystals: +{rewards['crystals']}")
+                if rewards.get("unlocks"):
+                    msg.append("\n🔓 UNLOCKS:")
+                    msg.extend(f"• {item}" for item in rewards["unlocks"])
+                await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
+            # Update player fields as before
             total_marks = sum(lvl["rewards"].get("marks", 0) for lvl in player_level_info["level_ups"])
             total_valor = sum(lvl["rewards"].get("valor", 0) for lvl in player_level_info["level_ups"])
             total_crystals = sum(lvl["rewards"].get("crystals", 0) for lvl in player_level_info["level_ups"])
             all_unlocks = []
             for lvl in player_level_info["level_ups"]:
                 all_unlocks.extend(lvl["rewards"].get("unlocks", []))
-            reward_text = [
-                f"✨ LEVEL UP! ({player_level_info['level_ups'][0]['old_level']} → {player_level_info['level_ups'][-1]['new_level']}) ✨",
-                "═══════════════════════",
-                f"🪙 Marks: +{total_marks}",
-                f"⚔️ Valor: +{total_valor}",
-                f"💠 Crystals: +{total_crystals}"
-            ]
-            if all_unlocks:
-                reward_text.append("\n🔓 UNLOCKS:")
-                reward_text.extend(f"• {item}" for item in set(all_unlocks))
-            await send(chat_id, "\n".join(reward_text), parse_mode=ParseMode.HTML)
             update_fields = {"$inc": {}, "$set": {"level": player_obj.level}}
             if total_marks:
                 update_fields["$inc"]["marks"] = total_marks

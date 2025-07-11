@@ -1,4 +1,4 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.models import Player, Character, Titan, DailyExplores, TITAN_NAME_VARIANTS
@@ -96,6 +96,13 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
         del context.bot_data[key]
 
 
+async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Close the persistent keyboard menu."""
+    await update.message.reply_text(
+        "Closing keyboard...",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
 
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
@@ -106,6 +113,21 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
+
+    keyboard = [
+        ["/explore", "/close"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard, 
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    
+    # Send message with persistent keyboard
+    await update.message.reply_text(
+        "Use the buttons below to explore or close the menu:",
+        reply_markup=reply_markup
+    )
     
     # Check for active battle before allowing explore
     try:
