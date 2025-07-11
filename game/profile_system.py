@@ -9,6 +9,7 @@ from html import escape
 from game.shop_system import ShopSystem
 from typing import Optional
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -550,13 +551,11 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player or not player.owned_characters:
         await update.message.reply_text("❌ You have no unlocked characters.")
         return
-    # Get argument (character name or partial)
     args = context.args if hasattr(context, 'args') else []
     if not args:
         await update.message.reply_text("Usage: /char <character name>")
         return
     query_name = " ".join(args).strip().lower()
-    # Find owned character with partial match
     matched_name: Optional[str] = None
     for char_name in player.owned_characters:
         if query_name in char_name.lower():
@@ -573,9 +572,8 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not char_data:
         await update.message.reply_text("Error: Character data not found.")
         return
-    # Store owner_id for button restriction
     context.user_data['owner_id'] = user_id
-    # Build detail text (reuse show_character_profile logic)
+    # Store profile text in user_data for later editing
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
         f"<b>Level:</b> {character.level}\n"
@@ -598,20 +596,28 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     profile_text += f"  Cooldown: {ability.cooldown} turns\n"
                 profile_text += "\n"
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data="fill_gas"),
+        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-    # Send image with caption if available
     image_url = CHARACTER_IMAGES.get(character.name)
-    if image_url:
-        await update.message.reply_photo(
+    # Ensure context.user_data is a dict
+    if context.user_data is None:
+        context.user_data = {}
+    context.user_data['char_detail_message_id'] = None
+    context.user_data['char_detail_profile_text'] = profile_text
+    context.user_data['char_detail_character_name'] = character.name
+    msg = None
+    if image_url and getattr(update, "message", None):
+        msg = await update.message.reply_photo(
             photo=image_url,
             caption=profile_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
-    else:
-        await update.message.reply_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    elif getattr(update, "message", None):
+        msg = await update.message.reply_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    if msg:
+        context.user_data['char_detail_message_id'] = msg.message_id
 
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):
@@ -628,24 +634,71 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player or not player.team:
         await query.answer("You haven't created a team yet! Use /start to begin.", show_alert=True)
         return
-    character_name = player.team[0].character_name
-    character = await db.get_character(user_id, character_name)
+    # Get character name from callback_data or user_data
+    char_name = None
+    if query.data.startswith("fill_gas_"):
+        char_name = query.data.replace("fill_gas_", "")
+    else:
+        char_name = context.user_data.get('char_detail_character_name')
+    character = await db.get_character(user_id, char_name)
     if not character:
-        await query.answer(f"Error: Character {character_name} not found.", show_alert=True)
+        await query.answer(f"Error: Character {char_name} not found.", show_alert=True)
         return
-    # If already full, show alert with current gas
     if getattr(character, "gas", 0) >= 5000:
-        await query.answer(f"{character_name}'s gas is already full! (5000/5000)", show_alert=True)
+        await query.answer(f"{char_name}'s gas is already full! (5000/5000)", show_alert=True)
         return
     prev_gas = getattr(character, "gas", 0)
+    gas_needed = 5000 - prev_gas
+    if getattr(player, "gas", 0) < gas_needed:
+        await query.answer(f"Not enough gas! You need {gas_needed} gas to refill, but you only have {player.gas}.", show_alert=True)
+        return
+    player.gas -= gas_needed
     character.gas = 5000
     character.max_gas = 5000
+    await db.update_player(player)
     await db.update_character(character)
+    # Update profile text with new gas value and refill info
+    profile_text = context.user_data.get('char_detail_profile_text', '')
+    # Replace gas line with updated value and add refill info
+    profile_text = re.sub(r"<b>Gas:</b> \d+", f"<b>Gas:</b> {character.gas} (Refilled by {gas_needed})", profile_text)
+    context.user_data['char_detail_profile_text'] = profile_text
+    keyboard = [
+        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
+         InlineKeyboardButton("Exit", callback_data="exit_profile")]
+    ]
+    image_url = CHARACTER_IMAGES.get(character.name)
+    message_id = context.user_data.get('char_detail_message_id')
+    chat_id = query.message.chat_id if query.message else None
+    try:
+        if image_url and chat_id and message_id:
+            await context.bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=message_id,
+                caption=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        elif chat_id and message_id:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        # fallback: edit current query message
+        try:
+            if image_url:
+                await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+            else:
+                await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception as e2:
+            pass
     await query.answer(
-        f"{character_name}'s gas was {prev_gas}/5000.\nNow filled to 5000!",
+        f"{char_name}'s gas was {prev_gas}/5000.\nNow filled to 5000! {gas_needed} gas deducted from your resources.",
         show_alert=True
     )
-    # No message edit, only alert as requested
     return
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -137,14 +137,7 @@ class Character(BaseModel):
                 self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
             # --- Max gas increases by 250 per level up ---
             self.max_gas += 250
-            self.gas = self.max_gas  # refill gas to new max
-            # Update rank
-            if self.level >= 25:
-                self.rank = "Veteran"
-            elif self.level >= 15:
-                self.rank = "Elite"
-            elif self.level >= 5:
-                self.rank = "Soldier"
+            self.gas = self.max_gas 
             # Check for ability unlocks
             self._check_ability_unlocks()
 
