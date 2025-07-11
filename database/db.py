@@ -44,7 +44,11 @@ class Database:
             # Test the connection
             await self.db.command('ping')
             # Create indexes for faster queries
-            await self.players.create_index("user_id")
+            index_name = "user_id_1"
+            indexes = await self.players.index_information()
+            if index_name in indexes:
+                await self.players.drop_index(index_name)
+            await self.players.create_index("user_id", name=index_name, unique=True, background=True)
             await self.characters.create_index([("user_id", 1), ("name", 1)])
             await self.titans.create_index("user_id")
             logger.info("Database connection verified (Motor) and indexes created")

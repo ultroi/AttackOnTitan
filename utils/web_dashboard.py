@@ -432,18 +432,13 @@ def monitor_stats():
     """Get detailed monitoring statistics"""
     try:
         if resource_monitor:
-            return {
-                "timestamp": datetime.now().isoformat(),
-                "live_players": resource_monitor.get_live_player_stats(),
-                "memory": resource_monitor.get_memory_usage(),
-                "battles": resource_monitor.get_battle_stats(),
-                "system": resource_monitor.get_system_load()
-            }
+            live_players = resource_monitor.get_live_player_stats()
+            return jsonify({"live_players": live_players})
         else:
-            return {"error": "Monitor not available"}, 503
+            return jsonify({"error": "Monitor not available"}), 503
     except Exception as e:
         logger.error(f"Monitor stats failed: {e}")
-        return {"error": str(e)}, 500
+        return jsonify({"detail": str(e)}), 500
 
 @app.route("/dashboard")
 def live_dashboard():
