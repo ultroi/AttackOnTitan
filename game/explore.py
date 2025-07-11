@@ -114,31 +114,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
-    # Show persistent keyboard by editing the original /explore message
+    # Show persistent keyboard with a minimal message (if not already present)
     keyboard = [["/explore", "/close"]]
     reply_markup = ReplyKeyboardMarkup(
-        keyboard, 
+        keyboard,
         resize_keyboard=True,
         one_time_keyboard=False
     )
-    
-    # Edit the original /explore message to add the keyboard
-    if update.message:
-        # Use InlineKeyboardMarkup for edit_text
-        inline_keyboard = [[InlineKeyboardButton("/explore", callback_data="explore"), InlineKeyboardButton("/close", callback_data="close")]]
-        inline_reply_markup = InlineKeyboardMarkup(inline_keyboard)
-        try:
-            await update.message.edit_text(
-                text=" ",  # Single space as a workaround
-                reply_markup=inline_reply_markup
-            )
-        except Exception as e:
-            logger.warning(f"Couldn't edit message to add keyboard: {e}")
-            # Fallback - send new message with ReplyKeyboardMarkup
-            await update.message.reply_text(
-                text=" ",  # Single space as a workaround
-                reply_markup=reply_markup
-            )
     
     # Check for active battle before allowing explore
     try:
