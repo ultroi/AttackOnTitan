@@ -1,3 +1,9 @@
+import asyncio
+from telegram.constants import ParseMode
+from utils.ban_utils import ban_user
+from utils.owners import get_owner_ids
+from database.db_instance import get_database
+import random
 import random
 import string
 import asyncio
@@ -10,6 +16,7 @@ import random
 import string
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
+import time
 
 def generate_captcha():
     # Generate random 6-character string (uppercase letters and digits)
@@ -75,17 +82,43 @@ def generate_captcha():
 
 # --- TEXT CAPTCHA WITH TRIES ---
 async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    captcha_text, captcha_image = generate_captcha()
+    # --- Captcha Timeout Task ---
+    async def captcha_timeout():
+        await asyncio.sleep(480)  # 8 minutes
+        if context.user_data is not None and context.user_data.get('captcha_active', False):
+            # Ban user for captcha timeout
+            user_id = update.effective_user.id if update.effective_user is not None else None
+            db = await get_database()
+            if db is not None and user_id is not None:
+                await db["bans"].update_one(
+                    {"user_id": user_id},
+                    {"$set": {"user_id": user_id, "expiry": None, "reason": "Captcha Timeout", "banned_by": user_id, "banned_at": int(time.time())}},
+                    upsert=True
+                )
+            # Log to channel
+            msg = (
+                f"<b>#CaptchaTimeout</b>\n\n"
+                f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{update.effective_user.first_name}</a>\n"
+                f"<b>ID</b> : <code>{user_id}</code>"
+            )
+            await context.bot.send_message(-1002873117075, msg, parse_mode=ParseMode.HTML)
+            context.user_data['captcha_active'] = False
+    # Ensure user_data is a dict
     if context.user_data is None:
         context.user_data = {}
+    # Start timeout task
+    context.user_data['captcha_timeout_task'] = asyncio.create_task(captcha_timeout())
+    captcha_text, captcha_image = generate_captcha()
     context.user_data['captcha_answer'] = captcha_text
     context.user_data['captcha_tries'] = 3
     context.user_data['captcha_active'] = True
 
+    # Always generate options with same length as captcha_text
     options = [captcha_text]
     while len(options) < 9:
-        random_option = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-        if random_option not in options:
+        random_option = ''.join(random.choices(string.ascii_uppercase + string.digits, k=len(captcha_text)))
+        # Ensure not too similar to answer (at least 2 chars different)
+        if random_option not in options and sum(a != b for a, b in zip(random_option, captcha_text)) >= 2:
             options.append(random_option)
     random.shuffle(options)
 
@@ -103,6 +136,7 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id if update.effective_user else None
     query = update.callback_query
     if query is None or context.user_data is None:
         if query:
@@ -120,10 +154,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.delete()
         except Exception:
             pass
-        # Send a new text message to the user
-        await query.message.chat.send_message("✅ CAPTCHA passed!")
+        # Give XP reward
+        xp_reward = random.randint(100, 150)
+        db = await get_database()
+        if db is not None and user_id:
+            await db["players"].update_one({"user_id": str(user_id)}, {"$inc": {"xp": xp_reward, "total_xp": xp_reward}})
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"✅ CAPTCHA passed! You gained {xp_reward} XP."
+        )
         context.user_data['verified'] = True
         context.user_data['captcha_active'] = False
+        # Cancel timeout task
+        timeout_task = context.user_data.get('captcha_timeout_task')
+        if timeout_task:
+            timeout_task.cancel()
     else:
         tries -= 1
         context.user_data['captcha_tries'] = tries
@@ -142,8 +187,26 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_caption(caption=f"❌ CAPTCHA failed. Please try /explore again.")
             except Exception:
                 pass
+            # Ban user for failing captcha
+            if db is not None and user_id:
+                await db["bans"].update_one(
+                    {"user_id": user_id},
+                    {"$set": {"user_id": user_id, "expiry": None, "reason": "Captcha Failed", "banned_by": user_id, "banned_at": int(time.time())}},
+                    upsert=True
+                )
+            # Log to channel
+            msg = (
+                f"<b>#CaptchaTimeout</b>\n\n"
+                f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{update.effective_user.first_name}</a>\n"
+                f"<b>ID</b> : <code>{user_id}</code>"
+            )
+            await context.bot.send_message(-1002873117075, msg, parse_mode=ParseMode.HTML)
             context.user_data['verified'] = False
             context.user_data['captcha_active'] = False
+            # Cancel timeout task
+            timeout_task = context.user_data.get('captcha_timeout_task')
+            if timeout_task:
+                timeout_task.cancel()
 
 # --- SPAWN CAPTCHA FOR EXPLORE ---
 async def spawn_captcha(update, context):

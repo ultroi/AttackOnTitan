@@ -115,14 +115,14 @@ async def ban_user(update: Update, context: CallbackContext):
     admin = update.effective_user
     time_str = f"{duration//3600 if duration and duration>=3600 else duration//60 if duration else 'Permanent'} {'hours' if duration and duration>=3600 else 'minutes' if duration else ''}" if duration else 'Permanent'
     msg = (
-        f"#BanEvent\n\n"
-        f"*Target* : [`{target_id}`](tg://user?id={target_id})\n"
-        f"*Target ID* : `{target_id}`\n"
-        f"*By* : [`{admin.first_name}`](tg://user?id={admin.id})\n"
-        f"*Reason* : `{reason}`\n"
-        f"*Time* : `{time_str}`"
+        f"<b>#BanEvent</b>\n\n"
+        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_id}</a>\n"
+        f"<b>Target ID</b> : <code>{target_id}</code>\n"
+        f"<b>By</b> : <a href=\"tg://user?id={admin.id}\">{admin.first_name}</a>\n"
+        f"<b>Reason</b> : <code>{reason}</code>\n"
+        f"<b>Time</b> : <code>{time_str}</code>"
     )
-    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
     if update.effective_message is not None:
         await update.effective_message.reply_text(f"User {target_id} banned. Time: {time_str}")
 
@@ -158,13 +158,13 @@ async def unban_user(update: Update, context: CallbackContext):
     # Log to group in proper format
     admin = update.effective_user
     msg = (
-        f"#UnbanEvent\n\n"
-        f"*Target* : [`{target_id}`](tg://user?id={target_id})\n"
-        f"*Target ID* : `{target_id}`\n"
-        f"*By* : [`{admin.first_name}`](tg://user?id={admin.id})\n"
-        f"*Time* : `{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`"
+        f"<b>#UnbanEvent</b>\n\n"
+        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_id}</a>\n"
+        f"<b>Target ID</b> : <code>{target_id}</code>\n"
+        f"<b>By</b> : <a href=\"tg://user?id={admin.id}\">{admin.first_name}</a>\n"
+        f"<b>Time</b> : <code>{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}</code>"
     )
-    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
 
 
 async def is_banned(user_id: int) -> bool:
