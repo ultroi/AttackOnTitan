@@ -143,15 +143,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     media=InputMediaPhoto(captcha_image, has_spoiler=True),
                     reply_markup=reply_markup
                 )
-                await query.edit_message_caption(caption="Please select the correct CAPTCHA text:")
-            except Exception:
-                # If edit fails, send a new message
-                await query.message.reply_photo(
-                    photo=captcha_image,
+                # Only update caption if needed, but always include reply_markup to keep buttons
+                await query.edit_message_caption(
                     caption="Please select the correct CAPTCHA text:",
-                    reply_markup=reply_markup,
-                    has_spoiler=True
+                    reply_markup=reply_markup
                 )
+            except Exception:
+                # If edit fails, send a new message only if message is accessible
+                if getattr(query, "message", None):
+                    await query.message.reply_photo(
+                        photo=captcha_image,
+                        caption="Please select the correct CAPTCHA text:",
+                        reply_markup=reply_markup,
+                        has_spoiler=True
+                    )
         else:
             await query.answer("❌ Failed all tries!")
             await query.edit_message_caption(caption=f"❌ CAPTCHA failed. Please try /explore again.")
