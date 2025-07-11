@@ -114,22 +114,28 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
-    # Show persistent keyboard only if not already shown
-    keyboard = [
-        ["/explore", "/close"]
-    ]
+    # Show persistent keyboard without any message
+    keyboard = [["/explore", "/close"]]
     reply_markup = ReplyKeyboardMarkup(
-        keyboard,
+        keyboard, 
         resize_keyboard=True,
         one_time_keyboard=False
     )
-
-    # Show keyboard only if message is not already using it
-    if not (update.message and update.message.reply_markup == reply_markup):
+    
+    # This will show the keyboard without sending a new message
+    if update.message:
         await update.message.reply_text(
-            "",
+            text=" ",  # Empty message
             reply_markup=reply_markup
         )
+        # Delete the empty message immediately
+        try:
+            await context.bot.delete_message(
+                chat_id=update.message.chat_id,
+                message_id=update.message.message_id + 1
+            )
+        except Exception as e:
+            logger.warning(f"Couldn't delete empty message: {e}")
     
     # Check for active battle before allowing explore
     try:
