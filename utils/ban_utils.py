@@ -114,13 +114,13 @@ async def ban_user(update: Update, context: CallbackContext):
     # Log to group in proper format
     admin = update.effective_user
     time_str = f"{duration//3600 if duration and duration>=3600 else duration//60 if duration else 'Permanent'} {'hours' if duration and duration>=3600 else 'minutes' if duration else ''}" if duration else 'Permanent'
-    # Try to get target's first name if available in context (if banning via reply)
-    target_name = str(target_id)
     if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
-        target_name = update.message.reply_to_message.from_user.first_name
+        target_display = update.message.reply_to_message.from_user.first_name
+    else:
+        target_display = str(target_id)
     msg = (
         f"<b>#BanEvent</b>\n\n"
-        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_name}</a>\n"
+        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_display}</a>\n"
         f"<b>Target ID</b> : <code>{target_id}</code>\n"
         f"<b>By</b> : <a href=\"tg://user?id={admin.id}\">{admin.first_name}</a>\n"
         f"<b>Reason</b> : <code>{reason}</code>\n"
@@ -161,13 +161,13 @@ async def unban_user(update: Update, context: CallbackContext):
         await update.effective_message.reply_text(f"User {target_id} unbanned.")
     # Log to group in proper format
     admin = update.effective_user
-    # Try to get target's first name if available in context (if unbanning via reply)
-    target_name = str(target_id)
     if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
-        target_name = update.message.reply_to_message.from_user.first_name
+        target_display = update.message.reply_to_message.from_user.first_name
+    else:
+        target_display = str(target_id)
     msg = (
         f"<b>#UnbanEvent</b>\n\n"
-        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_name}</a>\n"
+        f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_display}</a>\n"
         f"<b>Target ID</b> : <code>{target_id}</code>\n"
         f"<b>By</b> : <a href=\"tg://user?id={admin.id}\">{admin.first_name}</a>\n"
         f"<b>Time</b> : <code>{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}</code>"

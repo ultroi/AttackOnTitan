@@ -308,7 +308,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
                 return
 
-        from datetime import datetime
         logger.info(f"[{datetime.now()}] Starting titan generation for user {user_id}")
         titan = await db.generate_titan(player_character.level, player.unlocked_areas)
         logger.info(f"[{datetime.now()}] Titan generated for user {user_id}: {getattr(titan, 'name', None)}")
