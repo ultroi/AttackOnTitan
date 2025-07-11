@@ -9,7 +9,6 @@ from database.db_instance import get_database
 
 # Ban collection name
 BAN_COLLECTION = "bans"
-
 BAN_LOG_CHAT_ID = -1002873117075
 
 # Decorator to protect commands from banned users
@@ -33,12 +32,14 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
                     # Ban expired, remove
                     await db[BAN_COLLECTION].delete_one({"user_id": user_id})
                 else:
-                    # Notify only once
-                    if not hasattr(context.user_data, 'ban_notified'):
+                    # Notify only once per session
+                    if context.user_data is None:
+                        context.user_data = {}
+                    if not context.user_data.get('ban_notified', False):
                         if update.effective_message is not None:
-                            await update.effective_message.reply_text("You are banned from using commands.")
-                        if context.user_data is not None:
-                            context.user_data['ban_notified'] = True
+                            await update.effective_message.reply_text("You are banned!!")
+                        context.user_data['ban_notified'] = True
+                    # After first notification, do not respond to further commands
                     return
         except Exception:
             if update.effective_message is not None:
@@ -104,9 +105,9 @@ async def ban_user(update: Update, context: CallbackContext):
     # Notify banned user (if possible)
     try:
         if duration:
-            context.bot.send_message(target_id, f"You have been banned for {duration//3600 if duration>=3600 else duration//60} {'hours' if duration>=3600 else 'minutes'}.")
+            await context.bot.send_message(target_id, f"You have been banned for {duration//3600 if duration>=3600 else duration//60} {'hours' if duration>=3600 else 'minutes'}.")
         else:
-            context.bot.send_message(target_id, "You have been permanently banned.")
+            await context.bot.send_message(target_id, "You have been permanently banned.")
     except Exception:
         pass
 
@@ -115,13 +116,13 @@ async def ban_user(update: Update, context: CallbackContext):
     time_str = f"{duration//3600 if duration and duration>=3600 else duration//60 if duration else 'Permanent'} {'hours' if duration and duration>=3600 else 'minutes' if duration else ''}" if duration else 'Permanent'
     msg = (
         f"#BanEvent\n\n"
-        f"Target : [{target_id}](tg://user?id={target_id})\n"
-        f"Target ID : {target_id}\n"
-        f"By : [{admin.first_name}](tg://user?id={admin.id})\n"
-        f"Reason : [{reason}]\n"
-        f"Time : {time_str}"
+        f"*Target* : [`{target_id}`](tg://user?id={target_id})\n"
+        f"*Target ID* : `{target_id}`\n"
+        f"*By* : [`{admin.first_name}`](tg://user?id={admin.id})\n"
+        f"*Reason* : `{reason}`\n"
+        f"*Time* : `{time_str}`"
     )
-    context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
     if update.effective_message is not None:
         await update.effective_message.reply_text(f"User {target_id} banned. Time: {time_str}")
 
@@ -158,12 +159,12 @@ async def unban_user(update: Update, context: CallbackContext):
     admin = update.effective_user
     msg = (
         f"#UnbanEvent\n\n"
-        f"Target : [{target_id}](tg://user?id={target_id})\n"
-        f"Target ID : {target_id}\n"
-        f"By : [{admin.first_name}](tg://user?id={admin.id})\n"
-        f"Time : {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}"
+        f"*Target* : [`{target_id}`](tg://user?id={target_id})\n"
+        f"*Target ID* : `{target_id}`\n"
+        f"*By* : [`{admin.first_name}`](tg://user?id={admin.id})\n"
+        f"*Time* : `{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}`"
     )
-    context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
+    await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN)
 
 
 async def is_banned(user_id: int) -> bool:
