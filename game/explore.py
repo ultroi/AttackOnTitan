@@ -308,8 +308,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     pass
                 return
 
-        # Generate and display titan
+        from datetime import datetime
+        logger.info(f"[{datetime.now()}] Starting titan generation for user {user_id}")
         titan = await db.generate_titan(player_character.level, player.unlocked_areas)
+        logger.info(f"[{datetime.now()}] Titan generated for user {user_id}: {getattr(titan, 'name', None)}")
         if not titan:
             await _reply_error(update, "No titans found in your level range.")
             try:
@@ -318,20 +320,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-        logger.info(f"Generated titan for user {user_id}: {titan.name} (Level {titan.level}, HP: {titan.max_hp})")
-
-        # Store titan in database
+        logger.info(f"[{datetime.now()}] Storing titan in DB for user {user_id}")
         await db.store_titan(user_id_str, titan)
+        logger.info(f"[{datetime.now()}] Titan stored in DB for user {user_id}")
 
-        # Generate battle ID and store it
         battle_id = f"battle_{user_id}_{uuid4().hex}"
         context.bot_data[f"active_battle_id_{user_id}"] = battle_id
 
-        # Create battle button
         keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Find appropriate titan image (optimized lookup)
         titan_image_url = None
         titan_name_lower = titan.name.lower()
         for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
@@ -339,7 +337,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 titan_image_url = url
                 break
 
-        # Prepare encounter message
         image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
         reply_text = (
             f"<code>-------------------------</code>\n"
@@ -348,7 +345,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<code>-------------------------</code>\n"
         )
 
-        # Send message with battle button
         sent_message = None
         send_reply = None
         if update.message:
@@ -356,6 +352,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif update.callback_query and update.callback_query.message:
             if hasattr(update.callback_query.message, "edit_text"):
                 send_reply = update.callback_query.message.edit_text
+        logger.info(f"[{datetime.now()}] Sending titan encounter message for user {user_id}")
         if send_reply:
             try:
                 sent_message = await send_reply(
@@ -364,13 +361,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=False
                 )
+                logger.info(f"[{datetime.now()}] Titan encounter message sent for user {user_id}")
             except Exception as e:
-                logger.error(f"Failed to send reply for user {user_id}: {e}")
+                logger.error(f"[{datetime.now()}] Failed to send reply for user {user_id}: {e}")
                 await _reply_error(update, "An error occurred while displaying the titan.")
                 sent_message = None
 
-        # Start timeout task
         if sent_message:
+            logger.info(f"[{datetime.now()}] Starting titan timeout task for user {user_id}")
             titan_timeout_task = asyncio.create_task(
                 titan_encounter_timeout(user_id, context, sent_message)
             )
@@ -378,6 +376,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if key not in context.bot_data:
                 context.bot_data[key] = []
             context.bot_data[key].append(titan_timeout_task)
+            logger.info(f"[{datetime.now()}] Titan timeout task started for user {user_id}")
 
     except Exception as e:
         logger.error(f"Error in explore command: {e}")
