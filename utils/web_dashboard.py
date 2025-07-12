@@ -438,7 +438,7 @@ def monitor_stats():
             return jsonify({"error": "Monitor not available"}), 503
     except Exception as e:
         logger.error(f"Monitor stats failed: {e}")
-        return jsonify({"detail": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/dashboard")
 def live_dashboard():
