@@ -2,133 +2,711 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AoT Bot Live Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { background: #181c24; color: #f1f1f1; font-family: Arial, sans-serif; margin: 0; }
-    .container { max-width: 700px; margin: 40px auto; background: #23283a; border-radius: 10px; box-shadow: 0 2px 8px #0006; padding: 32px; }
-    h1 { color: #ffb347; }
-    .active-list { margin-bottom: 24px; }
-    .active-list table { width: 100%; border-collapse: collapse; }
-    .active-list th, .active-list td { padding: 8px 6px; border-bottom: 1px solid #333; }
-    .active-list th { color: #ffb347; text-align: left; }
-    .log-container { background: #181c24; border-radius: 8px; padding: 16px; max-height: 350px; overflow-y: auto; font-size: 1em; }
-    .log-entry { margin-bottom: 8px; border-left: 3px solid #ffb347; padding-left: 8px; }
-    .status-exploring { color: #4ecdc4; }
-    .status-battling { color: #ff6b6b; }
-    .status-ended { color: #ffe66d; }
-    .copy-id { cursor: pointer; color: #ffb347; }
-    .copy-id:hover { text-decoration: underline; }
+    :root {
+      --primary: #ffb347;
+      --primary-dark: #ff9a00;
+      --bg-dark: #12161f;
+      --bg-panel: #1e2332;
+      --bg-panel-light: #2a3248;
+      --text-light: #f1f1f1;
+      --text-muted: #a0a8c0;
+      --success: #4ecdc4;
+      --danger: #ff6b6b;
+      --warning: #ffe66d;
+      --info: #6b8cff;
+      --border-radius: 10px;
+      --transition: all 0.3s ease;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: var(--bg-dark);
+      color: var(--text-light);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid var(--bg-panel-light);
+    }
+    
+    h1 {
+      color: var(--primary);
+      font-size: 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    h1 i {
+      color: var(--danger);
+    }
+    
+    h2 {
+      font-size: 20px;
+      margin-bottom: 15px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    
+    @media (max-width: 768px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .panel {
+      background: var(--bg-panel);
+      border-radius: var(--border-radius);
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transition: var(--transition);
+    }
+    
+    .panel:hover {
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    }
+    
+    .stats-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    
+    .stat-card {
+      background: var(--bg-panel-light);
+      padding: 15px;
+      border-radius: var(--border-radius);
+      text-align: center;
+      transition: var(--transition);
+    }
+    
+    .stat-card:hover {
+      transform: translateY(-3px);
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      margin: 5px 0;
+    }
+    
+    .stat-label {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    
+    .online {
+      color: var(--success);
+    }
+    
+    .battling {
+      color: var(--danger);
+    }
+    
+    .exploring {
+      color: var(--info);
+    }
+    
+    .ended {
+      color: var(--warning);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid var(--bg-panel-light);
+    }
+    
+    th {
+      color: var(--primary);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 14px;
+    }
+    
+    tr:hover td {
+      background: var(--bg-panel-light);
+    }
+    
+    .user-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg-panel-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      font-weight: bold;
+    }
+    
+    .action-btn {
+      background: var(--bg-panel-light);
+      border: none;
+      color: var(--primary);
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    
+    .action-btn:hover {
+      background: var(--primary);
+      color: var(--bg-dark);
+    }
+    
+    .log-container {
+      background: var(--bg-panel-light);
+      border-radius: var(--border-radius);
+      padding: 15px;
+      height: 400px;
+      overflow-y: auto;
+      font-size: 14px;
+    }
+    
+    .log-entry {
+      margin-bottom: 12px;
+      padding: 10px 15px;
+      background: var(--bg-panel);
+      border-radius: var(--border-radius);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: var(--transition);
+    }
+    
+    .log-entry:hover {
+      transform: translateX(5px);
+    }
+    
+    .log-user {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+    }
+    
+    .log-time {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    
+    .status-badge {
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .badge-exploring {
+      background: rgba(78, 205, 196, 0.2);
+      color: var(--success);
+    }
+    
+    .badge-battling {
+      background: rgba(255, 107, 107, 0.2);
+      color: var(--danger);
+    }
+    
+    .badge-ended {
+      background: rgba(255, 230, 109, 0.2);
+      color: var(--warning);
+    }
+    
+    .refresh-btn {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border: none;
+      padding: 8px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: var(--transition);
+    }
+    
+    .refresh-btn:hover {
+      background: var(--primary-dark);
+    }
+    
+    .search-box {
+      background: var(--bg-panel-light);
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      color: var(--text-light);
+      width: 250px;
+      margin-bottom: 15px;
+    }
+    
+    .search-box:focus {
+      outline: 2px solid var(--primary);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 30px;
+      color: var(--text-muted);
+    }
+    
+    .empty-state i {
+      font-size: 40px;
+      margin-bottom: 15px;
+      color: var(--bg-panel-light);
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: var(--bg-panel);
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 4px;
+    }
+    
+    /* Animations */
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+    
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+    
+    /* Tooltip */
+    .tooltip {
+      position: relative;
+      display: inline-block;
+    }
+    
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 120px;
+      background-color: var(--bg-panel-light);
+      color: var(--text-light);
+      text-align: center;
+      border-radius: 6px;
+      padding: 5px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -60px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 12px;
+    }
+    
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>AoT Bot Live Dashboard</h1>
-    <div class="active-list">
-      <h2>Active Players</h2>
-      <table id="active-players-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>User ID</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="active-players-body">
-          <tr><td colspan="3">Loading...</td></tr>
-        </tbody>
-      </table>
+    <header>
+      <h1><i class="fas fa-robot"></i> AoT Bot Live Dashboard</h1>
+      <button class="refresh-btn" id="refresh-btn">
+        <i class="fas fa-sync-alt"></i> Refresh
+      </button>
+    </header>
+    
+    <div class="stats-container" id="stats-container">
+      <div class="stat-card">
+        <div class="stat-label">Total Players</div>
+        <div class="stat-value" id="total-players">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Exploring</div>
+        <div class="stat-value exploring" id="exploring-count">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Battling</div>
+        <div class="stat-value battling" id="battling-count">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active</div>
+        <div class="stat-value online" id="active-count">0</div>
+      </div>
     </div>
-    <div>
-      <h2>Live Player Logs</h2>
-      <div class="log-container" id="log-container">
-        Loading logs...
+    
+    <div class="dashboard">
+      <div class="panel">
+        <h2><i class="fas fa-users"></i> Active Players</h2>
+        <input type="text" class="search-box" id="player-search" placeholder="Search players...">
+        <table id="active-players-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="active-players-body">
+            <tr>
+              <td colspan="3" class="empty-state">
+                <i class="fas fa-spinner pulse"></i><br>
+                Loading player data...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <div class="panel">
+        <h2><i class="fas fa-scroll"></i> Live Activity Log</h2>
+        <div class="log-container" id="log-container">
+          <div class="empty-state">
+            <i class="fas fa-spinner pulse"></i><br>
+            Loading activity logs...
+          </div>
+        </div>
       </div>
     </div>
   </div>
-  <script>
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text);
-      alert("Copied: " + text);
-    }
 
+  <script>
+    // DOM Elements
+    const refreshBtn = document.getElementById('refresh-btn');
+    const playerSearch = document.getElementById('player-search');
+    const activePlayersBody = document.getElementById('active-players-body');
+    const logContainer = document.getElementById('log-container');
+    const statsContainer = {
+      total: document.getElementById('total-players'),
+      exploring: document.getElementById('exploring-count'),
+      battling: document.getElementById('battling-count'),
+      active: document.getElementById('active-count')
+    };
+    
+    // State
+    let allPlayers = [];
+    let filteredPlayers = [];
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchAndUpdate();
+      refreshBtn.addEventListener('click', fetchAndUpdate);
+      playerSearch.addEventListener('input', filterPlayers);
+    });
+    
+    // Fetch data and update UI
     function fetchAndUpdate() {
+      refreshBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
+      
       fetch('/monitor')
         .then(response => response.json())
         .then(data => {
-          // --- Active Players Table ---
-          const players = (data.live_players && data.live_players.players) ? data.live_players.players : [];
-          const tbody = document.getElementById('active-players-body');
-          tbody.innerHTML = '';
-          if (players.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3">No active players</td></tr>';
-          } else {
-            players.forEach(player => {
-              let status = '';
-              let statusClass = '';
-              if (player.action.includes('exploring')) {
-                status = 'Exploring';
-                statusClass = 'status-exploring';
-              } else if (player.action.includes('Battle') || player.action.includes('battle') || player.action === '🔥 In Battle') {
-                status = 'Battling';
-                statusClass = 'status-battling';
-              } else if (player.action.startsWith('🏁')) {
-                status = 'Ended';
-                statusClass = 'status-ended';
-              } else {
-                status = player.action;
-              }
-              const name = player.username || 'Unknown';
-              const id = player.user_id;
-              tbody.innerHTML += `<tr>
-                <td>${name}</td>
-                <td><span class="copy-id" onclick="copyToClipboard('${id}')">${id}</span></td>
-                <td class="${statusClass}">${status}</td>
-              </tr>`;
-            });
-          }
-
-          // --- Live Logs ---
-          // We'll use the players array as a log source, sorted by most recent activity
-          const logDiv = document.getElementById('log-container');
-          let logs = [];
-          players
-            .sort((a, b) => (b.duration || 0) - (a.duration || 0))
-            .forEach(player => {
-              let status = '';
-              let statusClass = '';
-              if (player.action.includes('exploring')) {
-                status = 'Exploring';
-                statusClass = 'status-exploring';
-              } else if (player.action.includes('Battle') || player.action.includes('battle') || player.action === '🔥 In Battle') {
-                status = 'Battling';
-                statusClass = 'status-battling';
-              } else if (player.action.startsWith('🏁')) {
-                status = 'Ended';
-                statusClass = 'status-ended';
-              } else {
-                status = player.action;
-              }
-              const name = player.username || 'Unknown';
-              const id = player.user_id;
-              const timeAgo = Math.round(player.duration || 0);
-              logs.push(`<div class="log-entry ${statusClass}">
-                <b>${name}</b> (<span class="copy-id" onclick="copyToClipboard('${id}')">${id}</span>) - <span class="${statusClass}">${status}</span>
-                <span style="float:right; color:#888;">${timeAgo}s ago</span>
-              </div>`);
-            });
-          if (logs.length === 0) {
-            logDiv.innerHTML = 'No recent player activity.';
-          } else {
-            logDiv.innerHTML = logs.join('');
-          }
+          updateDashboard(data);
+          refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
         })
         .catch(err => {
-          document.getElementById('active-players-body').innerHTML = '<tr><td colspan="3">Error loading data</td></tr>';
-          document.getElementById('log-container').innerText = 'Error loading logs';
+          console.error('Error fetching data:', err);
+          showError();
+          refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
         });
     }
-    setInterval(fetchAndUpdate, 2000); // Update every 2 seconds
-    fetchAndUpdate();
+    
+    // Update dashboard with new data
+    function updateDashboard(data) {
+      // Process player data
+      const playersRaw = (data.live_players && data.live_players.players) ? data.live_players.players : [];
+      
+      // Filter unique players by user_id, prefer non-'Unknown' username
+      const uniquePlayersMap = {};
+      playersRaw.forEach(player => {
+        const id = player.user_id;
+        if (!uniquePlayersMap[id] || (uniquePlayersMap[id].username === 'Unknown' && player.username && player.username !== 'Unknown')) {
+          uniquePlayersMap[id] = player;
+        }
+      });
+      
+      allPlayers = Object.values(uniquePlayersMap);
+      filterPlayers(); // Apply any existing search filter
+      
+      // Update stats
+      updateStats(allPlayers);
+      
+      // Auto-refresh every 5 seconds
+      setTimeout(fetchAndUpdate, 5000);
+    }
+    
+    // Update statistics counters
+    function updateStats(players) {
+      const exploringCount = players.filter(p => p.action.includes('exploring')).length;
+      const battlingCount = players.filter(p => 
+        p.action.includes('Battle') || p.action.includes('battle') || p.action === '🔥 In Battle'
+      ).length;
+      const activeCount = players.filter(p => !p.action.startsWith('🏁')).length;
+      
+      statsContainer.total.textContent = players.length;
+      statsContainer.exploring.textContent = exploringCount;
+      statsContainer.battling.textContent = battlingCount;
+      statsContainer.active.textContent = activeCount;
+    }
+    
+    // Filter players based on search input
+    function filterPlayers() {
+      const searchTerm = playerSearch.value.toLowerCase();
+      filteredPlayers = allPlayers.filter(player => {
+        const name = (player.username || 'Unknown').toLowerCase();
+        const id = player.user_id.toLowerCase();
+        return name.includes(searchTerm) || id.includes(searchTerm);
+      });
+      
+      renderPlayersTable();
+    }
+    
+    // Render players table
+    function renderPlayersTable() {
+      if (filteredPlayers.length === 0) {
+        activePlayersBody.innerHTML = `
+          <tr>
+            <td colspan="3" class="empty-state">
+              <i class="fas fa-user-slash"></i><br>
+              No players found
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
+      // Sort by most recent activity
+      const sortedPlayers = [...filteredPlayers].sort((a, b) => (b.duration || 0) - (a.duration || 0));
+      
+      activePlayersBody.innerHTML = sortedPlayers.map(player => {
+        const { username, user_id, action } = player;
+        const name = username || 'Unknown';
+        const initials = name.split(' ').map(n => n[0]).join('').toUpperCase();
+        
+        let status = '';
+        let statusClass = '';
+        
+        if (action.includes('exploring')) {
+          status = 'Exploring';
+          statusClass = 'exploring';
+        } else if (action.includes('Battle') || action.includes('battle') || action === '🔥 In Battle') {
+          status = 'Battling';
+          statusClass = 'battling';
+        } else if (action.startsWith('🏁')) {
+          status = 'Ended';
+          statusClass = 'ended';
+        } else {
+          status = action;
+        }
+        
+        return `
+          <tr>
+            <td>
+              <div class="user-cell">
+                <div class="user-avatar">${initials.substring(0, 2)}</div>
+                <div>
+                  <div>${name}</div>
+                  <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="status-badge badge-${statusClass}">${status}</span>
+            </td>
+            <td>
+              <button class="action-btn tooltip" onclick="copyToClipboard('${user_id}')">
+                <i class="far fa-copy"></i>
+                <span class="tooltiptext">Copy ID</span>
+              </button>
+              <button class="action-btn tooltip" onclick="showPlayerDetails('${user_id}')">
+                <i class="fas fa-search"></i>
+                <span class="tooltiptext">View Details</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      
+      // Update logs
+      updateLogs(sortedPlayers);
+    }
+    
+    // Update activity logs
+    function updateLogs(players) {
+      // Show only the latest log per user, exclude 'Ended' status
+      const logs = [];
+      const addedPlayers = new Set();
+      
+      players.forEach(player => {
+        const { username, user_id, action, duration } = player;
+        const name = username || 'Unknown';
+        
+        if (action.startsWith('🏁') || addedPlayers.has(user_id)) return;
+        
+        addedPlayers.add(user_id);
+        
+        let status = '';
+        let statusClass = '';
+        
+        if (action.includes('exploring')) {
+          status = 'Exploring';
+          statusClass = 'exploring';
+        } else if (action.includes('Battle') || action.includes('battle') || action === '🔥 In Battle') {
+          status = 'Battling';
+          statusClass = 'battling';
+        } else {
+          status = action;
+        }
+        
+        const timeAgo = Math.round(duration || 0);
+        
+        logs.push(`
+          <div class="log-entry">
+            <div class="log-user">
+              <div class="user-avatar">${name.substring(0, 1).toUpperCase()}</div>
+              <div>
+                ${name}
+                <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
+              </div>
+              <span class="status-badge badge-${statusClass}">${status}</span>
+            </div>
+            <div class="log-time">${timeAgo}s ago</div>
+          </div>
+        `);
+      });
+      
+      if (logs.length === 0) {
+        logContainer.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-comment-slash"></i><br>
+            No recent activity
+          </div>
+        `;
+      } else {
+        logContainer.innerHTML = logs.join('');
+      }
+    }
+    
+    // Show error state
+    function showError() {
+      activePlayersBody.innerHTML = `
+        <tr>
+          <td colspan="3" class="empty-state">
+            <i class="fas fa-exclamation-triangle"></i><br>
+            Error loading data
+          </td>
+        </tr>
+      `;
+      
+      logContainer.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-exclamation-triangle"></i><br>
+          Error loading logs
+        </div>
+      `;
+    }
+    
+    // Utility functions
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text)
+        .then(() => {
+          showToast(`Copied: ${text}`);
+        })
+        .catch(err => {
+          console.error('Failed to copy:', err);
+          showToast('Failed to copy');
+        });
+    }
+    
+    function showPlayerDetails(userId) {
+      // In a real implementation, this would show a modal with detailed player info
+      showToast(`Showing details for: ${userId}`);
+    }
+    
+    function showToast(message) {
+      // Simple toast notification
+      const toast = document.createElement('div');
+      toast.style.position = 'fixed';
+      toast.style.bottom = '20px';
+      toast.style.right = '20px';
+      toast.style.backgroundColor = 'var(--bg-panel)';
+      toast.style.color = 'var(--text-light)';
+      toast.style.padding = '12px 20px';
+      toast.style.borderRadius = '5px';
+      toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+      toast.style.zIndex = '1000';
+      toast.style.transition = 'all 0.3s ease';
+      toast.style.transform = 'translateY(100px)';
+      toast.style.opacity = '0';
+      toast.textContent = message;
+      
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.transform = 'translateY(0)';
+        toast.style.opacity = '1';
+      }, 10);
+      
+      setTimeout(() => {
+        toast.style.transform = 'translateY(100px)';
+        toast.style.opacity = '0';
+        setTimeout(() => {
+          document.body.removeChild(toast);
+        }, 300);
+      }, 3000);
+    }
   </script>
 </body>
 </html>
