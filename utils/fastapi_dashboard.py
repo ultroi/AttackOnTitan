@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from database.db_instance import get_database
 import time
 import os
+import httpx
 
 # Set up Jinja2 templates (Flask uses templates/, FastAPI can use same)
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '../templates'))
@@ -80,6 +81,17 @@ def include_dashboard_route(app):
                     {"$set": {"hcaptcha_verified": True}},
                     upsert=True
                 )
+                # Send Telegram message to user after successful verification
+                bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+                if bot_token:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            data={
+                                "chat_id": user_id,
+                                "text": "✅ Captcha verification successful! You may now continue exploring."
+                            }
+                        )
             except Exception as e:
                 print(f"DB error storing hCaptcha verification: {e}")
             return HTMLResponse("<h2>Verification successful! You may return to Telegram.</h2>")
