@@ -17,6 +17,18 @@ BAN_LOG_CHAT_ID = -1002873117075
 
 # Add this route to main.py:
 def include_dashboard_route(app):
+    @app.get("/error", response_class=HTMLResponse)
+    async def error_page(request: Request, error: str = "An error occurred"):
+        return templates.TemplateResponse("error.html", {"request": request, "error": error})
+
+    @app.get("/already_verified", response_class=HTMLResponse)
+    async def already_verified_page(request: Request, user_id: str = ""):
+        return templates.TemplateResponse("already_verified.html", {"request": request, "user_id": user_id})
+
+    @app.get("/verification_success", response_class=HTMLResponse)
+    async def verification_success_page(request: Request):
+        return templates.TemplateResponse("verification_success.html", {"request": request})
+    
     @app.get("/hcaptcha_timeout", response_class=HTMLResponse)
     async def hcaptcha_timeout(request: Request):
         return templates.TemplateResponse("hcaptcha_timeout.html", {"request": request})
