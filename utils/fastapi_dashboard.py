@@ -82,7 +82,7 @@ def include_dashboard_route(app):
                     upsert=True
                 )
                 # Send Telegram message to user after successful verification
-                bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+                bot_token = os.getenv("TELEGRAM_TOKEN")
                 if bot_token:
                     async with httpx.AsyncClient() as client:
                         await client.post(
