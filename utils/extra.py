@@ -57,6 +57,15 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_first_name = getattr(target_user, 'first_name', 'Unknown')
     target_first_name_clickable = f'<a href="tg://user?id={target_id}">{getattr(target_user, "first_name", "Unknown")}</a>'
 
+    # Block giving to bots
+    if getattr(target_user, 'is_bot', False):
+        await update.message.reply_text("You cannot give resources to a bot.")
+        return
+    # Block giving to yourself
+    if user_id == target_id:
+        await update.message.reply_text("You cannot give resources to yourself.")
+        return
+
     # Check for active battle
     try:
         from game.battle_system import active_battles, active_battles_lock
@@ -66,14 +75,16 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if active_battles_lock:
         async with active_battles_lock:
-            if user_id_str in active_battles:
+            if user_id_str in active_battles or target_id_str in active_battles:
+                who = first_name if user_id_str in active_battles else target_first_name
                 await update.message.reply_text(
-                    f"<a href=\"tg://user?id={user_id}\">{first_name}</a> is currently battling !!", parse_mode=ParseMode.HTML)
+                    f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!", parse_mode=ParseMode.HTML)
                 return
     else:
-        if user_id_str in active_battles:
+        if user_id_str in active_battles or target_id_str in active_battles:
+            who = first_name if user_id_str in active_battles else target_first_name
             await update.message.reply_text(
-                f"<a href=\"tg://user?id={user_id}\">{first_name}</a> is currently battling !!", parse_mode=ParseMode.HTML)
+                f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!", parse_mode=ParseMode.HTML)
             return
 
     # Parse command args
