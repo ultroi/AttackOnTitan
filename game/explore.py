@@ -34,25 +34,25 @@ TITAN_TYPE_IMAGE_URLS = {
 PREGENERATED_TITANS: Dict[str, list] = {}
 PREGEN_POOL_SIZE = 3
 
-async def get_pregenerated_titan(user_id_str, db, player_character):
+async def get_pregenerated_titan(user_id_str, db, player_character, unlocked_areas):
     pool = PREGENERATED_TITANS.get(user_id_str, [])
     if pool:
         titan = pool.pop(0)
         PREGENERATED_TITANS[user_id_str] = pool
         # Refill pool in background
         if len(pool) < PREGEN_POOL_SIZE:
-            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character))
+            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
         return titan
     else:
-        titan = await db.generate_titan(player_character.level, player_character.unlocked_areas)
+        titan = await db.generate_titan(player_character.level, unlocked_areas)
         # Refill pool in background
-        asyncio.create_task(refill_titan_pool(user_id_str, db, player_character))
+        asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
         return titan
 
-async def refill_titan_pool(user_id_str, db, player_character):
+async def refill_titan_pool(user_id_str, db, player_character, unlocked_areas):
     pool = PREGENERATED_TITANS.get(user_id_str, [])
     while len(pool) < PREGEN_POOL_SIZE:
-        titan = await db.generate_titan(player_character.level, player_character.unlocked_areas)
+        titan = await db.generate_titan(player_character.level, unlocked_areas)
         pool.append(titan)
     PREGENERATED_TITANS[user_id_str] = pool
 
@@ -333,7 +333,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- LOGGING DELAY START ---
     
     start_time = time.time()
-    titan = await get_pregenerated_titan(user_id_str, db, player_character)
+    titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
     titan_gen_time = time.time()
     logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
     if not titan:
