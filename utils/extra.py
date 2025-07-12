@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from telegram import Update
 from utils.ban_utils import ban_protected
 from game.explore import _reply_error
@@ -95,17 +96,21 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Database unavailable.")
         return
 
-    # Deduct from sender, add to receiver
-    sender = await db.get_player(user_id_str)
-    receiver = await db.get_player(target_id_str) if target_id_str else None
+    # Fetch sender and receiver in parallel
+    sender_task = asyncio.create_task(db.get_player(user_id_str))
+    receiver_task = asyncio.create_task(db.get_player(target_id_str)) if target_id_str else None
+    sender = await sender_task
+    receiver = await receiver_task if receiver_task else None
     if not sender or not receiver:
         await update.message.reply_text("Both users must have profiles.")
         return
     if getattr(sender, item, 0) < amount:
         await update.message.reply_text(f"You don't have enough {item}.")
         return
-    await db.update_player(user_id_str, {item: getattr(sender, item, 0) - amount})
-    await db.update_player(target_id_str, {item: getattr(receiver, item, 0) + amount})
+    # Update both balances in parallel
+    update_sender = asyncio.create_task(db.update_player(user_id_str, {item: getattr(sender, item, 0) - amount}))
+    update_receiver = asyncio.create_task(db.update_player(target_id_str, {item: getattr(receiver, item, 0) + amount}))
+    await asyncio.gather(update_sender, update_receiver)
 
     # Log the transaction
     log_msg = (
