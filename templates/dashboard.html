@@ -370,10 +370,6 @@
     
     <div class="stats-container" id="stats-container">
       <div class="stat-card">
-        <div class="stat-label">Total Players</div>
-        <div class="stat-value" id="total-players">0</div>
-      </div>
-      <div class="stat-card">
         <div class="stat-label">Exploring</div>
         <div class="stat-value exploring" id="exploring-count">0</div>
       </div>
@@ -382,8 +378,8 @@
         <div class="stat-value battling" id="battling-count">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Active</div>
-        <div class="stat-value online" id="active-count">0</div>
+        <div class="stat-label">Battle Ended</div>
+        <div class="stat-value ended" id="ended-count">0</div>
       </div>
     </div>
     
@@ -429,10 +425,9 @@
     const activePlayersBody = document.getElementById('active-players-body');
     const logContainer = document.getElementById('log-container');
     const statsContainer = {
-      total: document.getElementById('total-players'),
       exploring: document.getElementById('exploring-count'),
       battling: document.getElementById('battling-count'),
-      active: document.getElementById('active-count')
+      ended: document.getElementById('ended-count')
     };
     
     // State
@@ -465,10 +460,14 @@
     
     // Update dashboard with new data
     function updateDashboard(data) {
-      // Process player data
-      const playersRaw = (data.live_players && data.live_players.players) ? data.live_players.players : [];
+      // Use backend stats directly
+      const stats = data.live_players || {};
+      document.getElementById('exploring-count').textContent = stats.exploring || 0;
+      document.getElementById('battling-count').textContent = stats.in_battle || 0;
+      document.getElementById('ended-count').textContent = stats.ended || 0;
       
-      // Filter unique players by user_id, prefer non-'Unknown' username
+      // Player table and logs (optional, keep as is)
+      const playersRaw = stats.players || [];
       const uniquePlayersMap = {};
       playersRaw.forEach(player => {
         const id = player.user_id;
@@ -476,29 +475,11 @@
           uniquePlayersMap[id] = player;
         }
       });
-      
       allPlayers = Object.values(uniquePlayersMap);
-      filterPlayers(); // Apply any existing search filter
+      filterPlayers();
       
-      // Update stats
-      updateStats(allPlayers);
-      
-      // Auto-refresh every 5 seconds
-      setTimeout(fetchAndUpdate, 5000);
-    }
-    
-    // Update statistics counters
-    function updateStats(players) {
-      const exploringCount = players.filter(p => p.action.includes('exploring')).length;
-      const battlingCount = players.filter(p => 
-        p.action.includes('Battle') || p.action.includes('battle') || p.action === '🔥 In Battle'
-      ).length;
-      const activeCount = players.filter(p => !p.action.startsWith('🏁')).length;
-      
-      statsContainer.total.textContent = players.length;
-      statsContainer.exploring.textContent = exploringCount;
-      statsContainer.battling.textContent = battlingCount;
-      statsContainer.active.textContent = activeCount;
+      // Auto-refresh every 2 seconds
+      setTimeout(fetchAndUpdate, 2000);
     }
     
     // Filter players based on search input
