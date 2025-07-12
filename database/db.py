@@ -190,7 +190,6 @@ class Database:
                 stats=CharacterStats(**stats_dict),  # Properly initialize
                 gas=5000,
                 max_gas=10000,
-                rank="Cadet",
                 active_abilities=[],
                 passive_abilities=[],
                 ultimate_abilities=[],
@@ -219,7 +218,7 @@ class Database:
                 "name": character_name
             }, {
                 "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
-                "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1, "rank": 1,
+                "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1,
                 "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
                 "unlocked_abilities": 1
             })

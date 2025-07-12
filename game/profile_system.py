@@ -586,7 +586,6 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
         f"<b>Level:</b> {character.level}\n"
-        f"<b>Rank:</b> {character.rank}\n"
         f"<b>XP:</b> {character.xp} / {character.xp_to_next_level}\n\n"
         f"<b>Stats:</b>\n" + "\n".join(f"{stat}: {value}" for stat, value in character.stats.dict().items()) + "\n\n"
         f"<b>Gas:</b> {character.gas}\n"

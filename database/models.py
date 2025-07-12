@@ -41,7 +41,6 @@ class Character(BaseModel):
     level: int = 1
     xp: int = 0
     total_xp: int = 0
-    rank: str = "Cadet"
     stats: CharacterStats = Field(default_factory=CharacterStats)
     gas: int = 5000
     max_gas: int = 5000  # Added max_gas attribute
@@ -165,7 +164,7 @@ class Character(BaseModel):
                 "old_level": old_level,
                 "new_level": new_level,
                 "newly_unlocked_abilities": newly_unlocked,
-                "new_rank": self.rank,
+                # ...removed rank...
                 "hp_increase": self._get_hp_increase(old_level, new_level)
             })
         
@@ -342,14 +341,6 @@ class Player(BaseModel):
         self.marks += rewards["marks"]
         self.valor += rewards["valor"]
         self.crystal += rewards["crystals"]
-    
-        # Update rank
-        if self.level >= 25:
-            self.rank = "Veteran"
-        elif self.level >= 15:
-            self.rank = "Elite"
-        elif self.level >= 5:
-            self.rank = "Soldier"
     
         return {
             "old_level": old_level,

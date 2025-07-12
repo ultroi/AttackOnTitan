@@ -274,8 +274,6 @@ class ShopSystem:
                 return False
             elif condition == "valor" and player.valor < requirement:
                 return False
-            elif condition == "rank" and player.rank != requirement:
-                return False
             elif condition == "birthplace" and player.birthplace != requirement:
                 return False
             elif condition == "hollow_token" and player.get("hollow_tokens", 0) < requirement:
