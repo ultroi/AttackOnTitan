@@ -8,6 +8,7 @@ from game.captcha import spawn_captcha
 from utils.ban_utils import ban_protected
 from datetime import datetime, timezone
 from typing import Dict
+import time
 import random
 import logging
 import asyncio
@@ -261,7 +262,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
     # --- LOGGING DELAY START ---
-    import time
+    
     start_time = time.time()
     titan = await db.generate_titan(player_character.level, player.unlocked_areas)
     titan_gen_time = time.time()
