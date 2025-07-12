@@ -74,14 +74,24 @@ def include_dashboard_route(app):
                     {"request": request, "user_id": user_id}
                 )
 
-        # Initialize verification timer if not set or if previous verification expired
-        if not player or not player.get("hcaptcha_start_time") or (now - player.get("hcaptcha_start_time", 0) > HCAPTCHA_TIMEOUT):
+        # Only reset verification if previous verification expired
+        if not player or not player.get("hcaptcha_start_time"):
+            await db["players"].update_one(
+                {"user_id": str(user_id)},
+                {
+                    "$set": {
+                        "hcaptcha_start_time": now
+                    }
+                },
+                upsert=True
+            )
+        elif now - player.get("hcaptcha_start_time", 0) > HCAPTCHA_TIMEOUT:
             await db["players"].update_one(
                 {"user_id": str(user_id)},
                 {
                     "$set": {
                         "hcaptcha_start_time": now,
-                        "hcaptcha_verified": False  # Reset verification status
+                        "hcaptcha_verified": False
                     }
                 },
                 upsert=True
