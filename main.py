@@ -33,8 +33,8 @@ from game.profile_system import (
 )
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
-from utils.extra import buy_command
-from game.explore import explore, close_keyboard, give_command
+from utils.extra import buy_command, give_command
+from game.explore import explore, close_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
