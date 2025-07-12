@@ -20,14 +20,13 @@ user_last_explore: Dict[str, float] = {}
 EXPLORE_COOLDOWN = 3 
 TITAN_TIMEOUT_SECONDS = 60
 
-# Titan type to image URL mapping
+
 # Titan type to image URL mapping
 TITAN_TYPE_IMAGE_URLS = {
     "Goofy Grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
     "Potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
     "Bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
     "Gaping Mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
-    # Add more titan type to image URL mappings here
 }
 
 async def _reply_error(update: Update, message: str):
@@ -260,8 +259,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-    # INSTANT TITAN GENERATION
+
+    # --- LOGGING DELAY START ---
+    import time
+    start_time = time.time()
     titan = await db.generate_titan(player_character.level, player.unlocked_areas)
+    titan_gen_time = time.time()
+    logger.info(f"Titan generation took {titan_gen_time - start_time:.3f} seconds.")
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         try:
@@ -300,6 +304,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.callback_query and update.callback_query.message:
         if hasattr(update.callback_query.message, "edit_text"):
             send_reply = update.callback_query.message.edit_text
+    msg_send_start = time.time()
     if send_reply:
         try:
             sent_message = await send_reply(
@@ -308,9 +313,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=False
             )
+            msg_send_end = time.time()
+            logger.info(f"Titan message sending took {msg_send_end - msg_send_start:.3f} seconds.")
+            logger.info(f"Total delay from titan generation to message sent: {msg_send_end - start_time:.3f} seconds.")
         except Exception as e:
             await _reply_error(update, "An error occurred while displaying the titan.")
             sent_message = None
+
 
     if sent_message:
         titan_timeout_task = asyncio.create_task(
@@ -320,14 +329,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if key not in context.bot_data:
             context.bot_data[key] = []
         context.bot_data[key].append(titan_timeout_task)
-
-
-        logger.error(f"Error in explore command: {e}")
-        await _reply_error(update, "An error occurred while exploring. Please try again.")
-        try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
 
     # Clean up stale explore records
     try:
