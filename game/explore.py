@@ -176,197 +176,152 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in track_player_action: {e}")
 
-    try:
-        # Rate limiting check
-        current_time = datetime.now(timezone.utc).timestamp()
-        db = context.bot_data.get("db")
-        if db is None:
-            logger.error("Database not initialized in context.bot_data")
-            await _reply_error(update, "Internal error: Database not initialized.")
-            return
 
-        user_last_explore[user_id_str] = current_time
+    # INSTANT TITAN ENCOUNTER: Remove explore cooldown for fast titan appearance
+    db = context.bot_data.get("db")
+    if db is None:
+        logger.error("Database not initialized in context.bot_data")
+        await _reply_error(update, "Internal error: Database not initialized.")
+        return
 
-        # Get player data (only once)
-        player = await db.get_player(user_id_str)
-        if not player:
-            if update.message:
-                await update.message.reply_text("You need to create a profile first with /start")
-            return
-
-        # Set default location if not set
-        if not getattr(player, "location", None):
-            chars = await db.get_player_characters(user_id_str)
-            if chars and hasattr(chars[0], "birthplace"):
-                player.location = chars[0].birthplace
-                await db.update_player(user_id, {"location": player.location})
-
-        # Handle daily explores and XP
-        current_date = datetime.utcnow()
-        daily_explores_count = player.get_daily_explores_count(current_date)
-        explore_exp = player.calculate_exp_gain("daily_explore")
-        old_xp, old_level = player.xp, player.level
-        player.xp += explore_exp
-        player.total_xp += explore_exp
-        level_ups = 0
-        while player.xp >= player.xp_to_next_level:
-            player.level_up()
-            level_ups += 1
-
-        # Update player data if changed
-        if player.xp != old_xp or player.level != old_level:
-            update_data = {
-                "xp": player.xp,
-                "total_xp": player.total_xp,
-                "level": player.level,
-                "daily_explores": [d.model_dump() for d in player.daily_explores],
-                "updated_at": datetime.now(timezone.utc)
-            }
-            try:
-                await db.update_player(user_id, update_data)
-            except Exception as e:
-                logger.error(f"Failed to update player {user_id}: {e}")
-                await _reply_error(update, "An error occurred while updating your profile.")
-                return
-
-        # Check team requirements
-        if not player.team:
-            await _reply_error(update, "You need to have at least one character in your team. Use /inv to manage your team.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
-        player_character_name = player.team[0].character_name
-        player_character = await db.get_character(user_id_str, player_character_name)
-        if not player_character:
-            await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
-        if player_character.gas < 100:
-            await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
-        # Show EXP gain message for explore
-        exp_message = f"🧭 EXP gained: {explore_exp}"
-
-        # Handle travel/decision points
-        travel = getattr(player, "travel", {})
-        location = getattr(player, "location", None)
-
-        # If at a decision point, show direction options
-        if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-            directions = TRAVEL_MAP[location]
-            keyboard = [
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
-                for dir in directions.keys()
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            try:
-                if update.message:
-                    await update.message.reply_text(
-                        f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
-            except Exception as e:
-                logger.error(f"Failed to send decision point reply: {e}")
-            finally:
-                try:
-                    remove_player_activity(user_id)
-                except NameError:
-                    pass
-            return
-
-        # Spawn CAPTCHA with 6% chance
-        if random.random() < 0.06:
-            captcha_triggered = await spawn_captcha(update, context)
-            if captcha_triggered:
-                try:
-                    remove_player_activity(user_id)
-                except NameError:
-                    pass
-                return
-
-        logger.info(f"[{datetime.now()}] Starting titan generation for user {user_id}")
-        titan = await db.generate_titan(player_character.level, player.unlocked_areas)
-        logger.info(f"[{datetime.now()}] Titan generated for user {user_id}: {getattr(titan, 'name', None)}")
-        if not titan:
-            await _reply_error(update, "No titans found in your level range.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
-        logger.info(f"[{datetime.now()}] Storing titan in DB for user {user_id}")
-        await db.store_titan(user_id_str, titan)
-        logger.info(f"[{datetime.now()}] Titan stored in DB for user {user_id}")
-
-        battle_id = f"battle_{user_id}_{uuid4().hex}"
-        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
-
-        keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        titan_image_url = None
-        titan_name_lower = titan.name.lower()
-        for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
-            if titan_type.lower() in titan_name_lower:
-                titan_image_url = url
-                break
-
-        image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
-        reply_text = (
-            f"<code>-------------------------</code>\n"
-            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
-            f"<b>has blocked your way{image_embed}</b>\n"
-            f"<code>-------------------------</code>\n"
-        )
-
-        sent_message = None
-        send_reply = None
+    # Get player data (only once)
+    player = await db.get_player(user_id_str)
+    if not player:
         if update.message:
-            send_reply = update.message.reply_text
-        elif update.callback_query and update.callback_query.message:
-            if hasattr(update.callback_query.message, "edit_text"):
-                send_reply = update.callback_query.message.edit_text
-        logger.info(f"[{datetime.now()}] Sending titan encounter message for user {user_id}")
-        if send_reply:
-            try:
-                sent_message = await send_reply(
-                    text=reply_text,
+            await update.message.reply_text("You need to create a profile first with /start")
+        return
+
+    # Set default location if not set
+    if not getattr(player, "location", None):
+        chars = await db.get_player_characters(user_id_str)
+        if chars and hasattr(chars[0], "birthplace"):
+            player.location = chars[0].birthplace
+            await db.update_player(user_id, {"location": player.location})
+
+    # Check team requirements
+    if not player.team:
+        await _reply_error(update, "You need to have at least one character in your team. Use /inv to manage your team.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
+    player_character_name = player.team[0].character_name
+    player_character = await db.get_character(user_id_str, player_character_name)
+    if not player_character:
+        await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
+    if player_character.gas < 100:
+        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
+    # Handle travel/decision points
+    location = getattr(player, "location", None)
+    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+        directions = TRAVEL_MAP[location]
+        keyboard = [
+            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
+            for dir in directions.keys()
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            if update.message:
+                await update.message.reply_text(
+                    f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
                     reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
+                    parse_mode=ParseMode.HTML
                 )
-                logger.info(f"[{datetime.now()}] Titan encounter message sent for user {user_id}")
-            except Exception as e:
-                logger.error(f"[{datetime.now()}] Failed to send reply for user {user_id}: {e}")
-                await _reply_error(update, "An error occurred while displaying the titan.")
-                sent_message = None
+        except Exception as e:
+            logger.error(f"Failed to send decision point reply: {e}")
+        finally:
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+        return
 
-        if sent_message:
-            logger.info(f"[{datetime.now()}] Starting titan timeout task for user {user_id}")
-            titan_timeout_task = asyncio.create_task(
-                titan_encounter_timeout(user_id, context, sent_message)
+    # Spawn CAPTCHA with 6% chance
+    if random.random() < 0.06:
+        captcha_triggered = await spawn_captcha(update, context)
+        if captcha_triggered:
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+            return
+
+    # INSTANT TITAN GENERATION
+    titan = await db.generate_titan(player_character.level, player.unlocked_areas)
+    if not titan:
+        await _reply_error(update, "No titans found in your level range.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
+    await db.store_titan(user_id_str, titan)
+
+    battle_id = f"battle_{user_id}_{uuid4().hex}"
+    context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+
+    keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    titan_image_url = None
+    titan_name_lower = titan.name.lower()
+    for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
+        if titan_type.lower() in titan_name_lower:
+            titan_image_url = url
+            break
+
+    image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
+    reply_text = (
+        f"<code>-------------------------</code>\n"
+        f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
+        f"<b>has blocked your way{image_embed}</b>\n"
+        f"<code>-------------------------</code>\n"
+    )
+
+    sent_message = None
+    send_reply = None
+    if update.message:
+        send_reply = update.message.reply_text
+    elif update.callback_query and update.callback_query.message:
+        if hasattr(update.callback_query.message, "edit_text"):
+            send_reply = update.callback_query.message.edit_text
+    if send_reply:
+        try:
+            sent_message = await send_reply(
+                text=reply_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False
             )
-            key = f"titan_timeouts_{user_id}"
-            if key not in context.bot_data:
-                context.bot_data[key] = []
-            context.bot_data[key].append(titan_timeout_task)
-            logger.info(f"[{datetime.now()}] Titan timeout task started for user {user_id}")
+        except Exception as e:
+            await _reply_error(update, "An error occurred while displaying the titan.")
+            sent_message = None
 
-    except Exception as e:
+    if sent_message:
+        titan_timeout_task = asyncio.create_task(
+            titan_encounter_timeout(user_id, context, sent_message)
+        )
+        key = f"titan_timeouts_{user_id}"
+        if key not in context.bot_data:
+            context.bot_data[key] = []
+        context.bot_data[key].append(titan_timeout_task)
+
+
         logger.error(f"Error in explore command: {e}")
         await _reply_error(update, "An error occurred while exploring. Please try again.")
         try:
