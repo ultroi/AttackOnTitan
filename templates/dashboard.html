@@ -450,7 +450,7 @@
     function fetchAndUpdate() {
       refreshBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
       
-      fetch('/monitor')
+      fetch('https://attackontitan-j5yh.onrender.com/monitor')
         .then(response => response.json())
         .then(data => {
           updateDashboard(data);
