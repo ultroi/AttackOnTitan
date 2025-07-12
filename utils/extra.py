@@ -54,7 +54,8 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = getattr(target_user, 'id', None)
     target_id_str = str(target_id) if target_id else None
     first_name = update.effective_user.first_name or "Player"
-    target_first_name = f'<a href="tg://user?id={target_id}">{getattr(target_user, "first_name", "Unknown")}</a>'
+    target_first_name = getattr(target_user, 'first_name', 'Unknown')
+    target_first_name_clickable = f'<a href="tg://user?id={target_id}">{getattr(target_user, "first_name", "Unknown")}</a>'
 
     # Check for active battle
     try:
@@ -123,5 +124,5 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>Amount</b>: <code>{amount}</code>"
     )
     GIVE_LOG_CHAT_ID = -1002686338026
-    await update.message.reply_text(f"Successfully gave {amount} {item} to {target_first_name}.")
+    await update.message.reply_text(f"Successfully gave {amount} {item} to {target_first_name_clickable}.", parse_mode=ParseMode.HTML)
     await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
