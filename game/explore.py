@@ -526,10 +526,12 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_msg = (
         f"<b>#GiveEvent</b>\n\n"
         f"<b>From</b>: <a href=\"tg://user?id={user_id}\">{first_name}</a>\n"
+        f"<b>From ID</b>: <code>{user_id_str}</code>\n"
         f"<b>To</b>: <a href=\"tg://user?id={target_id}\">{target_first_name}</a>\n"
+        f"<b>To ID</b>: <code>{target_id_str}</code>\n"
         f"<b>Item</b>: <code>{item}</code>\n"
         f"<b>Amount</b>: <code>{amount}</code>"
     )
-    GIVE_LOG_CHAT_ID = -1002873117075  # Use your log group/chat ID
+    GIVE_LOG_CHAT_ID = -1002686338026
     await update.message.reply_text(f"Successfully gave {amount} {item} to {target_first_name}.")
     await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
