@@ -109,14 +109,40 @@ async def initialize_application():
                 logger.warning(f"Task cancelled for update {update}")
                 return
             logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+            # Prepare detailed error message
+            command = None
+            if isinstance(update, TelegramUpdate):
+                if hasattr(update, "message") and update.message is not None and hasattr(update.message, "text") and update.message.text:
+                    command = update.message.text
+                elif hasattr(update, "callback_query") and update.callback_query is not None and hasattr(update.callback_query, "data") and update.callback_query.data:
+                    command = f"Callback: {update.callback_query.data}"
+            user_id = getattr(update, "effective_user", None)
+            user_id_str = getattr(user_id, "id", "N/A") if user_id is not None else "N/A"
+            error_text = (
+                f"⚠️ <b>Error Occurred</b>\n"
+                f"<b>Command:</b> <code>{command}</code>\n"
+                f"<b>User:</b> <code>{user_id_str}</code>\n"
+                f"<b>Error:</b>\n<pre>{repr(context.error)}</pre>\n"
+            )
+            # Send error to group
+            try:
+                await context.bot.send_message(
+                    chat_id=-1002463105932,
+                    text=error_text,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send error to group: {e}")
+            # Notify user
             if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                 try:
                     if update.effective_message:
                         await update.effective_message.reply_text(
-                            "An error occurred !! Please report to mods"
+                            "An error occurred! Please report to mods."
                         )
                 except BadRequest:
                     pass
+
         application.add_error_handler(error_handler)
         if not app_initialized:
             await application.initialize()
