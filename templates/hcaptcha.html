@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>hCaptcha Verification</title>
+    <script src="https://hcaptcha.com/1/api.js" async defer></script>
+</head>
+<body>
+    <h2>Complete hCaptcha to continue</h2>
+    <form id="captcha-form" method="POST" action="/verify_hcaptcha">
+        <div class="h-captcha" data-sitekey="93e66168-0084-4490-a700-1ffcc1f631e0"></div>
+        <input type="hidden" name="user_id" id="user_id" value="">
+        <br>
+        <button type="submit">Verify</button>
+    </form>
+    <script>
+        // Set user_id from query param
+        const urlParams = new URLSearchParams(window.location.search);
+        document.getElementById('user_id').value = urlParams.get('user_id');
+    </script>
+</body>
+</html>

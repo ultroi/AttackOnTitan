@@ -176,6 +176,35 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in track_player_action: {e}")
 
+    # Track explore time in user_data
+    if context.user_data is None:
+        context.user_data = {}
+    now = time.time()
+    explore_start = context.user_data.get("explore_start_time")
+    if not explore_start:
+        context.user_data["explore_start_time"] = now
+        explore_start = now
+    total_explore_time = now - explore_start
+
+    # If user has explored for more than 20 minutes, require hCaptcha
+    if total_explore_time > 20 * 60 and not context.user_data.get("hcaptcha_verified"):
+        user_id = update.effective_user.id
+        hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
+        if update.message:
+            await update.message.reply_text(
+                f"🔒Please complete the Captcha to continue:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
+                ])
+            )
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(
+                f"🔒Please complete the hCaptcha to continue:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Verify with Captcha", url=hcaptcha_url)]
+                ])
+            )
+        return
 
     # INSTANT TITAN ENCOUNTER: Remove explore cooldown for fast titan appearance
     db = context.bot_data.get("db")
