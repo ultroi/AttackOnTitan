@@ -68,6 +68,32 @@ def include_dashboard_route(app):
                     {"$set": {"user_id": str(user_id), "expiry": None, "reason": "hCaptcha timeout", "banned_by": "system", "banned_at": now}},
                     upsert=True
                 )
+                # Send log to ban channel
+                ban_log_chat_id = -1002873117075
+                # Try to get user's first name from DB or fallback to user_id
+                first_name = None
+                if player and player.get("username"):
+                    first_name = player["username"]
+                elif player and player.get("name"):
+                    first_name = player["name"]
+                else:
+                    first_name = str(user_id)
+                msg = (
+                    f"<b>#Timeout_hCaptcha</b>\n\n"
+                    f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{first_name}</a>\n"
+                    f"<b>User ID</b> : <code>{user_id}</code>"
+                )
+                bot_token = os.getenv("TELEGRAM_TOKEN")
+                if bot_token:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            data={
+                                "chat_id": ban_log_chat_id,
+                                "text": msg,
+                                "parse_mode": "HTML"
+                            }
+                        )
             except Exception:
                 return HTMLResponse("<h2>Error banning user. Please try again later.</h2>")
             return HTMLResponse("<h2>Timeout! You did not complete hCaptcha in 10 minutes. You are now banned.</h2>")
