@@ -17,6 +17,10 @@ BAN_LOG_CHAT_ID = -1002873117075
 
 # Add this route to main.py:
 def include_dashboard_route(app):
+    @app.get("/hcaptcha_timeout", response_class=HTMLResponse)
+    async def hcaptcha_timeout(request: Request):
+        return templates.TemplateResponse("hcaptcha_timeout.html", {"request": request})
+    
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request):
         # Just render dashboard.html, JS will fetch /monitor for live data
