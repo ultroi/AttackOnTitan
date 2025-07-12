@@ -75,8 +75,8 @@ def include_dashboard_route(app):
     @app.post("/verify_hcaptcha")
     async def verify_hcaptcha(
         request: Request,
-        h_captcha_response: str = Form(...),
-        user_id: str = Form(...)
+        user_id: str = Form(...),
+        h_captcha_response: str = Form(None)
     ):
         """Process hCaptcha verification."""
         db = await get_database()
@@ -85,6 +85,16 @@ def include_dashboard_route(app):
 
         if not user_id:
             return RedirectResponse(f"/hcaptcha?error=User+ID+required")
+
+        # Get h-captcha-response from form if not provided
+        if h_captcha_response is None:
+            form = await request.form()
+            h_captcha_response = form.get("h-captcha-response")
+
+        if not h_captcha_response:
+            return RedirectResponse(
+                f"/hcaptcha?user_id={user_id}&error=Captcha+response+missing"
+            )
 
         # Check timeout first
         player = await db["players"].find_one({"user_id": str(user_id)})
@@ -109,7 +119,6 @@ def include_dashboard_route(app):
                 },
                 timeout=10.0  # Add timeout
             )
-            
         result = response.json()
 
         if not result.get("success"):
