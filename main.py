@@ -31,6 +31,7 @@ from game.profile_system import (
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info
 )
+from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
 from utils.extra import buy_command
 from game.explore import explore, close_keyboard
@@ -67,6 +68,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI()
+# Register dashboard route for FastAPI
+
+include_dashboard_route(app)
 
 # Global application and db instance for persistent server
 application = None
