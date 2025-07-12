@@ -24,9 +24,12 @@ def include_dashboard_route(app):
         if not user_id:
             return HTMLResponse("<h2>User ID missing. Cannot verify.</h2>")
         player = await db["players"].find_one({"user_id": str(user_id)})
-        # If already verified, show message
+        # Only show 'already verified' if verified and NOT in timeout
+        now = int(time.time())
+        start_time = player.get("hcaptcha_start_time") if player else None
         if player and player.get("hcaptcha_verified"):
-            return HTMLResponse("<h2>You are already verified! You may return to Telegram.</h2>")
+            if not start_time or now - start_time <= 600:
+                return HTMLResponse("<h2>You are already verified! You may return to Telegram.</h2>")
         # Set hCaptcha start time if not already set
         if not player or not player.get("hcaptcha_start_time"):
             await db["players"].update_one(
@@ -55,9 +58,9 @@ def include_dashboard_route(app):
         player = await db["players"].find_one({"user_id": str(user_id)})
         start_time = player.get("hcaptcha_start_time") if player else None
         now = int(time.time())
-        # Check for timeout
-        if start_time and now - start_time > 600:
-            # Ban user permanently
+        # Only check for timeout if hCaptcha is not being submitted
+        is_response_str = isinstance(hcaptcha_response, str)
+        if start_time and now - start_time > 600 and not (hcaptcha_response and is_response_str and hcaptcha_response.strip()):
             try:
                 await db["bans"].update_one(
                     {"user_id": str(user_id)},
