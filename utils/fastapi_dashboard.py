@@ -7,7 +7,11 @@ import time
 import os
 import httpx
 from typing import Optional
+import logging
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Set up Jinja2 templates (Flask uses templates/, FastAPI can use same)
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '../templates'))
@@ -119,7 +123,7 @@ def include_dashboard_route(app):
 
         if now - start_time > HCAPTCHA_TIMEOUT:
             await handle_verification_timeout(db, user_id, player)
-            return RedirectResponse("/hcaptcha_timeout")
+            return RedirectResponse("/hcaptcha_timeout", status_code=303)
 
         # Verify with hCaptcha API
         secret = os.getenv("HCAPTCHA_SECRET")  # Move secret to environment
@@ -161,7 +165,7 @@ def include_dashboard_route(app):
                 detail="Failed to update verification status"
             )
 
-        return RedirectResponse("/verification_success")
+        return RedirectResponse("/verification_success", status_code=303)
 
 async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
     """Handle timeout scenario with ban and logging."""
