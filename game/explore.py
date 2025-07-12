@@ -187,8 +187,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_explore_time = now - explore_start
 
     # If user has inactive in explore for 5 min then show hcaptcha 
-    if total_explore_time > 5 * 60 and not context.user_data.get("hcaptcha_verified"):
-        user_id = update.effective_user.id
+    if total_explore_time > 5 * 60:
+        # Reset hcaptcha_verified flag in DB and user_data
+        db = context.bot_data.get("db")
+        if db:
+            await db.update_player(user_id_str, {"hcaptcha_verified": False})
+        context.user_data["hcaptcha_verified"] = False
         hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
         if update.message:
             await update.message.reply_text(

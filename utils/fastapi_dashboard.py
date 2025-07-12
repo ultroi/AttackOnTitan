@@ -71,7 +71,6 @@ def include_dashboard_route(app):
             resp = await client.post("https://hcaptcha.com/siteverify", data=data)
             result = resp.json()
         if result.get("success"):
-            # Store verification status in DB
             try:
                 await db["players"].update_one(
                     {"user_id": str(user_id)},
