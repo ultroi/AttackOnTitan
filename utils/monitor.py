@@ -253,7 +253,7 @@ async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Telegram command handler for /monitor - sends live status and dashboard link."""
     try:
         status = resource_monitor.get_formatted_live_status()
-        dashboard_url = "https://attackontitan-j5yh.onrender.com/monitor"
+        dashboard_url = "https://attackontitan-j5yh.onrender.com/dashboard"
         status += f"\n\n<b>🔗 Live Dashboard:</b> <a href='{dashboard_url}'>Open Dashboard</a>"
         await update.message.reply_text(status, parse_mode="HTML", disable_web_page_preview=True)
     except Exception as e:

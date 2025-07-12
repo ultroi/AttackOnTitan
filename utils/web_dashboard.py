@@ -442,20 +442,8 @@ def monitor_stats():
 
 @app.route("/dashboard")
 def live_dashboard():
-    """Live dashboard endpoint"""
-    try:
-        if resource_monitor:
-            stats = resource_monitor.get_formatted_live_status()
-            return render_template('dashboard.html', stats=stats)
-        return jsonify({
-            "error": "Resource monitor not initialized",
-            "timestamp": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }), 500
+    # Just render the dashboard template; JS will fetch live data from /monitor
+    return render_template('dashboard.html')
 
 @app.route("/m")
 def mobile_dashboard():
