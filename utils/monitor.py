@@ -117,18 +117,17 @@ class ResourceMonitor:
             logger.error(f"Failed to log performance stats: {e}")
 
     def get_live_player_stats(self) -> Dict[str, Any]:
-        """Get live player activity without DB queries"""
+        """Get live player activity without DB queries, deduplicated by user_id"""
         from game.battle_system import active_battles  # Local import to avoid circular import
         current_time = datetime.now()
-        active_players = []
-        
-        # Get players currently in battles
+        player_map = {}
+
+        # Prefer battle info if present
         for user_id, battle in active_battles.items():
             player_info = live_player_activity.get(user_id, {})
             character_name = battle.character.name if battle.character else "Unknown"
             titan_name = battle.titan.name if battle.titan else "Unknown"
-            
-            active_players.append({
+            player_map[user_id] = {
                 "user_id": user_id,
                 "username": player_info.get("name", "Unknown"),
                 "action": "🔥 In Battle",
@@ -139,22 +138,23 @@ class ResourceMonitor:
                 "turn": battle.turn,
                 "gas": battle.gas,
                 "duration": (current_time - player_info.get("timestamp", current_time)).total_seconds() if user_id in live_player_activity else 0
-            })
-        
-        # Get other active players (exploring, etc.)
+            }
+
+        # Add other active players (exploring, etc.) if not already present
         for user_id, activity in live_player_activity.items():
-            if user_id not in active_battles:
+            if user_id not in player_map:
                 duration = (current_time - activity["timestamp"]).total_seconds()
                 # Remove stale activities (older than 5 minutes)
                 if duration < 300:
-                    active_players.append({
+                    player_map[user_id] = {
                         "user_id": user_id,
                         "username": activity["name"],
                         "action": activity["action"],
                         "details": activity.get("details", {}),
                         "duration": duration
-                    })
-        
+                    }
+
+        active_players = list(player_map.values())
         return {
             "total_active": len(active_players),
             "in_battle": len(active_battles),
