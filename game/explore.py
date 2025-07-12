@@ -364,15 +364,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _reply_error(update, "An error occurred while displaying the titan.")
             sent_message = None
 
-
+    # Move all cleanup and timeout tasks to background after message is sent
     if sent_message:
-        titan_timeout_task = asyncio.create_task(
-            titan_encounter_timeout(user_id, context, sent_message)
-        )
+        asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+        # Clean up stale explore records in background
+        asyncio.create_task(cleanup_stale_explore_records())
         key = f"titan_timeouts_{user_id}"
         if key not in context.bot_data:
             context.bot_data[key] = []
-        context.bot_data[key].append(titan_timeout_task)
+        context.bot_data[key].append(asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message)))
 
     # Clean up stale explore records
     try:
