@@ -23,9 +23,9 @@ async def initialize_database() -> AsyncIOMotorDatabase:
                 # Initialize the connection with explicit options
                 client = motor.motor_asyncio.AsyncIOMotorClient(
                     MONGO_URI,
-                    maxPoolSize=10,  # Limit connection pool size
-                    connectTimeoutMS=10000,  # 10-second timeout for connection
-                    serverSelectionTimeoutMS=10000  # 10-second timeout for server selection
+                    maxPoolSize=10, 
+                    connectTimeoutMS=10000, 
+                    serverSelectionTimeoutMS=10000 
                 )
                 _db_instance = client[DB_NAME]
                 
@@ -60,23 +60,8 @@ async def initialize_database() -> AsyncIOMotorDatabase:
     return _db_instance
 
 async def get_database() -> Optional[AsyncIOMotorDatabase]:
-    """Always create a new database client per call (for serverless compatibility)."""
-    try:
-        from config import MONGO_URI, DB_NAME
-        import motor.motor_asyncio
-        client = motor.motor_asyncio.AsyncIOMotorClient(
-            MONGO_URI,
-            maxPoolSize=10,
-            connectTimeoutMS=10000,
-            serverSelectionTimeoutMS=10000
-        )
-        db = client[DB_NAME]
-        await db.command('ping')
-        logger.info(f"Database connection established successfully to {DB_NAME}")
-        return db
-    except Exception as e:
-        logger.error(f"Error getting database instance: {str(e)}")
-        return None
+    """Get the persistent global database instance (recommended for all bot operations)."""
+    return await get_persistent_database()
 
 async def get_persistent_database() -> Optional[AsyncIOMotorDatabase]:
     """Get the persistent global database instance (for persistent servers)."""

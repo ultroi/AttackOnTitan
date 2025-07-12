@@ -49,7 +49,6 @@ class Database:
             if index_name in indexes:
                 await self.players.drop_index(index_name)
             await self.players.create_index("user_id", name=index_name, unique=True, background=True)
-            # Fix index conflict for characters collection
             char_index_name = "user_id_1_name_1"
             char_indexes = await self.characters.index_information()
             if char_index_name in char_indexes:
@@ -65,6 +64,8 @@ class Database:
     # Player operations
     async def create_player(self, user_id: int, username: str, name: str, referral_code: str = None, referred_by: str = None) -> Player:
         try:
+            import time
+            start = time.perf_counter()
             # Generate a unique referral code if not provided
             if not referral_code:
                 referral_code = str(user_id)
@@ -89,6 +90,8 @@ class Database:
             )
             logger.info(f"Creating player: {player}")
             await self.players.insert_one(player.dict())
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"create_player query time: {elapsed:.2f} ms")
             return player
         except Exception as e:
             logger.error(f"Failed to create player: {e}")
@@ -96,17 +99,20 @@ class Database:
 
     async def get_player(self, user_id: str) -> Optional[Player]:
         try:
+            import time
+            start = time.perf_counter()
             if self.players is None:
-                await self.init_db()  # Initialize if not already done
+                await self.init_db() 
             if self.players is None:
                 raise ConnectionError("Database connection failed")
-            # Use projection to fetch only needed fields for explore
             player_data = await self.players.find_one({"user_id": user_id}, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
                 "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
                 "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
                 "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1
             })
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"get_player query time: {elapsed:.2f} ms")
             return Player(**player_data) if player_data else None
         except (PyMongoError, ConnectionError) as e:
             logger.error(f"Failed to get player: {e}")
@@ -114,6 +120,8 @@ class Database:
 
     async def update_player(self, user_id: int, update_data: Dict) -> Optional[Player]:
         try:
+            import time
+            start = time.perf_counter()
             # Ensure XP and total_xp are never negative
             if 'xp' in update_data:
                 update_data['xp'] = max(0, update_data['xp'])
@@ -130,6 +138,8 @@ class Database:
                 {"$set": update_data},
                 return_document=True
             )
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"update_player query time: {elapsed:.2f} ms")
             return Player(**result) if result else None
         except Exception as e:
             logger.error(f"Failed to update player: {e}")
@@ -187,7 +197,7 @@ class Database:
                 level=1,
                 xp=0,
                 total_xp=0,
-                stats=CharacterStats(**stats_dict),  # Properly initialize
+                stats=CharacterStats(**stats_dict), 
                 gas=5000,
                 max_gas=10000,
                 active_abilities=[],
@@ -196,10 +206,7 @@ class Database:
                 unlocked_abilities={}
             )
             character.unlock_abilities()
-            
-            # Ensure the entire character is dumped before saving
             character_dict = character.dict()
-            # Ensure all passive abilities have 'unlocked' field for DB validation
             if 'passive_abilities' in character_dict:
                 for ability in character_dict['passive_abilities']:
                     ability['unlocked'] = ability.get('is_unlocked', False)
@@ -232,11 +239,9 @@ class Database:
     async def update_character(self, character: Character) -> Character:
         try:
             character.updated_at = datetime.now(timezone.utc)
-            character_dict = character.dict()  # Convert to dict
-            # Ensure all passive abilities have 'unlocked' field for DB validation
+            character_dict = character.dict() 
             if 'passive_abilities' in character_dict:
                 for ability in character_dict['passive_abilities']:
-                    # Use 'is_unlocked' if present, else fallback to False
                     ability['unlocked'] = ability.get('is_unlocked', False)
             await self.characters.find_one_and_update(
                 {
