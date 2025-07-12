@@ -223,8 +223,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hcaptcha_verified = player.hcaptcha_verified
     context.user_data["hcaptcha_verified"] = hcaptcha_verified
 
-    # Only prompt hCaptcha if user inactive for more than threshold
-    if total_explore_time > INACTIVITY_THRESHOLD:
+    # Only prompt hCaptcha if user inactive for more than threshold AND not already verified
+    if total_explore_time > INACTIVITY_THRESHOLD and not context.user_data["hcaptcha_verified"]:
         # Reset hcaptcha_verified in DB and session
         if db:
             await db.update_player(user_id_str, {"hcaptcha_verified": False})
