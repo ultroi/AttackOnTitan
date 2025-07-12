@@ -25,7 +25,7 @@ def include_dashboard_route(app):
         hcaptcha_response = form.get("h-captcha-response")
         user_id = form.get("user_id")
         import httpx
-        secret = "93e66168-0084-4490-a700-1ffcc1f631e0" 
+        secret = "ES_661bbcca8a9d4bccb6d84c1a591b4ef0" 
         data = {
             "response": hcaptcha_response,
             "secret": secret,
@@ -34,8 +34,17 @@ def include_dashboard_route(app):
             resp = await client.post("https://hcaptcha.com/siteverify", data=data)
             result = resp.json()
         if result.get("success"):
-            # Mark user as verified (implement your logic, e.g., update DB or cache)
-            # For demo, just show success
+            # Store verification status in DB
+            try:
+                from database.db_instance import get_database
+                db = await get_database()
+                await db["players"].update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": {"hcaptcha_verified": True}},
+                    upsert=True
+                )
+            except Exception as e:
+                print(f"DB error storing hCaptcha verification: {e}")
             return HTMLResponse("<h2>Verification successful! You may return to Telegram.</h2>")
         else:
             return HTMLResponse("<h2>Verification failed. Please try again.</h2>")

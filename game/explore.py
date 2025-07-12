@@ -206,7 +206,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # INSTANT TITAN ENCOUNTER: Remove explore cooldown for fast titan appearance
+    # INSTANT TITAN ENCOUNTER: 
     db = context.bot_data.get("db")
     if db is None:
         logger.error("Database not initialized in context.bot_data")
