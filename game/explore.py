@@ -202,48 +202,44 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in track_player_action: {e}")
 
-    # Track explore time in user_data
-    if context.user_data is None:
-        context.user_data = {}
+    # Track explore time in database
     now = time.time()
-    explore_start = context.user_data.get("explore_start_time")
-    if not explore_start:
-        context.user_data["explore_start_time"] = now
+    explore_start = player.get("explore_start_time", now)
+    if not player.get("explore_start_time"):
+        await db["players"].update_one(
+            {"user_id": user_id_str},
+            {"$set": {"explore_start_time": now}}
+        )
         explore_start = now
     total_explore_time = now - explore_start
-
-    # For testing: if inactivity > 2 minutes, treat as inactive
     INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
 
-    db = context.bot_data.get("db")
-    hcaptcha_verified = False
-    if db:
-        player = await db.get_player(user_id_str)
-        if player and hasattr(player, "hcaptcha_verified"):
-            hcaptcha_verified = player.hcaptcha_verified
-    context.user_data["hcaptcha_verified"] = hcaptcha_verified
+    # Check hCaptcha verification status
+    hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
+    hcaptcha_prompted = context.user_data.get("hcaptcha_prompted", False) if context.user_data is not None else False
 
-    # Only prompt hCaptcha if user inactive for more than threshold AND not already verified AND not already prompted
-    if total_explore_time > INACTIVITY_THRESHOLD and not context.user_data.get("hcaptcha_verified"):
-        if not context.user_data.get("hcaptcha_prompted"):
-            context.user_data["hcaptcha_prompted"] = True  # Mark as prompted
+    # Prompt hCaptcha if inactive for > 2 minutes and not verified
+    if total_explore_time > INACTIVITY_THRESHOLD and not hcaptcha_verified:
+        if not hcaptcha_prompted:
+            if context.user_data is not None:
+                context.user_data["hcaptcha_prompted"] = True
             hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
-            await update.message.reply_text(
-                "🔒 <b>Verification Required</b>\n\n"
-                "You must complete hCaptcha to continue exploring.\n",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
-                ]),
-                parse_mode=ParseMode.HTML
-            )
+            if update.message is not None and hasattr(update.message, "reply_text"):
+                await update.message.reply_text(
+                    "🔒 <b>Verification Required</b>\n\n"
+                    "You must complete hCaptcha to continue exploring.\n",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
+                    ]),
+                    parse_mode=ParseMode.HTML
+                )
             return
         else:
-            # Already prompted but not verified - block further actions
-            await _reply_error(update, "❌ You must complete the hCaptcha verification to continue.")
             return
     else:
-        # Reset flags if active (verified or under threshold)
-        context.user_data["hcaptcha_prompted"] = False
+        # Reset prompted flag if active
+        if context.user_data is not None:
+            context.user_data["hcaptcha_prompted"] = False
 
     # INSTANT TITAN ENCOUNTER: 
     db = context.bot_data.get("db")

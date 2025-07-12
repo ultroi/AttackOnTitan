@@ -1,8 +1,7 @@
-from fastapi import Request
+from fastapi import Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from database.db_instance import get_database
-from fastapi import Form, HTTPException
 import time
 import os
 import httpx
@@ -13,13 +12,12 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Set up Jinja2 templates (Flask uses templates/, FastAPI can use same)
+# Set up Jinja2 templates
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '../templates'))
 
 HCAPTCHA_TIMEOUT = 600  # 10 minutes in seconds
-BAN_LOG_CHAT_ID = -1002873117075 
+BAN_LOG_CHAT_ID = -1002873117075
 
-# Add this route to main.py:
 def include_dashboard_route(app):
     @app.get("/error", response_class=HTMLResponse)
     async def error_page(request: Request, error: str = "An error occurred"):
@@ -32,14 +30,13 @@ def include_dashboard_route(app):
     @app.get("/verification_success", response_class=HTMLResponse)
     async def verification_success_page(request: Request):
         return templates.TemplateResponse("verification_success.html", {"request": request})
-    
+
     @app.get("/hcaptcha_timeout", response_class=HTMLResponse)
     async def hcaptcha_timeout(request: Request):
         return templates.TemplateResponse("hcaptcha_timeout.html", {"request": request})
-    
+
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request):
-        # Just render dashboard.html, JS will fetch /monitor for live data
         return templates.TemplateResponse("dashboard.html", {"request": request})
 
     @app.get("/hcaptcha", response_class=HTMLResponse)
@@ -65,7 +62,7 @@ def include_dashboard_route(app):
         player = await db["players"].find_one({"user_id": str(user_id)})
         now = int(time.time())
 
-        # Check if already verified (within timeout window)
+        # Check if already verified
         if player and player.get("hcaptcha_verified"):
             start_time = player.get("hcaptcha_start_time", 0)
             if now - start_time <= HCAPTCHA_TIMEOUT:
@@ -74,13 +71,14 @@ def include_dashboard_route(app):
                     {"request": request, "user_id": user_id}
                 )
 
-        # Only reset verification if previous verification expired
+        # Reset verification if expired
         if not player or not player.get("hcaptcha_start_time"):
             await db["players"].update_one(
                 {"user_id": str(user_id)},
                 {
                     "$set": {
-                        "hcaptcha_start_time": now
+                        "hcaptcha_start_time": now,
+                        "hcaptcha_verified": False
                     }
                 },
                 upsert=True
@@ -93,8 +91,7 @@ def include_dashboard_route(app):
                         "hcaptcha_start_time": now,
                         "hcaptcha_verified": False
                     }
-                },
-                upsert=True
+                }
             )
 
         return templates.TemplateResponse(
@@ -103,7 +100,7 @@ def include_dashboard_route(app):
                 "request": request,
                 "user_id": user_id,
                 "error": error,
-                "site_key": os.getenv("HCAPTCHA_SITE_KEY") 
+                "site_key": os.getenv("HCAPTCHA_SITE_KEY")
             }
         )
 
@@ -121,7 +118,6 @@ def include_dashboard_route(app):
         if not user_id:
             return RedirectResponse(f"/hcaptcha?error=User+ID+required")
 
-        # Get h-captcha-response from form if not provided
         if h_captcha_response is None:
             form = await request.form()
             h_captcha_response = form.get("h-captcha-response")
@@ -131,7 +127,6 @@ def include_dashboard_route(app):
                 f"/hcaptcha?user_id={user_id}&error=Captcha+response+missing"
             )
 
-        # Get current player data
         player = await db["players"].find_one({"user_id": str(user_id)})
         now = int(time.time())
         start_time = player.get("hcaptcha_start_time", now) if player else now
@@ -141,7 +136,6 @@ def include_dashboard_route(app):
             await handle_verification_timeout(db, user_id, player)
             return RedirectResponse("/hcaptcha_timeout", status_code=303)
 
-        # Rest of the verification logic remains the same...
         # Verify with hCaptcha API
         secret = os.getenv("HCAPTCHA_SECRET")
         if not secret:
@@ -170,7 +164,8 @@ def include_dashboard_route(app):
                 {
                     "$set": {
                         "hcaptcha_verified": True,
-                        "last_verified": now
+                        "last_verified": now,
+                        "explore_start_time": now  # Reset exploration time
                     }
                 }
             )
@@ -187,7 +182,6 @@ def include_dashboard_route(app):
 async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
     """Handle timeout scenario with ban and logging."""
     now = int(time.time())
-    # Update ban record (permanent ban)
     await db["bans"].update_one(
         {"user_id": str(user_id)},
         {
@@ -202,7 +196,6 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
         upsert=True
     )
 
-    # Notify banned user
     bot_token = os.getenv("TELEGRAM_TOKEN")
     if bot_token:
         try:
@@ -218,7 +211,6 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
         except Exception:
             pass
 
-        # Log to group in proper format
         user_name = (player.get("username") or player.get("name") or str(user_id)) if player else str(user_id)
         msg = (
             f"<b>#BanEvent</b>\n\n"
