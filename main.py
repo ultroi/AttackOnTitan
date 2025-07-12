@@ -252,13 +252,17 @@ async def set_webhook(request: Request):
         logger.error(f"Failed to set webhook: {e}")
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
-@app.get("/monitor_dashboard")
+
+@app.get("/monitor")
 async def monitor_dashboard():
     try:
-        stats = resource_monitor.get_formatted_live_status()
-        return JSONResponse({"status": "ok", "html": stats})
+        from utils.monitor import resource_monitor
+        live_players = resource_monitor.get_live_player_stats()
+        return {"live_players": live_players}
     except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return {"error": str(e)}
+    
+
 
 def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("start", start_character_selection))
