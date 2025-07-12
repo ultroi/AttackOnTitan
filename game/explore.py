@@ -468,7 +468,7 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target_id = getattr(target_user, 'id', None)
     target_id_str = str(target_id) if target_id else None
     first_name = update.effective_user.first_name or "Player"
-    target_first_name = getattr(target_user, 'first_name', 'Unknown')
+    target_first_name = f'<a href="tg://user?id={target_id}">{getattr(target_user, "first_name", "Unknown")}</a>'
 
     # Check for active battle
     try:
