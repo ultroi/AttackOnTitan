@@ -202,6 +202,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in track_player_action: {e}")
 
+    # Get player data (only once)
+    db = context.bot_data.get("db")
+    if db is None:
+        logger.error("Database not initialized in context.bot_data")
+        await _reply_error(update, "Internal error: Database not initialized.")
+        return
+    
+
+    player = await db.get_player(user_id_str)
+    if not player:
+        if update.message:
+            await update.message.reply_text("You need to create a profile first with /start")
+        return
+
     # Track explore time in database
     now = time.time()
     explore_start = player.get("explore_start_time", now)
@@ -240,20 +254,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Reset prompted flag if active
         if context.user_data is not None:
             context.user_data["hcaptcha_prompted"] = False
-
-    # INSTANT TITAN ENCOUNTER: 
-    db = context.bot_data.get("db")
-    if db is None:
-        logger.error("Database not initialized in context.bot_data")
-        await _reply_error(update, "Internal error: Database not initialized.")
-        return
-
-    # Get player data (only once)
-    player = await db.get_player(user_id_str)
-    if not player:
-        if update.message:
-            await update.message.reply_text("You need to create a profile first with /start")
-        return
 
     # Set default location if not set
     if not getattr(player, "location", None):
