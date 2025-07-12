@@ -212,39 +212,43 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         explore_start = now
     total_explore_time = now - explore_start
 
-    # Only check hcaptcha_verified from DB if inactivity threshold is crossed
-    if total_explore_time > 5 * 60:
-        db = context.bot_data.get("db")
-        hcaptcha_verified = False
+    # For testing: if inactivity > 2 minutes, treat as inactive
+    INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
+
+    db = context.bot_data.get("db")
+    hcaptcha_verified = False
+    if db:
+        player = await db.get_player(user_id_str)
+        if player and hasattr(player, "hcaptcha_verified"):
+            hcaptcha_verified = player.hcaptcha_verified
+    context.user_data["hcaptcha_verified"] = hcaptcha_verified
+
+    # Only prompt hCaptcha if user inactive for more than threshold
+    if total_explore_time > INACTIVITY_THRESHOLD:
+        # Reset hcaptcha_verified in DB and session
         if db:
-            player = await db.get_player(user_id_str)
-            if player and hasattr(player, "hcaptcha_verified"):
-                hcaptcha_verified = player.hcaptcha_verified
-        context.user_data["hcaptcha_verified"] = hcaptcha_verified
-        # Show captcha only if not verified and not already prompted in this session
-        if not context.user_data["hcaptcha_verified"]:
-            if not context.user_data.get("hcaptcha_prompted"):
-                # Reset hcaptcha_verified flag in DB and user_data
-                if db:
-                    await db.update_player(user_id_str, {"hcaptcha_verified": False})
-                context.user_data["hcaptcha_verified"] = False
-                context.user_data["hcaptcha_prompted"] = True
-                hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
-                if update.message:
-                    await update.message.reply_text(
-                        f"🔒Please complete the Captcha to continue:",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
-                        ])
-                    )
-                elif update.callback_query:
-                    await update.callback_query.message.reply_text(
-                        f"🔒Please complete the hCaptcha to continue:",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("Verify with Captcha", url=hcaptcha_url)]
-                        ])
-                    )
-            return
+            await db.update_player(user_id_str, {"hcaptcha_verified": False})
+        context.user_data["hcaptcha_verified"] = False
+        context.user_data["hcaptcha_prompted"] = True
+        hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
+        if update.message:
+            await update.message.reply_text(
+                f"🔒Please complete the Captcha to continue:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
+                ])
+            )
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(
+                f"🔒Please complete the hCaptcha to continue:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Verify with Captcha", url=hcaptcha_url)]
+                ])
+            )
+        return
+    else:
+        # If verified or within activity window, reset session flags
+        context.user_data["hcaptcha_prompted"] = False
 
     # INSTANT TITAN ENCOUNTER: 
     db = context.bot_data.get("db")
