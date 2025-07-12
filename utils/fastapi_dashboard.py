@@ -1,14 +1,19 @@
 from fastapi import Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from database.db_instance import get_database
+from fastapi import Form, HTTPException
 import time
 import os
 import httpx
+from typing import Optional
+
 
 # Set up Jinja2 templates (Flask uses templates/, FastAPI can use same)
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '../templates'))
 
+HCAPTCHA_TIMEOUT = 600  # 10 minutes in seconds
+BAN_LOG_CHAT_ID = -1002873117075 
 
 # Add this route to main.py:
 def include_dashboard_route(app):
@@ -18,108 +23,184 @@ def include_dashboard_route(app):
         return templates.TemplateResponse("dashboard.html", {"request": request})
 
     @app.get("/hcaptcha", response_class=HTMLResponse)
-    async def hcaptcha_page(request: Request, user_id: str):
+    async def hcaptcha_page(
+        request: Request,
+        user_id: str,
+        error: Optional[str] = None
+    ):
+        """Render hCaptcha verification page with user context."""
         db = await get_database()
         if db is None:
-            return HTMLResponse("<h2>Database unavailable. Please try again later.</h2>")
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error": "Database unavailable"}
+            )
+
         if not user_id:
-            return HTMLResponse("<h2>User ID missing. Cannot verify.</h2>")
+            return templates.TemplateResponse(
+                "error.html",
+                {"request": request, "error": "User ID required"}
+            )
+
         player = await db["players"].find_one({"user_id": str(user_id)})
-        # Only show 'already verified' if verified and NOT in timeout
         now = int(time.time())
-        start_time = player.get("hcaptcha_start_time") if player else None
+
+        # Check if already verified (within timeout window)
         if player and player.get("hcaptcha_verified"):
-            if not start_time or now - start_time <= 600:
-                return HTMLResponse("<h2>You are already verified! You may return to Telegram.</h2>")
-        # Set hCaptcha start time if not already set
+            start_time = player.get("hcaptcha_start_time", 0)
+            if now - start_time <= HCAPTCHA_TIMEOUT:
+                return templates.TemplateResponse(
+                    "already_verified.html",
+                    {"request": request, "user_id": user_id}
+                )
+
+        # Initialize verification timer if not set
         if not player or not player.get("hcaptcha_start_time"):
             await db["players"].update_one(
                 {"user_id": str(user_id)},
-                {"$set": {"hcaptcha_start_time": int(time.time())}},
+                {"$set": {"hcaptcha_start_time": now}},
                 upsert=True
             )
-        return templates.TemplateResponse("hcaptcha.html", {"request": request, "user_id": user_id})
+
+        return templates.TemplateResponse(
+            "hcaptcha.html",
+            {
+                "request": request,
+                "user_id": user_id,
+                "error": error,
+                "site_key": os.getenv("HCAPTCHA_SITE_KEY") 
+            }
+        )
 
     @app.post("/verify_hcaptcha")
-    async def verify_hcaptcha(request: Request):
-        form = await request.form()
-        hcaptcha_response = form.get("h-captcha-response")
-        user_id = form.get("user_id")
-        if not user_id:
-            return HTMLResponse("<h2>User ID missing. Cannot verify.</h2>")
-        import httpx
-        secret = "ES_661bbcca8a9d4bccb6d84c1a591b4ef0" 
-        data = {
-            "response": hcaptcha_response,
-            "secret": secret,
-        }
+    async def verify_hcaptcha(
+        request: Request,
+        h_captcha_response: str = Form(...),
+        user_id: str = Form(...)
+    ):
+        """Process hCaptcha verification."""
         db = await get_database()
         if db is None:
-            return HTMLResponse("<h2>Database unavailable. Please try again later.</h2>")
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        if not user_id:
+            return RedirectResponse(f"/hcaptcha?error=User+ID+required")
+
+        # Check timeout first
         player = await db["players"].find_one({"user_id": str(user_id)})
-        start_time = player.get("hcaptcha_start_time") if player else None
         now = int(time.time())
-        # Only check for timeout if hCaptcha is not being submitted
-        is_response_str = isinstance(hcaptcha_response, str)
-        if start_time and now - start_time > 600 and not (hcaptcha_response and is_response_str and hcaptcha_response.strip()):
-            try:
-                await db["bans"].update_one(
-                    {"user_id": str(user_id)},
-                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "hCaptcha timeout", "banned_by": "system", "banned_at": now}},
-                    upsert=True
-                )
-                # Send log to ban channel
-                ban_log_chat_id = -1002873117075
-                # Try to get user's first name from DB or fallback to user_id
-                first_name = None
-                if player and player.get("username"):
-                    first_name = player["username"]
-                elif player and player.get("name"):
-                    first_name = player["name"]
-                else:
-                    first_name = str(user_id)
-                msg = (
-                    f"<b>#Timeout_hCaptcha</b>\n\n"
-                    f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{first_name}</a>\n"
-                    f"<b>User ID</b> : <code>{user_id}</code>"
-                )
-                bot_token = os.getenv("TELEGRAM_TOKEN")
-                if bot_token:
-                    async with httpx.AsyncClient() as client:
-                        await client.post(
-                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                            data={
-                                "chat_id": ban_log_chat_id,
-                                "text": msg,
-                                "parse_mode": "HTML"
-                            }
-                        )
-            except Exception:
-                return HTMLResponse("<h2>Error banning user. Please try again later.</h2>")
-            return HTMLResponse("<h2>Timeout! You did not complete hCaptcha in 10 minutes. You are now banned.</h2>")
+        start_time = player.get("hcaptcha_start_time", 0) if player else now
+
+        if now - start_time > HCAPTCHA_TIMEOUT:
+            await handle_verification_timeout(db, user_id, player)
+            return RedirectResponse("/hcaptcha_timeout")
+
+        # Verify with hCaptcha API
+        secret = os.getenv("HCAPTCHA_SECRET")  # Move secret to environment
+        if not secret:
+            raise HTTPException(status_code=500, detail="Server configuration error")
+
         async with httpx.AsyncClient() as client:
-            resp = await client.post("https://hcaptcha.com/siteverify", data=data)
-            result = resp.json()
-        if result.get("success"):
-            try:
-                await db["players"].update_one(
-                    {"user_id": str(user_id)},
-                    {"$set": {"hcaptcha_verified": True}},
-                    upsert=True
-                )
-                # Send Telegram message to user after successful verification
-                bot_token = os.getenv("TELEGRAM_TOKEN")
-                if bot_token:
-                    async with httpx.AsyncClient() as client:
-                        await client.post(
-                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                            data={
-                                "chat_id": user_id,
-                                "text": "✅ Captcha verification successful! You may now continue exploring."
-                            }
-                        )
-            except Exception as e:
-                print(f"DB error storing hCaptcha verification: {e}")
-            return HTMLResponse("<h2>Verification successful! You may return to Telegram.</h2>")
-        else:
-            return HTMLResponse("<h2>Verification failed. Please try again.</h2>")
+            response = await client.post(
+                "https://hcaptcha.com/siteverify",
+                data={
+                    "response": h_captcha_response,
+                    "secret": secret
+                },
+                timeout=10.0  # Add timeout
+            )
+            
+        result = response.json()
+
+        if not result.get("success"):
+            return RedirectResponse(
+                f"/hcaptcha?user_id={user_id}&error=Verification+failed"
+            )
+
+        # Successful verification
+        try:
+            await db["players"].update_one(
+                {"user_id": str(user_id)},
+                {
+                    "$set": {
+                        "hcaptcha_verified": True,
+                        "last_verified": now
+                    }
+                }
+            )
+            await notify_user_success(user_id, player)
+        except Exception as e:
+            logger.error(f"Failed to update verification status: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update verification status"
+            )
+
+        return RedirectResponse("/verification_success")
+
+async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
+    """Handle timeout scenario with ban and logging."""
+    now = int(time.time())
+    
+    # Update ban record
+    await db["bans"].update_one(
+        {"user_id": str(user_id)},
+        {
+            "$set": {
+                "reason": "hCaptcha timeout",
+                "banned_by": "system",
+                "banned_at": now,
+                "expiry": None  # Permanent ban
+            }
+        },
+        upsert=True
+    )
+
+    # Log to Telegram channel
+    bot_token = os.getenv("TELEGRAM_TOKEN")
+    if not bot_token:
+        return
+
+    user_name = (player.get("username") or 
+                player.get("name") or 
+                str(user_id)) if player else str(user_id)
+
+    message = (
+        f"⚠️ <b>hCaptcha Timeout Ban</b>\n\n"
+        f"• User: <a href='tg://user?id={user_id}'>{user_name}</a>\n"
+        f"• ID: <code>{user_id}</code>\n"
+        f"• Reason: Failed to complete verification in time"
+    )
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={  # Use json instead of data for better encoding
+                "chat_id": BAN_LOG_CHAT_ID,
+                "text": message,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True
+            }
+        )
+
+async def notify_user_success(user_id: str, player: Optional[dict]):
+    """Notify user in Telegram about successful verification."""
+    bot_token = os.getenv("TELEGRAM_TOKEN")
+    if not bot_token:
+        return
+
+    user_name = player.get("name", "Explorer") if player else "Explorer"
+    message = (
+        f"✅ <b>Verification Successful!</b>\n\n"
+        f"Hello {user_name}, you can now continue exploring!"
+    )
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={
+                "chat_id": user_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+        )

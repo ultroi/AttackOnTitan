@@ -223,31 +223,26 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hcaptcha_verified = player.hcaptcha_verified
     context.user_data["hcaptcha_verified"] = hcaptcha_verified
 
-    # Only prompt hCaptcha if user inactive for more than threshold AND not already verified
-    if total_explore_time > INACTIVITY_THRESHOLD and not context.user_data["hcaptcha_verified"]:
-        # Reset hcaptcha_verified in DB and session
-        if db:
-            await db.update_player(user_id_str, {"hcaptcha_verified": False})
-        context.user_data["hcaptcha_verified"] = False
-        context.user_data["hcaptcha_prompted"] = True
-        hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
-        if update.message:
+    # Only prompt hCaptcha if user inactive for more than threshold AND not already verified AND not already prompted
+    if total_explore_time > INACTIVITY_THRESHOLD and not context.user_data.get("hcaptcha_verified"):
+        if not context.user_data.get("hcaptcha_prompted"):
+            context.user_data["hcaptcha_prompted"] = True  # Mark as prompted
+            hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
             await update.message.reply_text(
-                f"🔒Please complete the Captcha to continue:",
+                "🔒 <b>Verification Required</b>\n\n"
+                "You must complete hCaptcha to continue exploring.\n",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
-                ])
+                ]),
+                parse_mode=ParseMode.HTML
             )
-        elif update.callback_query:
-            await update.callback_query.message.reply_text(
-                f"🔒Please complete the hCaptcha to continue:",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Verify with Captcha", url=hcaptcha_url)]
-                ])
-            )
-        return
+            return
+        else:
+            # Already prompted but not verified - block further actions
+            await _reply_error(update, "❌ You must complete the hCaptcha verification to continue.")
+            return
     else:
-        # If verified or within activity window, reset session flags
+        # Reset flags if active (verified or under threshold)
         context.user_data["hcaptcha_prompted"] = False
 
     # INSTANT TITAN ENCOUNTER: 
