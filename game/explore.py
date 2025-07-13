@@ -186,21 +186,27 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Initialize timing variables
     now = time.time()
-    explore_start = getattr(player, "explore_start_time", now)
+    explore_start = getattr(player, "explore_start_time", None)
     
     # Only set initial explore time if not already set
-    if explore_start == now:
+    if explore_start is None:
+        # First explore ever
         await db.update_player(user_id, {"explore_start_time": now})
-    
-    total_explore_time = now - explore_start
+        total_explore_time = 0
+    else:
+        total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 120  # 2 minutes in seconds
 
     # Debug logging
     logger.info(f"[TIMER] User {user_id} - Total explore time: {total_explore_time:.1f}s")
 
     # hCaptcha verification check
-    if (total_explore_time > INACTIVITY_THRESHOLD and 
-        not getattr(player, "hcaptcha_verified", False)):
+    if (
+        total_explore_time > INACTIVITY_THRESHOLD and 
+        not getattr(player, "hcaptcha_verified", False) and
+        not context.user_data.get("hcaptcha_prompted", False)
+    ):
+
         hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
         try:
             if hasattr(update, "message") and update.message:
