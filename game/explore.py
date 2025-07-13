@@ -195,6 +195,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # First explore ever, or after verification
         await db.update_player(user_id, {"explore_start_time": now})
         total_explore_time = 0
+        # Force fetch latest player data after update
+        player = await db.get_player(user_id_str)
+        explore_start = getattr(player, "explore_start_time", None)
+        logger.info(f"[HCAPTCHA DEBUG] (AFTER UPDATE) explore_start_time={explore_start}")
     else:
         total_explore_time = now - explore_start
     logger.info(f"[HCAPTCHA DEBUG] total_explore_time={total_explore_time}")
