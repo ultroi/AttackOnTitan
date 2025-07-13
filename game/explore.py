@@ -247,6 +247,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     #     except Exception as e:
     #         logger.error(f"Failed to send hCaptcha prompt: {e}")
 
+    if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
+        logger.info(f"[BLOCK] User {user_id} tried /explore without completing verification.")
+        return
+
     # Reset flags if verified
     if getattr(player, "hcaptcha_verified", False):
         if context.user_data is None:

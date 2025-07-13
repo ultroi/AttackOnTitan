@@ -183,7 +183,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_caption(
                     caption=f"❌ Incorrect! {tries} tries left.\nPlease select the correct CAPTCHA text:",
-                    reply_markup=query.message.reply_markup
+                    reply_markup=query.message.reply_markup if hasattr(query.message, "reply_markup") else None
                 )
             except Exception:
                 pass
@@ -201,16 +201,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     upsert=True
                 )
             # Log to channel
+            user_first_name = update.effective_user.first_name if update.effective_user and hasattr(update.effective_user, "first_name") else "Unknown"
             msg = (
                 f"<b>#CaptchaTimeout</b>\n\n"
-                f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{update.effective_user.first_name}</a>\n"
+                f"<b>User</b> : <a href=\"tg://user?id={user_id}\">{user_first_name}</a>\n"
                 f"<b>ID</b> : <code>{user_id}</code>"
             )
             await context.bot.send_message(-1002873117075, msg, parse_mode=ParseMode.HTML)
             # Notify user
             ban_msg = "❌ You failed to solve the CAPTCHA and have been banned."
             if query.message is not None:
-                await query.message.edit_text(ban_msg)
+                # If the message has a caption, edit the caption; if it has text, edit the text
+                try:
+                    if hasattr(query.message, "caption") and query.message.caption:
+                        await query.edit_message_caption(caption=ban_msg)
+                    elif hasattr(query.message, "text") and query.message.text:
+                        await query.message.edit_text(ban_msg)
+                except Exception:
+                    pass
             context.user_data['verified'] = False
             context.user_data['captcha_active'] = False
             # Cancel timeout task
