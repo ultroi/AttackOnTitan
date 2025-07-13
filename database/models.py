@@ -284,6 +284,7 @@ class Player(BaseModel):
     referral_milestones: Dict[str, bool] = Field(default_factory=dict)  # Track milestone rewards
     hcaptcha_verified: Optional[bool] = False
     hcaptcha_start_time: Optional[float] = None
+    explore_start_time: Optional[float] = None
 
     @property
 
