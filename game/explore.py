@@ -220,10 +220,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = time.time()
     explore_start = getattr(player, "explore_start_time", now)
     if not getattr(player, "explore_start_time", None):
-        await db["players"].update_one(
-            {"user_id": user_id_str},
-            {"$set": {"explore_start_time": now}}
-        )
+        await db.update_player(user_id, {"explore_start_time": now})
         explore_start = now
     total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
