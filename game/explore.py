@@ -187,15 +187,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Initialize timing variables
     now = time.time()
     explore_start = getattr(player, "explore_start_time", None)
-    
-    # Only set initial explore time if not already set
+    INACTIVITY_THRESHOLD = 120  # 2 minutes in seconds
+    # Only set initial explore time if not already set AND not verified
     if explore_start is None:
-        # First explore ever
+        # First explore ever, or after verification
         await db.update_player(user_id, {"explore_start_time": now})
         total_explore_time = 0
     else:
         total_explore_time = now - explore_start
-    INACTIVITY_THRESHOLD = 120  # 2 minutes in seconds
+
 
     # Debug logging
     logger.info(f"[TIMER] User {user_id} - Total explore time: {total_explore_time:.1f}s")
@@ -206,7 +206,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         not getattr(player, "hcaptcha_verified", False) and
         not context.user_data.get("hcaptcha_prompted", False)
     ):
-
         hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
         try:
             if hasattr(update, "message") and update.message:
@@ -231,13 +230,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.user_data is None:
             context.user_data = {}
         context.user_data["hcaptcha_prompted"] = True
+        # Reset explore_start_time after prompt so next inactivity triggers again
+        await db.update_player(user_id, {"explore_start_time": now})
         return
 
-    # Reset flags if verified
+    # Reset flags and timer if verified
     if getattr(player, "hcaptcha_verified", False):
         if context.user_data is None:
             context.user_data = {}
         context.user_data["hcaptcha_prompted"] = False
+        # Reset explore_start_time after verification
         await db.update_player(user_id, {"explore_start_time": now})
 
     # Check team requirements
