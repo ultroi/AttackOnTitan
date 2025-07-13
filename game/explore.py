@@ -121,6 +121,11 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
                 task.cancel()
         del context.bot_data[key]
 
+async def reset_explore_timer(user_id, db):
+    """Reset the explore_start_time for a user (for inactivity/hCaptcha logic)."""
+    await db.update_player(user_id, {"explore_start_time": None})
+    logger.info(f"[DEBUG] explore_start_time reset for user {user_id}")
+
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Close the persistent keyboard menu."""
@@ -164,13 +169,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Failed to send persistent keyboard: {e}")
         context.user_data["persistent_keyboard_sent"] = True
     
+
+    # Get player data (only once)
+    db = context.bot_data.get("db")
+    if db is None:
+        logger.error("Database not initialized in context.bot_data")
+        await _reply_error(update, "Internal error: Database not initialized.")
+        return
+
     # Check for active battle before allowing explore
     try:
         from game.battle_system import active_battles, active_battles_lock
     except ImportError:
         active_battles = {}
         active_battles_lock = None
-
 
     if active_battles_lock:
         async with active_battles_lock:
@@ -182,6 +194,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     remove_player_activity(user_id)
                 except Exception:
                     pass
+                await reset_explore_timer(user_id, db)
                 return
     else:
         if user_id_str in active_battles:
@@ -192,6 +205,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remove_player_activity(user_id)
             except Exception:
                 pass
+            await reset_explore_timer(user_id, db)
             return
 
     try:
@@ -254,11 +268,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["hcaptcha_prompted"] = False
 
     # Set default location if not set
-    if not getattr(player, "location", None):
-        chars = await db.get_player_characters(user_id_str)
-        if chars and hasattr(chars[0], "birthplace"):
-            player.location = chars[0].birthplace
-            await db.update_player(user_id, {"location": player.location})
+    # if not getattr(player, "location", None):
+    #     chars = await db.get_player_characters(user_id_str)
+    #     if chars and hasattr(chars[0], "birthplace"):
+    #         player.location = chars[0].birthplace
+    #         await db.update_player(user_id, {"location": player.location})
 
     # Check team requirements
     if not player.team:
