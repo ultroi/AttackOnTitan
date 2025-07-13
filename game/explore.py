@@ -183,6 +183,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message:
             await update.message.reply_text("You need to create a profile first with /start")
         return
+    # --- DEBUG LOGGING FOR HCAPTCHA ---
+    logger.info(f"[HCAPTCHA DEBUG] user_id={user_id} hcaptcha_verified={getattr(player, 'hcaptcha_verified', None)} explore_start_time={getattr(player, 'explore_start_time', None)} hcaptcha_prompted={context.user_data.get('hcaptcha_prompted', None)}")
 
     # Initialize timing variables
     now = time.time()
@@ -195,6 +197,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_explore_time = 0
     else:
         total_explore_time = now - explore_start
+    logger.info(f"[HCAPTCHA DEBUG] total_explore_time={total_explore_time}")
 
 
     # Debug logging
