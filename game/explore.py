@@ -176,64 +176,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error("Database not initialized in context.bot_data")
         await _reply_error(update, "Internal error: Database not initialized.")
         return
-
-        # Check if user is banned
-        banned = False
-        try:
-            ban_info = await db.get_ban(user_id_str)
-            if ban_info and ban_info.get("expiry") is None:
-                banned = True
-        except Exception as e:
-            logger.error(f"Error checking ban status: {e}")
-        if banned:
-            await _reply_error(update, "You are banned and cannot explore.")
-            return
-
-    # Check for active battle before allowing explore
-    try:
-        from game.battle_system import active_battles, active_battles_lock
-    except ImportError:
-        active_battles = {}
-        active_battles_lock = None
-
-    if active_battles_lock:
-        async with active_battles_lock:
-            if user_id_str in active_battles:
-                first_name = update.effective_user.first_name or "Player"
-                await _reply_error(update, f"{first_name} is currently battling !!")
-                try:
-                    from utils.monitor import remove_player_activity
-                    remove_player_activity(user_id)
-                except Exception:
-                    pass
-                await reset_explore_timer(user_id, db)
-                return
-    else:
-        if user_id_str in active_battles:
-            first_name = update.effective_user.first_name or "Player"
-            await _reply_error(update, f"{first_name} is currently battling !!")
-            try:
-                from utils.monitor import remove_player_activity
-                remove_player_activity(user_id)
-            except Exception:
-                pass
-            await reset_explore_timer(user_id, db)
-            return
-
-    try:
-        from utils.monitor import track_player_action, remove_player_activity
-        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-    except ModuleNotFoundError:
-        logger.warning("utils.monitor not found, skipping activity tracking")
-    except Exception as e:
-        logger.error(f"Error in track_player_action: {e}")
-
-    # Get player data (only once)
-    db = context.bot_data.get("db")
-    if db is None:
-        logger.error("Database not initialized in context.bot_data")
-        await _reply_error(update, "Internal error: Database not initialized.")
-        return
     
 
     player = await db.get_player(user_id_str)
@@ -242,10 +184,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You need to create a profile first with /start")
         return
 
-    # Always check and reset hcaptcha flags after verification
+    # Check and reset hcaptcha flags only after successful verification
     hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
     if hcaptcha_verified:
-        # Reset explore_start_time and hcaptcha_prompted so user can explore freely
         await db.update_player(user_id, {"explore_start_time": time.time()})
         if context.user_data is not None:
             context.user_data["hcaptcha_prompted"] = False
@@ -292,10 +233,50 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player.team:
         await _reply_error(update, "You need to have at least one character in your team. Use /inv to manage your team.")
         try:
+            from utils.monitor import remove_player_activity
             remove_player_activity(user_id)
-        except NameError:
+        except Exception:
             pass
         return
+
+    # Check for active battle before allowing explore
+    try:
+        from game.battle_system import active_battles, active_battles_lock
+    except ImportError:
+        active_battles = {}
+        active_battles_lock = None
+
+    if active_battles_lock:
+        async with active_battles_lock:
+            if user_id_str in active_battles:
+                first_name = update.effective_user.first_name or "Player"
+                await _reply_error(update, f"{first_name} is currently battling !!")
+                try:
+                    from utils.monitor import remove_player_activity
+                    remove_player_activity(user_id)
+                except Exception:
+                    pass
+                await reset_explore_timer(user_id, db)
+                return
+    else:
+        if user_id_str in active_battles:
+            first_name = update.effective_user.first_name or "Player"
+            await _reply_error(update, f"{first_name} is currently battling !!")
+            try:
+                from utils.monitor import remove_player_activity
+                remove_player_activity(user_id)
+            except Exception:
+                pass
+            await reset_explore_timer(user_id, db)
+            return
+
+    try:
+        from utils.monitor import track_player_action, remove_player_activity
+        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+    except ModuleNotFoundError:
+        logger.warning("utils.monitor not found, skipping activity tracking")
+    except Exception as e:
+        logger.error(f"Error in track_player_action: {e}")
 
     player_character_name = player.team[0].character_name
     player_character = await db.get_character(user_id_str, player_character_name)
