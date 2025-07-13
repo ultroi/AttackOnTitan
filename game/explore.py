@@ -224,6 +224,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         explore_start = now
     total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
+    logger.info(f"[DEBUG] explore_start_time: {explore_start}, now: {now}, total_explore_time: {total_explore_time}, hcaptcha_verified: {getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
 
     # Check hCaptcha verification status
     hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
