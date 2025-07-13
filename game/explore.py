@@ -239,6 +239,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
     logger.info(f"[DEBUG] explore_start_time: {explore_start}, now: {now}, total_explore_time: {total_explore_time}, hcaptcha_verified: {getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
+    logger.info(f"[DEBUG] inactivity check: total_explore_time={total_explore_time}, hcaptcha_verified={getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted={context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
 
     # Check hCaptcha verification status
     hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
@@ -266,13 +267,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Reset prompted flag if active
         if context.user_data is not None:
             context.user_data["hcaptcha_prompted"] = False
-
-    # Set default location if not set
-    # if not getattr(player, "location", None):
-    #     chars = await db.get_player_characters(user_id_str)
-    #     if chars and hasattr(chars[0], "birthplace"):
-    #         player.location = chars[0].birthplace
-    #         await db.update_player(user_id, {"location": player.location})
 
     # Check team requirements
     if not player.team:
