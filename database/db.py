@@ -109,7 +109,8 @@ class Database:
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
                 "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
                 "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
-                "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1
+                "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
+                "hcaptcha_verified": 1, "hcaptcha_start_time": 1
             })
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(f"get_player query time: {elapsed:.2f} ms")

@@ -282,6 +282,8 @@ class Player(BaseModel):
     referred_by: Optional[str] = None    # Referral code of the referrer
     referral_count: int = 0              # Number of successful referrals
     referral_milestones: Dict[str, bool] = Field(default_factory=dict)  # Track milestone rewards
+    hcaptcha_verified: Optional[bool] = False
+    hcaptcha_start_time: Optional[float] = None
 
     @property
 
