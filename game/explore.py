@@ -218,10 +218,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Track explore time in database
     now = time.time()
-    explore_start = getattr(player, "explore_start_time", now)
-    if not getattr(player, "explore_start_time", None):
-        await db.update_player(user_id, {"explore_start_time": now})
+    explore_start = getattr(player, "explore_start_time", None)
+    if explore_start is None:
         explore_start = now
+        await db.update_player(user_id, {"explore_start_time": now})
     total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
     logger.info(f"[DEBUG] explore_start_time: {explore_start}, now: {now}, total_explore_time: {total_explore_time}, hcaptcha_verified: {getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
