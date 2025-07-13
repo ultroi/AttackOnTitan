@@ -256,7 +256,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     remove_player_activity(user_id)
                 except Exception:
                     pass
-                await reset_explore_timer(user_id, db)
                 return
     else:
         if user_id_str in active_battles:
@@ -267,7 +266,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remove_player_activity(user_id)
             except Exception:
                 pass
-            await reset_explore_timer(user_id, db)
             return
 
     try:
