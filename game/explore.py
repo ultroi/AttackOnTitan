@@ -177,6 +177,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
 
+        # Check if user is banned
+        banned = False
+        try:
+            ban_info = await db.get_ban(user_id_str)
+            if ban_info and ban_info.get("expiry") is None:
+                banned = True
+        except Exception as e:
+            logger.error(f"Error checking ban status: {e}")
+        if banned:
+            await _reply_error(update, "You are banned and cannot explore.")
+            return
+
     # Check for active battle before allowing explore
     try:
         from game.battle_system import active_battles, active_battles_lock
@@ -230,6 +242,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You need to create a profile first with /start")
         return
 
+    # Always check and reset hcaptcha flags after verification
+    hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
+    if hcaptcha_verified:
+        # Reset explore_start_time and hcaptcha_prompted so user can explore freely
+        await db.update_player(user_id, {"explore_start_time": time.time()})
+        if context.user_data is not None:
+            context.user_data["hcaptcha_prompted"] = False
+
     # Track explore time in database
     now = time.time()
     explore_start = getattr(player, "explore_start_time", None)
@@ -242,9 +262,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"[DEBUG] inactivity check: total_explore_time={total_explore_time}, hcaptcha_verified={getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted={context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
 
     # Check hCaptcha verification status
-    hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
     hcaptcha_prompted = context.user_data.get("hcaptcha_prompted", False) if context.user_data is not None else False
-
     # Prompt hCaptcha if inactive for > 2 minutes and not verified
     if total_explore_time > INACTIVITY_THRESHOLD and not hcaptcha_verified:
         if not hcaptcha_prompted:
@@ -262,10 +280,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             return
         else:
+            # Block all explore actions until verified
+            await _reply_error(update, "Please complete hCaptcha verification to continue exploring.")
             return
     else:
-        # Reset prompted flag if active
-        if context.user_data is not None:
+        # Reset prompted flag if active and verified
+        if context.user_data is not None and hcaptcha_verified:
             context.user_data["hcaptcha_prompted"] = False
 
     # Check team requirements
