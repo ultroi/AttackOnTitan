@@ -218,8 +218,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Track explore time in database
     now = time.time()
-    explore_start = player.get("explore_start_time", now)
-    if not player.get("explore_start_time"):
+    explore_start = getattr(player, "explore_start_time", now)
+    if not getattr(player, "explore_start_time", None):
         await db["players"].update_one(
             {"user_id": user_id_str},
             {"$set": {"explore_start_time": now}}
