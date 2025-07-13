@@ -184,48 +184,48 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You need to create a profile first with /start")
         return
 
-    # Check and reset hcaptcha flags only after successful verification
+    # Initialize timing variables
     now = time.time()
     explore_start = getattr(player, "explore_start_time", now)
     
-    # Only update explore_start_time if it's None (first explore) or after verification
+    # Only set initial explore time if not already set
     if explore_start == now:
         await db.update_player(user_id, {"explore_start_time": now})
     
     total_explore_time = now - explore_start
     INACTIVITY_THRESHOLD = 120  # 2 minutes in seconds
-    
-    # Debug logging for hCaptcha flow
-    logger.info(f"[hCaptcha] User {user_id} - Explore time: {total_explore_time:.1f}s, Verified: {getattr(player, 'hcaptcha_verified', False)}, Prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data else False}")
 
-    # Show hCaptcha prompt if needed
+    # Debug logging
+    logger.info(f"[TIMER] User {user_id} - Total explore time: {total_explore_time:.1f}s")
+
+    # hCaptcha verification check
     if (total_explore_time > INACTIVITY_THRESHOLD and 
         not getattr(player, "hcaptcha_verified", False)):
         
-        if context.user_data is not None and not context.user_data.get("hcaptcha_prompted", False):
+        if not context.user_data.get("hcaptcha_prompted", False):
             context.user_data["hcaptcha_prompted"] = True
             hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
-            send_hcaptcha = None
-            if update.message is not None and hasattr(update.message, "reply_text"):
-                send_hcaptcha = update.message.reply_text
-            elif update.callback_query is not None and hasattr(update.callback_query, "message") and update.callback_query.message is not None and hasattr(update.callback_query.message, "reply_text"):
-                send_hcaptcha = update.callback_query.message.reply_text
-            if send_hcaptcha:
-                await send_hcaptcha(
+            
+            try:
+                sender = update.message or update.callback_query.message
+                await sender.reply_text(
                     "🔒 <b>Verification Required</b>\n\nComplete hCaptcha to continue:",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("Verify Now", url=hcaptcha_url)]
                     ]),
                     parse_mode=ParseMode.HTML
                 )
-            else:
-                await _reply_error(update, "Verification Required. Complete hCaptcha to continue.")
+            except Exception as e:
+                logger.error(f"Failed to send hCaptcha prompt: {e}")
+                await _reply_error(update, "Verification required. Please try again.")
+            
             return
-        await _reply_error(update, "Complete hCaptcha verification to continue.")
-        return
+        else:
+            await _reply_error(update, "Please complete the hCaptcha verification to continue.")
+            return
 
     # Reset flags if verified
-    if getattr(player, "hcaptcha_verified", False) and context.user_data:
+    if getattr(player, "hcaptcha_verified", False):
         context.user_data["hcaptcha_prompted"] = False
         await db.update_player(user_id, {"explore_start_time": now})
 
