@@ -185,49 +185,49 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check and reset hcaptcha flags only after successful verification
-    hcaptcha_verified = getattr(player, "hcaptcha_verified", False)
-    if hcaptcha_verified:
-        await db.update_player(user_id, {"explore_start_time": time.time()})
-        if context.user_data is not None:
-            context.user_data["hcaptcha_prompted"] = False
-
-    # Track explore time in database
     now = time.time()
-    explore_start = getattr(player, "explore_start_time", None)
-    if explore_start is None:
-        explore_start = now
+    explore_start = getattr(player, "explore_start_time", now)
+    
+    # Only update explore_start_time if it's None (first explore) or after verification
+    if explore_start == now:
         await db.update_player(user_id, {"explore_start_time": now})
+    
     total_explore_time = now - explore_start
-    INACTIVITY_THRESHOLD = 2 * 60  # 2 minutes
-    logger.info(f"[DEBUG] explore_start_time: {explore_start}, now: {now}, total_explore_time: {total_explore_time}, hcaptcha_verified: {getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
-    logger.info(f"[DEBUG] inactivity check: total_explore_time={total_explore_time}, hcaptcha_verified={getattr(player, 'hcaptcha_verified', False)}, hcaptcha_prompted={context.user_data.get('hcaptcha_prompted', False) if context.user_data is not None else False}")
+    INACTIVITY_THRESHOLD = 120  # 2 minutes in seconds
+    
+    # Debug logging for hCaptcha flow
+    logger.info(f"[hCaptcha] User {user_id} - Explore time: {total_explore_time:.1f}s, Verified: {getattr(player, 'hcaptcha_verified', False)}, Prompted: {context.user_data.get('hcaptcha_prompted', False) if context.user_data else False}")
 
-    # Check hCaptcha verification status
-    hcaptcha_prompted = context.user_data.get("hcaptcha_prompted", False) if context.user_data is not None else False
-    # Prompt hCaptcha if inactive for > 2 minutes and not verified
-    if total_explore_time > INACTIVITY_THRESHOLD and not hcaptcha_verified:
-        if not hcaptcha_prompted:
-            if context.user_data is not None:
-                context.user_data["hcaptcha_prompted"] = True
+    # Show hCaptcha prompt if needed
+    if (total_explore_time > INACTIVITY_THRESHOLD and 
+        not getattr(player, "hcaptcha_verified", False)):
+        
+        if context.user_data is not None and not context.user_data.get("hcaptcha_prompted", False):
+            context.user_data["hcaptcha_prompted"] = True
             hcaptcha_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}"
+            send_hcaptcha = None
             if update.message is not None and hasattr(update.message, "reply_text"):
-                await update.message.reply_text(
-                    "🔒 <b>Verification Required</b>\n\n"
-                    "You must complete hCaptcha to continue exploring.\n",
+                send_hcaptcha = update.message.reply_text
+            elif update.callback_query is not None and hasattr(update.callback_query, "message") and update.callback_query.message is not None and hasattr(update.callback_query.message, "reply_text"):
+                send_hcaptcha = update.callback_query.message.reply_text
+            if send_hcaptcha:
+                await send_hcaptcha(
+                    "🔒 <b>Verification Required</b>\n\nComplete hCaptcha to continue:",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Verify with hCaptcha", url=hcaptcha_url)]
+                        [InlineKeyboardButton("Verify Now", url=hcaptcha_url)]
                     ]),
                     parse_mode=ParseMode.HTML
                 )
+            else:
+                await _reply_error(update, "Verification Required. Complete hCaptcha to continue.")
             return
-        else:
-            # Block all explore actions until verified
-            await _reply_error(update, "Please complete hCaptcha verification to continue exploring.")
-            return
-    else:
-        # Reset prompted flag if active and verified
-        if context.user_data is not None and hcaptcha_verified:
-            context.user_data["hcaptcha_prompted"] = False
+        await _reply_error(update, "Complete hCaptcha verification to continue.")
+        return
+
+    # Reset flags if verified
+    if getattr(player, "hcaptcha_verified", False) and context.user_data:
+        context.user_data["hcaptcha_prompted"] = False
+        await db.update_player(user_id, {"explore_start_time": now})
 
     # Check team requirements
     if not player.team:
