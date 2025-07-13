@@ -31,6 +31,14 @@ ALLOWED_CHARACTERS = set(CHARACTERS)
 
 @ban_protected
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Step 0: Prevent bypass if hCaptcha is pending
+    if hasattr(context, 'user_data') and context.user_data is not None:
+        if context.user_data.get('hcaptcha_pending'):
+            await update.message.reply_text(
+                "⚠️ Please complete the hCaptcha verification before continuing."
+            )
+            return
+
     # Step 1: Extract and preserve referral code
     referral_code = None
     if hasattr(update, 'message') and update.message and update.message.text:
@@ -38,11 +46,14 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         if len(parts) > 1 and parts[1].startswith('referral_'):
             referral_code = parts[1][len('referral_'):]
 
-    # Step 2: FULL MEMORY CLEANUP (except referral)
+    # Step 2: FULL MEMORY CLEANUP (except referral and hcaptcha_pending)
     if hasattr(context, 'user_data') and context.user_data is not None:
+        hcaptcha_pending = context.user_data.get('hcaptcha_pending')
         context.user_data.clear()  # Clear all first
         if referral_code:
             context.user_data['referred_by'] = referral_code  # Restore referral
+        if hcaptcha_pending:
+            context.user_data['hcaptcha_pending'] = hcaptcha_pending
 
     # Step 3: Force cleanup battles/timeouts
     user_id = str(update.effective_user.id) if update.effective_user else None
@@ -57,12 +68,13 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         except Exception as e:
             logger.error(f"Battle cleanup error: {e}")
 
-        # Cancel titan timeouts
+        # Cancel titan timeouts ONLY if hCaptcha is not pending
         timeout_key = f"titan_timeouts_{user_id}"
-        if timeout_key in context.bot_data:
-            for task in context.bot_data[timeout_key]:
-                task.cancel()
-            del context.bot_data[timeout_key]
+        if not (hasattr(context, 'user_data') and context.user_data.get('hcaptcha_pending')):
+            if timeout_key in context.bot_data:
+                for task in context.bot_data[timeout_key]:
+                    task.cancel()
+                del context.bot_data[timeout_key]
 
     # Step 4: Check if player exists
     db = context.bot_data.get("db") or Database()
@@ -90,8 +102,6 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
-    
-    
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Do NOT send a new photo here; only edit the existing message (text or caption)
