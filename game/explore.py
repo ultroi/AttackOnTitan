@@ -243,157 +243,170 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "hcaptcha_verified": False
             })
 
-        # Always update last_explore_time
-        await db.update_player(user_id_str, {"last_explore_time": now})
+    # Always update last_explore_time
+    await db.update_player(user_id_str, {"last_explore_time": now})
 
-        # Check for active battle before allowing explore
-        try:
-            from game.battle_system import active_battles, active_battles_lock
-        except ImportError:
-            active_battles = {}
-            active_battles_lock = None
+    # Check for active battle before allowing explore
+    try:
+        from game.battle_system import active_battles, active_battles_lock
+    except ImportError:
+        active_battles = {}
+        active_battles_lock = None
 
-        if active_battles_lock:
-            async with active_battles_lock:
-                if user_id_str in active_battles:
-                    first_name = update.effective_user.first_name or "Player"
-                    await _reply_error(update, f"{first_name} is currently battling !!")
-                    try:
-                        from utils.monitor import remove_player_activity
-                        remove_player_activity(user_id)
-                    except Exception:
-                        pass
-                    return
-        else:
+    is_in_battle = False
+    if active_battles_lock:
+        async with active_battles_lock:
             if user_id_str in active_battles:
-                first_name = update.effective_user.first_name or "Player"
-                await _reply_error(update, f"{first_name} is currently battling !!")
-                try:
-                    from utils.monitor import remove_player_activity
-                    remove_player_activity(user_id)
-                except Exception:
-                    pass
-                return
+                is_in_battle = True
+    elif user_id_str in active_battles:
+        is_in_battle = True
 
+    if is_in_battle:
+        first_name = update.effective_user.first_name or "Player"
+        await _reply_error(update, f"{first_name} is currently battling !!")
         try:
-            from utils.monitor import track_player_action, remove_player_activity
-            track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-        except ModuleNotFoundError:
-            logger.warning("utils.monitor not found, skipping activity tracking")
-        except Exception as e:
-            logger.error(f"Error in track_player_action: {e}")
+            from utils.monitor import remove_player_activity
+            remove_player_activity(user_id)
+        except Exception:
+            pass
+        return
 
-        player_character_name = player.team[0].character_name
-        player_character = await db.get_character(user_id_str, player_character_name)
-        if not player_character:
-            await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
+    try:
+        from utils.monitor import track_player_action, remove_player_activity
+        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+    except ModuleNotFoundError:
+        logger.warning("utils.monitor not found, skipping activity tracking")
+    except Exception as e:
+        logger.error(f"Error in track_player_action: {e}")
 
-        if player_character.gas < 100:
-            await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
+    player_character_name = player.team[0].character_name
+    player_character = await db.get_character(user_id_str, player_character_name)
+    if not player_character:
+        await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
 
-        # Handle travel/decision points
-        location = getattr(player, "location", None)
-        if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-            directions = TRAVEL_MAP[location]
-            keyboard = [
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
-                for dir in directions.keys()
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            try:
-                if update.message:
-                    await update.message.reply_text(
-                        f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
-            except Exception as e:
-                logger.error(f"Failed to send decision point reply: {e}")
-            finally:
-                try:
-                    remove_player_activity(user_id)
-                except NameError:
-                    pass
-            return
+    if player_character.gas < 100:
+        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
 
-        # Spawn CAPTCHA with 6% chance
-        if random.random() < 0.06:
-            captcha_triggered = await spawn_captcha(update, context)
-            if captcha_triggered:
-                try:
-                    remove_player_activity(user_id)
-                except NameError:
-                    pass
-                return
-
-        # --- LOGGING DELAY START ---
-        start_time = time.time()
-        titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
-        titan_gen_time = time.time()
-        logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
-        if not titan:
-            await _reply_error(update, "No titans found in your level range.")
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-            return
-
-        await db.store_titan(user_id_str, titan)
-
-        battle_id = f"battle_{user_id}_{uuid4().hex}"
-        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
-
-        keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
+    # Handle travel/decision points
+    location = getattr(player, "location", None)
+    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+        directions = TRAVEL_MAP[location]
+        keyboard = [
+            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
+            for dir in directions.keys()
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        titan_image_url = None
-        titan_name_lower = titan.name.lower()
-        for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
-            if titan_type.lower() in titan_name_lower:
-                titan_image_url = url
-                break
-
-        image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
-        reply_text = (
-            f"<code>-------------------------</code>\n"
-            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
-            f"<b>has blocked your way{image_embed}</b>\n"
-            f"<code>-------------------------</code>\n"
-        )
-
-    sent_message = None
-    send_reply = None
-    if update.message:
-        send_reply = update.message.reply_text
-    elif update.callback_query and update.callback_query.message:
-        if hasattr(update.callback_query.message, "edit_text"):
-            send_reply = update.callback_query.message.edit_text
-    msg_send_start = time.time()
-    if send_reply:
         try:
-            sent_message = await send_reply(
+            if update.message:
+                await update.message.reply_text(
+                    f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+        except Exception as e:
+            logger.error(f"Failed to send decision point reply: {e}")
+        finally:
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+        return
+
+    # Spawn CAPTCHA with 6% chance
+    if random.random() < 0.06:
+        captcha_triggered = await spawn_captcha(update, context)
+        if captcha_triggered:
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+            return
+
+    # --- LOGGING DELAY START ---
+    start_time = time.time()
+    titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
+    titan_gen_time = time.time()
+    logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
+    if not titan:
+        await _reply_error(update, "No titans found in your level range.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
+
+    await db.store_titan(user_id_str, titan)
+
+    battle_id = f"battle_{user_id}_{uuid4().hex}"
+    context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+
+    keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    titan_image_url = None
+    titan_name_lower = titan.name.lower()
+    for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
+        if titan_type.lower() in titan_name_lower:
+            titan_image_url = url
+            break
+
+    image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
+    reply_text = (
+        f"<code>-------------------------</code>\n"
+        f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
+        f"<b>has blocked your way{image_embed}</b>\n"
+        f"<code>-------------------------</code>\n"
+    )
+
+    msg_send_start = time.time()  # Added missing variable
+    sent_message = None
+    try:
+        if update.message:
+            sent_message = await update.message.reply_text(
                 text=reply_text,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=False
             )
+        elif update.callback_query and update.callback_query.message:
+            try:
+                sent_message = await update.callback_query.message.edit_text(
+                    text=reply_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
+            except Exception as edit_error:
+                logger.error(f"Failed to edit message, trying to send new: {edit_error}")
+                sent_message = await update.callback_query.message.chat.send_message(
+                    text=reply_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
+        
+        if sent_message:
             msg_send_end = time.time()
             logger.info(f"Titan message sending took {msg_send_end - msg_send_start:.3f} seconds.")
             logger.info(f"Total delay from titan generation to message sent: {msg_send_end - start_time:.3f} seconds.")
-        except Exception as e:
-            await _reply_error(update, "An error occurred while displaying the titan.")
-            sent_message = None
+    except Exception as e:
+        logger.error(f"Failed to send titan encounter message: {e}", exc_info=True)
+        await _reply_error(update, "An error occurred while displaying the titan.")
+        try:
+            remove_player_activity(user_id)
+        except NameError:
+            pass
+        return
 
     # Move all cleanup and timeout tasks to background after message is sent
     if sent_message:
@@ -414,6 +427,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_last_explore.pop(uid, None)
     except Exception as e:
         logger.warning(f"Error cleaning up user_last_explore: {e}")
+
 
 async def cleanup_stale_explore_records(max_age_hours: int = 24):
     """Clean up stale explore records to prevent memory leaks."""
