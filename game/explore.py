@@ -8,6 +8,7 @@ from game.travel_map import TRAVEL_MAP
 from game.captcha import spawn_captcha
 from utils.ban_utils import ban_protected
 from datetime import datetime, timezone
+from utils.maintenance import maintenance_protected
 from typing import Dict
 import time
 import random
@@ -135,6 +136,8 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardRemove()
         )
 
+# Decorator to protect explore command from bans and maintenance mode
+@maintenance_protected
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""

@@ -10,6 +10,7 @@ import logging
 import asyncio
 from game.battle_system import active_battles
 from utils.ban_utils import ban_protected
+from utils.maintenance import maintenance_protected
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ LOG_CHANNEL_ID = -1002873117075
 ALLOWED_LOCATIONS = ["Shiganshina", "Karanes", "Trost", "Orvud"]
 ALLOWED_CHARACTERS = set(CHARACTERS)
 
+@maintenance_protected
 @ban_protected
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id) if update.effective_user else None

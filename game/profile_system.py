@@ -8,6 +8,7 @@ from database.characters import get_character_data, CHARACTER_IMAGES
 from utils.ban_utils import ban_protected
 from html import escape
 from game.shop_system import ShopSystem
+from utils.maintenance import maintenance_protected
 from typing import Optional
 import logging
 import re
@@ -43,6 +44,7 @@ async def handle_unauthorized(update: Update):
             logger.error(f"Error sending unauthorized message: {e}")
 
 
+@maintenance_protected
 @ban_protected
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_authorization(update, context):
@@ -504,6 +506,8 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 
+
+@maintenance_protected
 @ban_protected
 async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
@@ -549,6 +553,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await profile(update, context)
 
 
+@maintenance_protected
 @ban_protected
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user or not hasattr(update.effective_user, "id"):

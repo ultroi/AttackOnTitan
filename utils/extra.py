@@ -5,10 +5,12 @@ from utils.ban_utils import ban_protected
 from game.explore import _reply_error
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from utils.maintenance import maintenance_protected
 
 logger = logging.getLogger(__name__)
 
 @ban_protected
+@maintenance_protected
 async def buy_command(update: Update, context):
                 try:
                     if not update.effective_user or not update.message:
@@ -36,7 +38,7 @@ async def buy_command(update: Update, context):
 
 
 
-
+@maintenance_protected
 @ban_protected
 async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /give command to share resources."""

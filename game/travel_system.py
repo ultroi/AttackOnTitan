@@ -5,10 +5,13 @@ from .travel_map import TRAVEL_MAP
 from game.map_system import MAP_IMAGE_URL
 from utils.ban_utils import ban_protected
 from game.explore import _reply_error
+from utils.maintenance import maintenance_protected
 
 import logging
 logger = logging.getLogger(__name__)
 
+
+@maintenance_protected
 @ban_protected
 async def travel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
      # Only allow in private chat
