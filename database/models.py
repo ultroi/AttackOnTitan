@@ -285,6 +285,7 @@ class Player(BaseModel):
     hcaptcha_verified: Optional[bool] = False
     hcaptcha_start_time: Optional[float] = None
     explore_start_time: Optional[float] = None
+    last_explore_time: Optional[float] = None
 
     @property
 
