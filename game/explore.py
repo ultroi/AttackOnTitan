@@ -66,8 +66,8 @@ async def _reply_error(update: Update, message: str):
         elif hasattr(update, "callback_query") and update.callback_query:
             if hasattr(update.callback_query, "answer"):
                 await update.callback_query.answer(message)
-    except Exception as e:
-        logger.error(f"Failed to send error message: {e}")
+    except Exception:
+        pass
 
 async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
     """Handle titan encounter timeout with proper cleanup."""
@@ -82,7 +82,7 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         try:
             from game.battle_system import active_battles
             if str(user_id) in active_battles:
-                logger.info(f"Skipping timeout for user {user_id} - active battle in progress")
+                pass
                 return
         except ImportError:
             pass
@@ -101,10 +101,10 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
                             "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
                             parse_mode=ParseMode.HTML
                         )
-                    except Exception as e:
-                        logger.error(f"Failed to edit message for user {user_id}: {e}")
-    except Exception as e:
-        logger.error(f"Error in titan_encounter_timeout for user {user_id}: {e}")
+                    except Exception:
+                        pass
+    except Exception:
+        pass
     finally:
         # Clean up the task reference
         key = f"titan_timeouts_{user_id}"
@@ -125,7 +125,7 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
 async def reset_explore_timer(user_id, db):
     """Reset the explore_start_time for a user (for inactivity/hCaptcha logic)."""
     await db.update_player(user_id, {"explore_start_time": None})
-    logger.info(f"[DEBUG] explore_start_time reset for user {user_id}")
+    pass
 
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -166,8 +166,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Opening keyboard...",
                     reply_markup=reply_markup
                 )
-            except Exception as e:
-                logger.error(f"Failed to send persistent keyboard: {e}")
+            except Exception:
+                pass
         context.user_data["persistent_keyboard_sent"] = True
 
     # Get player data (only once)
@@ -185,8 +185,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Block if verification in progress
     if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
-        logger.info(f"[BLOCK] User {user_id} tried /explore without completing verification.")
-        await update.message.reply_text("⚠️ Please complete verification first.")
         return
 
     now = time.time()
@@ -197,16 +195,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     INACTIVITY_THRESHOLD = 120
     if last_explore is not None:
         inactivity_duration = now - last_explore
-        logger.info(f"[TIMER] Inactivity duration: {inactivity_duration:.1f}s")
         if inactivity_duration > INACTIVITY_THRESHOLD:
             inactive = True
     else:
-        logger.info("[TIMER] No previous explore timestamp.")
+        pass
 
     # If inactive and not verified
     if inactive and not getattr(player, "hcaptcha_verified", False):
         if not context.user_data.get("hcaptcha_prompted", False):
-            logger.info("[HCAPTCHA] Triggering verification")
             context.user_data["hcaptcha_prompted"] = True
             timestamp = int(now)
             verification_url = (
@@ -261,9 +257,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from utils.monitor import track_player_action, remove_player_activity
         track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
     except ModuleNotFoundError:
-        logger.warning("utils.monitor not found, skipping activity tracking")
-    except Exception as e:
-        logger.error(f"Error in track_player_action: {e}")
+        pass
+    except Exception:
+        pass
 
     player_character_name = player.team[0].character_name
     player_character = await db.get_character(user_id_str, player_character_name)
@@ -300,7 +296,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML
                 )
         except Exception as e:
-            logger.error(f"Failed to send decision point reply: {e}")
+            pass
         finally:
             try:
                 remove_player_activity(user_id)
@@ -322,7 +318,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
     titan_gen_time = time.time()
-    logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         try:
@@ -373,7 +368,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     disable_web_page_preview=False
                 )
             except Exception as edit_error:
-                logger.error(f"Failed to edit message, trying to send new: {edit_error}")
+                pass
                 sent_message = await update.callback_query.message.chat.send_message(
                     text=reply_text,
                     reply_markup=reply_markup,
@@ -383,10 +378,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if sent_message:
             msg_send_end = time.time()
-            logger.info(f"Titan message sending took {msg_send_end - msg_send_start:.3f} seconds.")
-            logger.info(f"Total delay from titan generation to message sent: {msg_send_end - start_time:.3f} seconds.")
     except Exception as e:
-        logger.error(f"Failed to send titan encounter message: {e}", exc_info=True)
         await _reply_error(update, "An error occurred while displaying the titan.")
         try:
             remove_player_activity(user_id)
@@ -411,8 +403,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for uid in list(user_last_explore.keys()):
             if now - user_last_explore[uid] > max_age:
                 user_last_explore.pop(uid, None)
-    except Exception as e:
-        logger.warning(f"Error cleaning up user_last_explore: {e}")
+    except Exception:
+        pass
 
 
 async def cleanup_stale_explore_records(max_age_hours: int = 24):
@@ -425,8 +417,8 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
                 if current_time - user_last_explore[uid] > (max_age_hours * 3600):
                     user_last_explore.pop(uid, None)
             await asyncio.sleep(3600)
-        except Exception as e:
-            logger.error(f"Error in cleanup_stale_explore_records: {e}")
+        except Exception:
+            pass
             await asyncio.sleep(3600)
 
 async def force_cleanup_user(user_id: int, db: Database):
@@ -437,8 +429,8 @@ async def force_cleanup_user(user_id: int, db: Database):
         if user_id_str in active_battles:
             try:
                 cleanup_battle(user_id_str, "forced_cleanup")
-            except Exception as e:
-                logger.warning(f"Error cleaning up battle for user {user_id}: {e}")
+            except Exception:
+                pass
             active_battles.pop(user_id_str, None)
         user_last_explore.pop(user_id_str, None)
         await db.update_player(user_id, {"last_explore": None})
@@ -448,9 +440,9 @@ async def force_cleanup_user(user_id: int, db: Database):
             remove_player_activity(user_id)
         except ModuleNotFoundError:
             pass
-        logger.info(f"Force cleaned up all data for user {user_id}")
-    except Exception as e:
-        logger.error(f"Error in force_cleanup_user for {user_id}: {e}")
+        pass
+    except Exception:
+        pass
 
 async def start_cleanup_task():
     """Start the cleanup task."""

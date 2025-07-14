@@ -133,7 +133,13 @@ def include_dashboard_route(app):
 
         # Check timeout
         if now - start_time > HCAPTCHA_TIMEOUT:
+            # Ban user and prevent verification
             await handle_verification_timeout(db, user_id, player)
+            # Also set hcaptcha_verified to False to prevent future verification
+            await db["players"].update_one(
+                {"user_id": str(user_id)},
+                {"$set": {"hcaptcha_verified": False}}
+            )
             return RedirectResponse("/hcaptcha_timeout", status_code=303)
 
         # Verify with hCaptcha API
@@ -159,6 +165,17 @@ def include_dashboard_route(app):
 
         # Successful verification
         try:
+            # Double check timeout before updating (race condition prevention)
+            player = await db["players"].find_one({"user_id": str(user_id)})
+            start_time = player.get("hcaptcha_start_time", now) if player else now
+            if now - start_time > HCAPTCHA_TIMEOUT:
+                await handle_verification_timeout(db, user_id, player)
+                await db["players"].update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": {"hcaptcha_verified": False}}
+                )
+                return RedirectResponse("/hcaptcha_timeout", status_code=303)
+
             await db["players"].update_one(
                 {"user_id": str(user_id)},
                 {
