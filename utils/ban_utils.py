@@ -54,7 +54,7 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
 async def ban_user(update: Update, context: CallbackContext):
     if not update.effective_user or not update.effective_chat:
         return
-    
+
     user_id = update.effective_user.id
     is_owner = user_id in get_owner_ids()
     is_mod_user = await is_mod(user_id)
@@ -76,6 +76,11 @@ async def ban_user(update: Update, context: CallbackContext):
     except Exception:
         if update.effective_message is not None:
             await update.effective_message.reply_text("Invalid user_id. Please provide a valid numeric user ID.")
+        return
+    # Prevent banning owner
+    if target_id in get_owner_ids():
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("You cannot ban an owner! Don't even try.")
         return
     reason = ''
     duration = None
@@ -137,7 +142,7 @@ async def ban_user(update: Update, context: CallbackContext):
         target_display = target_user.first_name
     except Exception:
         target_display = str(target_id)
-    
+
     msg = (
         f"<b>#BanEvent</b>\n\n"
         f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_display}</a>\n"
