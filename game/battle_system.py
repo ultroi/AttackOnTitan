@@ -494,19 +494,16 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     callback_data = query.data
     user_id = str(update.effective_user.id)
-    # Only allow the latest battle button to work
     current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
     if callback_data != current_battle_id:
-        return  # Ignore old/expired battle buttons
+        return 
     if not callback_data or not callback_data.startswith("battle_"):
         await query.edit_message_text("Invalid battle request.")
         return
-    logger.info(f"[BATTLE_START] user_id: {user_id}")
     titan_timeout_key = f"titan_timeout_{user_id}"
     titan_timeout_task = context.bot_data.pop(titan_timeout_key, None)
     if titan_timeout_task and not titan_timeout_task.done():
         titan_timeout_task.cancel()
-        logger.info(f"[BATTLE_START] Cancelled titan timeout for user_id: {user_id}")
     db = context.bot_data.get("db")
     if not db:
         logger.error("Database not initialized")
@@ -545,7 +542,6 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         })
     except ImportError:
         pass
-    logger.info(f"Battle started for user {user_id}. Active battles: {len(active_battles)}")
     keyboard = generate_ability_keyboard(battle)
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
@@ -595,7 +591,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         else:
             full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
     elif action == "action_basic_attack":
-        logger.info(f"[Basic Attack] Before: gas={battle.gas}, titan_hp={battle.titan_hp}")
         if battle.gas >= 20:
             battle.gas -= 20
             battle.character_gas = battle.gas
@@ -603,7 +598,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 base_damage = battle.character.stats.ATK or 25
                 total_damage = max(1, base_damage + random.randint(-2, 3))
                 battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                logger.info(f"[Basic Attack] {battle.character.name} dealt {total_damage} damage. Titan HP now {battle.titan_hp}")
             except Exception as e:
                 logger.error(f"Error calculating basic attack damage: {e}")
                 total_damage = 10
@@ -611,7 +605,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
         else:
             full_message.append(f"❌ {battle.character.name} doesn't have enough gas for basic attack!")
-        logger.info(f"[Basic Attack] After: gas={battle.gas}, titan_hp={battle.titan_hp}")
     elif action.startswith("ability_"):
         damage, message, effects = battle.use_ability(action[8:])
         battle.character_gas = battle.gas
