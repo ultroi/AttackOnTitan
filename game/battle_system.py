@@ -442,10 +442,13 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
 def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboardButton]]:
     """Generate keyboard buttons for valid abilities and actions."""
     keyboard = []
+    def obfuscate_text(text):
+        # Insert zero-width space (\u200B) between each character
+        return ''.join(char + '\u200B' for char in text)
     character_data = get_character_data(battle.character.character_type)
     if not character_data:
         logger.warning(f"No character data found for {battle.character.character_type}")
-        keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
+        keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
         return keyboard
     for ability_type in ["active", "passive", "ultimate"]:
         abilities = getattr(character_data, f"{ability_type}_abilities", [])
@@ -462,24 +465,24 @@ def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboar
             prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else "🔄"
             if battle.ability_cooldowns.get(ability.name, 0) == 0 and battle.gas >= gas_cost:
                 keyboard.append([InlineKeyboardButton(
-                    f"{prefix} {ability_display_name} ({gas_cost} gas)",
+                    obfuscate_text(f"{prefix} {ability_display_name} ({gas_cost} gas)"),
                     callback_data=f"ability_{ability.name}"
                 )])
             elif battle.ability_cooldowns.get(ability.name, 0) > 0:
                 keyboard.append([InlineKeyboardButton(
-                    f"⏳ {prefix} {ability_display_name} (CD: {battle.ability_cooldowns[ability.name]})",
+                    obfuscate_text(f"⏳ {prefix} {ability_display_name} (CD: {battle.ability_cooldowns[ability.name]})"),
                     callback_data=f"cooldown_{ability.name}"
                 )])
             elif battle.gas < gas_cost and gas_cost > 0:
                 keyboard.append([InlineKeyboardButton(
-                    f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)",
+                    obfuscate_text(f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)"),
                     callback_data=f"lowgas_{ability.name}"
                 )])
     if battle.gas >= 20:
-        keyboard.append([InlineKeyboardButton("⚔️ Basic Attack (20 gas)", callback_data="action_basic_attack")])
+        keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack (20 gas)"), callback_data="action_basic_attack")])
     else:
-        keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Need 20 gas)", callback_data="lowgas_basic_attack")])
-    keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
+        keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack"), callback_data="lowgas_basic_attack")])
+    keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
     return keyboard
 
 # =========================

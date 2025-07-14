@@ -211,7 +211,6 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
     if existing_ban:
         # Already banned, do not send notification again
         return
-
     # Ban user
     await db["bans"].update_one(
         {"user_id": user_id_int},
