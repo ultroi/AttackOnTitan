@@ -212,6 +212,7 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
         # Already banned, do not send notification again
         return
 
+    # Ban user
     await db["bans"].update_one(
         {"user_id": user_id_int},
         {
@@ -224,6 +225,17 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
             }
         },
         upsert=True
+    )
+
+    # Reset player settings so user can explore after unban
+    await db["players"].update_one(
+        {"user_id": str(user_id_int)},
+        {"$set": {
+            "hcaptcha_verified": False,
+            "hcaptcha_start_time": None,
+            "explore_start_time": None,
+            "last_explore_time": None,
+        }}
     )
 
     bot_token = os.getenv("TELEGRAM_TOKEN")
