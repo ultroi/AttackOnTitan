@@ -375,19 +375,6 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("An error occurred while showing the shop.")
 
 
-# Example: Add command handlers for maintenance mode
-application.add_handler(CommandHandler("maintenance_on", maintenance_on))
-application.add_handler(CommandHandler("maintenance_off", maintenance_off))
-
-# Example usage: decorate all user commands
-from game.profile_system import profile
-from utils.ban_utils import ban_protected
-
-profile = maintenance_protected(ban_protected(profile))
-
-# Repeat for other commands you want protected:
-# from game.profile_system import show_inventory
-# show_inventory = maintenance_protected(ban_protected(show_inventory))
 
 async def main():
     try:
