@@ -160,10 +160,10 @@ async def initialize_application():
                 logger.warning(f"Could not fetch commit message: {e}")
             # Send startup message to group
             try:
-                msg = "Started !!"
+                msg = "<b>✅ Bot Started!</b>"
                 if commit_message:
-                    msg += f"\n<b>Latest Commit:</b> <code>{commit_message}</code>"
-                await application.bot.send_message(chat_id=-1002463105932, text=msg)
+                    msg += f"\n\n<b>Latest Commit:</b>\n<code>{commit_message}</code>"
+                await application.bot.send_message(chat_id=-1002463105932, text=msg, parse_mode="HTML")
             except Exception as e:
                 logger.error(f"Failed to send startup message: {e}")
     except Exception as e:
