@@ -31,101 +31,91 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-                name="Echo Shard", type="echo_shard", rarity="common", durability=100, weight=0.1, attributes={}, price=100, currency="marks", stock_limit=10, cooldown_hours=0, description="A mysterious shard with echoing power."
+            name="Echo Shard", type="echo_shard", rarity="common", attributes={}, price=100, currency="marks", stock_limit=10, cooldown_hours=0, description="A mysterious shard with echoing power.", unlock_conditions={}
             ),
             "combat_boots": Equipment(
-                name="Combat Boots", type="gear", rarity="common", durability=80, weight=2.5, attributes={"speed": 5, "durability": 15}, price=500, currency="marks", stock_limit=5, cooldown_hours=0, description="Boots that increase your speed and durability."
+            name="Combat Boots", type="gear", rarity="common", attributes={"speed": 5, "durability": 15}, price=500, currency="marks", stock_limit=5, cooldown_hours=0, description="Boots that increase your speed and durability.", unlock_conditions={}
             ),
             "anti_titan_armor": Equipment(
-                name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", durability=100, weight=8.0, attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", stock_limit=2, cooldown_hours=0, description="Armor vest for protection against titans."
+            name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", stock_limit=2, cooldown_hours=0, description="Armor vest for protection against titans.", unlock_conditions={}
             ),
             "time_contract": Equipment(
-                name="Time Contract Scroll", type="utility", rarity="uncommon", durability=100, weight=0.1, attributes={}, price=1500, currency="marks", stock_limit=5, cooldown_hours=0, description="A scroll that contracts time."
+            name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={}, price=1500, currency="marks", stock_limit=5, cooldown_hours=0, description="A scroll that contracts time.", unlock_conditions={}
             ),
             "bounty_permit": Equipment(
-                name="Bounty Permit", type="utility", rarity="uncommon", durability=100, weight=0.1, attributes={}, price=2000, currency="marks", stock_limit=5, cooldown_hours=0, description="Permit to claim bounties."
+            name="Bounty Permit", type="utility", rarity="uncommon", attributes={}, price=2000, currency="marks", stock_limit=5, cooldown_hours=0, description="Permit to claim bounties.", unlock_conditions={}
             ),
             "training_dummy": Equipment(
-                name="Training Dummy", type="utility", rarity="common", durability=100, weight=0.1, attributes={}, price=500, currency="marks", stock_limit=10, cooldown_hours=0, description="Dummy for training purposes."
+            name="Training Dummy", type="utility", rarity="common", attributes={}, price=500, currency="marks", stock_limit=10, cooldown_hours=0, description="Dummy for training purposes.", unlock_conditions={}
             ),
             "battle_journal": Equipment(
-                name="Battle Journal", type="utility", rarity="common", durability=100, weight=0.1, attributes={}, price=300, currency="marks", stock_limit=10, cooldown_hours=0, description="Journal to record battles."
+            name="Battle Journal", type="utility", rarity="common", attributes={}, price=300, currency="marks", stock_limit=10, cooldown_hours=0, description="Journal to record battles.", unlock_conditions={}
             ),
             "titan_biology_manual": Equipment(
-                name="Titan Biology Manual", type="utility", rarity="uncommon", durability=100, weight=0.1, attributes={}, price=1200, currency="marks", stock_limit=5, cooldown_hours=0, description="Manual containing titan biology."
+            name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={}, price=1200, currency="marks", stock_limit=5, cooldown_hours=0, description="Manual containing titan biology.", unlock_conditions={}
             ),
             "dual_blades": Equipment(
-                name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", durability=85, weight=3.5, attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", stock_limit=3, cooldown_hours=0, description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", stock_limit=3, cooldown_hours=0, description="Blades made of ultrahard steel.", unlock_conditions={}
             ),
             "odm_gear": Equipment(
-                name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", durability=90, weight=15.0, attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", stock_limit=3, cooldown_hours=0, description="Equipment for vertical maneuvering."
+            name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", stock_limit=3, cooldown_hours=0, description="Equipment for vertical maneuvering.", unlock_conditions={}
             ),
             "thunder_spears": Equipment(
-                name="Thunder Spears", type="weapon", rarity="epic", durability=1, weight=4.0, attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", stock_limit=1, cooldown_hours=0, description="Spears that unleash thunderous attacks."
+            name="Thunder Spears", type="weapon", rarity="epic", attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", stock_limit=1, cooldown_hours=0, description="Spears that unleash thunderous attacks.", unlock_conditions={}
             ),
             "anti_personnel_odm": Equipment(
-                name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", durability=85, weight=12.0, attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", stock_limit=2, cooldown_hours=0, description="ODM gear effective against humans."
+            name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", stock_limit=2, cooldown_hours=0, description="ODM gear effective against humans.", unlock_conditions={}
             ),
             "pistols": Equipment(
-                name="Double-Barreled Pistols", type="weapon", rarity="uncommon", durability=70, weight=1.5, attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", stock_limit=5, cooldown_hours=0, description="Pistols with double barrels."
+            name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", stock_limit=5, cooldown_hours=0, description="Pistols with double barrels.", unlock_conditions={}
             ),
             "rifles": Equipment(
-                name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", durability=75, weight=4.0, attributes={"attack": 30, "range": 40}, price=3000, currency="marks", stock_limit=5, cooldown_hours=0, description="Bolt-action rifles."
+            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", stock_limit=5, cooldown_hours=0, description="Bolt-action rifles.", unlock_conditions={}
             ),
             "sniper_rifles": Equipment(
-                name="Sniper Rifles", type="weapon", rarity="rare", durability=80, weight=6.0, attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", stock_limit=3, cooldown_hours=0, description="Rifles designed for long-range precision."
+            name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", stock_limit=3, cooldown_hours=0, description="Rifles designed for long-range precision.", unlock_conditions={}
             ),
             "machine_guns": Equipment(
-                name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", durability=90, weight=25.0, attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", stock_limit=2, cooldown_hours=0, description="Guns that fire bullets in rapid succession."
+            name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", stock_limit=2, cooldown_hours=0, description="Guns that fire bullets in rapid succession.", unlock_conditions={}
             ),
             "anti_titan_cannons": Equipment(
-                name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", durability=95, weight=500.0, attributes={"attack": 75, "range": 100}, price=15000, currency="marks", stock_limit=1, cooldown_hours=0, description="Cannons mounted on walls to fight titans."
+            name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", attributes={"attack": 75, "range": 100}, price=15000, currency="marks", stock_limit=1, cooldown_hours=0, description="Cannons mounted on walls to fight titans.", unlock_conditions={}
             ),
             "mobile_artillery": Equipment(
-                name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", durability=85, weight=300.0, attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", stock_limit=1, cooldown_hours=0, description="Artillery that can be moved and used against titans."
+            name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", stock_limit=1, cooldown_hours=0, description="Artillery that can be moved and used against titans.", unlock_conditions={}
             ),
             "titan_restraints": Equipment(
-                name="Titan Restraint Traps", type="weapon", rarity="epic", durability=60, weight=50.0, attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", stock_limit=2, cooldown_hours=0, description="Traps designed to restrain titans."
+            name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", stock_limit=2, cooldown_hours=0, description="Traps designed to restrain titans.", unlock_conditions={}
             ),
             "titan_guillotine": Equipment(
-                name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", durability=70, weight=200.0, attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", stock_limit=1, cooldown_hours=0, description="A guillotine designed for titans."
+            name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", stock_limit=1, cooldown_hours=0, description="A guillotine designed for titans.", unlock_conditions={}
             ),
             "anti_titan_grenades": Equipment(
-                name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", durability=1, weight=2.0, attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", stock_limit=5, cooldown_hours=0, description="Grenades effective against titans."
+            name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", stock_limit=5, cooldown_hours=0, description="Grenades effective against titans.", unlock_conditions={}
             ),
             "control_rod": Equipment(
-                name="Founding Titan Control Rod", type="weapon", rarity="legendary", durability=50, weight=5.0, attributes={"special_ability": 100}, price=20000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Control rod for the Founding Titan."
+            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"special_ability": 100}, price=20000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Control rod for the Founding Titan.", unlock_conditions={}
             ),
             "warhammer_weapons": Equipment(
-                name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", durability=80, weight=8.0, attributes={"attack": 65, "adaptability": 40}, price=18000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Weapons constructed by the Warhammer Titan."
+            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"attack": 65, "adaptability": 40}, price=18000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Weapons constructed by the Warhammer Titan.", unlock_conditions={}
             ),
             "titan_serum": Equipment(
-                name="Titan Serum Injections", type="weapon", rarity="legendary", durability=1, weight=0.1, attributes={"transformation": 100}, price=22000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Serum that transforms the user into a titan."
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"transformation": 100}, price=22000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Serum that transforms the user into a titan.", unlock_conditions={}
             ),
             "colossal_power": Equipment(
-                name="Colossal Titan Transformation", type="weapon", rarity="legendary", durability=1, weight=0.0, attributes={"nuclear_strike": 200}, price=25000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Grants the power of the Colossal Titan."
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"nuclear_strike": 200}, price=25000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Grants the power of the Colossal Titan.", unlock_conditions={}
             ),
             "bladed_gloves": Equipment(
-                name="Bladed Gloves", type="weapon", rarity="legendary", durability=75, weight=1.0, attributes={"attack": 45, "assassination": 60}, price=17000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Gloves with blades for close combat."
+            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"attack": 45, "assassination": 60}, price=17000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Gloves with blades for close combat.", unlock_conditions={}
             ),
             "airship_guns": Equipment(
-                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", durability=95, weight=1000.0, attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Machine guns mounted on airships."
+            name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Machine guns mounted on airships.", unlock_conditions={}
             ),
             "naval_cannons": Equipment(
-                name="Naval Ship Cannons", type="weapon", rarity="legendary", durability=98, weight=2000.0, attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Cannons used on naval ships."
+            name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Cannons used on naval ships.", unlock_conditions={}
             )
         }
-        self.hidden_items = {
-            "shadow_echo_shard": Equipment(
-                name="Shadow-Enhanced Echo Shard", type="echo_shard", rarity="legendary", durability=100, weight=0.1, attributes={}, price=10000, currency="crystal", stock_limit=1, cooldown_hours=24, description="A legendary shard with shadow powers."
-            ),
-            "titan_serum_fragment": Equipment(
-                name="Fragmented Titan Serum", type="utility", rarity="legendary", durability=100, weight=0.1, attributes={}, price=5000, currency="crystal", stock_limit=1, cooldown_hours=24, description="A rare fragment of titan serum."
-            ),
-            "stolen_military_tech": Equipment(
-                name="Stolen Military Tech Gear", type="gear", rarity="legendary", durability=100, weight=8.0, attributes={}, price=8000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Advanced gear stolen from the military."
-            )
-        }
+        # self.hidden_items is intentionally left empty
         return items
 
     async def show_shop(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, category: str = "main") -> tuple[str, InlineKeyboardMarkup]:
