@@ -70,7 +70,7 @@ class ShopSystem:
             name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", description="Pistols with double barrels."
             ),
             "rifles": Equipment(
-            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", description="Bolt-action rifles."
+            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30}, price=3000, currency="marks", description="Bolt-action rifles."
             ),
             "sniper_rifles": Equipment(
             name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", description="Rifles designed for long-range precision."
@@ -214,7 +214,7 @@ class ShopSystem:
             # Custom UI for weapons
             if category == "weapons":
                 damage = item.attributes.get("attack") or item.attributes.get("damage") or "-"
-                weapon_heading = f"<b>{item.name}</b> (<i>{damage}</i>) [<code>{price_str}</code>]"
+                weapon_heading = f"<b>{item.name}</b>  ({damage})  [<code>{price_str}</code>]"
                 # Show rest attributes except attack/damage
                 other_attrs = ""
                 for attr, val in item.attributes.items():
@@ -223,7 +223,7 @@ class ShopSystem:
                 item_text = (
                     f"{weapon_heading}\n"
                     f"{other_attrs}\n"
-                    f"<i>{item.description}</i>\n"
+                    f"<i>{item.description}</i>\n\n"
                 )
             else:
                 damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
