@@ -31,6 +31,29 @@ ALLOWED_CHARACTERS = set(CHARACTERS)
 
 @ban_protected
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id) if update.effective_user else None
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+
+    # If journey already started, show same message in both PM and group
+    if player:
+        await update.message.reply_text(
+            "You have already started your journey!\n"
+            "Use /explore to continue your adventure."
+        )
+        return
+
+    # Only allow in private chat; in group, show PM redirect button
+    if update.effective_chat.type != "private":
+        keyboard = [[InlineKeyboardButton("Start Your Journey (PM)", url=f"https://t.me/{context.bot.username}?start=start")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "To begin your journey, please start the bot in a private chat (PM).\n\n"
+            "Tap the button below to continue.",
+            reply_markup=reply_markup
+        )
+        return
+
     # Step 0: Prevent bypass if hCaptcha is pending
     if hasattr(context, 'user_data') and context.user_data is not None:
         if context.user_data.get('hcaptcha_pending'):
@@ -56,7 +79,6 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
             context.user_data['hcaptcha_pending'] = hcaptcha_pending
 
     # Step 3: Force cleanup battles/timeouts
-    user_id = str(update.effective_user.id) if update.effective_user else None
     if user_id:
         # Clean active battles
         try:
@@ -75,16 +97,6 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
                 for task in context.bot_data[timeout_key]:
                     task.cancel()
                 del context.bot_data[timeout_key]
-
-    # Step 4: Check if player exists
-    db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    if player:
-        await update.message.reply_text(
-            "You have already started your journey!\n"
-            "Use /explore to continue your adventure."
-        )
-        return
 
     # Step 5: Send welcome message
     keyboard = [[InlineKeyboardButton("Start Your Journey", callback_data="start_journey")]]

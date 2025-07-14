@@ -179,6 +179,7 @@ class ShopSystem:
 
     async def _show_category(self, context: ContextTypes.DEFAULT_TYPE, player: Player, category: str) -> tuple[str, InlineKeyboardMarkup]:
         """Show items in a specific category with pagination."""
+
         category_items = self._get_category_items(category)
         available_items = [(key, item) for key, item in category_items.items() if self._check_unlock_conditions(player, item)]
         if not available_items:
@@ -188,6 +189,7 @@ class ShopSystem:
 
         # Use random selection for shop items, persist per user until refresh
         paged_items = self._get_random_shop_items(category, str(player.user_id), context)
+        paged_items = paged_items[:10]  # Limit to 10 items per section
 
         category_names = {
             "weapons": "⚔️ Weapons",
@@ -237,6 +239,7 @@ class ShopSystem:
         if row:
             keyboard.append(row)
         keyboard.append([InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")])
+        message += "\n<i>Buttons will only show for items you can afford and purchase.</i>"
         return message, InlineKeyboardMarkup(keyboard)
 
     def _get_category_items(self, category: str) -> Dict[str, Equipment]:

@@ -146,6 +146,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
+     # Only allow in private chat
+    if update.effective_chat and update.effective_chat.type != "private":
+        await _reply_error(update, "This command can only be used in private chat.")
+        return
+
     # Show persistent keyboard only the first time
     if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
         keyboard = [["/explore", "/close"]]

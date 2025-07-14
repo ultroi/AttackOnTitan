@@ -4,12 +4,17 @@ from telegram.constants import ParseMode
 from .travel_map import TRAVEL_MAP
 from game.map_system import MAP_IMAGE_URL
 from utils.ban_utils import ban_protected
+from game.explore import _reply_error
 
 import logging
 logger = logging.getLogger(__name__)
 
 @ban_protected
 async def travel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+     # Only allow in private chat
+    if update.effective_chat and update.effective_chat.type != "private":
+        await _reply_error(update, "This command can only be used in private chat.")
+        return
     db = context.bot_data.get("db")
     user_id = str(update.effective_user.id)
     player = await db.get_player(user_id)
