@@ -31,88 +31,88 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-            name="Echo Shard", type="echo_shard", rarity="common", attributes={}, price=100, currency="marks", stock_limit=10, cooldown_hours=0, description="A mysterious shard with echoing power.", unlock_conditions={}
+            name="Echo Shard", type="echo_shard", rarity="common", attributes={}, price=100, currency="marks", description="A mysterious shard with echoing power.", unlock_conditions={}
             ),
             "combat_boots": Equipment(
-            name="Combat Boots", type="gear", rarity="common", attributes={"speed": 5, "durability": 15}, price=500, currency="marks", stock_limit=5, cooldown_hours=0, description="Boots that increase your speed and durability.", unlock_conditions={}
+            name="Combat Boots", type="gear", rarity="common", attributes={"speed": 5, "durability": 15}, price=500, currency="marks", description="Boots that increase your speed and durability.", unlock_conditions={}
             ),
             "anti_titan_armor": Equipment(
-            name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", stock_limit=2, cooldown_hours=0, description="Armor vest for protection against titans.", unlock_conditions={}
+            name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", description="Armor vest for protection against titans.", unlock_conditions={}
             ),
             "time_contract": Equipment(
-            name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={}, price=1500, currency="marks", stock_limit=5, cooldown_hours=0, description="A scroll that contracts time.", unlock_conditions={}
+            name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={}, price=1500, currency="marks", description="A scroll that contracts time.", unlock_conditions={}
             ),
             "bounty_permit": Equipment(
-            name="Bounty Permit", type="utility", rarity="uncommon", attributes={}, price=2000, currency="marks", stock_limit=5, cooldown_hours=0, description="Permit to claim bounties.", unlock_conditions={}
+            name="Bounty Permit", type="utility", rarity="uncommon", attributes={}, price=2000, currency="marks", description="Permit to claim bounties.", unlock_conditions={}
             ),
             "training_dummy": Equipment(
-            name="Training Dummy", type="utility", rarity="common", attributes={}, price=500, currency="marks", stock_limit=10, cooldown_hours=0, description="Dummy for training purposes.", unlock_conditions={}
+            name="Training Dummy", type="utility", rarity="common", attributes={}, price=500, currency="marks", description="Dummy for training purposes.", unlock_conditions={}
             ),
             "battle_journal": Equipment(
-            name="Battle Journal", type="utility", rarity="common", attributes={}, price=300, currency="marks", stock_limit=10, cooldown_hours=0, description="Journal to record battles.", unlock_conditions={}
+            name="Battle Journal", type="utility", rarity="common", attributes={}, price=300, currency="marks", description="Journal to record battles.", unlock_conditions={}
             ),
             "titan_biology_manual": Equipment(
-            name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={}, price=1200, currency="marks", stock_limit=5, cooldown_hours=0, description="Manual containing titan biology.", unlock_conditions={}
+            name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={}, price=1200, currency="marks", description="Manual containing titan biology.", unlock_conditions={}
             ),
             "dual_blades": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", stock_limit=3, cooldown_hours=0, description="Blades made of ultrahard steel.", unlock_conditions={}
+            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", description="Blades made of ultrahard steel.", unlock_conditions={}
             ),
             "odm_gear": Equipment(
-            name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", stock_limit=3, cooldown_hours=0, description="Equipment for vertical maneuvering.", unlock_conditions={}
+            name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", description="Equipment for vertical maneuvering.", unlock_conditions={}
             ),
             "thunder_spears": Equipment(
-            name="Thunder Spears", type="weapon", rarity="epic", attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", stock_limit=1, cooldown_hours=0, description="Spears that unleash thunderous attacks.", unlock_conditions={}
+            name="Thunder Spears", type="weapon", rarity="epic", attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", description="Spears that unleash thunderous attacks.", unlock_conditions={}
             ),
             "anti_personnel_odm": Equipment(
-            name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", stock_limit=2, cooldown_hours=0, description="ODM gear effective against humans.", unlock_conditions={}
+            name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", description="ODM gear effective against humans.", unlock_conditions={}
             ),
             "pistols": Equipment(
-            name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", stock_limit=5, cooldown_hours=0, description="Pistols with double barrels.", unlock_conditions={}
+            name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", description="Pistols with double barrels.", unlock_conditions={}
             ),
             "rifles": Equipment(
-            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", stock_limit=5, cooldown_hours=0, description="Bolt-action rifles.", unlock_conditions={}
+            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", description="Bolt-action rifles.", unlock_conditions={}
             ),
             "sniper_rifles": Equipment(
-            name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", stock_limit=3, cooldown_hours=0, description="Rifles designed for long-range precision.", unlock_conditions={}
+            name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", description="Rifles designed for long-range precision.", unlock_conditions={}
             ),
             "machine_guns": Equipment(
-            name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", stock_limit=2, cooldown_hours=0, description="Guns that fire bullets in rapid succession.", unlock_conditions={}
+            name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", description="Guns that fire bullets in rapid succession.", unlock_conditions={}
             ),
             "anti_titan_cannons": Equipment(
-            name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", attributes={"attack": 75, "range": 100}, price=15000, currency="marks", stock_limit=1, cooldown_hours=0, description="Cannons mounted on walls to fight titans.", unlock_conditions={}
+            name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", attributes={"attack": 75, "range": 100}, price=15000, currency="marks", description="Cannons mounted on walls to fight titans.", unlock_conditions={}
             ),
             "mobile_artillery": Equipment(
-            name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", stock_limit=1, cooldown_hours=0, description="Artillery that can be moved and used against titans.", unlock_conditions={}
+            name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", description="Artillery that can be moved and used against titans.", unlock_conditions={}
             ),
             "titan_restraints": Equipment(
-            name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", stock_limit=2, cooldown_hours=0, description="Traps designed to restrain titans.", unlock_conditions={}
+            name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", description="Traps designed to restrain titans.", unlock_conditions={}
             ),
             "titan_guillotine": Equipment(
-            name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", stock_limit=1, cooldown_hours=0, description="A guillotine designed for titans.", unlock_conditions={}
+            name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", description="A guillotine designed for titans.", unlock_conditions={}
             ),
             "anti_titan_grenades": Equipment(
-            name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", stock_limit=5, cooldown_hours=0, description="Grenades effective against titans.", unlock_conditions={}
+            name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", description="Grenades effective against titans.", unlock_conditions={}
             ),
             "control_rod": Equipment(
-            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"special_ability": 100}, price=20000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Control rod for the Founding Titan.", unlock_conditions={}
+            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"special_ability": 100}, price=20000, currency="marks", description="Control rod for the Founding Titan.", unlock_conditions={}
             ),
             "warhammer_weapons": Equipment(
-            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"attack": 65, "adaptability": 40}, price=18000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Weapons constructed by the Warhammer Titan.", unlock_conditions={}
+            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"attack": 65, "adaptability": 40}, price=18000, currency="marks", description="Weapons constructed by the Warhammer Titan.", unlock_conditions={}
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"transformation": 100}, price=22000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Serum that transforms the user into a titan.", unlock_conditions={}
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"transformation": 100}, price=22000, currency="marks", description="Serum that transforms the user into a titan.", unlock_conditions={}
             ),
             "colossal_power": Equipment(
-            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"nuclear_strike": 200}, price=25000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Grants the power of the Colossal Titan.", unlock_conditions={}
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"nuclear_strike": 200}, price=25000, currency="marks", description="Grants the power of the Colossal Titan.", unlock_conditions={}
             ),
             "bladed_gloves": Equipment(
-            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"attack": 45, "assassination": 60}, price=17000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Gloves with blades for close combat.", unlock_conditions={}
+            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"attack": 45, "assassination": 60}, price=17000, currency="marks", description="Gloves with blades for close combat.", unlock_conditions={}
             ),
             "airship_guns": Equipment(
-            name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Machine guns mounted on airships.", unlock_conditions={}
+            name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="marks", description="Machine guns mounted on airships.", unlock_conditions={}
             ),
             "naval_cannons": Equipment(
-            name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="crystal", stock_limit=1, cooldown_hours=24, description="Cannons used on naval ships.", unlock_conditions={}
+            name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="marks", description="Cannons used on naval ships.", unlock_conditions={}
             )
         }
         # self.hidden_items is intentionally left empty
@@ -199,39 +199,42 @@ class ShopSystem:
             "barracks": "🏛️ Barracks Quartermaster",
             "hollow": "💀 Black Market"
         }
-        message = f" <b>{category_names.get(category, category.title())}</b>\n═══════════════════════\n\n"
+        # Custom UI for weapons
+        if category == "weapons":
+            message = f"<b>WEAPONS</b> (<i>Damage</i>) [<code>Price Currency</code>] \n═══════════════════════\n\n"
+        else:
+            message = f" <b>{category_names.get(category, category.title())}</b>\n═══════════════════════\n\n"
         keyboard = []
         db = await self._get_db(context)
 
         row = []
         for idx, (item_key, item) in enumerate(paged_items, start=1):
             price_str = f"{item.price:,} {item.currency.title()}"
-            damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
             rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
-            purchases_today = await db.get_daily_purchases(player.user_id, item_key)
-            remaining = max(0, item.stock_limit - purchases_today) if item.stock_limit > 0 else None
-            last_purchase = await db.shop_purchases_collection.find_one(
-                {"user_id": player.user_id, "item_key": item_key},
-                sort=[("purchase_date", -1)]
-            )
-            can_purchase = True
-            if item.cooldown_hours > 0 and last_purchase:
-                last_time = last_purchase["purchase_date"]
-                if (datetime.now(timezone.utc) - last_time).total_seconds() < item.cooldown_hours * 3600:
-                    can_purchase = False
-
-            item_text = (
-                f"{rarity_emoji.get(item.rarity, '⚪')} <b>{idx}. {item.name}</b>\n"
-                f"💰 <b>{price_str}</b>{damage_info}\n"
-                f"📝 {item.description}\n"
-            )
-            if remaining is not None:
-                item_text += f"📦 Stock: {remaining}/{item.stock_limit}\n"
-            if not can_purchase:
-                item_text += f"⏳ Cooldown: Wait {(item.cooldown_hours * 3600 - (datetime.now(timezone.utc) - last_time).total_seconds()) / 3600:.1f} hours\n"
-
-            message += item_text + "\n"
-            if await self._can_afford(player, item) and can_purchase and (item.stock_limit == -1 or (remaining is not None and remaining > 0)):
+            # Custom UI for weapons
+            if category == "weapons":
+                damage = item.attributes.get("attack") or item.attributes.get("damage") or "-"
+                weapon_heading = f"<b>{item.name}</b> (<i>{damage}</i>) [<code>{price_str}</code>]"
+                # Show rest attributes except attack/damage
+                other_attrs = ""
+                for attr, val in item.attributes.items():
+                    if attr not in ["attack", "damage"]:
+                        other_attrs += f"<b>{attr.title()}</b>: <code>{val}</code>  "
+                item_text = (
+                    f"{weapon_heading}<br>"
+                    f"{other_attrs}<br>"
+                    f"<i>{item.description}</i><br>"
+                    "<br>"
+                )
+            else:
+                damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
+                item_text = (
+                    f"{rarity_emoji.get(item.rarity, '⚪')} <b>{idx}. {item.name}</b>\n"
+                    f"💰 <b>{price_str}</b>{damage_info}\n"
+                    f"📝 {item.description}\n"
+                )
+            message += item_text
+            if await self._can_afford(player, item):
                 row.append(InlineKeyboardButton(f"🛒 {idx}", callback_data=f"buy_{item_key}"))
                 if len(row) == 3:
                     keyboard.append(row)
@@ -260,20 +263,20 @@ class ShopSystem:
             return regular_items
         return {}
 
-    def _check_unlock_conditions(self, player: Player, item: Equipment) -> bool:
-        """Check if player meets item unlock conditions."""
-        for condition, requirement in item.unlock_conditions.items():
-            if condition == "level" and player.level < requirement:
-                return False
-            elif condition == "valor" and player.valor < requirement:
-                return False
-            elif condition == "birthplace" and player.birthplace != requirement:
-                return False
-            elif condition == "hollow_token" and player.get("hollow_tokens", 0) < requirement:
-                return False
-            elif condition == "elite_contract_complete" and player.get("elite_contracts_completed", 0) < requirement:
-                return False
-        return True
+    # def _check_unlock_conditions(self, player: Player, item: Equipment) -> bool:
+    #     """Check if player meets item unlock conditions."""
+    #     for condition, requirement in item.unlock_conditions.items():
+    #         if condition == "level" and player.level < requirement:
+    #             return False
+    #         elif condition == "valor" and player.valor < requirement:
+    #             return False
+    #         elif condition == "birthplace" and player.birthplace != requirement:
+    #             return False
+    #         elif condition == "hollow_token" and player.get("hollow_tokens", 0) < requirement:
+    #             return False
+    #         elif condition == "elite_contract_complete" and player.get("elite_contracts_completed", 0) < requirement:
+    #             return False
+    #     return True
 
     async def _can_afford(self, player: Player, item: Equipment) -> bool:
         """Check if player can afford the item."""
@@ -299,17 +302,7 @@ class ShopSystem:
                 return {"success": False, "message": "Item not found"}
             if not self._check_unlock_conditions(player, item):
                 return {"success": False, "message": f"You don't meet the requirements for {item.name}"}
-            purchases_today = await db.get_daily_purchases(user_id, item_name)
-            if item.stock_limit > 0 and purchases_today + quantity > item.stock_limit:
-                return {"success": False, "message": f"Stock limit exceeded for {item.name}"}
-            last_purchase = await db.shop_purchases_collection.find_one(
-                {"user_id": user_id, "item_key": item_name},
-                sort=[("purchase_date", -1)]
-            )
-            if item.cooldown_hours > 0 and last_purchase:
-                last_time = last_purchase["purchase_date"]
-                if (datetime.now(timezone.utc) - last_time).total_seconds() < item.cooldown_hours * 3600:
-                    return {"success": False, "message": f"{item.name} is on cooldown for {(item.cooldown_hours * 3600 - (datetime.now(timezone.utc) - last_time).total_seconds()) / 3600:.1f} hours"}
+            # ...existing code...
 
             total_cost = item.price * quantity
             if item.currency == "marks" and player.marks < total_cost:

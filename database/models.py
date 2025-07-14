@@ -14,8 +14,6 @@ class CharacterStats(BaseModel):
     SPD: int = 10
     HP: int = 650  # Increased default max HP for better balance
 
-# Removed AbilityInfo, use Ability from schemas.py
-
 class Equipment(BaseModel):
     name: str
     type: str
@@ -24,8 +22,6 @@ class Equipment(BaseModel):
     attributes: Dict[str, float]
     currency: str = "marks"  # Default currency
     price: int = 0  # Default price
-    stock_limit: int = -1  # -1 means unlimited
-    cooldown_hours: int = 0  # Default no cooldown
     description: str = ""  # Default empty description
     unlock_conditions: Dict[str, Any] = Field(default_factory=dict)  # Ensure unlock_conditions always exists
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
