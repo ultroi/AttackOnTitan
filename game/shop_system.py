@@ -214,16 +214,15 @@ class ShopSystem:
             # Custom UI for weapons
             if category == "weapons":
                 damage = item.attributes.get("attack") or item.attributes.get("damage") or "-"
-                weapon_heading = f"<b>{item.name}</b>  ({damage})  [<code>{price_str}</code>]"
-                # Show rest attributes except attack/damage
+                weapon_heading = f"<b>{idx}. {item.name}</b>  ({damage})  [<code>{price_str}</code>]"
                 other_attrs = ""
                 for attr, val in item.attributes.items():
                     if attr not in ["attack", "damage"]:
-                        other_attrs += f"<b>{attr.title()}</b>: <code>{val}</code>  "
+                        other_attrs += f"{attr.title()}: <code>{val}</code>  "
                 item_text = (
                     f"{weapon_heading}\n"
                     f"{other_attrs}\n"
-                    f"<i>{item.description}</i>\n\n"
+                    f"📝<b>:</b> <i>{item.description}</i>\n\n"
                 )
             else:
                 damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
@@ -403,27 +402,31 @@ class ShopSystem:
             self._clear_random_shop_items(str(user_id), context)
             
             next_cost = refresh_cost + 50
-            return f"✅ Shop refreshed successfully!\nSpent: {refresh_cost} valor\nNext refresh will cost: {next_cost} valor"
+            return f"✅ Shop refreshed successfully!"
         except (ValueError, PyMongoError) as e:
             logger.error(f"Error in refresh_shop for user {user_id}: {e}")
             return f"❌ Error refreshing shop: {str(e)}"
 
-    async def handle_callback(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, callback_data: str) -> Optional[tuple[str, InlineKeyboardMarkup]]:
+    async def handle_callback(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, callback_data: str) -> Optional[tuple[str, InlineKeyboardMarkup] | tuple[str, InlineKeyboardMarkup, bool]]:
         """Handle shop-related callback queries."""
         try:
             if callback_data == "shop_refresh":
                 refresh_result = await self.refresh_shop(context, user_id)
-                # Show the same shop UI (items will be randomized)
-                return await self.show_shop(context, user_id)
+                shop_message, shop_keyboard = await self.show_shop(context, user_id)
+                return refresh_result, shop_keyboard, True  
+            
             elif callback_data.startswith("buy_"):
                 item_key = callback_data.replace("buy_", "")
                 result = await self.purchase_item(context, user_id, item_key)
                 keyboard = [[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]]
                 return result["message"], InlineKeyboardMarkup(keyboard)
+            
             elif callback_data.startswith("shop_"):
                 category = callback_data.replace("shop_", "")
                 return await self.show_shop(context, user_id, category)
+            
             return None
+        
         except (ValueError, PyMongoError) as e:
             logger.error(f"Error in handle_callback for user {user_id}: {e}")
             return f"❌ Error handling shop action: {str(e)}", InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]])
