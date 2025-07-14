@@ -221,10 +221,9 @@ class ShopSystem:
                     if attr not in ["attack", "damage"]:
                         other_attrs += f"<b>{attr.title()}</b>: <code>{val}</code>  "
                 item_text = (
-                    f"{weapon_heading}<br>"
-                    f"{other_attrs}<br>"
-                    f"<i>{item.description}</i><br>"
-                    "<br>"
+                    f"{weapon_heading}\n"
+                    f"{other_attrs}\n"
+                    f"<i>{item.description}</i>\n"
                 )
             else:
                 damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""

@@ -322,18 +322,6 @@ class Player(BaseModel):
         self.level += 1
         self.xp -= self.xp_to_next_level
 
-        # Auto-create Central Bank account at level 15
-        if self.level == 15:
-            # Use sync pymongo for now (since models.py is sync)
-            try:
-                client = AsyncIOMotorClient(os.getenv("MONGO_URI", "mongodb://localhost:27017/"))
-                db = client[os.getenv("DB_NAME", "aot")]
-                if not db.central_bank_accounts.find_one({'user_id': self.user_id}):
-                    account = CentralBankAccount(user_id=self.user_id)
-                    db.central_bank_accounts.insert_one(account.model_dump())
-            except Exception as e:
-                pass
-    
         # Apply rewards
         rewards = self.get_level_up_rewards(self.level)
         self.marks += rewards["marks"]
