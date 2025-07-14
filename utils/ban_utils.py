@@ -5,6 +5,7 @@ from telegram.constants import ParseMode
 import time
 from utils.owners import get_owner_ids
 from database.db_instance import get_database
+from utils.mod_utils import is_mod
 
 
 # Ban collection name
@@ -53,10 +54,14 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
 async def ban_user(update: Update, context: CallbackContext):
     if not update.effective_user or not update.effective_chat:
         return
-    # Only allow owners to ban
-    if update.effective_user.id not in get_owner_ids():
+    
+    user_id = update.effective_user.id
+    is_owner = user_id in get_owner_ids()
+    is_mod_user = await is_mod(user_id)
+    # Only allow owners and mods to ban
+    if not (is_owner or is_mod_user):
         if update.effective_message is not None:
-            await update.effective_message.reply_text("You are not authorized to ban users. Only owners can use this command.")
+            await update.effective_message.reply_text("You are not authorized to ban users.")
         return
     args = context.args
     if not args:
@@ -94,6 +99,11 @@ async def ban_user(update: Update, context: CallbackContext):
     expiry = None
     if duration:
         expiry = int(time.time()) + duration
+    # Owners can ban without reason, mods must provide reason
+    if is_mod_user and not is_owner and not reason:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("provide a reason for banning.")
+        return
     try:
         db = await get_database()
         if db is None:
@@ -144,17 +154,28 @@ async def ban_user(update: Update, context: CallbackContext):
 async def unban_user(update: Update, context: CallbackContext):
     if not update.effective_user or not update.effective_chat:
         return
-    # Only allow admins to unban
-    if update.effective_user.id not in get_owner_ids():
+    user_id = update.effective_user.id
+    is_owner = user_id in get_owner_ids()
+    is_mod_user = await is_mod(user_id)
+    # Only allow owners and mods to unban
+    if not (is_owner or is_mod_user):
         if update.effective_message is not None:
             await update.effective_message.reply_text("You are not authorized to unban users.")
         return
     args = context.args
     if not args:
         if update.effective_message is not None:
-            await update.effective_message.reply_text("Usage: /ubfb <user_id>")
+            await update.effective_message.reply_text("Usage: /ubfb <user_id> [reason]")
         return
     target_id = int(args[0])
+    reason = ''
+    if len(args) > 1:
+        reason = ' '.join(args[1:]).strip()
+    # Owners can unban without reason, mods must provide reason
+    if is_mod_user and not is_owner and not reason:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("provide a reason")
+        return
     try:
         db = await get_database()
         if db is None:
@@ -170,17 +191,16 @@ async def unban_user(update: Update, context: CallbackContext):
         await update.effective_message.reply_text(f"User {target_id} unbanned.")
     admin = update.effective_user
     try:
-        # Try to get the user object to get their first name
         target_user = await context.bot.get_chat(target_id)
         target_display = target_user.first_name
     except Exception:
         target_display = str(target_id)
-    
     msg = (
         f"<b>#UnbanEvent</b>\n\n"
         f"<b>Target</b> : <a href=\"tg://user?id={target_id}\">{target_display}</a>\n"
         f"<b>Target ID</b> : <code>{target_id}</code>\n"
         f"<b>By</b> : <a href=\"tg://user?id={admin.id}\">{admin.first_name}</a>\n"
+        f"<b>Reason</b> : <code>{reason}</code>\n"
         f"<b>Time</b> : <code>{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}</code>"
     )
     await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
