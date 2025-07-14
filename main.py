@@ -224,7 +224,7 @@ async def webhook(request: Request):
         logger.error(f"Webhook processing error: {e}")
         return Response(status_code=500)
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "POST"])
 async def index():
     return {
         "status": "ok",
