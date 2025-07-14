@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Rate limiting for explore command
 user_last_explore: Dict[str, float] = {}
-EXPLORE_COOLDOWN = 3 
-TITAN_TIMEOUT_SECONDS = 60
+TITAN_TIMEOUT_SECONDS = 60 * 3  # 3 minutes
 
 
 # Titan type to image URL mapping
@@ -192,7 +191,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check inactivity
     inactive = False
-    INACTIVITY_THRESHOLD = 120
+    INACTIVITY_THRESHOLD = 1500
     if last_explore is not None:
         inactivity_duration = now - last_explore
         if inactivity_duration > INACTIVITY_THRESHOLD:

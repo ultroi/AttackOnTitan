@@ -204,11 +204,19 @@ def include_dashboard_route(app):
 async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
     """Handle timeout scenario with ban and logging."""
     now = int(time.time())
+    # Ensure user_id is int for ban logic compatibility
+    user_id_int = int(user_id)
+    # Check if already banned
+    existing_ban = await db["bans"].find_one({"user_id": user_id_int})
+    if existing_ban:
+        # Already banned, do not send notification again
+        return
+
     await db["bans"].update_one(
-        {"user_id": str(user_id)},
+        {"user_id": user_id_int},
         {
             "$set": {
-                "user_id": str(user_id),
+                "user_id": user_id_int,
                 "expiry": None,
                 "reason": "hCaptcha timeout",
                 "banned_by": "system",
@@ -225,7 +233,7 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
                 await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
                     json={
-                        "chat_id": user_id,
+                        "chat_id": user_id_int,
                         "text": "You have been permanently banned due to hCaptcha timeout.",
                         "parse_mode": "HTML"
                     }
@@ -233,11 +241,11 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
         except Exception:
             pass
 
-        user_name = (player.get("username") or player.get("name") or str(user_id)) if player else str(user_id)
+        first_name = (player.get("first_name") or player.get("name") or str(user_id_int)) if player else str(user_id_int)
         msg = (
             f"<b>#BanEvent</b>\n\n"
-            f"<b>Target</b> : <a href='tg://user?id={user_id}'>{user_name}</a>\n"
-            f"<b>Target ID</b> : <code>{user_id}</code>\n"
+            f"<b>Target</b> : <a href='tg://user?id={user_id_int}'>{first_name}</a>\n"
+            f"<b>Target ID</b> : <code>{user_id_int}</code>\n"
             f"<b>By</b> : <code>system</code>\n"
             f"<b>Reason</b> : <code>hCaptcha timeout</code>\n"
             f"<b>Time</b> : <code>Permanent</code>"

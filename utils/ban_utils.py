@@ -63,7 +63,15 @@ async def ban_user(update: Update, context: CallbackContext):
         if update.effective_message is not None:
             await update.effective_message.reply_text("Usage: /bfb <user_id> [reason] [duration]")
         return
-    target_id = int(args[0])
+    # Validate user_id
+    try:
+        target_id = int(args[0])
+        if target_id <= 0:
+            raise ValueError
+    except Exception:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Invalid user_id. Please provide a valid numeric user ID.")
+        return
     reason = ''
     duration = None
     # Parse reason and duration

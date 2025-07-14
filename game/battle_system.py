@@ -850,7 +850,7 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
     user_id = str(user_id)
     try:
         battle.timeout_task = asyncio.current_task()
-        await asyncio.sleep(60)
+        await asyncio.sleep(180)
         async with active_battles_lock:
             if user_id in active_battles:
                 db = context.bot_data.get("db")
