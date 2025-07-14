@@ -48,3 +48,37 @@ async def promote_mod(update: Update, context: CallbackContext):
     if update.effective_message is not None:
         await update.effective_message.reply_text(f"User {target_id} promoted to MOD.")
 
+
+
+async def demote_mod(update: Update, context: CallbackContext):
+    if not update.effective_user or not update.effective_chat:
+        return
+    if update.effective_user.id not in get_owner_ids():
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Only owners can demote mods.")
+        return
+    args = context.args
+    if not args:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Usage: /demod <user_id>")
+        return
+    try:
+        target_id = int(args[0])
+        if target_id <= 0:
+            raise ValueError
+    except Exception:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Invalid user_id. Please provide a valid numeric user ID.")
+        return
+    db = await get_database()
+    if db is None:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Database unavailable. Please try again later.")
+        return
+    result = await db[MOD_COLLECTION].delete_one({"user_id": target_id})
+    if result.deleted_count > 0:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text(f"User {target_id} demoted from MOD.")
+    else:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text(f"User {target_id} is not a MOD.")

@@ -18,7 +18,7 @@ from database.db_instance import get_persistent_database
 import signal
 from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
-from utils.mod_utils import promote_mod
+from utils.mod_utils import promote_mod, demote_mod
 
 # Import handlers
 from game.character_system import (
@@ -325,6 +325,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("ubfb", unban_user))
     app_instance.add_handler(CommandHandler("give", give_command))
     app_instance.add_handler(CommandHandler("mod", promote_mod))
+    app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
