@@ -7,7 +7,6 @@ from utils.owners import get_owner_ids
 from database.db_instance import get_database
 
 MOD_COLLECTION = "mods"
-BAN_LOG_CHAT_ID = -1002873117075
 
 async def is_mod(user_id: int) -> bool:
     db = await get_database()

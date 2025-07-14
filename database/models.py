@@ -19,7 +19,7 @@ class Equipment(BaseModel):
     type: str
     item_type: str = ""  # Add item_type for shop filtering compatibility
     rarity: str
-    attributes: Dict[str, float]
+    attributes: Dict[str, Any]
     currency: str = "marks"  # Default currency
     price: int = 0  # Default price
     description: str = ""  # Default empty description
