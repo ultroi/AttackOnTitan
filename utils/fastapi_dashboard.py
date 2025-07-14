@@ -87,10 +87,16 @@ def include_dashboard_route(app):
         else:
             # Do not reset the timer if expired
             if now - player.get("hcaptcha_start_time", 0) > HCAPTCHA_TIMEOUT:
+                # Ban and notify user if timeout
+                await handle_verification_timeout(db, user_id, player)
+                await db["players"].update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": {"hcaptcha_verified": False}}
+                )
                 return templates.TemplateResponse(
                     "hcaptcha_timeout.html",
                     {"request": request}
-            )
+                )
 
 
         return templates.TemplateResponse(
