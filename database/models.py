@@ -23,8 +23,8 @@ class Equipment(BaseModel):
     currency: str = "marks"  # Default currency
     price: int = 0  # Default price
     description: str = ""  # Default empty description
-    unlock_conditions: Dict[str, Any] = Field(default_factory=dict)  # Ensure unlock_conditions always exists
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    unlock_conditions: Dict[str, Any] = Field(default_factory=dict) 
+    # unlock_conditions removed
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Character(BaseModel):

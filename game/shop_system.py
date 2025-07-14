@@ -31,88 +31,88 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-            name="Echo Shard", type="echo_shard", rarity="common", attributes={}, price=100, currency="marks", description="A mysterious shard with echoing power.", unlock_conditions={}
+            name="Echo Shard", type="echo_shard", rarity="common", attributes={}, price=100, currency="marks", description="A mysterious shard with echoing power."
             ),
             "combat_boots": Equipment(
-            name="Combat Boots", type="gear", rarity="common", attributes={"speed": 5, "durability": 15}, price=500, currency="marks", description="Boots that increase your speed and durability.", unlock_conditions={}
+            name="Combat Boots", type="gear", rarity="common", attributes={"speed": 5, "durability": 15}, price=500, currency="marks", description="Boots that increase your speed and durability."
             ),
             "anti_titan_armor": Equipment(
-            name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", description="Armor vest for protection against titans.", unlock_conditions={}
+            name="Anti-Titan Armor Vest", type="gear", rarity="uncommon", attributes={"defense": 20, "durability": 25}, price=2000, currency="marks", description="Armor vest for protection against titans."
             ),
             "time_contract": Equipment(
-            name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={}, price=1500, currency="marks", description="A scroll that contracts time.", unlock_conditions={}
+            name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={}, price=1500, currency="marks", description="A scroll that contracts time."
             ),
             "bounty_permit": Equipment(
-            name="Bounty Permit", type="utility", rarity="uncommon", attributes={}, price=2000, currency="marks", description="Permit to claim bounties.", unlock_conditions={}
+            name="Bounty Permit", type="utility", rarity="uncommon", attributes={}, price=2000, currency="marks", description="Permit to claim bounties."
             ),
             "training_dummy": Equipment(
-            name="Training Dummy", type="utility", rarity="common", attributes={}, price=500, currency="marks", description="Dummy for training purposes.", unlock_conditions={}
+            name="Training Dummy", type="utility", rarity="common", attributes={}, price=500, currency="marks", description="Dummy for training purposes."
             ),
             "battle_journal": Equipment(
-            name="Battle Journal", type="utility", rarity="common", attributes={}, price=300, currency="marks", description="Journal to record battles.", unlock_conditions={}
+            name="Battle Journal", type="utility", rarity="common", attributes={}, price=300, currency="marks", description="Journal to record battles."
             ),
             "titan_biology_manual": Equipment(
-            name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={}, price=1200, currency="marks", description="Manual containing titan biology.", unlock_conditions={}
+            name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={}, price=1200, currency="marks", description="Manual containing titan biology."
             ),
             "dual_blades": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", description="Blades made of ultrahard steel.", unlock_conditions={}
+            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="rare", attributes={"attack": 40, "accuracy": 25}, price=5000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "odm_gear": Equipment(
-            name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", description="Equipment for vertical maneuvering.", unlock_conditions={}
+            name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50, "maneuverability": 40}, price=7000, currency="marks", description="Equipment for vertical maneuvering."
             ),
             "thunder_spears": Equipment(
-            name="Thunder Spears", type="weapon", rarity="epic", attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", description="Spears that unleash thunderous attacks.", unlock_conditions={}
+            name="Thunder Spears", type="weapon", rarity="epic", attributes={"attack": 80, "armor_piercing": 60}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
             ),
             "anti_personnel_odm": Equipment(
-            name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", description="ODM gear effective against humans.", unlock_conditions={}
+            name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"attack": 35, "speed": 45, "human_effective": 50}, price=9000, currency="marks", description="ODM gear effective against humans."
             ),
             "pistols": Equipment(
-            name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", description="Pistols with double barrels.", unlock_conditions={}
+            name="Double-Barreled Pistols", type="weapon", rarity="uncommon", attributes={"attack": 25, "speed": 30}, price=2500, currency="marks", description="Pistols with double barrels."
             ),
             "rifles": Equipment(
-            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", description="Bolt-action rifles.", unlock_conditions={}
+            name="Rifles (Bolt-Action)", type="weapon", rarity="uncommon", attributes={"attack": 30, "range": 40}, price=3000, currency="marks", description="Bolt-action rifles."
             ),
             "sniper_rifles": Equipment(
-            name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", description="Rifles designed for long-range precision.", unlock_conditions={}
+            name="Sniper Rifles", type="weapon", rarity="rare", attributes={"attack": 45, "range": 80, "accuracy": 50}, price=6000, currency="marks", description="Rifles designed for long-range precision."
             ),
             "machine_guns": Equipment(
-            name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", description="Guns that fire bullets in rapid succession.", unlock_conditions={}
+            name="Machine Guns / Mounted Guns", type="weapon", rarity="epic", attributes={"attack": 60, "area_damage": 30}, price=12000, currency="marks", description="Guns that fire bullets in rapid succession."
             ),
             "anti_titan_cannons": Equipment(
-            name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", attributes={"attack": 75, "range": 100}, price=15000, currency="marks", description="Cannons mounted on walls to fight titans.", unlock_conditions={}
+            name="Anti-Titan Cannons (Wall-Mounted)", type="weapon", rarity="epic", attributes={"attack": 75, "range": 100}, price=15000, currency="marks", description="Cannons mounted on walls to fight titans."
             ),
             "mobile_artillery": Equipment(
-            name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", description="Artillery that can be moved and used against titans.", unlock_conditions={}
+            name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"attack": 70, "area_damage": 50}, price=13000, currency="marks", description="Artillery that can be moved and used against titans."
             ),
             "titan_restraints": Equipment(
-            name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", description="Traps designed to restrain titans.", unlock_conditions={}
+            name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"restraint": 80, "durability_bonus": 20}, price=11000, currency="marks", description="Traps designed to restrain titans."
             ),
             "titan_guillotine": Equipment(
-            name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", description="A guillotine designed for titans.", unlock_conditions={}
+            name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"attack": 100, "execution_chance": 25}, price=14000, currency="marks", description="A guillotine designed for titans."
             ),
             "anti_titan_grenades": Equipment(
-            name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", description="Grenades effective against titans.", unlock_conditions={}
+            name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"attack": 50, "area_damage": 40}, price=3500, currency="marks", description="Grenades effective against titans."
             ),
             "control_rod": Equipment(
-            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"special_ability": 100}, price=20000, currency="marks", description="Control rod for the Founding Titan.", unlock_conditions={}
+            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"special_ability": 100}, price=20000, currency="marks", description="Control rod for the Founding Titan."
             ),
             "warhammer_weapons": Equipment(
-            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"attack": 65, "adaptability": 40}, price=18000, currency="marks", description="Weapons constructed by the Warhammer Titan.", unlock_conditions={}
+            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"attack": 65, "adaptability": 40}, price=18000, currency="marks", description="Weapons constructed by the Warhammer Titan."
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"transformation": 100}, price=22000, currency="marks", description="Serum that transforms the user into a titan.", unlock_conditions={}
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"transformation": 100}, price=22000, currency="marks", description="Serum that transforms the user into a titan."
             ),
             "colossal_power": Equipment(
-            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"nuclear_strike": 200}, price=25000, currency="marks", description="Grants the power of the Colossal Titan.", unlock_conditions={}
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"nuclear_strike": 200}, price=25000, currency="marks", description="Grants the power of the Colossal Titan."
             ),
             "bladed_gloves": Equipment(
-            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"attack": 45, "assassination": 60}, price=17000, currency="marks", description="Gloves with blades for close combat.", unlock_conditions={}
+            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"attack": 45, "assassination": 60}, price=17000, currency="marks", description="Gloves with blades for close combat."
             ),
             "airship_guns": Equipment(
-            name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="marks", description="Machine guns mounted on airships.", unlock_conditions={}
+            name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"attack": 120, "aerial_combat": 80}, price=30000, currency="marks", description="Machine guns mounted on airships."
             ),
             "naval_cannons": Equipment(
-            name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="marks", description="Cannons used on naval ships.", unlock_conditions={}
+            name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"attack": 150, "naval_combat": 100}, price=35000, currency="marks", description="Cannons used on naval ships."
             )
         }
         # self.hidden_items is intentionally left empty
@@ -181,7 +181,7 @@ class ShopSystem:
         """Show items in a specific category with pagination."""
 
         category_items = self._get_category_items(category)
-        available_items = [(key, item) for key, item in category_items.items() if self._check_unlock_conditions(player, item)]
+        available_items = list(category_items.items())
         if not available_items:
             message = f"🚫 No items available in this category or you don't meet the requirements."
             keyboard = [[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]]
@@ -263,21 +263,6 @@ class ShopSystem:
             return regular_items
         return {}
 
-    # def _check_unlock_conditions(self, player: Player, item: Equipment) -> bool:
-    #     """Check if player meets item unlock conditions."""
-    #     for condition, requirement in item.unlock_conditions.items():
-    #         if condition == "level" and player.level < requirement:
-    #             return False
-    #         elif condition == "valor" and player.valor < requirement:
-    #             return False
-    #         elif condition == "birthplace" and player.birthplace != requirement:
-    #             return False
-    #         elif condition == "hollow_token" and player.get("hollow_tokens", 0) < requirement:
-    #             return False
-    #         elif condition == "elite_contract_complete" and player.get("elite_contracts_completed", 0) < requirement:
-    #             return False
-    #     return True
-
     async def _can_afford(self, player: Player, item: Equipment) -> bool:
         """Check if player can afford the item."""
         if item.currency == "marks":
@@ -300,9 +285,7 @@ class ShopSystem:
             item = self.shop_items.get(item_name) or self.hidden_items.get(item_name)
             if not item:
                 return {"success": False, "message": "Item not found"}
-            if not self._check_unlock_conditions(player, item):
-                return {"success": False, "message": f"You don't meet the requirements for {item.name}"}
-            # ...existing code...
+           
 
             total_cost = item.price * quantity
             if item.currency == "marks" and player.marks < total_cost:
