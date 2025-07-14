@@ -1,3 +1,4 @@
+from multiprocessing import context
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -168,7 +169,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.error(f"Failed to send persistent keyboard: {e}")
         context.user_data["persistent_keyboard_sent"] = True
-    
 
     # Get player data (only once)
     db = context.bot_data.get("db")
@@ -176,7 +176,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error("Database not initialized in context.bot_data")
         await _reply_error(update, "Internal error: Database not initialized.")
         return
-    
 
     player = await db.get_player(user_id_str)
     if not player:
@@ -188,99 +187,38 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"[BLOCK] User {user_id} tried /explore without completing verification.")
         return
 
-    # Reset flags if verified
-    # if getattr(player, "hcaptcha_verified", False):
-    #     if context.user_data is None:
-    #         context.user_data = {}
-    #     context.user_data["hcaptcha_prompted"] = False
-    #     await db.update_player(user_id_str, {
-    #         "hcaptcha_verified": False,  # Reset for next verification
-    #         "explore_start_time": time.time()  # Reset timer
-    #     })
-    #     player = await db.get_player(user_id_str)
-
-    # # Initialize timing variables
-    # now = time.time()
-    # if getattr(player, "explore_start_time", None) is None:
-    #     await db.update_player(user_id_str, {"explore_start_time": now})
-    #     player = await db.get_player(user_id_str)
-
-    # explore_start = getattr(player, "explore_start_time", now)
-    # total_explore_time = now - explore_start
-    # logger.info(f"[TIMER] User {user_id} - Total explore time: {total_explore_time:.1f}s")
-
-    # # hCaptcha verification check
-    # INACTIVITY_THRESHOLD = 120
-    # if (total_explore_time > INACTIVITY_THRESHOLD and 
-    #     not getattr(player, "hcaptcha_verified", False) and
-    #     not context.user_data.get("hcaptcha_prompted", False)):
-    #     logger.info(f"[HCAPTCHA] Triggering verification for user {user_id}")
-    #     if context.user_data is None:
-    #         context.user_data = {}
-    #     context.user_data["hcaptcha_prompted"] = True
-    #     timestamp = int(time.time())
-    #     verification_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
-    #     try:
-    #         if update.message:
-    #             await update.message.reply_text(
-    #                 "🔒 <b>Verification Required</b>\n\n"
-    #                 "Complete hCaptcha to continue exploring:",
-    #                 reply_markup=InlineKeyboardMarkup([
-    #                     [InlineKeyboardButton("Verify Now", url=verification_url)]
-    #                 ]),
-    #                 parse_mode=ParseMode.HTML
-    #             )
-    #         elif update.callback_query:
-    #             await update.callback_query.answer(
-    #                 "🔒 Verification Required. Please check the chat for hCaptcha link.",
-    #                 show_alert=True
-    #             )
-    #         await db.update_player(user_id_str, {
-    #             "hcaptcha_start_time": timestamp,
-    #             "explore_start_time": now
-    #         })
-    #     except Exception as e:
-    #         logger.error(f"Failed to send hCaptcha prompt: {e}")
-
-    #     return
-    
-    if getattr(player, "hcaptcha_verified", False):
-        if context.user_data is None:
-            context.user_data = {}
-        context.user_data["hcaptcha_prompted"] = False
-        await db.update_player(user_id_str, {
-            "hcaptcha_verified": False,  # Reset for next verification
-            "last_active_time": time.time()  # Update activity time
-        })
-        player = await db.get_player(user_id_str)
-
-    # Update last active time (for all actions)
     now = time.time()
-    await db.update_player(user_id_str, {"last_active_time": now})
-    
-    # Check inactivity only if we have a last_active_time
-    last_active = getattr(player, "last_active_time", now)
-    inactive_time = now - last_active
+    last_explore = getattr(player, "last_explore_time", None)
 
-    # hCaptcha verification check (only if inactive for >2 minutes)
+    # Determine inactivity
+    inactive = False
     INACTIVITY_THRESHOLD = 120
-    if (inactive_time > INACTIVITY_THRESHOLD and 
+    if last_explore is not None:
+        inactivity_duration = now - last_explore
+        logger.info(f"[TIMER] User {user_id} - Inactivity duration: {inactivity_duration:.1f}s")
+        if inactivity_duration > INACTIVITY_THRESHOLD:
+            inactive = True
+    else:
+        # First explore
+        logger.info(f"[TIMER] User {user_id} - No previous explore timestamp.")
+        last_explore = now
+
+    # Check if user needs verification
+    if (inactive and
         not getattr(player, "hcaptcha_verified", False) and
         not context.user_data.get("hcaptcha_prompted", False)):
-        
-        logger.info(f"[HCAPTCHA] Triggering verification for user {user_id} (inactive for {inactive_time:.1f}s)")
+        logger.info(f"[HCAPTCHA] Triggering verification for user {user_id}")
         if context.user_data is None:
             context.user_data = {}
         context.user_data["hcaptcha_prompted"] = True
-        
-        timestamp = int(time.time())
+        timestamp = int(now)
         verification_url = f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
-        
         try:
             if update.message:
                 await update.message.reply_text(
                     "🔒 <b>Verification Required</b>\n\n"
-                    "You've been inactive for too long. Complete hCaptcha to continue exploring:",
+                    "You were inactive for more than 2 minutes.\n"
+                    "Complete hCaptcha to continue exploring:",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("Verify Now", url=verification_url)]
                     ]),
@@ -296,27 +234,37 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             })
         except Exception as e:
             logger.error(f"Failed to send hCaptcha prompt: {e}")
-        return
+            return
 
-    # Check team requirements
-    if not player.team:
-        await _reply_error(update, "You need to have at least one character in your team. Use /inv to manage your team.")
+        # Reset hcaptcha flags if verified
+        if getattr(player, "hcaptcha_verified", False):
+            context.user_data["hcaptcha_prompted"] = False
+            await db.update_player(user_id_str, {
+                "hcaptcha_verified": False
+            })
+
+        # Always update last_explore_time
+        await db.update_player(user_id_str, {"last_explore_time": now})
+
+        # Check for active battle before allowing explore
         try:
-            from utils.monitor import remove_player_activity
-            remove_player_activity(user_id)
-        except Exception:
-            pass
-        return
+            from game.battle_system import active_battles, active_battles_lock
+        except ImportError:
+            active_battles = {}
+            active_battles_lock = None
 
-    # Check for active battle before allowing explore
-    try:
-        from game.battle_system import active_battles, active_battles_lock
-    except ImportError:
-        active_battles = {}
-        active_battles_lock = None
-
-    if active_battles_lock:
-        async with active_battles_lock:
+        if active_battles_lock:
+            async with active_battles_lock:
+                if user_id_str in active_battles:
+                    first_name = update.effective_user.first_name or "Player"
+                    await _reply_error(update, f"{first_name} is currently battling !!")
+                    try:
+                        from utils.monitor import remove_player_activity
+                        remove_player_activity(user_id)
+                    except Exception:
+                        pass
+                    return
+        else:
             if user_id_str in active_battles:
                 first_name = update.effective_user.first_name or "Player"
                 await _reply_error(update, f"{first_name} is currently battling !!")
@@ -326,115 +274,103 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception:
                     pass
                 return
-    else:
-        if user_id_str in active_battles:
-            first_name = update.effective_user.first_name or "Player"
-            await _reply_error(update, f"{first_name} is currently battling !!")
-            try:
-                from utils.monitor import remove_player_activity
-                remove_player_activity(user_id)
-            except Exception:
-                pass
-            return
 
-    try:
-        from utils.monitor import track_player_action, remove_player_activity
-        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-    except ModuleNotFoundError:
-        logger.warning("utils.monitor not found, skipping activity tracking")
-    except Exception as e:
-        logger.error(f"Error in track_player_action: {e}")
-
-    player_character_name = player.team[0].character_name
-    player_character = await db.get_character(user_id_str, player_character_name)
-    if not player_character:
-        await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
         try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
-        return
-
-    if player_character.gas < 100:
-        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
-        try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
-        return
-
-    # Handle travel/decision points
-    location = getattr(player, "location", None)
-    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-        directions = TRAVEL_MAP[location]
-        keyboard = [
-            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
-            for dir in directions.keys()
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        try:
-            if update.message:
-                await update.message.reply_text(
-                    f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
+            from utils.monitor import track_player_action, remove_player_activity
+            track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+        except ModuleNotFoundError:
+            logger.warning("utils.monitor not found, skipping activity tracking")
         except Exception as e:
-            logger.error(f"Failed to send decision point reply: {e}")
-        finally:
-            try:
-                remove_player_activity(user_id)
-            except NameError:
-                pass
-        return
+            logger.error(f"Error in track_player_action: {e}")
 
-    # Spawn CAPTCHA with 6% chance
-    if random.random() < 0.06:
-        captcha_triggered = await spawn_captcha(update, context)
-        if captcha_triggered:
+        player_character_name = player.team[0].character_name
+        player_character = await db.get_character(user_id_str, player_character_name)
+        if not player_character:
+            await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
             try:
                 remove_player_activity(user_id)
             except NameError:
                 pass
             return
 
+        if player_character.gas < 100:
+            await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+            return
 
-    # --- LOGGING DELAY START ---
-    
-    start_time = time.time()
-    titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
-    titan_gen_time = time.time()
-    logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
-    if not titan:
-        await _reply_error(update, "No titans found in your level range.")
-        try:
-            remove_player_activity(user_id)
-        except NameError:
-            pass
-        return
+        # Handle travel/decision points
+        location = getattr(player, "location", None)
+        if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+            directions = TRAVEL_MAP[location]
+            keyboard = [
+                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
+                for dir in directions.keys()
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            try:
+                if update.message:
+                    await update.message.reply_text(
+                        f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send decision point reply: {e}")
+            finally:
+                try:
+                    remove_player_activity(user_id)
+                except NameError:
+                    pass
+            return
 
-    await db.store_titan(user_id_str, titan)
+        # Spawn CAPTCHA with 6% chance
+        if random.random() < 0.06:
+            captcha_triggered = await spawn_captcha(update, context)
+            if captcha_triggered:
+                try:
+                    remove_player_activity(user_id)
+                except NameError:
+                    pass
+                return
 
-    battle_id = f"battle_{user_id}_{uuid4().hex}"
-    context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+        # --- LOGGING DELAY START ---
+        start_time = time.time()
+        titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
+        titan_gen_time = time.time()
+        logger.info(f"Titan generation (pregenerated) took {titan_gen_time - start_time:.3f} seconds.")
+        if not titan:
+            await _reply_error(update, "No titans found in your level range.")
+            try:
+                remove_player_activity(user_id)
+            except NameError:
+                pass
+            return
 
-    keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+        await db.store_titan(user_id_str, titan)
 
-    titan_image_url = None
-    titan_name_lower = titan.name.lower()
-    for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
-        if titan_type.lower() in titan_name_lower:
-            titan_image_url = url
-            break
+        battle_id = f"battle_{user_id}_{uuid4().hex}"
+        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
 
-    image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
-    reply_text = (
-        f"<code>-------------------------</code>\n"
-        f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
-        f"<b>has blocked your way{image_embed}</b>\n"
-        f"<code>-------------------------</code>\n"
-    )
+        keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        titan_image_url = None
+        titan_name_lower = titan.name.lower()
+        for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
+            if titan_type.lower() in titan_name_lower:
+                titan_image_url = url
+                break
+
+        image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
+        reply_text = (
+            f"<code>-------------------------</code>\n"
+            f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
+            f"<b>has blocked your way{image_embed}</b>\n"
+            f"<code>-------------------------</code>\n"
+        )
 
     sent_message = None
     send_reply = None
