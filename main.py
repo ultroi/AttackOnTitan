@@ -149,9 +149,21 @@ async def initialize_application():
             await application.start()
             app_initialized = True
             logger.info("Bot application initialized and started successfully")
+            # Get latest commit message
+            commit_message = None
+            try:
+                import subprocess
+                commit_message = subprocess.check_output([
+                    "git", "log", "-1", "--pretty=%B"
+                ], cwd=os.path.dirname(os.path.abspath(__file__)), encoding="utf-8").strip()
+            except Exception as e:
+                logger.warning(f"Could not fetch commit message: {e}")
             # Send startup message to group
             try:
-                await application.bot.send_message(chat_id=-1002463105932, text="Started !!")
+                msg = "Started !!"
+                if commit_message:
+                    msg += f"\n<b>Latest Commit:</b> <code>{commit_message}</code>"
+                await application.bot.send_message(chat_id=-1002463105932, text=msg)
             except Exception as e:
                 logger.error(f"Failed to send startup message: {e}")
     except Exception as e:
