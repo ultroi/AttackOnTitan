@@ -422,7 +422,7 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
     asyncio.create_task(_cleanup())
 
 
-def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboardButton]]:
+def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
     """Generate keyboard buttons for valid abilities and actions."""
     keyboard = []
     def obfuscate_text(text):
@@ -539,7 +539,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         })
     except ImportError:
         pass
-    keyboard = generate_ability_keyboard(battle)
+    keyboard = generate_ability_keyboard(battle, context)
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     await query.edit_message_text(
@@ -654,7 +654,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
-    keyboard = generate_ability_keyboard(battle)
+    keyboard = generate_ability_keyboard(battle, context)
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     battle_message = (
