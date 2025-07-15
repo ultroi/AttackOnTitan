@@ -83,22 +83,22 @@ class ShopSystem:
                 }, price=1200, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
-                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"damage_min": 120.0, "damage_max": 150.0}, price=30000, currency="marks", description="Machine guns mounted on airships."
+                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"damage_min": 150.0, "damage_max": 175.0}, price=30000, currency="marks", description="Machine guns mounted on airships."
             ),
             "odm_gear": Equipment(
                 name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50}, price=7000, currency="marks", description="Equipment for vertical maneuvering."
             ),
             "thunder_spears": Equipment(
-                name="Thunder Spears", type="weapon", rarity="epic", attributes={"damage_min": 80.0, "damage_max": 120.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
+                name="Thunder Spears", type="weapon", rarity="epic", attributes={"damage_min": 100.0, "damage_max": 125.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
             ),
             "anti_personnel_odm": Equipment(
-                name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"damage_min": 35.0, "damage_max": 45.0, "speed": 45.0}, price=9000, currency="marks", description="ODM gear effective against humans."
+                name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"damage_min": 50.0, "damage_max": 60.0, "speed": 45.0}, price=9000, currency="marks", description="ODM gear effective against humans."
             ),
             "pistols": Equipment(
-                name="Double-Barreled Pistols", type="military", rarity="uncommon", attributes={"damage_min": 25.0, "damage_max": 35.0, "speed": 30.0}, price=2500, currency="marks", description="Pistols with double barrels. Dual-fire advantage."
+                name="Double-Barreled Pistols", type="military", rarity="uncommon", attributes={"damage_min": 25.0, "damage_max": 35.0, "speed": 30.0}, price=3500, currency="marks", description="Pistols with double barrels. Dual-fire advantage."
             ),
             "rifles": Equipment(
-                name="Rifles (Bolt-Action)", type="military", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=3000, currency="marks", description="Bolt-action rifles."
+                name="Rifles (Bolt-Action)", type="military", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=4000, currency="marks", description="Bolt-action rifles."
             ),
             "sniper_rifles": Equipment(
                 name="Sniper Rifles", type="military", rarity="rare", attributes={"damage_min": 45.0, "damage_max": 60.0, "accuracy": 50.0}, price=6000, currency="marks", description="Rifles designed for long-range precision."
@@ -110,22 +110,22 @@ class ShopSystem:
                 name="Anti-Titan Cannons (Wall-Mounted)", type="military", rarity="epic", attributes={"damage_min": 75.0, "damage_max": 90.0}, price=15000, currency="marks", description="Cannons mounted on walls to fight titans."
             ),
             "mobile_artillery": Equipment(
-                name="Mobile Artillery / Anti-Titan Mortars", type="weapon", rarity="epic", attributes={"damage_min": 70.0, "damage_max": 90.0}, price=13000, currency="marks", description="Artillery that can be moved and used against titans. Slow but heavy hitting."
+                name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 190.0, "damage_max": 275.0}, price=75000, currency="marks", description="Weapons constructed by the Warhammer Titan."
             ),
             "titan_restraints": Equipment(
-                name="Titan Restraint Traps", type="weapon", rarity="epic", attributes={"damage_min": 0.0, "damage_max": 10.0, "restraint": 80.0}, price=11000, currency="marks", description="Traps designed to restrain titans. Purely restraint-based; no consistent damage output."
+                name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 200.0, "damage_max": 275.0}, price=100000, currency="marks", description="Serum that transforms the user into a titan."
             ),
             "titan_guillotine": Equipment(
-                name="Titan Guillotine (Executioner from Hell)", type="weapon", rarity="epic", attributes={"damage_min": 100.0, "damage_max": 125.0, "execution_chance": 25.0}, price=14000, currency="marks", description="A guillotine designed for titans."
+                name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 300.0, "damage_max": 375.0}, price=125000, currency="marks", description="Grants the power of the Colossal Titan."
             ),
             "anti_titan_grenades": Equipment(
-                name="Anti-Titan Grenades / Satchel Bombs", type="weapon", rarity="rare", attributes={"damage_min": 50.0, "damage_max": 65.0, "area_damage": 40.0}, price=3500, currency="marks", description="Grenades effective against titans. AOE."
+                name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"damage_min": 45.0, "damage_max": 60.0}, price=12000, currency="marks", description="Gloves with blades for close combat. High critical chance."
             ),
             "control_rod": Equipment(
-                name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 0.0, "damage_max": 100.0}, price=20000, currency="marks", description="Control rod for the Founding Titan. Not a damage-dealing item; used for control mechanics."
+                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"damage_min": 175.0, "damage_max": 215.0}, price=45000, currency="marks", description="Machine guns mounted on airships."
             ),
             "warhammer_weapons": Equipment(
-                name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 65.0, "damage_max": 80.0}, price=18000, currency="marks", description="Weapons constructed by the Warhammer Titan."
+                name="Naval Ship Cannons", type="weapon", rarity="legendary", attributes={"damage_min": 175.0, "damage_max": 225.0}, price=42000, currency="marks", description="Cannons used on naval ships. Devastating power; slow reload, high recoil."
             ),
             "titan_serum": Equipment(
                 name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 150.0, "damage_max": 200.0}, price=22000, currency="marks", description="Serum that transforms the user into a titan."

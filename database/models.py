@@ -28,6 +28,7 @@ class Equipment(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Character(BaseModel):
+    equipped_weapon: Optional[str] = None  # weapon key
     user_id: str
     name: str
     character_type: str

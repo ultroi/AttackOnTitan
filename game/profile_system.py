@@ -610,6 +610,7 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 profile_text += "\n"
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
+         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     image_url = CHARACTER_IMAGES.get(character.name)
@@ -736,3 +737,55 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.edit_caption("Exited")
             except Exception as e3:
                 logger.error(f"Error closing profile: {e} / {e2} / {e3}")
+
+
+# Show weapons UI for character from profile
+async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(update.effective_user.id)
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    char_name = query.data.replace("show_weapons_", "")
+    character = await db.get_character(user_id, char_name)
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    shop_items = shop_system.shop_items
+    # Only show weapons in inventory
+    weapon_keys = [k for k in player.inventory if k in shop_items and shop_items[k].type == "weapon" and player.inventory[k] > 0]
+    text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
+    keyboard = []
+    for k in weapon_keys:
+        weapon = shop_items[k]
+        equipped = " (equipped)" if getattr(character, "equipped_weapon", None) == k else ""
+        text += f"• {weapon.name}{equipped}\n"
+        btn_text = "Unequip" if getattr(character, "equipped_weapon", None) == k else "Equip"
+        keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
+    if not weapon_keys:
+        text += "No weapons purchased."
+    keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name}")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+# Equip/unequip weapon logic from profile
+async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(update.effective_user.id)
+    db = context.bot_data.get("db") or Database()
+    data = query.data.replace("equip_weapon_", "")
+    char_name, weapon_key = data.split("_", 1)
+    character = await db.get_character(user_id, char_name)
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    shop_items = shop_system.shop_items
+    # Only allow equip if weapon is in inventory
+    player = await db.get_player(user_id)
+    if weapon_key not in player.inventory or player.inventory[weapon_key] == 0:
+        await query.edit_message_text("You do not own this weapon.")
+        return
+    if getattr(character, "equipped_weapon", None) == weapon_key:
+        character.equipped_weapon = None
+        await db.update_character(user_id, char_name, {"equipped_weapon": None})
+        await query.edit_message_text(f"{shop_items[weapon_key].name} unequipped.")
+    else:
+        character.equipped_weapon = weapon_key
+        await db.update_character(user_id, char_name, {"equipped_weapon": weapon_key})
+        await query.edit_message_text(f"{shop_items[weapon_key].name} equipped.")
