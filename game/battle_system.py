@@ -782,8 +782,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         if player_level_info["total_level_ups"] > 0:
             
             
-            # Reset left-side XP (titan/opponent XP) to 0
-            self.titan_xp = 0 if hasattr(self, 'titan_xp') else None
             # Reset player XP to 0 after level up
             player_obj.xp = 0
             for lvl_up in player_level_info["level_ups"]:
