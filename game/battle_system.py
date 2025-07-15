@@ -815,7 +815,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     try:
         from game.random_drop import get_random_drop
         import random
-        if random.random() < 0.03:
+        if random.random() < 0.025:
             drop = get_random_drop()
             if drop['type'] in ['bottle', 'cylinder']:
                 await query.message.reply_photo(
