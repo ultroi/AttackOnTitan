@@ -6,6 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
+from game.random_drop import get_random_drop
 import asyncio
 import random
 from utils.monitor import track_battle_end
@@ -513,13 +514,25 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
     titan = Titan(**titan_data)
-    player_data = await db.players.find_one({"user_id": user_id})
+    # Cache player and team info in context for this battle
+    if "battle_cache" not in context.user_data:
+        context.user_data["battle_cache"] = {}
+    battle_cache = context.user_data["battle_cache"]
+    if not battle_cache.get("player_data"):
+        player_data = await db.players.find_one({"user_id": user_id})
+        battle_cache["player_data"] = player_data
+    else:
+        player_data = battle_cache["player_data"]
     if not player_data or not player_data.get('team'):
         await query.edit_message_text("Error: No character in your team.")
         return
     team_member = player_data['team'][0]
     character_name = team_member['character_name'] if isinstance(team_member, dict) else team_member
-    character = await db.get_character(user_id, character_name)
+    if not battle_cache.get("character"):
+        character = await db.get_character(user_id, character_name)
+        battle_cache["character"] = character
+    else:
+        character = battle_cache["character"]
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
@@ -688,16 +701,21 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         await query.edit_message_text("❌ Database error!")
         cleanup_battle(user_id, "error", battle)
         return
-    player_data = await db.players.find_one({"user_id": user_id})
+    # Use cached player/team info if available
+    battle_cache = context.user_data.get("battle_cache", {})
+    player_data = battle_cache.get("player_data")
+    if not player_data:
+        player_data = await db.players.find_one({"user_id": user_id})
+        battle_cache["player_data"] = player_data
     if not player_data:
         await query.edit_message_text("❌ Player data not found!")
         cleanup_battle(user_id, "error", battle)
         return
     explore_count = player_data.get("explore_count", 0)
-    await db.players.update_one({"user_id": user_id}, {"$inc": {"explore_count": 1}})
     send = context.bot.send_message
     chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
     # Fast reward calculation and messaging
+    # Batch DB updates for character and player
     if battle.titan_hp <= 0:
         rewards = battle.calculate_rewards(
             titan=battle.titan,
@@ -714,21 +732,25 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.gas = max(0, battle.character_gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = battle.character_hp
-        await db.update_character(battle.character)
+        # Batch update: character and player
+        updates = []
+        updates.append(db.update_character(battle.character))
         reward_updates = {
             "$inc": {
                 "crystal": rewards["crystal"],
                 "valor": rewards["valor"],
                 "xp": player_xp,
                 "marks": rewards["marks"],
-                "total_xp": player_xp
+                "total_xp": player_xp,
+                "explore_count": 1
             },
             "$set": {
                 "level": player_obj.level,
                 "updated_at": datetime.now(timezone.utc)
             }
         }
-        await db.players.update_one({"user_id": user_id}, reward_updates)
+        updates.append(db.players.update_one({"user_id": user_id}, reward_updates))
+        await asyncio.gather(*updates)
         reward_msg = [
             f"<b>You have defeated {battle.titan.name}!</b>\n",
             f"⚡ <b>XP: +{rewards['xp']}</b>",
@@ -804,7 +826,11 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.gas = max(0, battle.character_gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
-        await db.update_character(battle.character)
+        # Batch update: character and player (explore_count)
+        updates = []
+        updates.append(db.update_character(battle.character))
+        updates.append(db.players.update_one({"user_id": user_id}, {"$inc": {"explore_count": 1}}))
+        await asyncio.gather(*updates)
         await query.edit_message_text(f"{battle.character.name} was defeated by {battle.titan.name}!")
         try:
             track_battle_end(int(user_id), battle.character.name, "defeat")
@@ -813,7 +839,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        from game.random_drop import get_random_drop
         import random
         if random.random() < 0.025:
             drop = get_random_drop()
@@ -875,6 +900,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     # Clear active battle id so user can explore again
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
+    # Remove cached battle data after battle ends
+    context.user_data.pop("battle_cache", None)
     cleanup_battle(user_id, "completed", battle)
 
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
