@@ -28,7 +28,6 @@ class Equipment(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Character(BaseModel):
-    equipped_weapon: Optional[str] = None  # weapon key
     user_id: str
     name: str
     character_type: str
@@ -38,11 +37,8 @@ class Character(BaseModel):
     total_xp: int = 0
     stats: CharacterStats = Field(default_factory=CharacterStats)
     gas: int = 5000
-    max_gas: int = 5000  # Added max_gas attribute
-    crystals: int = 0
-    valor: int = 0
-    marks: int = 0
-    explore_count: int = 0
+    max_gas: int = 5000 
+    equipped_weapon: Optional[str] = None  
     active_abilities: List[Ability] = Field(default_factory=list)
     passive_abilities: List[Ability] = Field(default_factory=list)
     ultimate_abilities: List[Ability] = Field(default_factory=list)
