@@ -17,13 +17,17 @@ logger = logging.getLogger(__name__)
 
 def check_authorization(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Check if the user is authorized to access the current interaction."""
-    if not update.effective_user:
+    if context.user_data is None:
+        context.user_data = {}
+    effective_user = getattr(update, 'effective_user', None)
+    if not effective_user or not hasattr(effective_user, 'id') or effective_user.id is None:
         return False
-    user_id = str(update.effective_user.id)
-    callback_data = getattr(update.callback_query, 'data', None) if update.callback_query else None
+    user_id = str(effective_user.id)
+    callback_query = getattr(update, 'callback_query', None)
+    callback_data = getattr(callback_query, 'data', None) if callback_query else None
     # For callback queries, verify the user matches
-    if update.callback_query and str(update.callback_query.from_user.id) != user_id:
-        logger.warning(f"Unauthorized access attempt by {update.callback_query.from_user.id} for {user_id}'s data")
+    if callback_query and hasattr(callback_query, 'from_user') and str(getattr(callback_query.from_user, 'id', '')) != user_id:
+        logger.warning(f"Unauthorized access attempt by {getattr(callback_query.from_user, 'id', 'unknown')} for {user_id}'s data")
         return False
     # Check if we have a valid user in context
     if not context.user_data.get('authorized', False):
@@ -32,14 +36,16 @@ def check_authorization(update: Update, context: ContextTypes.DEFAULT_TYPE) -> b
 
 async def handle_unauthorized(update: Update):
     """Handle unauthorized access attempts."""
-    if update.callback_query:
+    callback_query = getattr(update, 'callback_query', None)
+    message = getattr(update, 'message', None)
+    if callback_query:
         try:
-            await update.callback_query.answer("⚠️ You are not authorized to view this!", show_alert=True)
+            await callback_query.answer("⚠️ You are not authorized to view this!", show_alert=True)
         except Exception as e:
             logger.error(f"Error handling unauthorized access: {e}")
-    elif update.message:
+    elif message:
         try:
-            await update.message.reply_text("⚠️ Authorization required!")
+            await message.reply_text("⚠️ Authorization required!")
         except Exception as e:
             logger.error(f"Error sending unauthorized message: {e}")
 
@@ -47,6 +53,8 @@ async def handle_unauthorized(update: Update):
 @maintenance_protected
 @ban_protected
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -110,6 +118,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -203,6 +213,8 @@ def get_position_emoji(position: int) -> str:
     }.get(position, "❓")
 
 async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -225,6 +237,8 @@ async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -248,6 +262,8 @@ async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -262,6 +278,8 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await manage_team(update, context)
 
 async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -300,6 +318,8 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -314,6 +334,8 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -363,6 +385,8 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(inv_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -400,6 +424,8 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -437,6 +463,8 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -474,6 +502,8 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -510,6 +540,8 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @maintenance_protected
 @ban_protected
 async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -540,6 +572,8 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -556,6 +590,8 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @maintenance_protected
 @ban_protected
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not update.effective_user or not hasattr(update.effective_user, "id"):
         await update.message.reply_text("❌ Unable to get your user ID. Please try again.")
         return
@@ -634,13 +670,16 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['char_detail_message_id'] = msg.message_id
 
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await query.answer("You are not authorized to use this button!", show_alert=True)
+        if query:
+            await query.answer("You are not authorized to use this button!", show_alert=True)
         return
     user_id = str(query.from_user.id)
     db = context.bot_data.get("db") or Database()
@@ -716,6 +755,8 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
@@ -741,16 +782,34 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Show weapons UI for character from profile
 async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
     query = update.callback_query
+    # Ensure query is not None and has required attributes
+    query = getattr(update, 'callback_query', None)
+    if query is None or not hasattr(query, 'answer') or not hasattr(query, 'data'):
+        return
     await query.answer()
-    user_id = str(update.effective_user.id)
+    effective_user = getattr(update, 'effective_user', None)
+    if effective_user is None or not hasattr(effective_user, 'id') or effective_user.id is None:
+        await query.edit_message_text("❌ Unable to get your user ID.")
+        return
+    user_id = effective_user.id
     db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    char_name = query.data.replace("show_weapons_", "")
-    character = await db.get_character(user_id, char_name)
+    player = await db.get_player(str(user_id))
+    if player is None or not hasattr(player, 'inventory'):
+        await query.edit_message_text("❌ Player or inventory not found.")
+        return
+    char_name = query.data.replace("show_weapons_", "") if query.data else None
+    if not char_name:
+        await query.edit_message_text("❌ Character name not found in callback data.")
+        return
+    character = await db.get_character(int(user_id), char_name)
+    if character is None or not hasattr(character, 'name'):
+        await query.edit_message_text("❌ Character not found.")
+        return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     shop_items = shop_system.shop_items
-    # Only show weapons purchased from shop (not hidden items)
     weapon_keys = [k for k in player.inventory if k in shop_items and shop_items[k].type == "weapon" and player.inventory[k] > 0]
     text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
     keyboard = []
@@ -764,29 +823,54 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     else:
         text += "No weapons purchased from shop."
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name}")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    # Use edit_message_caption if the message has a photo/caption, else edit_message_text
+    try:
+        if hasattr(query, "message") and getattr(query.message, "photo", None):
+            await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        else:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        # fallback: try the other method
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception:
+            await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+
 
 # Equip/unequip weapon logic from profile
 async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
+    if context.user_data is None:
+        context.user_data = {}
+    query = getattr(update, 'callback_query', None)
+    if not query or not hasattr(query, 'data') or query.data is None:
+        return
     await query.answer()
-    user_id = str(update.effective_user.id)
+    user_id = getattr(update.effective_user, 'id', None)
+    if user_id is None:
+        await handle_unauthorized(update)
+        return
     db = context.bot_data.get("db") or Database()
     data = query.data.replace("equip_weapon_", "")
+    if "_" not in data:
+        await query.edit_message_text("Invalid weapon data.")
+        return
     char_name, weapon_key = data.split("_", 1)
-    character = await db.get_character(user_id, char_name)
+    character = await db.get_character(int(user_id), char_name) if char_name else None
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     shop_items = shop_system.shop_items
-    # Only allow equip/unequip if weapon is purchased from shop
-    player = await db.get_player(user_id)
-    if weapon_key not in shop_items or weapon_key not in player.inventory or player.inventory[weapon_key] == 0:
+    player = await db.get_player(str(user_id))
+    if not player or not character:
+        await query.edit_message_text("Player or character not found.")
+        return
+    if weapon_key not in shop_items or weapon_key not in player.inventory or player.inventory.get(weapon_key, 0) == 0:
         await query.edit_message_text("You do not own this weapon from shop.")
         return
     if getattr(character, "equipped_weapon", None) == weapon_key:
         character.equipped_weapon = None
-        await db.update_character(user_id, char_name, {"equipped_weapon": None})
+        await db.update_character(character)
         await query.edit_message_text(f"{shop_items[weapon_key].name} unequipped.")
     else:
         character.equipped_weapon = weapon_key
-        await db.update_character(user_id, char_name, {"equipped_weapon": weapon_key})
+        await db.update_character(character)
         await query.edit_message_text(f"{shop_items[weapon_key].name} equipped.")
