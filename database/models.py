@@ -133,8 +133,8 @@ class Character(BaseModel):
 
     def _check_ability_unlocks(self) -> None:
         for ability in self.active_abilities + self.passive_abilities + self.ultimate_abilities:
-            if not ability.unlocked and self.level >= ability.level_required:
-                ability.unlocked = True
+            if not ability.is_unlocked and self.level >= ability.level_required:
+                ability.is_unlocked = True
                 self.unlocked_abilities[ability.name] = True
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
