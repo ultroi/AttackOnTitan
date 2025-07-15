@@ -875,23 +875,23 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
     keyboard = []
     equipped_weapon = getattr(character, "equipped_weapon", None)
-    
+    callback_char_name = character.name.replace(" ", "_")
+
     if weapon_keys:
         for k in weapon_keys:
             weapon = shop_items[k]
             is_equipped = equipped_weapon == k
             text += f"• {weapon.name}{' (equipped)' if is_equipped else ''}\n"
             btn_text = "Unequip" if is_equipped else "Equip"
-            keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
-        
+            keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{callback_char_name}_{k}")])
         # If any weapon is equipped, show button to equip basic attack
         if equipped_weapon:
-            keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{char_name}_basic_attack")])
+            keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{callback_char_name}_basic_attack")])
     else:
         text += "No weapons purchased from shop."
 
     # Add Back button
-    keyboard.append([InlineKeyboardButton("Back", callback_data=f"back_to_char_{char_name}")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data=f"back_to_char_{callback_char_name}")])
 
     try:
         if query.message.photo:
@@ -976,14 +976,39 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         await query.answer("Invalid weapon equip data.", show_alert=True)
         return
 
-    char_name, weapon_key = data.split("_", 1)
-    character = await db.get_character(user_id, char_name)
+    # Split into character name and weapon key, handling names with underscores
+    parts = data.split("_")
+    if len(parts) < 2:
+        await query.answer("Invalid weapon equip data format.", show_alert=True)
+        return
+    
+    # The character name might contain underscores, so we need to handle that
+    char_name = "_".join(parts[:-1])  # All parts except last are character name
+    weapon_key = parts[-1]  # Last part is weapon key
+    
+    # Get the original character name from player's owned characters
+    player = await db.get_player(user_id)
+    if not player:
+        await query.answer("Player not found.", show_alert=True)
+        return
+    
+    # Find the exact character name match
+    matched_name = None
+    for owned_char in player.owned_characters:
+        if owned_char.replace(" ", "_").lower() == char_name.lower():
+            matched_name = owned_char
+            break
+    
+    if not matched_name:
+        await query.answer(f"Character {char_name.replace('_', ' ')} not found in your collection.", show_alert=True)
+        return
+    
+    character = await db.get_character(user_id, matched_name)
     shop_system = context.bot_data.get("shop_system", ShopSystem())
     shop_items = shop_system.shop_items
-    player = await db.get_player(user_id)
 
-    if not player or not character:
-        await query.answer("Player or character not found.", show_alert=True)
+    if not character:
+        await query.answer("Character not found in database.", show_alert=True)
         return
 
     # Handle basic attack equip
