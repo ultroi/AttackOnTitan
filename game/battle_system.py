@@ -514,6 +514,9 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
     titan = Titan(**titan_data)
+    # Ensure context.user_data is a dict
+    if not hasattr(context, "user_data") or context.user_data is None:
+        context.user_data = {}
     # Cache player and team info in context for this battle
     if "battle_cache" not in context.user_data:
         context.user_data["battle_cache"] = {}
@@ -702,6 +705,9 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         cleanup_battle(user_id, "error", battle)
         return
     # Use cached player/team info if available
+    # Ensure context.user_data is a dict
+    if not hasattr(context, "user_data") or context.user_data is None:
+        context.user_data = {}
     battle_cache = context.user_data.get("battle_cache", {})
     player_data = battle_cache.get("player_data")
     if not player_data:
@@ -922,7 +928,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
     # Remove cached battle data after battle ends
-    context.user_data.pop("battle_cache", None)
+    if hasattr(context, "user_data") and isinstance(context.user_data, dict):
+        context.user_data.pop("battle_cache", None)
     cleanup_battle(user_id, "completed", battle)
 
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
