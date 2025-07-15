@@ -822,7 +822,7 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
             keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
     else:
         text += "No weapons purchased from shop."
-    keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name}")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data="show_inventory")])
     # Use edit_message_caption if the message has a photo/caption, else edit_message_text
     try:
         if hasattr(query, "message") and getattr(query.message, "photo", None):
