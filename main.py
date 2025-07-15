@@ -22,7 +22,7 @@ from utils.mod_utils import promote_mod, demote_mod
 from utils.maintenance import maintenance_protected, maintenance
 
 # Import handlers
-from game.character_system import (
+from game.start import (
     show_character_selection,
     show_character_details, confirm_character_selection,
     create_character, back_to_selection,
@@ -351,7 +351,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
-    app_instance.add_handler(CallbackQueryHandler(show_weapons_ui_profile, pattern="^show_weapons_ui_profile$"))
+    app_instance.add_handler(CallbackQueryHandler(show_weapons_ui_profile, pattern=r"^show_weapons_"))
     app_instance.add_handler(CallbackQueryHandler(handle_equip_weapon_profile, pattern=r"^equip_weapon_|^unequip_weapon_"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))

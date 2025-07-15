@@ -14,7 +14,7 @@ from game.battle_system import (
 from game.shop_system import ShopSystem
 from database.db import Database
 from game.profile_system import profile, exit_profile, fill_gas
-from game.character_system import (
+from game.start import (
     show_character_selection,
     show_character_details,
     confirm_character_selection,
