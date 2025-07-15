@@ -997,16 +997,6 @@ async def show_char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    
-    query = getattr(update, 'callback_query', None)
-    if not query or not hasattr(query, 'data') or query.data is None:
-        return
-    
-    await query.answer()
-    user_id = getattr(update.effective_user, 'id', None)
-    
-    if context.user_data is None:
-        context.user_data = {}
 
     query = getattr(update, 'callback_query', None)
     if not query or not hasattr(query, 'data') or query.data is None:
