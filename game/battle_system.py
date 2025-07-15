@@ -602,6 +602,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
     elif action == "action_basic_attack":
         shop_items = context.bot_data.get("shop_items") or {}
+        # Always refresh character from DB to get latest equipped_weapon
+        db = context.bot_data.get("db") or Database()
+        refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+        if refreshed_character:
+            battle.character.equipped_weapon = refreshed_character.equipped_weapon
         weapon = battle.get_equipped_weapon(shop_items)
         if battle.gas >= 20:
             battle.gas -= 20
