@@ -836,17 +836,44 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     try:
         if random.random() < 0.025:
             drop = get_random_drop()
-            if drop['type'] in ['bottle', 'cylinder']:
-                await query.message.reply_photo(
-                    photo=drop['image'],
-                    caption=drop['message'],
-                    parse_mode=ParseMode.HTML
-                )
+            # Get player object
+            player_obj = await db.get_player(user_id)
+            if player_obj:
+                inv = player_obj.inventory or {}
+                if drop['type'] in ['bottle', 'cylinder']:
+                    inv['gas'] = inv.get('gas', 0) + drop['amount']
+                    await query.message.reply_photo(
+                        photo=drop['image'],
+                        caption=drop['message'],
+                        parse_mode=ParseMode.HTML
+                    )
+                elif drop['type'] == 'valors':
+                    inv['valor'] = inv.get('valor', 0) + drop['amount']
+                    await query.message.reply_text(
+                        drop['message'],
+                        parse_mode=ParseMode.HTML
+                    )
+                elif drop['type'] == 'crystals':
+                    inv['crystal'] = inv.get('crystal', 0) + drop['amount']
+                    await query.message.reply_text(
+                        drop['message'],
+                        parse_mode=ParseMode.HTML
+                    )
+                # Update player inventory in DB
+                await db.update_player(user_id, {"inventory": inv})
             else:
-                await query.message.reply_text(
-                    drop['message'],
-                    parse_mode=ParseMode.HTML
-                )
+                # Fallback: just send message
+                if drop.get('image'):
+                    await query.message.reply_photo(
+                        photo=drop['image'],
+                        caption=drop['message'],
+                        parse_mode=ParseMode.HTML
+                    )
+                else:
+                    await query.message.reply_text(
+                        drop['message'],
+                        parse_mode=ParseMode.HTML
+                    )
     except Exception:
         pass
 
