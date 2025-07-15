@@ -4,8 +4,8 @@ def get_random_drop():
     roll = random.random()
     if roll < 0.70:
         # 70% chance for bottle or cylinder of gas
-        gas_amount = random.randint(200, 2000)
-        if gas_amount == 2000:
+        if random.random() < 0.01:
+            # 1% chance for cylinder
             return {
                 'type': 'cylinder',
                 'amount': 2000,
@@ -13,6 +13,7 @@ def get_random_drop():
                 'message': f'You found a cylinder of gas and received 2000 gas!'
             }
         else:
+            gas_amount = random.randint(200, 1999)
             return {
                 'type': 'bottle',
                 'amount': gas_amount,
