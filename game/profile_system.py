@@ -834,6 +834,23 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     else:
         text += "No weapons purchased from shop."
     keyboard.append([InlineKeyboardButton("Back", callback_data="show_inventory")])
+    equipped_weapon = getattr(character, "equipped_weapon", None)
+    if weapon_keys:
+        for k in weapon_keys:
+            weapon = shop_items[k]
+            if equipped_weapon == k:
+                text += f"• {weapon.name} (equipped)\n"
+                # Do not show button for equipped weapon
+            else:
+                text += f"• {weapon.name}\n"
+                btn_text = "Equip"
+                keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
+        # If any weapon is equipped, show button to equip basic attack
+        if equipped_weapon:
+            keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{char_name}_basic_attack")])
+    else:
+        text += "No weapons purchased from shop."
+    keyboard.append([InlineKeyboardButton("Back", callback_data="show_inventory")])
     # Use edit_message_caption if the message has a photo/caption, else edit_message_text
     try:
         if hasattr(query, "message") and getattr(query.message, "photo", None):
@@ -874,16 +891,22 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
     if not player or not character:
         await query.edit_message_text("Player or character not found.")
         return
-    if weapon_key not in shop_items or weapon_key not in player.inventory or player.inventory.get(weapon_key, 0) == 0:
-        await query.edit_message_text("You do not own this weapon from shop.")
-        return
-    result_text = f"{shop_items[weapon_key].name} {'unequipped' if getattr(character, 'equipped_weapon', None) == weapon_key else 'equipped.'}"
-    if getattr(character, "equipped_weapon", None) == weapon_key:
+    # Handle basic attack equip
+    if weapon_key == "basic_attack":
         character.equipped_weapon = None
         await db.update_character(character)
+        result_text = "Basic Attack equipped."
     else:
-        character.equipped_weapon = weapon_key
-        await db.update_character(character)
+        if weapon_key not in shop_items or weapon_key not in player.inventory or player.inventory.get(weapon_key, 0) == 0:
+            await query.edit_message_text("You do not own this weapon from shop.")
+            return
+        result_text = f"{shop_items[weapon_key].name} {'unequipped' if getattr(character, 'equipped_weapon', None) == weapon_key else 'equipped.'}"
+        if getattr(character, "equipped_weapon", None) == weapon_key:
+            character.equipped_weapon = None
+            await db.update_character(character)
+        else:
+            character.equipped_weapon = weapon_key
+            await db.update_character(character)
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     try:
         if hasattr(query, "message") and getattr(query.message, "photo", None):

@@ -462,9 +462,20 @@ def generate_ability_keyboard(battle: 'BattleSystem') -> List[List[InlineKeyboar
                     callback_data=f"lowgas_{ability.name}"
                 )])
     if battle.gas >= 20:
-        keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack (20 gas)"), callback_data="action_basic_attack")])
+        # Show equipped weapon name if equipped
+        shop_items = context.bot_data.get("shop_items") or {}
+        weapon = battle.get_equipped_weapon(shop_items)
+        if weapon:
+            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⚔️ {weapon.name} "), callback_data="action_basic_attack")])
+        else:
+            keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack "), callback_data="action_basic_attack")])
     else:
-        keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack"), callback_data="lowgas_basic_attack")])
+        shop_items = context.bot_data.get("shop_items") or {}
+        weapon = battle.get_equipped_weapon(shop_items)
+        if weapon:
+            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⛽ Attack with {weapon.name}"), callback_data="lowgas_basic_attack")])
+        else:
+            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack"), callback_data="lowgas_basic_attack")])
     keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
     return keyboard
 
