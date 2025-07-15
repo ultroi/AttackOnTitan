@@ -846,17 +846,26 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if player is None:
-        await query.edit_message_text("❌ Player not found.")
+        if hasattr(query.message, "photo") and query.message.photo:
+            await query.edit_message_caption("❌ Player not found.")
+        else:
+            await query.edit_message_text("❌ Player not found.")
         return
-    
+
     char_name = query.data.replace("show_weapons_", "") if query.data else None
     if not char_name:
-        await query.edit_message_text("❌ Character name not found in callback data.")
+        if hasattr(query.message, "photo") and query.message.photo:
+            await query.edit_message_caption("❌ Character name not found in callback data.")
+        else:
+            await query.edit_message_text("❌ Character name not found in callback data.")
         return
 
     character = await db.get_character(user_id, char_name)
     if character is None:
-        await query.edit_message_text("❌ Character not found.")
+        if hasattr(query.message, "photo") and query.message.photo:
+            await query.edit_message_caption("❌ Character not found.")
+        else:
+            await query.edit_message_text("❌ Character not found.")
         return
 
     shop_system = context.bot_data.get("shop_system", ShopSystem())
