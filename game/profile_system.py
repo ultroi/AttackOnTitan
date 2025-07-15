@@ -760,6 +760,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
+         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     
@@ -835,61 +836,72 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    
+
     query = getattr(update, 'callback_query', None)
     if query is None or not hasattr(query, 'answer') or not hasattr(query, 'data'):
         return
-    
+
     await query.answer()
     effective_user = getattr(update, 'effective_user', None)
-    
     if effective_user is None or not hasattr(effective_user, 'id') or effective_user.id is None:
         await query.edit_message_text("❌ Unable to get your user ID.")
         return
-    
+
     user_id = effective_user.id
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(str(user_id))
-    
     if player is None or not hasattr(player, 'inventory'):
         await query.edit_message_text("❌ Player or inventory not found.")
         return
-    
+
     char_name = query.data.replace("show_weapons_", "") if query.data else None
     if not char_name:
         await query.edit_message_text("❌ Character name not found in callback data.")
         return
-    
+
     character = await db.get_character(int(user_id), char_name)
     if character is None or not hasattr(character, 'name'):
         await query.edit_message_text("❌ Character not found.")
         return
-    
+
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     shop_items = shop_system.shop_items
     weapon_keys = [k for k in player.inventory if k in shop_items and shop_items[k].type == "weapon" and player.inventory[k] > 0]
-    
+
     text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
     keyboard = []
-    
+    equipped_weapon = getattr(character, "equipped_weapon", None)
     if weapon_keys:
         for k in weapon_keys:
             weapon = shop_items[k]
-            equipped = " (equipped)" if getattr(character, "equipped_weapon", None) == k else ""
-            text += f"• {weapon.name}{equipped}\n"
-            btn_text = "Unequip" if getattr(character, "equipped_weapon", None) == k else "Equip"
+            is_equipped = equipped_weapon == k
+            text += f"• {weapon.name}{' (equipped)' if is_equipped else ''}\n"
+            btn_text = "Unequip" if is_equipped else "Equip"
             keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
+        # If any weapon is equipped, show button to equip basic attack
+        if equipped_weapon:
+            keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{char_name}_basic_attack")])
     else:
         text += "No weapons purchased from shop."
-    
-    # If accessed from char detail, go back to char detail
-    if context.user_data is None:
-        context.user_data = {}
-    
+
+    # Only add one Back button at the end
     if context.user_data.get('char_detail_character_name') == character.name:
         keyboard.append([InlineKeyboardButton("Back", callback_data=f"show_char_detail_{character.name}")])
     else:
         keyboard.append([InlineKeyboardButton("Back", callback_data="show_inventory")])
+
+    # Use edit_message_caption if the message has a photo/caption, else edit_message_text
+    try:
+        if hasattr(query, "message") and getattr(query.message, "photo", None):
+            await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        else:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    except Exception as e:
+        # fallback: try the other method
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception:
+            await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 
 async def show_char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
