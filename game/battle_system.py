@@ -771,12 +771,21 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         # Always send level up messages instantly
         if char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
+                # Prepare stat change details
+                stat_names = ["ATK", "DEF", "ACC", "INT", "SPD"]
+                stat_lines = []
+                for stat in stat_names:
+                    old = level_up.get(f"old_{stat.lower()}", None)
+                    new = level_up.get(f"new_{stat.lower()}", None)
+                    if old is not None and new is not None:
+                        stat_lines.append(f"{stat} : {old} ➜ {new}")
                 msg = [
-                    f"🎊 {battle.character.name} leveled up! 🎊",
-                    f"Level: {level_up['old_level']} → {level_up['new_level']}"
+                    f"🎊 <b>{battle.character.name} leveled up!!</b> ",
+                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
                 ]
-                if level_up['hp_increase'] > 0:
-                    msg.append(f"💖 HP increased by {level_up['hp_increase']}!")
+                if stat_lines:
+                    msg.append("<b>Stats:</b>")
+                    msg.extend(stat_lines)
                 if level_up["newly_unlocked_abilities"]:
                     msg.append(f"\n🌟 New abilities unlocked:")
                     for ability in level_up["newly_unlocked_abilities"]:
