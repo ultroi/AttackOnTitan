@@ -327,7 +327,6 @@ class Database:
 
     async def get_titan(self, user_id: str) -> Optional[Titan]:
         titan_data = await self.titans.find_one({"user_id": user_id})
-        logger.info(f"[DB] get_titan found: {titan_data is not None}")
         return Titan(**titan_data) if titan_data else None
 
     async def delete_titan(self, user_id: str):
