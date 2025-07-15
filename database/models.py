@@ -103,6 +103,8 @@ class Character(BaseModel):
         if self.level < 125:
             self.level += 1
             self.xp -= self.xp_to_next_level
+            if self.xp < 0:
+                self.xp = 0
             character_data = get_character_data(self.character_type)
             if character_data:
                 # --- Progressive stat scaling toward max_potential ---
@@ -140,6 +142,8 @@ class Character(BaseModel):
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
         self.xp += amount
+        if self.xp < 0:
+            self.xp = 0
         self.total_xp += amount
         
         level_ups = []
