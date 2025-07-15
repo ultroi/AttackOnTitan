@@ -894,12 +894,18 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"back_to_char_{callback_char_name}")])
 
     try:
+        logger.info(f"show_weapons_ui_profile: chat_id={query.message.chat_id if query.message else None}, message_id={query.message.message_id if query.message else None}, photo={getattr(query.message, 'photo', None)}")
         if query.message.photo:
             await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         else:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.error(f"Error showing weapons UI: {e}")
+        # Fallback: send a new message to user if UI update fails
+        try:
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception as e2:
+            logger.error(f"Fallback reply_text also failed: {e2}")
 
 
 async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
