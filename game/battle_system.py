@@ -603,21 +603,16 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     elif action == "action_basic_attack":
         shop_items = context.bot_data.get("shop_items") or {}
         weapon = battle.get_equipped_weapon(shop_items)
-        if weapon:
-            if battle.gas >= 20:
-                battle.gas -= 20
-                battle.character_gas = battle.gas
+        if battle.gas >= 20:
+            battle.gas -= 20
+            battle.character_gas = battle.gas
+            if weapon:
                 damage_min = weapon.attributes.get("damage_min", 10)
                 damage_max = weapon.attributes.get("damage_max", 20)
                 total_damage = random.randint(int(damage_min), int(damage_max))
                 battle.titan_hp = max(0, battle.titan_hp - total_damage)
                 full_message.append(f"⚔️ {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
             else:
-                full_message.append(f"❌ {battle.character.name} doesn't have enough gas for weapon attack!")
-        else:
-            if battle.gas >= 20:
-                battle.gas -= 20
-                battle.character_gas = battle.gas
                 try:
                     base_damage = battle.character.stats.ATK or 25
                     total_damage = max(1, base_damage + random.randint(-2, 3))
@@ -627,6 +622,9 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     total_damage = 10
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
                 full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
+        else:
+            if weapon:
+                full_message.append(f"❌ {battle.character.name} doesn't have enough gas for weapon attack!")
             else:
                 full_message.append(f"❌ {battle.character.name} doesn't have enough gas for basic attack!")
     elif action.startswith("ability_"):
