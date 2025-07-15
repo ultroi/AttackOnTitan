@@ -949,7 +949,7 @@ async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     
     try:
-        if query.message.photo:
+        if query.message is not None and getattr(query.message, "photo", None):
             await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         else:
             await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -976,15 +976,10 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         await query.answer("Invalid weapon equip data.", show_alert=True)
         return
 
-    # Split into character name and weapon key, handling names with underscores
+    # Split into parts - last part is always weapon key, rest is character name
     parts = data.split("_")
-    if len(parts) < 2:
-        await query.answer("Invalid weapon equip data format.", show_alert=True)
-        return
-    
-    # The character name might contain underscores, so we need to handle that
-    char_name = "_".join(parts[:-1])  # All parts except last are character name
-    weapon_key = parts[-1]  # Last part is weapon key
+    weapon_key = parts[-1]
+    char_name_part = "_".join(parts[:-1])  # Join all except last part for character name
     
     # Get the original character name from player's owned characters
     player = await db.get_player(user_id)
@@ -992,15 +987,16 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         await query.answer("Player not found.", show_alert=True)
         return
     
-    # Find the exact character name match
+    # Find the exact character name match by replacing underscores with spaces
+    search_name = char_name_part.replace("_", " ")
     matched_name = None
     for owned_char in player.owned_characters:
-        if owned_char.replace(" ", "_").lower() == char_name.lower():
+        if owned_char.lower() == search_name.lower():
             matched_name = owned_char
             break
     
     if not matched_name:
-        await query.answer(f"Character {char_name.replace('_', ' ')} not found in your collection.", show_alert=True)
+        await query.answer(f"Character '{search_name}' not found in your collection.", show_alert=True)
         return
     
     character = await db.get_character(user_id, matched_name)
@@ -1016,16 +1012,20 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         character.equipped_weapon = None
         await db.update_character(character)
         await query.answer(f"{character.name} will use basic attack.", show_alert=True)
-    else:
-        if weapon_key not in player.inventory or player.inventory[weapon_key] <= 0:
-            await query.answer("You do not own this weapon.", show_alert=True)
-            return
-        if weapon_key not in shop_items:
-            await query.answer("Weapon not found in shop.", show_alert=True)
-            return
-        character.equipped_weapon = weapon_key
-        await db.update_character(character)
-        await query.answer(f"{character.name} equipped {shop_items[weapon_key].name}.", show_alert=True)
+        await show_weapons_ui_profile(update, context)
+        return
+    
+    # Handle regular weapon equip
+    if weapon_key not in shop_items or shop_items[weapon_key].type != "weapon":
+        await query.answer("Invalid weapon.", show_alert=True)
+        return
+        
+    if weapon_key not in player.inventory or player.inventory[weapon_key] <= 0:
+        await query.answer("You do not own this weapon.", show_alert=True)
+        return
 
-    # Update the weapons UI
+    character.equipped_weapon = weapon_key
+    await db.update_character(character)
+    weapon_name = shop_items[weapon_key].name
+    await query.answer(f"{character.name} equipped {weapon_name}.", show_alert=True)
     await show_weapons_ui_profile(update, context)
