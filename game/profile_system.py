@@ -1005,54 +1005,52 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
     await query.answer()
     user_id = getattr(update.effective_user, 'id', None)
     
-    if user_id is None:
-        await handle_unauthorized(update)
+    if context.user_data is None:
+        context.user_data = {}
+
+    query = getattr(update, 'callback_query', None)
+    if not query or not hasattr(query, 'data') or query.data is None:
         return
-    
+
+    await query.answer()
+    user_id = getattr(update.effective_user, 'id', None)
+    if user_id is None:
+        return
+
     db = context.bot_data.get("db") or Database()
     data = query.data.replace("equip_weapon_", "")
-    
     if "_" not in data:
-        await query.edit_message_text("Invalid weapon data.")
+        await query.answer("Invalid weapon equip data.", show_alert=True)
         return
-    
+
     char_name, weapon_key = data.split("_", 1)
     character = await db.get_character(int(user_id), char_name) if char_name else None
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     shop_items = shop_system.shop_items
     player = await db.get_player(str(user_id))
-    
+
     if not player or not character:
-        await query.edit_message_text("Player or character not found.")
+        await query.answer("Player or character not found.", show_alert=True)
         return
-    
+
     # Handle basic attack equip
     if weapon_key == "basic_attack":
         character.equipped_weapon = None
         await db.update_character(character)
-        result_text = "Basic Attack equipped."
+        await query.answer(f"{character.name} will use basic attack.", show_alert=True)
     else:
-        if weapon_key not in shop_items or weapon_key not in player.inventory or player.inventory.get(weapon_key, 0) == 0:
-            await query.edit_message_text("You do not own this weapon from shop.")
+        if weapon_key not in player.inventory or player.inventory[weapon_key] <= 0:
+            await query.answer("You do not own this weapon.", show_alert=True)
             return
-        
-        result_text = f"{shop_items[weapon_key].name} {'unequipped' if getattr(character, 'equipped_weapon', None) == weapon_key else 'equipped.'}"
-        
-        if getattr(character, "equipped_weapon", None) == weapon_key:
-            character.equipped_weapon = None
-            await db.update_character(character)
-        else:
-            character.equipped_weapon = weapon_key
-            await db.update_character(character)
-    
-    # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
+        if weapon_key not in shop_items:
+            await query.answer("Weapon not found in shop.", show_alert=True)
+            return
+        character.equipped_weapon = weapon_key
+        await db.update_character(character)
+        await query.answer(f"{character.name} equipped {shop_items[weapon_key].name}.", show_alert=True)
+
+    # Refresh the character detail UI after equip
     try:
-        if hasattr(query, "message") and getattr(query.message, "photo", None):
-            await query.edit_message_caption(result_text)
-        else:
-            await query.edit_message_text(result_text)
+        await show_char_detail(update, context)
     except Exception:
-        try:
-            await query.edit_message_text(result_text)
-        except Exception:
-            await query.edit_message_caption(result_text)
+        pass
