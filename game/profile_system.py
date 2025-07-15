@@ -750,17 +750,17 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
     character = await db.get_character(user_id, char_name)
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
     shop_items = shop_system.shop_items
-    # Only show weapons in inventory
     weapon_keys = [k for k in player.inventory if k in shop_items and shop_items[k].type == "weapon" and player.inventory[k] > 0]
     text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
     keyboard = []
-    for k in weapon_keys:
-        weapon = shop_items[k]
-        equipped = " (equipped)" if getattr(character, "equipped_weapon", None) == k else ""
-        text += f"• {weapon.name}{equipped}\n"
-        btn_text = "Unequip" if getattr(character, "equipped_weapon", None) == k else "Equip"
-        keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
-    if not weapon_keys:
+    if weapon_keys:
+        for k in weapon_keys:
+            weapon = shop_items[k]
+            equipped = " (equipped)" if getattr(character, "equipped_weapon", None) == k else ""
+            text += f"• {weapon.name}{equipped}\n"
+            btn_text = "Unequip" if getattr(character, "equipped_weapon", None) == k else "Equip"
+            keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
+    else:
         text += "No weapons purchased."
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name}")])
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
