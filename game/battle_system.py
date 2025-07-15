@@ -810,6 +810,27 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             track_battle_end(int(user_id), battle.character.name, "defeat")
         except ImportError:
             pass
+
+    # Add random drop after battle end
+    try:
+        from game.random_drop import get_random_drop
+        import random
+        if random.random() < 0.03:
+            drop = get_random_drop()
+            if drop['type'] in ['bottle', 'cylinder']:
+                await query.message.reply_photo(
+                    photo=drop['image'],
+                    caption=drop['message'],
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await query.message.reply_text(
+                    drop['message'],
+                    parse_mode=ParseMode.HTML
+                )
+    except Exception:
+        pass
+
     # Clean up titan and travel state quickly
     if f"last_titan_{user_id}" in context.bot_data:
         del context.bot_data[f"last_titan_{user_id}"]

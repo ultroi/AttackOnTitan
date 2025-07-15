@@ -321,6 +321,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
+    
     # --- LOGGING DELAY START ---
     start_time = time.time()
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
