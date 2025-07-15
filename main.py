@@ -28,6 +28,7 @@ from game.character_system import (
     create_character, back_to_selection,
     start_character_selection
 )
+from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
@@ -328,6 +329,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("mod", promote_mod))
     app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CommandHandler("mm", maintenance))
+    app_instance.add_handler(CommandHandler("add", add_resource_command))
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
