@@ -33,7 +33,7 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info,
-    show_weapons_ui_profile, handle_equip_weapon_profile
+    show_weapons_ui_profile, handle_equip_weapon_profile, fill_gas, exit_profile, back_to_char
 )
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
@@ -351,15 +351,19 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
-    app_instance.add_handler(CallbackQueryHandler(show_weapons_ui_profile, pattern=r"^show_weapons_"))
-    app_instance.add_handler(CallbackQueryHandler(handle_equip_weapon_profile, pattern=r"^equip_weapon_|^unequip_weapon_"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
     app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
 
+    # Newly added handlers (inserted at correct places by feature)
+    app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
+    app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
+    app_instance.add_handler(CallbackQueryHandler(show_weapons_ui_profile, pattern=r"^show_weapons_"))
+    app_instance.add_handler(CallbackQueryHandler(back_to_char, pattern=r"^back_to_char_"))
+    app_instance.add_handler(CallbackQueryHandler(handle_equip_weapon_profile, pattern=r"^equip_weapon_"))
+
     # Fallback handler, must be last
     app_instance.add_handler(CallbackQueryHandler(button_callback))
-
 
 # Shop command handler for /shop
 @maintenance_protected
