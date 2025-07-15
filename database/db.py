@@ -3,7 +3,7 @@ import random
 import datetime
 from typing import Optional, List, Dict
 from dotenv import load_dotenv
-from database.models import Character, Player, Titan, Equipment, CharacterStats, SPECIAL_ABILITIES, generate_titan_name, generate_titan_hp, generate_titan_xp
+from database.models import Character, Player, Titan, Equipment, CharacterStats, generate_titan_name, generate_titan_hp, generate_titan_xp
 from database.schemas import Ability  # Use Ability instead of AbilityInfo
 from database.characters import get_character_data
 from database.db_instance import get_database
@@ -284,11 +284,7 @@ class Database:
             raise
 
     # Titan operations
-    _cached_special_abilities = None
-    def _get_special_abilities(self, difficulty):
-        if self._cached_special_abilities is None:
-            self._cached_special_abilities = SPECIAL_ABILITIES
-        return self._cached_special_abilities[difficulty]
+    # ...existing code...
 
     async def generate_titan(self, player_level: int, unlocked_areas: List[str]) -> Optional[Titan]:
         # Determine difficulty based on player level
@@ -305,9 +301,7 @@ class Database:
         # Name and HP using models.py logic
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(level, difficulty)
-        abilities_list = self._get_special_abilities(difficulty)
-        abilities = random.sample(abilities_list, k=min(2, len(abilities_list)))
-        special_abilities = abilities.copy()
+        abilities = []
         now = datetime.now(timezone.utc)
         titan = Titan(
             name=name,
@@ -316,7 +310,6 @@ class Database:
             abilities=abilities,
             created_at=now,
             difficulty=difficulty,
-            special_abilities=special_abilities,
             spawn_areas=unlocked_areas or [],
             drop_table={},
             xp_reward=generate_titan_xp(level, difficulty),

@@ -472,7 +472,6 @@ class Titan(BaseModel):
     abilities: List[str]
     created_at: datetime
     difficulty: str = "Normal"
-    special_abilities: Optional[List[str]] = None
     spawn_areas: List[str]
     min_level_requirement: int = 1
     internal_name: Optional[str] = None
@@ -514,22 +513,7 @@ TITAN_DESCRIPTORS = {
 }
 
 # Special abilities by difficulty - Enhanced with anime references
-SPECIAL_ABILITIES = {
-    "Easy": [
-        "Stumble", "Slow Movement", "Poor Vision", "Weak Grip", "Clumsy Steps",
-        "Distracted", "Dizzy Spells", "Poor Balance", "Sluggish Reflexes"
-    ],
-    "Normal": [
-        "Charge", "Ground Slam", "Roar", "Regeneration", "Berserker Rage",
-        "Territorial Instinct", "Pack Hunt", "Surprise Attack", "Endurance Boost",
-        "Defensive Stance", "Quick Recovery", "Intimidating Presence"
-    ],
-    "Hard": [
-        "Titan Shift", "Armor Plating", "Steam Blast", "Crystal Armor", "Thunder Spear",
-        "Hardening", "Coordinate Power", "Founding Will", "Beast Control", "War Hammer Creation",
-        "Jaw Crush", "Cart Endurance", "Female Agility", "Colossal Explosion", "Primal Scream"
-    ]
-}
+# ...existing code...
 
 # Base HP ranges by difficulty - Rebalanced for better gameplay
 HP_RANGES = {

@@ -105,7 +105,7 @@ class BattleSystem:
             "character_level": self.character.level,
             "target_is_self": False,
             "titan_difficulty": self.titan.difficulty,
-            "titan_special_abilities": self.titan.special_abilities or []
+            # ...existing code...
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
@@ -186,27 +186,7 @@ class BattleSystem:
         base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
         special_messages = []
         # Titan special abilities
-        if self.titan.special_abilities:
-            for ability in self.titan.special_abilities:
-                if ability == "Armor Plating" and random.random() < 0.3:
-                    base_damage = int(base_damage * 1.2)
-                    special_messages.append(f"⚔️ {self.titan.name}'s Armor Spikes deal extra damage!")
-                elif ability == "Thunder Spear" and random.random() < 0.25:
-                    base_damage = int(base_damage * 1.4)
-                    special_messages.append(f"⚡ {self.titan.name} unleashes a Thunder Spear!")
-                elif ability == "Regeneration" and random.random() < 0.4:
-                    heal = int(self.titan.max_hp * 0.08)
-                    self.titan_hp = min(self.titan.max_hp, self.titan_hp + heal)
-                    special_messages.append(f"🩹 {self.titan.name} regenerates {heal} HP!")
-                elif ability == "Berserker Rage" and self.titan_hp / self.titan.max_hp < 0.3:
-                    base_damage = int(base_damage * 1.5)
-                    special_messages.append(f"😡 {self.titan.name} enters berserker rage!")
-                elif ability == "Steam Blast" and random.random() < 0.2:
-                    self.debuffs["burn"] = 3
-                    special_messages.append(f"🔥 {self.titan.name} releases scalding steam!")
-                elif ability == "Colossal Explosion" and random.random() < 0.15:
-                    base_damage = int(base_damage * 2.0)
-                    special_messages.append(f"💥 {self.titan.name} creates a massive explosion!")
+        # ...existing code...
         # Calculate final damage
         damage = int(base_damage * (1 - min(0.75, self.character.stats.DEF / 250)))
         if self.buffs.get("damage_reduction", 0):
@@ -342,8 +322,7 @@ class BattleSystem:
         character_bar = "█" * int(character_hp_percent * 10) + "▒" * (10 - int(character_hp_percent * 10))
         titan_bar = "█" * int(titan_hp_percent * 10) + "▒" * (10 - int(titan_hp_percent * 10))
         status_message = f"Turn: {self.turn + 1}\nDifficulty: {self.titan.difficulty}\n"
-        if self.titan.special_abilities:
-            status_message += f"Special Abilities: {', '.join(self.titan.special_abilities)}\n"
+        # ...existing code...
         if self.titan_debuffs:
             debuffs_display = [f"{k}({int(v)})" if isinstance(v, (int, float)) else k for k, v in self.titan_debuffs.items()]
             status_message += f"🔽 Titan debuffs: {', '.join(debuffs_display)}\n"
