@@ -786,7 +786,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player_obj.xp = 0
             for lvl_up in player_level_info["level_ups"]:
                 msg = [
-                    f"🎉 PLAYER LEVEL UP! 🎉",
+                    f"PLAYER LEVEL UP! ",
                     f"Level: {lvl_up['old_level']} → {lvl_up['new_level']}"
                 ]
                 rewards = lvl_up.get("rewards", {})
@@ -796,17 +796,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     msg.append(f"⚔️ Valor: +{rewards['valor']}")
                 if rewards.get("crystals", 0) > 0:
                     msg.append(f"💠 Crystals: +{rewards['crystals']}")
-                if rewards.get("unlocks"):
-                    msg.append("\n🔓 UNLOCKS:")
-                    msg.extend(f"• {item}" for item in rewards["unlocks"])
                 await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
             # Update player fields as before
             total_marks = sum(lvl["rewards"].get("marks", 0) for lvl in player_level_info["level_ups"])
             total_valor = sum(lvl["rewards"].get("valor", 0) for lvl in player_level_info["level_ups"])
             total_crystals = sum(lvl["rewards"].get("crystals", 0) for lvl in player_level_info["level_ups"])
             all_unlocks = []
-            for lvl in player_level_info["level_ups"]:
-                all_unlocks.extend(lvl["rewards"].get("unlocks", []))
             update_fields = {"$inc": {}, "$set": {"level": player_obj.level}}
             if total_marks:
                 update_fields["$inc"]["marks"] = total_marks
@@ -814,10 +809,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 update_fields["$inc"]["valor"] = total_valor
             if total_crystals:
                 update_fields["$inc"]["crystal"] = total_crystals
-            if all_unlocks:
-                player_unlocks = set(player_data.get("unlocks", []))
-                player_unlocks.update(all_unlocks)
-                update_fields["$set"]["unlocks"] = list(player_unlocks)
+            # Ensure XP is set to 0 after level up
+            update_fields["$set"]["xp"] = 0
             await db.players.update_one({"user_id": user_id}, update_fields)
         try:
             track_battle_end(int(user_id), battle.character.name, "victory")
@@ -841,7 +834,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        import random
         if random.random() < 0.025:
             drop = get_random_drop()
             if drop['type'] in ['bottle', 'cylinder']:
