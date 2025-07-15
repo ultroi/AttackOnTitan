@@ -462,21 +462,18 @@ def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFA
                     obfuscate_text(f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)"),
                     callback_data=f"lowgas_{ability.name}"
                 )])
+    shop_items = context.bot_data.get("shop_items") or {}
+    weapon = battle.get_equipped_weapon(shop_items)
     if battle.gas >= 20:
-        # Show equipped weapon name if equipped
-        shop_items = context.bot_data.get("shop_items") or {}
-        weapon = battle.get_equipped_weapon(shop_items)
         if weapon:
-            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⚔️ {weapon.name} "), callback_data="action_basic_attack")])
+            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⚔️ {weapon.name}"), callback_data="action_basic_attack")])
         else:
-            keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack "), callback_data="action_basic_attack")])
+            keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack"), callback_data="action_basic_attack")])
     else:
-        shop_items = context.bot_data.get("shop_items") or {}
-        weapon = battle.get_equipped_weapon(shop_items)
         if weapon:
-            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⛽ Attack with {weapon.name}"), callback_data="lowgas_basic_attack")])
+            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⛽ {weapon.name} (Low Gas)"), callback_data="lowgas_basic_attack")])
         else:
-            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack"), callback_data="lowgas_basic_attack")])
+            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (Low Gas)"), callback_data="lowgas_basic_attack")])
     keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
     return keyboard
 

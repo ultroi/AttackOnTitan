@@ -885,10 +885,7 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
         text += "No weapons purchased from shop."
 
     # Only add one Back button at the end
-    if context.user_data.get('char_detail_character_name') == character.name:
-        keyboard.append([InlineKeyboardButton("Back", callback_data=f"show_char_detail_{character.name}")])
-    else:
-        keyboard.append([InlineKeyboardButton("Back", callback_data="show_inventory")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data=f"show_char_detail_{character.name}")])
 
     # Use edit_message_caption if the message has a photo/caption, else edit_message_text
     try:
