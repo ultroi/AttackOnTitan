@@ -954,6 +954,12 @@ async def show_char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Build weapon buttons and text
     equipped_weapon = getattr(character, "equipped_weapon", None)
+    # Define shop_items and weapon_keys before usage
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    shop_items = shop_system.shop_items
+    weapon_keys = [k for k in getattr(character, "inventory", getattr(player, "inventory", {})) if k in shop_items and shop_items[k].type == "weapon" and getattr(character, "inventory", getattr(player, "inventory", {}))[k] > 0]
+    text = ""  # Initialize text before usage
+
     if weapon_keys and len(weapon_keys) > 0:
         for k in weapon_keys:
             weapon = shop_items[k]
@@ -964,7 +970,7 @@ async def show_char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += f"• {weapon.name}\n"
                 btn_text = "Equip"
                 keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{char_name}_{k}")])
-        
+
         # If any weapon is equipped, show button to equip basic attack
         if equipped_weapon:
             keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{char_name}_basic_attack")])
@@ -1039,7 +1045,8 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         await db.update_character(character)
         await query.answer(f"{character.name} equipped {shop_items[weapon_key].name}.", show_alert=True)
 
-    # Refresh the character detail UI after equip
+    # Reload character to reflect equipped weapon in UI
+    character = await db.get_character(int(user_id), char_name)
     try:
         await show_char_detail(update, context)
     except Exception:
