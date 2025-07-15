@@ -905,20 +905,24 @@ async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_
 async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
+
     if not check_authorization(update, context):
         await handle_unauthorized(update)
         return
-    
+
     char_name = query.data.replace("back_to_char_", "")
     user_id = str(query.from_user.id)
     db = context.bot_data.get("db") or Database()
     character = await db.get_character(user_id, char_name)
-    
+
     if not character:
-        await query.edit_message_text("Character not found.")
+        # Always use edit_message_caption if message has photo
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption("Character not found.")
+        else:
+            await query.edit_message_text("Character not found.")
         return
-    
+
     char_data = get_character_data(character.name)
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
@@ -928,7 +932,7 @@ async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>Gas:</b> {character.gas}\n"
         f"<b>Unlocked Abilities:</b>\n"
     )
-    
+
     for ability_type in ["active", "passive", "ultimate"]:
         abilities = getattr(char_data, f"{ability_type}_abilities")
         for ability in abilities:
@@ -941,13 +945,13 @@ async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if ability.cooldown:
                     profile_text += f"  Cooldown: {ability.cooldown} turns\n"
                 profile_text += "\n"
-    
+
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
          InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-    
+
     try:
         if query.message is not None and getattr(query.message, "photo", None):
             await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -1007,12 +1011,17 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
         await query.answer("Character not found in database.", show_alert=True)
         return
 
+    logger.info(f"handle_equip_weapon_profile called for user {getattr(query.from_user, 'id', None)} with data: {query.data}")
     # Handle basic attack equip
     if weapon_key == "basic_attack":
         character.equipped_weapon = None
         await db.update_character(character)
         await query.answer(f"{character.name} will use basic attack.", show_alert=True)
-        await show_weapons_ui_profile(update, context)
+        try:
+            await show_weapons_ui_profile(update, context)
+        except Exception as e:
+            logger.error(f"Error updating weapons UI after basic attack equip: {e}")
+            await query.answer("Failed to update weapons UI.", show_alert=True)
         return
     
     # Handle regular weapon equip
@@ -1028,4 +1037,8 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
     await db.update_character(character)
     weapon_name = shop_items[weapon_key].name
     await query.answer(f"{character.name} equipped {weapon_name}.", show_alert=True)
-    await show_weapons_ui_profile(update, context)
+    try:
+        await show_weapons_ui_profile(update, context)
+    except Exception as e:
+        logger.error(f"Error updating weapons UI after equip: {e}")
+        await query.answer("Failed to update weapons UI.", show_alert=True)
