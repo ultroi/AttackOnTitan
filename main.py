@@ -311,6 +311,7 @@ async def monitor_dashboard():
 
 
 def register_handlers(app_instance):
+    # Command handlers
     app_instance.add_handler(CommandHandler("start", start_character_selection))
     app_instance.add_handler(CommandHandler("inv", profile))
     app_instance.add_handler(CommandHandler("explore", explore))
@@ -331,6 +332,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CommandHandler("mm", maintenance))
     app_instance.add_handler(CommandHandler("add", add_resource_command))
+
+    # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -342,27 +345,35 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     app_instance.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
     app_instance.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+
+    # Profile and inventory
     app_instance.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
     app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
     app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
     app_instance.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
     app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
     app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
-    app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
-    app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
-    app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
-    app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
-    app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
 
-    # Newly added handlers (inserted at correct places by feature)
+    # Character detail handlers (new)
     app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
     app_instance.add_handler(CallbackQueryHandler(show_weapons_ui_profile, pattern=r"^show_weapons_"))
     app_instance.add_handler(CallbackQueryHandler(back_to_char, pattern=r"^back_to_char_"))
     app_instance.add_handler(CallbackQueryHandler(handle_equip_weapon_profile, pattern=r"^equip_weapon_"))
 
-    # Fallback handler, must be last
+    # Battle and travel
+    app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
+    app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
+    app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
+    app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
+
+    # Shop and purchases
+    app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+
+    # Generic button handler (should be last)
+    app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
+
+    # Fallback handler (must be absolutely last)
     app_instance.add_handler(CallbackQueryHandler(button_callback))
 
 # Shop command handler for /shop
