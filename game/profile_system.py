@@ -720,52 +720,59 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("You haven't created a team yet! Use /start to begin.", show_alert=True)
         return
     
-    # Get character name from callback_data or user_data
+    # Get character name from callback_data or user_data, always convert underscores to spaces
     char_name = None
     if query.data.startswith("fill_gas_"):
-        char_name = query.data.replace("fill_gas_", "")
+        char_name = query.data.replace("fill_gas_", "").replace("_", " ")
     else:
         char_name = context.user_data.get('char_detail_character_name')
-    
-    character = await db.get_character(user_id, char_name)
+    # Try to match with owned characters (case-insensitive)
+    matched_name = None
+    for owned_char in player.owned_characters:
+        if owned_char.lower() == char_name.lower():
+            matched_name = owned_char
+            break
+    if not matched_name:
+        matched_name = char_name
+    character = await db.get_character(user_id, matched_name)
     if not character:
         await query.answer(f"Error: Character {char_name} not found.", show_alert=True)
         return
-    
+
     if getattr(character, "gas", 0) >= 5000:
-        await query.answer(f"{char_name}'s gas is already full! (5000/5000)", show_alert=True)
+        await query.answer(f"{matched_name}'s gas is already full! (5000/5000)", show_alert=True)
         return
-    
+
     prev_gas = getattr(character, "gas", 0)
     gas_needed = 5000 - prev_gas
-    
+
     if getattr(player, "gas", 0) < gas_needed:
         await query.answer(f"Not enough gas! You need {gas_needed} gas to refill, but you only have {player.gas}.", show_alert=True)
         return
-    
+
     player.gas -= gas_needed
     character.gas = 5000
     character.max_gas = 5000
-    
+
     await db.update_player(player.user_id, {"gas": player.gas, "updated_at": datetime.now(timezone.utc)})
     await db.update_character(character)
-    
+
     # Update profile text with new gas value and refill info
     profile_text = context.user_data.get('char_detail_profile_text', '')
-    # Replace gas line with updated value and add refill info
     profile_text = re.sub(r"<b>Gas:</b> \d+", f"<b>Gas:</b> {character.gas} (Refilled by {gas_needed})", profile_text)
     context.user_data['char_detail_profile_text'] = profile_text
-    
+
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
-         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}"),
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
+         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}")],
+         [InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-    
+
     image_url = CHARACTER_IMAGES.get(character.name)
     message_id = context.user_data.get('char_detail_message_id')
     chat_id = query.message.chat_id if query.message else None
-    
+
+    # Always fallback to editing the current query message if original message can't be found
     try:
         if image_url and chat_id and message_id:
             await context.bot.edit_message_caption(
@@ -783,8 +790,13 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.HTML
             )
+        else:
+            # fallback: edit current query message
+            if image_url:
+                await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+            else:
+                await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
     except Exception as e:
-        # fallback: edit current query message
         try:
             if image_url:
                 await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -792,9 +804,9 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         except Exception as e2:
             pass
-    
+
     await query.answer(
-        f"{char_name}'s gas was {prev_gas}/5000.\nNow filled to 5000! {gas_needed} gas deducted from your resources.",
+        f"{matched_name}'s gas was {prev_gas}/5000.\nNow filled to 5000! {gas_needed} gas deducted from your resources.",
         show_alert=True
     )
 
