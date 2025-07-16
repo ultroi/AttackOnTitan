@@ -720,22 +720,27 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("You haven't created a team yet! Use /start to begin.", show_alert=True)
         return
     
-    # Get character name from callback_data or user_data, always convert underscores to spaces
+    # Get character name from callback_data or user_data, always convert underscores to spaces and normalize
     char_name = None
     if query.data.startswith("fill_gas_"):
         char_name = query.data.replace("fill_gas_", "").replace("_", " ")
     else:
         char_name = context.user_data.get('char_detail_character_name')
-    # Try to match with owned characters (case-insensitive)
+    # Normalize for matching
+    def normalize_name(name):
+        return str(name).replace("_", " ").strip().lower() if name else ""
+    normalized_char_name = normalize_name(char_name)
     matched_name = None
     for owned_char in player.owned_characters:
-        if owned_char.lower() == char_name.lower():
+        if normalize_name(owned_char) == normalized_char_name:
             matched_name = owned_char
             break
     if not matched_name:
         matched_name = char_name
+    logger.debug(f"[fill_gas] char_name: {char_name}, normalized: {normalized_char_name}, matched_name: {matched_name}")
     character = await db.get_character(user_id, matched_name)
     if not character:
+        logger.warning(f"[fill_gas] Character not found: {matched_name} for user {user_id}")
         await query.answer(f"Error: Character {char_name} not found.", show_alert=True)
         return
 
@@ -1063,28 +1068,34 @@ async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFA
     parts = data.split("_")
     weapon_key = parts[-1]
     char_name_part = "_".join(parts[:-1])
-    # Convert underscores to spaces for char name
+    # Convert underscores to spaces for char name and normalize
+    def normalize_name(name):
+        return str(name).replace("_", " ").strip().lower() if name else ""
     search_name = char_name_part.replace("_", " ")
+    normalized_search_name = normalize_name(search_name)
 
     # Get the original character name from player's owned characters
     player = await db.get_player(user_id)
     if not player:
+        logger.warning(f"[equip_weapon] Player not found: {user_id}")
         await query.answer("Player not found.", show_alert=True)
         return
 
     matched_name = None
     for owned_char in player.owned_characters:
-        if owned_char.lower() == search_name.lower():
+        if normalize_name(owned_char) == normalized_search_name:
             matched_name = owned_char
             break
     if not matched_name:
         matched_name = search_name  # fallback
 
+    logger.debug(f"[equip_weapon] search_name: {search_name}, normalized: {normalized_search_name}, matched_name: {matched_name}")
     character = await db.get_character(user_id, matched_name)
     shop_system = context.bot_data.get("shop_system", ShopSystem())
     shop_items = shop_system.shop_items
 
     if not character:
+        logger.warning(f"[equip_weapon] Character not found: {matched_name} for user {user_id}")
         await query.answer("Character not found in database.", show_alert=True)
         return
 
