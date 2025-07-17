@@ -33,7 +33,7 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
-    fill_gas, exit_profile,
+    fill_gas, exit_profile, view_weapons_char, equip_weapon
 )
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
@@ -356,6 +356,9 @@ def register_handlers(app_instance):
 
     # Character detail handlers (new)
     app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
+    app_instance.add_handler(CallbackQueryHandler(view_weapons_char, pattern=r"^view_weapons_"))
+    app_instance.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
+    app_instance.add_handler(CallbackQueryHandler(char_detail, pattern=r"^char_detail_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
 
     # Battle and travel

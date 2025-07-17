@@ -665,6 +665,7 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile_text = _create_char_profile_text(character, char_data)
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}") ,
+         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}") ,
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     image_url = CHARACTER_IMAGES.get(character.name)
@@ -683,6 +684,70 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# --- Weapons View and Equip Handlers ---
+async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    char_name = query.data.replace("view_weapons_", "").replace("_", " ")
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    character = await db.get_character(user_id, char_name)
+    if not player or not character:
+        await query.answer("❌ Character or Player not found.", show_alert=True)
+        return
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = getattr(player, 'inventory', {}) or {}
+    weapons = []
+    for k, v in inv.items():
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        if item and getattr(item, 'type', None) == "weapon":
+            weapons.append((k, item, v))
+    # Add basic attack as a weapon if not equipped
+    basic_attack = None
+    if not character.equipped_weapon:
+        basic_attack = {"name": "Basic Attack", "description": "Default attack.", "type": "weapon"}
+        weapons.append(("basic_attack", basic_attack, 1))
+    text = f"<b>Weapons for {character.name}:</b>\n"
+    keyboard = []
+    for k, item, v in weapons:
+        equipped = (character.equipped_weapon == k)
+        name = getattr(item, 'name', k)
+        if equipped:
+            text += f"- {name} (Equipped)\n"
+        else:
+            text += f"- {name}\n"
+        text += f"  <i>{getattr(item, 'description', '')}</i>\n"
+        if not equipped:
+            keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}_{k}")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name.replace(' ', '_')}")])
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = str(query.from_user.id)
+    data = query.data.replace("equip_weapon_", "")
+    parts = data.split("_")
+    char_name = " ".join(parts[:-1])
+    weapon_key = parts[-1]
+    db = context.bot_data.get("db") or Database()
+    character = await db.get_character(user_id, char_name)
+    if not character:
+        await query.answer("❌ Character not found.", show_alert=True)
+        return
+    # Equip weapon
+    last_weapon = character.equipped_weapon
+    character.equipped_weapon = weapon_key if weapon_key != "basic_attack" else None
+    await db.update_character(character)
+    # Show updated weapons list
+    await view_weapons_char(update, context)
+    if last_weapon and last_weapon != weapon_key:
+        await query.answer(f"Unequipped {last_weapon}. Equipped {weapon_key}.", show_alert=True)
+    else:
+        await query.answer(f"Equipped {weapon_key}.", show_alert=True)
+
+
 
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -693,34 +758,26 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data.get("db") or Database()
     try:
         player = await db.get_player(user_id)
-        print(f"DEBUG fill_gas: player={player}")
         character = await db.get_character(str(user_id), char_name)
-        print(f"DEBUG fill_gas: character={character}")
         if not player or not character:
             await query.answer("❌ Character or Player not found.", show_alert=True)
-            print("DEBUG fill_gas: Not found")
             return
-        print(f"DEBUG fill_gas: BEFORE player.gas={player.gas}, character.gas={character.gas}")
         # Set base max_gas to 5000, then add 250 for each level above 1
         character.max_gas = 5000 + (max(0, character.level - 1) * 250)
-        print(f"DEBUG fill_gas: CALCULATED character.max_gas={character.max_gas} for level={character.level}")
         if character.gas >= character.max_gas:
             await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
-            print("DEBUG fill_gas: Already full")
             return
         gas_needed = character.max_gas - character.gas
         if player.gas < gas_needed:
             await query.answer(f"⚠️ Not enough gas! Need {gas_needed}, you have {player.gas}.", show_alert=True)
-            print("DEBUG fill_gas: Not enough gas")
             return
         # Fill gas
         player.gas -= gas_needed
         character.gas = character.max_gas
         print(f"DEBUG fill_gas: AFTER player.gas={player.gas}, character.gas={character.gas}")
         update_player_result = await db.update_player(str(user_id), {"gas": player.gas})
-        print(f"DEBUG fill_gas: update_player_result={update_player_result}")
         update_character_result = await db.update_character(character)
-        print(f"DEBUG fill_gas: update_character_result={update_character_result}")
+
         char_data = get_character_data(character.name)
         updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
         keyboard = [
