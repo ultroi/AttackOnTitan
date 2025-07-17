@@ -689,9 +689,12 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
+    print(f"DEBUG fill_gas: user_id={user_id}, char_name={char_name}")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
+    print(f"DEBUG fill_gas: player={player}")
     character = await db.get_character(str(user_id), char_name)
+    print(f"DEBUG fill_gas: character={character}")
     if not player or not character:
         await query.answer("❌ Character or Player not found.", show_alert=True)
         return
