@@ -714,7 +714,7 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char_name = query.data.replace("view_weapons_", "").replace("_", " ")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
-    character = await db.get_character(user_id, char_name)
+    character = await db.get_character(str(user_id), char_name)
     if not player or not character:
         await query.answer("❌ Character or Player not found.", show_alert=True)
         return
@@ -725,11 +725,6 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
         if item and getattr(item, 'type', None) == "weapon":
             weapons.append((k, item, v))
-    # Add basic attack as a weapon if not equipped
-    basic_attack = None
-    if not character.equipped_weapon:
-        basic_attack = {"name": "Basic Attack", "description": "Default attack.", "type": "weapon"}
-        weapons.append(("basic_attack", basic_attack, 1))
     text = f"<b>Weapons for {character.name}:</b>\n"
     keyboard = []
     for k, item, v in weapons:
@@ -740,8 +735,10 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             text += f"- {name}\n"
         text += f"  <i>{getattr(item, 'description', '')}</i>\n"
+        # Use weapon key for callback, not display name
         if not equipped:
-            keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}_{k}")])
+            safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', k)
+            keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}__{safe_key}")])
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name.replace(' ', '_')}")])
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     if hasattr(query, "message") and getattr(query.message, "photo", None):
@@ -754,11 +751,17 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = str(query.from_user.id)
     data = query.data.replace("equip_weapon_", "")
-    parts = data.split("_")
-    char_name = " ".join(parts[:-1])
-    weapon_key = parts[-1]
+    # Split on double underscore to separate char_name and weapon_key
+    if "__" in data:
+        char_name_part, weapon_key = data.split("__", 1)
+        char_name = char_name_part.replace("_", " ")
+    else:
+        # fallback for old format
+        parts = data.split("_")
+        char_name = " ".join(parts[:-1])
+        weapon_key = parts[-1]
     db = context.bot_data.get("db") or Database()
-    character = await db.get_character(user_id, char_name)
+    character = await db.get_character(str(user_id), char_name)
     if not character:
         await query.answer("❌ Character not found.", show_alert=True)
         return
