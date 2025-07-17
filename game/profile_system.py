@@ -764,13 +764,12 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Recreate keyboard
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
-         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name.replace(' ', '_')}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     
-    # Edit message
+    # Edit message robustly (handle both caption and text)
     try:
-        if query.message.caption:
+        if hasattr(query.message, "photo") and getattr(query.message, "caption", None):
             await query.edit_message_caption(
                 caption=profile_text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
@@ -783,8 +782,21 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML
             )
     except Exception as e:
+        # fallback: try the other method
+        try:
+            await query.edit_message_text(
+                text=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            await query.edit_message_caption(
+                caption=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
         logger.error(f"Error updating message: {e}")
-    
+
     await query.answer(
         f"{character.name}'s gas was {prev_gas}/{character.max_gas}.\n"
         f"Now filled to {character.max_gas}! {gas_needed} gas deducted.",
@@ -823,275 +835,3 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e2:
             logger.error(f"Error closing profile: {e}")
 
-
-async def show_weapons_ui_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data is None:
-        context.user_data = {}
-
-    query = update.callback_query
-    if not hasattr(update, "callback_query") or update.callback_query is None:
-        logger.error("No callback_query found in update for show_weapons_ui_profile.")
-        return
-
-    query = update.callback_query
-
-    try:
-        await query.answer()
-    except Exception as e:
-        logger.warning(f"Failed to answer callback query: {e}")
-
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-
-    user_id = str(getattr(getattr(query, "from_user", None), "id", ""))
-    if not user_id:
-        logger.error("No user_id found in callback_query for show_weapons_ui_profile.")
-        return
-
-    db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    message = getattr(query, "message", None)
-
-    if player is None:
-        if message and getattr(message, "photo", None):
-            await query.edit_message_caption("❌ Player not found.")
-        elif message:
-            await query.edit_message_text("❌ Player not found.")
-        return
-
-    char_name = None
-    if hasattr(query, "data") and query.data:
-        char_name = query.data.replace("show_weapons_", "")
-    if not char_name:
-        if message and getattr(message, "photo", None):
-            await query.edit_message_caption("❌ Character name not found in callback data.")
-        elif message:
-            await query.edit_message_text("❌ Character name not found in callback data.")
-        return
-
-    # Ensure user_id is int if required by db.get_character
-    try:
-        user_id_int = int(user_id)
-    except Exception:
-        user_id_int = user_id
-
-    character = await db.get_character(user_id_int, char_name)
-    if character is None:
-        if message and getattr(message, "photo", None):
-            await query.edit_message_caption("❌ Character not found.")
-        elif message:
-            await query.edit_message_text("❌ Character not found.")
-        return
-
-    shop_system = context.bot_data.get("shop_system", ShopSystem())
-    shop_items = shop_system.shop_items
-    weapon_keys = [k for k in getattr(player, "inventory", {}) if k in shop_items and shop_items[k].type == "weapon" and player.inventory[k] > 0]
-
-    text = f"<b>{character.name} - Equip Weapon</b>\n\nAvailable Weapons:\n"
-    keyboard = []
-    equipped_weapon = getattr(character, "equipped_weapon", None)
-    callback_char_name = character.name.replace(" ", "_")
-
-    if weapon_keys:
-        for k in weapon_keys:
-            weapon = shop_items[k]
-            is_equipped = equipped_weapon == k
-            text += f"• {weapon.name}{' (equipped)' if is_equipped else ''}\n"
-            btn_text = "Unequip" if is_equipped else "Equip"
-            keyboard.append([InlineKeyboardButton(f"{btn_text} {weapon.name}", callback_data=f"equip_weapon_{callback_char_name}_{k}")])
-        # If any weapon is equipped, show button to equip basic attack
-        if equipped_weapon:
-            keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{callback_char_name}_basic_attack")])
-    else:
-        text += "No weapons purchased from shop."
-
-    # Add Back button
-    keyboard.append([InlineKeyboardButton("Back", callback_data=f"back_to_char_{callback_char_name}")])
-
-    try:
-        logger.info(
-            f"show_weapons_ui_profile: chat_id={getattr(message, 'chat_id', None)}, "
-            f"message_id={getattr(message, 'message_id', None)}, "
-            f"photo={getattr(message, 'photo', None)}"
-        )
-        if message and getattr(message, "photo", None):
-            await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-        elif message:
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logger.error(f"Error showing weapons UI: {e}")
-        # Fallback: send a new message to user if UI update fails
-        try:
-            if message:
-                await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-        except Exception as e2:
-            logger.error(f"Fallback reply_text also failed: {e2}")
-
-
-async def back_to_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    if query is None:
-        logger.error("No callback_query found in update for back_to_char.")
-        return
-
-    await query.answer()
-
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-
-    if not hasattr(query, "data") or query.data is None:
-        await query.answer("Invalid callback data.", show_alert=True)
-        return
-
-    char_name_raw = query.data.replace("back_to_char_", "")
-    char_name = char_name_raw.replace("_", " ")
-    if not hasattr(query, "from_user") or query.from_user is None:
-        await query.answer("Invalid user.", show_alert=True)
-        return
-
-    user_id = getattr(query.from_user, "id", None)
-    if user_id is None:
-        await query.answer("User ID not found.", show_alert=True)
-        return
-
-    db = context.bot_data.get("db") or Database()
-    try:
-        user_id_int = int(user_id)
-    except Exception:
-        user_id_int = user_id
-
-    # Try to find the character by matching with owned characters (case-insensitive)
-    player = await db.get_player(user_id_int)
-    matched_name = None
-    if player:
-        for owned_char in player.owned_characters:
-            if owned_char.lower() == char_name.lower():
-                matched_name = owned_char
-                break
-    if not matched_name:
-        matched_name = char_name  # fallback
-
-    character = await db.get_character(user_id_int, matched_name)
-
-    if not character:
-        message = getattr(query, "message", None)
-        if message and getattr(message, "photo", None):
-            await query.edit_message_caption("Character not found.")
-        elif message:
-            await query.edit_message_text("Character not found.")
-        return
-
-    char_data = get_character_data(character.name)
-    profile_text = (
-        f"<b>{escape(character.name)}</b>\n"
-        f"<b>Level:</b> {character.level}\n"
-        f"<b>XP:</b> {character.xp} / {character.xp_to_next_level}\n\n"
-        f"<b>Stats:</b>\n" + "\n".join(f"{stat}: {value}" for stat, value in character.stats.dict().items()) + "\n\n"
-        f"<b>Gas:</b> {character.gas}\n"
-        f"<b>Unlocked Abilities:</b>\n"
-    )
-
-    for ability_type in ["active", "passive", "ultimate"]:
-        abilities = getattr(char_data, f"{ability_type}_abilities")
-        for ability in abilities:
-            if character.unlocked_abilities.get(ability.name, False):
-                profile_text += (
-                    f"• {escape(ability.name)} ({ability_type})\n"
-                    f"  <i>{escape(ability.description)}</i>\n"
-                    f"  Gas Cost: {ability.gas_cost}\n"
-                )
-                if ability.cooldown:
-                    profile_text += f"  Cooldown: {ability.cooldown} turns\n"
-                profile_text += "\n"
-
-    keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name}"),
-         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name}"),
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
-    ]
-
-    message = getattr(query, "message", None)
-    try:
-        if message is not None and getattr(message, "photo", None):
-            await query.edit_message_caption(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-        elif message:
-            await query.edit_message_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logger.error(f"Error returning to character: {e}")
-
-
-async def handle_equip_weapon_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
-    
-    user_id = str(query.from_user.id)
-    db = context.bot_data.get("db") or Database()
-    
-    # Parse callback data
-    parts = query.data.replace("equip_weapon_", "").split("_")
-    if len(parts) < 2:
-        await query.answer("Invalid callback data.", show_alert=True)
-        return
-    
-    # Reconstruct character name (all parts except last)
-    char_name = " ".join(parts[:-1])
-    weapon_key = parts[-1]
-    
-    player = await db.get_player(user_id)
-    if not player:
-        await query.answer("Player not found.", show_alert=True)
-        return
-    
-    # Find exact character name match
-    matched_name = None
-    for owned_char in player.owned_characters:
-        if owned_char.lower() == char_name.lower():
-            matched_name = owned_char
-            break
-    
-    if not matched_name:
-        await query.answer("Character not found or not owned.", show_alert=True)
-        return
-    
-    character = await db.get_character(user_id, matched_name)
-    if not character:
-        await query.answer("Character not found in database.", show_alert=True)
-        return
-    
-    shop_system = context.bot_data.get("shop_system", ShopSystem())
-    shop_items = shop_system.shop_items
-    
-    # Handle basic attack
-    if weapon_key == "basic_attack":
-        character.equipped_weapon = None
-        await db.update_character(character)
-        await query.answer(f"{character.name} will use basic attack.", show_alert=True)
-        await show_weapons_ui_profile(update, context)
-        return
-    
-    # Handle regular weapon
-    if weapon_key not in shop_items or shop_items[weapon_key].type != "weapon":
-        await query.answer("Invalid weapon.", show_alert=True)
-        return
-    
-    if weapon_key not in player.inventory or player.inventory[weapon_key] <= 0:
-        await query.answer("You don't own this weapon.", show_alert=True)
-        return
-    
-    # Toggle equip/unequip
-    if character.equipped_weapon == weapon_key:
-        character.equipped_weapon = None
-        action = "unequipped"
-    else:
-        character.equipped_weapon = weapon_key
-        action = "equipped"
-    
-    await db.update_character(character)
-    await query.answer(f"{character.name} {action} {shop_items[weapon_key].name}.", show_alert=True)
-    await show_weapons_ui_profile(update, context)
