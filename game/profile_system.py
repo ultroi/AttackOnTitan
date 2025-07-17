@@ -665,8 +665,8 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     profile_text = _create_char_profile_text(character, char_data)
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}") ,
-         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}") ,
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
+         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")] ,
+         [InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     image_url = CHARACTER_IMAGES.get(character.name)
     if image_url:
@@ -721,7 +721,11 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not equipped:
             keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}_{k}")])
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name.replace(' ', '_')}")])
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
+    if hasattr(query, "message") and getattr(query.message, "photo", None):
+        await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    else:
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -782,7 +786,8 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
         keyboard = [
             [InlineKeyboardButton("Fill Gas", callback_data=query.data),
-             InlineKeyboardButton("Exit", callback_data="exit_profile")]
+             InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")] ,
+             [InlineKeyboardButton("Exit", callback_data="exit_profile")]
         ]
         if query.message is not None and getattr(query.message, "photo", None):
             await query.edit_message_caption(
