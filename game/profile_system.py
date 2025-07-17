@@ -648,11 +648,25 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Character not found or not owned.")
         return
 
-    matched_name = next((name for name in player.owned_characters if query_name in name.lower()), None)
+    # Improved matching: case-insensitive, ignore extra spaces, allow partial match
+    def normalize(s):
+        return re.sub(r"\s+", " ", s.strip().lower())
+
+    norm_query = normalize(query_name)
+    owned_norm = [(name, normalize(name)) for name in player.owned_characters]
+    matched_name = None
+    for orig, norm in owned_norm:
+        if norm_query in norm or norm in norm_query:
+            matched_name = orig
+            break
 
     if not matched_name:
+        # If no match, show list of owned characters
         if hasattr(update, "message") and update.message:
-            await update.message.reply_text("❌ Character not found or not owned.")
+            char_list = "\n".join(f"- {name}" for name in player.owned_characters)
+            await update.message.reply_text(
+                f"❌ Character not found or not owned.\n\nYour owned characters:\n{char_list}\n\nTry using the exact or partial name."
+            )
         return
 
     character = await db.get_character(int(user_id), matched_name)
@@ -666,17 +680,16 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if hasattr(update, "message") and update.message:
             await update.message.reply_text("Error: Character data not found.")
         return
-        
     # Generate profile text using the helper function
     profile_text = _create_char_profile_text(character, char_data)
-    
+
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
+        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}") ,
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
 
     image_url = CHARACTER_IMAGES.get(character.name)
-    
+
     if image_url and hasattr(update, "message") and update.message:
         await update.message.reply_photo(
             photo=image_url,
