@@ -709,13 +709,17 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Weapons View and Equip Handlers ---
 async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    logger.info(f"[view_weapons_char] Callback data: {query.data}")
     await query.answer()
     user_id = str(query.from_user.id)
     char_name = query.data.replace("view_weapons_", "").replace("_", " ")
+    logger.info(f"[view_weapons_char] user_id: {user_id}, char_name: {char_name}")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     character = await db.get_character(str(user_id), char_name)
+    logger.info(f"[view_weapons_char] player: {player is not None}, character: {character is not None}")
     if not player or not character:
+        logger.warning(f"[view_weapons_char] Player or character not found for user_id={user_id}, char_name={char_name}")
         await query.answer("❌ Character or Player not found.", show_alert=True)
         return
     shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
@@ -725,6 +729,7 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
         if item and getattr(item, 'type', None) == "weapon":
             weapons.append((k, item, v))
+    logger.info(f"[view_weapons_char] weapons found: {len(weapons)}")
     text = f"<b>Weapons for {character.name}:</b>\n"
     keyboard = []
     for k, item, v in weapons:
@@ -740,6 +745,7 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
             safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', k)
             keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}__{safe_key}")])
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name.replace(' ', '_')}")])
+    logger.info(f"[view_weapons_char] Updating message with weapons list.")
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     if hasattr(query, "message") and getattr(query.message, "photo", None):
         await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -748,6 +754,7 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    logger.info(f"[equip_weapon] Callback data: {query.data}")
     await query.answer()
     user_id = str(query.from_user.id)
     data = query.data.replace("equip_weapon_", "")
@@ -760,20 +767,27 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         char_name = " ".join(parts[:-1])
         weapon_key = parts[-1]
+    logger.info(f"[equip_weapon] user_id: {user_id}, char_name: {char_name}, weapon_key: {weapon_key}")
     db = context.bot_data.get("db") or Database()
     character = await db.get_character(str(user_id), char_name)
+    logger.info(f"[equip_weapon] character found: {character is not None}")
     if not character:
+        logger.warning(f"[equip_weapon] Character not found for user_id={user_id}, char_name={char_name}")
         await query.answer("❌ Character not found.", show_alert=True)
         return
     # Equip weapon
     last_weapon = character.equipped_weapon
     character.equipped_weapon = weapon_key if weapon_key != "basic_attack" else None
+    logger.info(f"[equip_weapon] Equipping weapon: {weapon_key}, last_weapon: {last_weapon}")
     await db.update_character(character)
     # Show updated weapons list
+    logger.info(f"[equip_weapon] Calling view_weapons_char to update UI.")
     await view_weapons_char(update, context)
     if last_weapon and last_weapon != weapon_key:
+        logger.info(f"[equip_weapon] Unequipped {last_weapon}. Equipped {weapon_key}.")
         await query.answer(f"Unequipped {last_weapon}. Equipped {weapon_key}.", show_alert=True)
     else:
+        logger.info(f"[equip_weapon] Equipped {weapon_key}.")
         await query.answer(f"Equipped {weapon_key}.", show_alert=True)
 
 
