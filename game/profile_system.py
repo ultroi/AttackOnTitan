@@ -648,25 +648,41 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Character not found or not owned.")
         return
 
-    # Improved matching: case-insensitive, ignore extra spaces, allow partial match
+
+    # Match any input: find closest match, fallback to first owned character
     def normalize(s):
         return re.sub(r"\s+", " ", s.strip().lower())
 
     norm_query = normalize(query_name)
     owned_norm = [(name, normalize(name)) for name in player.owned_characters]
     matched_name = None
+    min_dist = None
+    # Try exact/partial match first
     for orig, norm in owned_norm:
         if norm_query in norm or norm in norm_query:
             matched_name = orig
             break
+    # If no match, use closest by Levenshtein distance
+    if not matched_name and norm_query:
+        try:
+            from difflib import SequenceMatcher
+            def ratio(a, b):
+                return SequenceMatcher(None, a, b).ratio()
+            best_ratio = 0
+            for orig, norm in owned_norm:
+                r = ratio(norm_query, norm)
+                if r > best_ratio:
+                    best_ratio = r
+                    matched_name = orig
+        except Exception:
+            pass
+    # If still no match, fallback to first owned character
+    if not matched_name and player.owned_characters:
+        matched_name = player.owned_characters[0]
 
     if not matched_name:
-        # If no match, show list of owned characters
         if hasattr(update, "message") and update.message:
-            char_list = "\n".join(f"- {name}" for name in player.owned_characters)
-            await update.message.reply_text(
-                f"❌ Character not found or not owned.\n\nYour owned characters:\n{char_list}\n\nTry using the exact or partial name."
-            )
+            await update.message.reply_text("❌ You do not own any characters.")
         return
 
     character = await db.get_character(int(user_id), matched_name)
