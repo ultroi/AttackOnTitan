@@ -780,8 +780,9 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character.equipped_weapon = weapon_key if weapon_key != "basic_attack" else None
     logger.info(f"[equip_weapon] Equipping weapon: {weapon_key}, last_weapon: {last_weapon}")
     await db.update_character(character)
-    # Show updated weapons list
-    logger.info(f"[equip_weapon] Calling view_weapons_char to update UI.")
+    # Fix: Set correct callback data before calling view_weapons_char
+    query.data = f"view_weapons_{char_name.replace(' ', '_')}"
+    logger.info(f"[equip_weapon] Calling view_weapons_char to update UI with callback data: {query.data}")
     await view_weapons_char(update, context)
     if last_weapon and last_weapon != weapon_key:
         logger.info(f"[equip_weapon] Unequipped {last_weapon}. Equipped {weapon_key}.")
