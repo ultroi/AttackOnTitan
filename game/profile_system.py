@@ -633,18 +633,13 @@ def _create_char_profile_text(character, char_data) -> str:
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     query_name = " ".join(args).strip().lower()
-
     db = context.bot_data.get("db") or Database()
     user_id = update.effective_user.id
     player = await db.get_player(user_id)
-
     if not player or not player.owned_characters:
         await update.message.reply_text("❌ You do not own any characters.")
         return
-
-    print("User query:", query_name)
-    print("Owned characters:", player.owned_characters)
-
+    # Robust partial/case-insensitive match
     matched_name = None
     for name in player.owned_characters:
         if query_name == name.lower():
@@ -652,32 +647,25 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
     if not matched_name:
         for name in player.owned_characters:
-            if query_name in name.lower():
+            if query_name and query_name in name.lower():
                 matched_name = name
                 break
     if not matched_name:
-        matched_name = player.owned_characters[0]
-
-    print("Matched:", matched_name)
-
+        await update.message.reply_text("❌ No matching character found. Please check the name.")
+        return
     character = await db.get_character(user_id, matched_name)
-    print("Character found:", character)
-
     if not character:
         await update.message.reply_text(f"❌ Character {matched_name} not found.")
         return
-
     char_data = get_character_data(character.name)
     if not char_data:
         await update.message.reply_text("❌ Character data not found.")
         return
-
     profile_text = _create_char_profile_text(character, char_data)
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
+        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}") ,
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-
     image_url = CHARACTER_IMAGES.get(character.name)
     if image_url:
         await update.message.reply_photo(
