@@ -598,54 +598,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await profile(update, context)
 
 
-@maintenance_protected
-@ban_protected
-async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data is None:
-        context.user_data = {}
-    if not update.effective_user or not hasattr(update.effective_user, "id"):
-        await update.message.reply_text("❌ Unable to get your user ID. Please try again.")
-        return
-    
-    user_id = str(update.effective_user.id)
-    db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    
-    if not player or not player.owned_characters:
-        await update.message.reply_text("❌ You have no unlocked characters.")
-        return
-    
-    args = context.args if hasattr(context, 'args') else []
-    if not args:
-        await update.message.reply_text("Usage: /char <character name>")
-        return
-    
-    query_name = " ".join(args).strip().lower()
-    matched_name: Optional[str] = None
-    
-    for char_name in player.owned_characters:
-        if query_name in char_name.lower():
-            matched_name = char_name
-            break
-    
-    if not matched_name:
-        await update.message.reply_text("❌ Character not found or not owned.")
-        return
-    
-    character = await db.get_character(user_id, matched_name)
-    if not character:
-        await update.message.reply_text(f"Error: Character {matched_name} not found.")
-        return
-    
-    char_data = get_character_data(character.name)
-    if not char_data:
-        await update.message.reply_text("Error: Character data not found.")
-        return
-    
-    context.user_data['owner_id'] = user_id
-    context.user_data['current_char_name'] = character.name
-    
-    # Store profile text in user_data for later editing
+
+def _create_char_profile_text(character, char_data) -> str:
+    """Generates the character profile text."""
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
         f"<b>Level:</b> {character.level}\n"
@@ -667,142 +622,148 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if ability.cooldown:
                     profile_text += f"  Cooldown: {ability.cooldown} turns\n"
                 profile_text += "\n"
+                
+    return profile_text
+
+
+
+# --- UPDATED char_detail FUNCTION ---
+@maintenance_protected
+@ban_protected
+async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Ensure context.args is a list of strings
+    args = context.args if hasattr(context, "args") and context.args else []
+    query_name = " ".join(args).strip().lower()
+
+    db = context.bot_data.get("db") or Database()
+    user_id = str(update.effective_user.id)
+    player = await db.get_player(user_id)
+
+    if not player or not hasattr(player, "owned_characters"):
+        if update.message:
+            await update.message.reply_text("❌ Character not found or not owned.")
+        return
+
+    matched_name = next((name for name in player.owned_characters if query_name in name.lower()), None)
+
+    if not matched_name:
+        if update.message:
+            await update.message.reply_text("❌ Character not found or not owned.")
+        return
+
+    character = await db.get_character(user_id, matched_name)
+    if not character:
+        if update.message:
+            await update.message.reply_text(f"Error: Character {matched_name} not found.")
+        return
+
+    char_data = get_character_data(character.name)
+    if not char_data:
+        if update.message:
+            await update.message.reply_text("Error: Character data not found.")
+        return
+        
+    # Generate profile text using the helper function
+    profile_text = _create_char_profile_text(character, char_data)
     
     keyboard = [
         [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
-         InlineKeyboardButton("Weapons", callback_data=f"show_weapons_{character.name.replace(' ', '_')}"),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-    
+
     image_url = CHARACTER_IMAGES.get(character.name)
     
-    context.user_data['char_detail_message_id'] = None
-    context.user_data['char_detail_profile_text'] = profile_text
-    context.user_data['char_detail_character_name'] = character.name
-    
-    msg = None
-    if image_url and getattr(update, "message", None):
-        msg = await update.message.reply_photo(
+    if image_url and update.message:
+        await update.message.reply_photo(
             photo=image_url,
             caption=profile_text,
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
-    elif getattr(update, "message", None):
-        msg = await update.message.reply_text(profile_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-    
-    if msg:
-        context.user_data['char_detail_message_id'] = msg.message_id
+    elif update.message:
+        await update.message.reply_text(
+            profile_text, 
+            reply_markup=InlineKeyboardMarkup(keyboard), 
+            parse_mode=ParseMode.HTML
+        )
 
-
+# --- COMPLETELY REFACTORED fill_gas FUNCTION ---
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    if not check_authorization(update, context):
+
+    if not check_authorization(update, context): 
         await handle_unauthorized(update)
         return
-    
-    # Extract character name from callback data
-    char_name_encoded = query.data.replace("fill_gas_", "")
-    char_name = char_name_encoded.replace("_", " ")
-    
+        
     user_id = str(query.from_user.id)
+    char_name = query.data.replace("fill_gas_", "").replace("_", " ")
+
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
-    
-    if not player:
-        await query.answer("Player not found.", show_alert=True)
+    character = await db.get_character(user_id, char_name) # Fetch character directly
+
+    if not player or not character:
+        await query.answer("❌ Error: Player or Character not found.", show_alert=True)
         return
-    
-    # Find exact character name match from owned characters
-    matched_name = None
-    for owned_char in player.owned_characters:
-        if owned_char.lower() == char_name.lower():
-            matched_name = owned_char
-            break
-    
-    if not matched_name:
-        await query.answer("Character not found or not owned.", show_alert=True)
-        return
-    
-    character = await db.get_character(user_id, matched_name)
-    if not character:
-        await query.answer("Character not found in database.", show_alert=True)
-        return
-    
+
     # Check if gas is already full
-    if getattr(character, "gas", 0) >= getattr(character, "max_gas", 5000):
-        await query.answer(f"{character.name}'s gas is already full!", show_alert=True)
+    if character.gas >= character.max_gas:
+        await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
         return
-    
-    # Calculate gas needed
+
     gas_needed = character.max_gas - character.gas
-    
-    # Check player has enough gas
-    if getattr(player, "gas", 0) < gas_needed:
+
+    if player.gas < gas_needed:
         await query.answer(
-            f"Not enough gas! You need {gas_needed} gas to refill, but you only have {player.gas}.",
+            f"⚠️ Not enough gas! You need {gas_needed} but only have {player.gas}.",
             show_alert=True
         )
         return
-    
-    # Update gas values
-    prev_gas = character.gas
+
+    # Update gas values and save to the database
     player.gas -= gas_needed
     character.gas = character.max_gas
     
-    # Save changes
     await db.update_player(user_id, {"gas": player.gas})
     await db.update_character(character)
-    
-    # Update profile text
-    profile_text = context.user_data.get('char_detail_profile_text', '')
-    profile_text = re.sub(r"<b>Gas:</b> \d+", f"<b>Gas:</b> {character.gas}", profile_text)
-    context.user_data['char_detail_profile_text'] = profile_text
-    
-    # Recreate keyboard
+
+    # Regenerate the profile text from the updated character object
+    char_data = get_character_data(character.name)
+    if not char_data: # Safety check
+        await query.answer("Error: Cannot find character's static data.", show_alert=True)
+        return
+        
+    updated_profile_text = _create_char_profile_text(character, char_data)
+
+    # Recreate keyboard (optional, but good practice if state could change)
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
+        [InlineKeyboardButton("Fill Gas", callback_data=query.data),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     
-    # Edit message robustly (handle both caption and text)
+    # Edit the original message with the new, correct content
     try:
-        if hasattr(query.message, "photo") and getattr(query.message, "caption", None):
+        if query.message.photo:
             await query.edit_message_caption(
-                caption=profile_text,
+                caption=updated_profile_text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.HTML
             )
         else:
             await query.edit_message_text(
-                text=profile_text,
+                text=updated_profile_text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.HTML
             )
+        
+        await query.answer(
+            f"✅ Gas filled! {gas_needed} gas deducted.",
+            show_alert=True
+        )
     except Exception as e:
-        # fallback: try the other method
-        try:
-            await query.edit_message_text(
-                text=profile_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-        except Exception:
-            await query.edit_message_caption(
-                caption=profile_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-        logger.error(f"Error updating message: {e}")
-
-    await query.answer(
-        f"{character.name}'s gas was {prev_gas}/{character.max_gas}.\n"
-        f"Now filled to {character.max_gas}! {gas_needed} gas deducted.",
-        show_alert=True
-    )
-
+        logger.error(f"Error updating message in fill_gas: {e}")
+        await query.answer("❌ Error updating profile.", show_alert=True)
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
