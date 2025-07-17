@@ -748,11 +748,30 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__{safe_key}")])
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")])
     logger.info(f"[view_weapons_char] Updating message with weapons list.")
-    # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
-    if hasattr(query, "message") and getattr(query.message, "photo", None):
-        await query.edit_message_caption(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+    # Prevent 'Message is not modified' error by checking current content and markup
+    current_message = getattr(query, "message", None)
+    new_markup = InlineKeyboardMarkup(keyboard)
+    if current_message:
+        # For photo messages, compare caption and markup
+        if getattr(current_message, "photo", None):
+            current_caption = getattr(current_message, "caption", None)
+            current_markup = getattr(current_message, "reply_markup", None)
+            if current_caption == text and current_markup == new_markup:
+                logger.info("[view_weapons_char] Message not modified, skipping edit.")
+                await query.answer("No changes made.", show_alert=True)
+                return
+            await query.edit_message_caption(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+        else:
+            current_text = getattr(current_message, "text", None)
+            current_markup = getattr(current_message, "reply_markup", None)
+            if current_text == text and current_markup == new_markup:
+                logger.info("[view_weapons_char] Message not modified, skipping edit.")
+                await query.answer("No changes made.", show_alert=True)
+                return
+            await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
     else:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        # Fallback: just send edit_message_text
+        await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
