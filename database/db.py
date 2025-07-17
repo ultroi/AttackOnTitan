@@ -201,7 +201,7 @@ class Database:
                 total_xp=0,
                 stats=CharacterStats(**stats_dict), 
                 gas=5000,
-                max_gas=10000,
+                max_gas=5000,
                 active_abilities=[],
                 passive_abilities=[],
                 ultimate_abilities=[],
