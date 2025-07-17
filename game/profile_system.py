@@ -707,12 +707,14 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # --- Weapons View and Equip Handlers ---
-async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None):
     query = update.callback_query
-    logger.info(f"[view_weapons_char] Callback data: {query.data}")
+    logger.info(f"[view_weapons_char] Callback data: {getattr(query, 'data', None)}")
     await query.answer()
     user_id = str(query.from_user.id)
-    char_name = query.data.replace("view_weapons_", "").replace("_", " ")
+    # If char_name is not provided, extract from callback data
+    if char_name is None:
+        char_name = query.data.replace("view_weapons_", "").replace("_", " ")
     logger.info(f"[view_weapons_char] user_id: {user_id}, char_name: {char_name}")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -743,8 +745,8 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Use weapon key for callback, not display name
         if not equipped:
             safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', k)
-            keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{char_name.replace(' ', '_')}__{safe_key}")])
-    keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{char_name.replace(' ', '_')}")])
+            keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__{safe_key}")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")])
     logger.info(f"[view_weapons_char] Updating message with weapons list.")
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     if hasattr(query, "message") and getattr(query.message, "photo", None):
@@ -780,10 +782,9 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character.equipped_weapon = weapon_key if weapon_key != "basic_attack" else None
     logger.info(f"[equip_weapon] Equipping weapon: {weapon_key}, last_weapon: {last_weapon}")
     await db.update_character(character)
-    # Fix: Set correct callback data before calling view_weapons_char
-    query.data = f"view_weapons_{char_name.replace(' ', '_')}"
-    logger.info(f"[equip_weapon] Calling view_weapons_char to update UI with callback data: {query.data}")
-    await view_weapons_char(update, context)
+    # Call view_weapons_char with char_name argument
+    logger.info(f"[equip_weapon] Calling view_weapons_char to update UI for char_name: {char_name}")
+    await view_weapons_char(update, context, char_name=char_name)
     if last_weapon and last_weapon != weapon_key:
         logger.info(f"[equip_weapon] Unequipped {last_weapon}. Equipped {weapon_key}.")
         await query.answer(f"Unequipped {last_weapon}. Equipped {weapon_key}.", show_alert=True)
