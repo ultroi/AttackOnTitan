@@ -691,44 +691,63 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
     print(f"DEBUG fill_gas: user_id={user_id}, char_name={char_name}")
     db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
-    print(f"DEBUG fill_gas: player={player}")
-    character = await db.get_character(str(user_id), char_name)
-    print(f"DEBUG fill_gas: character={character}")
-    if not player or not character:
-        await query.answer("❌ Character or Player not found.", show_alert=True)
-        return
-    if character.gas >= character.max_gas:
-        await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
-        return
-    gas_needed = character.max_gas - character.gas
-    if player.gas < gas_needed:
-        await query.answer(f"⚠️ Not enough gas! Need {gas_needed}, you have {player.gas}.", show_alert=True)
-        return
-    # Fill gas
-    player.gas -= gas_needed
-    character.gas = character.max_gas
-    await db.update_player(str(user_id), {"gas": player.gas})
-    await db.update_character(character)
-    char_data = get_character_data(character.name)
-    updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
-    keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=query.data),
-         InlineKeyboardButton("Exit", callback_data="exit_profile")]
-    ]
-    if getattr(query.message, "photo", None):
-        await query.edit_message_caption(
-            caption=updated_profile,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await query.edit_message_text(
-            text=updated_profile,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-    await query.answer(f"✅ Gas filled! {gas_needed} used.", show_alert=True)
+    try:
+        player = await db.get_player(user_id)
+        print(f"DEBUG fill_gas: player={player}")
+        character = await db.get_character(str(user_id), char_name)
+        print(f"DEBUG fill_gas: character={character}")
+        if not player or not character:
+            await query.answer("❌ Character or Player not found.", show_alert=True)
+            print("DEBUG fill_gas: Not found")
+            return
+        print(f"DEBUG fill_gas: BEFORE player.gas={player.gas}, character.gas={character.gas}")
+        if character.gas >= character.max_gas:
+            await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
+            print("DEBUG fill_gas: Already full")
+            return
+        gas_needed = character.max_gas - character.gas
+        if player.gas < gas_needed:
+            await query.answer(f"⚠️ Not enough gas! Need {gas_needed}, you have {player.gas}.", show_alert=True)
+            print("DEBUG fill_gas: Not enough gas")
+            return
+        # Fill gas
+        player.gas -= gas_needed
+        character.gas = character.max_gas
+        print(f"DEBUG fill_gas: AFTER player.gas={player.gas}, character.gas={character.gas}")
+        update_player_result = await db.update_player(str(user_id), {"gas": player.gas})
+        print(f"DEBUG fill_gas: update_player_result={update_player_result}")
+        update_character_result = await db.update_character(character)
+        print(f"DEBUG fill_gas: update_character_result={update_character_result}")
+        char_data = get_character_data(character.name)
+        updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
+        keyboard = [
+            [InlineKeyboardButton("Fill Gas", callback_data=query.data),
+             InlineKeyboardButton("Exit", callback_data="exit_profile")]
+        ]
+        if query.message is not None and getattr(query.message, "photo", None):
+            await query.edit_message_caption(
+                caption=updated_profile,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        elif query.message is not None:
+            await query.edit_message_text(
+                text=updated_profile,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            # Fallback: send a new message if query.message is None
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=updated_profile,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        await query.answer(f"✅ Gas filled! {gas_needed} used.", show_alert=True)
+    except Exception as e:
+        print(f"ERROR fill_gas: {e}")
+        await query.answer("❌ Error filling gas.", show_alert=True)
 
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
