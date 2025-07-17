@@ -100,8 +100,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Dispatch table for callbacks
         handlers = {
             "back_to_profile": lambda data: profile(update, context),
-            "exit_profile": lambda data: exit_profile(update, context),
-            "fill_gas": lambda data: fill_gas(update, context),
             "select_": lambda data: handle_select_character(query, context, data.split("_")[1]),
             "confirm_": lambda data: confirm_character_selection(update, context),
             "back_to_selection": lambda data: show_character_selection(update, context),

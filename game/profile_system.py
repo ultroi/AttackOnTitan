@@ -690,31 +690,40 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- COMPLETELY REFACTORED fill_gas FUNCTION ---
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    logger.info(f"fill_gas called by user_id={getattr(query.from_user, 'id', None)} with data={getattr(query, 'data', None)}")
     await query.answer()
 
     if not check_authorization(update, context): 
+        logger.warning("fill_gas: authorization failed")
         await handle_unauthorized(update)
         return
-        
+
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
+    logger.info(f"fill_gas: user_id={user_id}, char_name={char_name}")
 
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     character = await db.get_character(user_id, char_name) # Fetch character directly
+    logger.info(f"fill_gas: player found={player is not None}, character found={character is not None}")
 
     if not player or not character:
+        logger.warning("fill_gas: player or character not found")
         await query.answer("❌ Error: Player or Character not found.", show_alert=True)
         return
 
     # Check if gas is already full
+    logger.info(f"fill_gas: character.gas={character.gas}, character.max_gas={character.max_gas}")
     if character.gas >= character.max_gas:
+        logger.info("fill_gas: gas already full")
         await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
         return
 
     gas_needed = character.max_gas - character.gas
+    logger.info(f"fill_gas: gas_needed={gas_needed}, player.gas={player.gas}")
 
     if player.gas < gas_needed:
+        logger.info("fill_gas: not enough gas")
         await query.answer(
             f"⚠️ Not enough gas! You need {gas_needed} but only have {player.gas}.",
             show_alert=True
@@ -724,16 +733,18 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Update gas values and save to the database
     player.gas -= gas_needed
     character.gas = character.max_gas
-    
+    logger.info(f"fill_gas: updating player.gas={player.gas}, character.gas={character.gas}")
     await db.update_player(user_id, {"gas": player.gas})
     await db.update_character(character)
 
     # Regenerate the profile text from the updated character object
     char_data = get_character_data(character.name)
+    logger.info(f"fill_gas: char_data found={char_data is not None}")
     if not char_data: # Safety check
+        logger.warning("fill_gas: character static data not found")
         await query.answer("Error: Cannot find character's static data.", show_alert=True)
         return
-        
+
     updated_profile_text = _create_char_profile_text(character, char_data)
 
     # Recreate keyboard (optional, but good practice if state could change)
@@ -741,9 +752,10 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Fill Gas", callback_data=query.data),
          InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
-    
+
     # Edit the original message with the new, correct content
     try:
+        logger.info(f"fill_gas: editing message, is_photo={getattr(query.message, 'photo', None) is not None}")
         if query.message.photo:
             await query.edit_message_caption(
                 caption=updated_profile_text,
@@ -756,7 +768,8 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.HTML
             )
-        
+
+        logger.info("fill_gas: message edited successfully")
         await query.answer(
             f"✅ Gas filled! {gas_needed} gas deducted.",
             show_alert=True
@@ -789,10 +802,16 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         try:
             # If can't delete, fallback to edit caption/text
-            if query.message.photo:
-                await query.edit_message_caption("Exited")
+            if getattr(query.message, "photo", None):
+                await query.edit_message_caption(
+                    caption="Profile closed.",
+                    reply_markup=None
+                )
             else:
-                await query.edit_message_text("Exited")
+                await query.edit_message_text(
+                    text="Profile closed.",
+                    reply_markup=None
+                )
         except Exception as e2:
-            logger.error(f"Error closing profile: {e}")
+            logger.error(f"Error closing profile: {e2}")
 
