@@ -691,7 +691,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
-    character = await db.get_character(user_id, char_name)
+    character = await db.get_character(str(user_id), char_name)
     if not player or not character:
         await query.answer("❌ Character or Player not found.", show_alert=True)
         return
@@ -705,7 +705,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Fill gas
     player.gas -= gas_needed
     character.gas = character.max_gas
-    await db.update_player(user_id, {"gas": player.gas})
+    await db.update_player(str(user_id), {"gas": player.gas})
     await db.update_character(character)
     char_data = get_character_data(character.name)
     updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
