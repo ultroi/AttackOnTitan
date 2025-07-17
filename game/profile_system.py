@@ -652,15 +652,37 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 matched_name = name
                 break
     if not matched_name:
-        await update.message.reply_text("❌ No matching character found. Please check the name.")
+        if update.message:
+            await update.message.reply_text("❌ No matching character found. Please check the name.")
+        elif update.callback_query:
+            # If message has photo, use edit_message_caption, else edit_message_text
+            msg = update.callback_query.message
+            if msg and getattr(msg, "photo", None):
+                await update.callback_query.edit_message_caption(caption="❌ No matching character found. Please check the name.", reply_markup=None)
+            else:
+                await update.callback_query.edit_message_text(text="❌ No matching character found. Please check the name.", reply_markup=None)
         return
     character = await db.get_character(user_id, matched_name)
     if not character:
-        await update.message.reply_text(f"❌ Character {matched_name} not found.")
+        if update.message:
+            await update.message.reply_text(f"❌ Character {matched_name} not found.")
+        elif update.callback_query:
+            msg = update.callback_query.message
+            if msg and getattr(msg, "photo", None):
+                await update.callback_query.edit_message_caption(caption=f"❌ Character {matched_name} not found.", reply_markup=None)
+            else:
+                await update.callback_query.edit_message_text(text=f"❌ Character {matched_name} not found.", reply_markup=None)
         return
     char_data = get_character_data(character.name)
     if not char_data:
-        await update.message.reply_text("❌ Character data not found.")
+        if update.message:
+            await update.message.reply_text("❌ Character data not found.")
+        elif update.callback_query:
+            msg = update.callback_query.message
+            if msg and getattr(msg, "photo", None):
+                await update.callback_query.edit_message_caption(caption="❌ Character data not found.", reply_markup=None)
+            else:
+                await update.callback_query.edit_message_text(text="❌ Character data not found.", reply_markup=None)
         return
     profile_text = _create_char_profile_text(character, char_data)
     keyboard = [
