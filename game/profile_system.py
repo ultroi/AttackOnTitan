@@ -701,6 +701,9 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("DEBUG fill_gas: Not found")
             return
         print(f"DEBUG fill_gas: BEFORE player.gas={player.gas}, character.gas={character.gas}")
+        # Set base max_gas to 5000, then add 250 for each level above 1
+        character.max_gas = 5000 + (max(0, character.level - 1) * 250)
+        print(f"DEBUG fill_gas: CALCULATED character.max_gas={character.max_gas} for level={character.level}")
         if character.gas >= character.max_gas:
             await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
             print("DEBUG fill_gas: Already full")
