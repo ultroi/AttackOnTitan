@@ -127,9 +127,8 @@ class Character(BaseModel):
                 hp_increase = new_max_hp - self.stats.HP
                 self.stats.HP = new_max_hp
                 self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
-            # --- Max gas remains fixed at 5000 ---
-            self.max_gas = 5000
-            self.gas = self.max_gas
+            self.max_gas += 250
+            self.gas = self.max_gas 
             # Check for ability unlocks
             self._check_ability_unlocks()
 
@@ -222,8 +221,8 @@ class Character(BaseModel):
     
     def refill_gas(self) -> None:
         """Refill character's gas to maximum capacity."""
-        self.max_gas = 5000
         self.gas = 5000
+        self.max_gas = 5000
         self.updated_at = datetime.now(timezone.utc)
 
     def dict(self, *args, **kwargs):
