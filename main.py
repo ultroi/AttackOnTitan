@@ -21,6 +21,11 @@ from utils.ban_utils import ban_protected, ban_user, unban_user
 from utils.mod_utils import promote_mod, demote_mod
 from utils.maintenance import maintenance_protected, maintenance
 
+# Import database models
+from database.models import Character, Player
+from pymongo import UpdateOne
+from typing import List, Dict
+
 # Import handlers
 from game.start import (
     show_character_selection,
@@ -33,7 +38,7 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
-    fill_gas, exit_profile, view_weapons_char, equip_weapon
+    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
 )
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
@@ -92,14 +97,105 @@ def is_ip_allowed(client_ip: str) -> bool:
     except ValueError:
         return False
 
-async def migrate_character_schema(db):
-    # Example: Add equipped_weapon field if missing
-    result = await db.characters.update_many(
-        {"equipped_weapon": {"$exists": False}},
-        {"$set": {"equipped_weapon": None}}
-    )
-    if result.modified_count > 0:
-        print(f"[MIGRATION] Updated {result.modified_count} character(s) with equipped_weapon field.")
+async def migrate_schema(db):
+    # --- Character migration ---
+    char_fields = Character.model_fields if hasattr(Character, "model_fields") else Character.__annotations__
+    # Use type-based defaults for required fields
+    from datetime import datetime, timezone
+    from database.models import CharacterStats
+    def get_default_value(field_type, field_name=None):
+        # Special handling for known fields
+        if field_name == "stats":
+            return CharacterStats()
+        if field_name in ("active_abilities", "passive_abilities", "ultimate_abilities"):
+            return []
+        if field_name == "unlocked_abilities":
+            return {}
+        if field_name in ("created_at", "updated_at"):
+            return datetime.now(timezone.utc)
+        origin = getattr(field_type, "__origin__", None)
+        if field_type is list or field_type is List or origin is list:
+            return []
+        if field_type is dict or field_type is Dict or origin is dict:
+            return {}
+        if field_type is str:
+            return ""
+        if field_type is int:
+            return 0
+        if field_type is float:
+            return 0.0
+        if field_type is bool:
+            return False
+        return None
+
+    char_defaults = {}
+    for k, v in char_fields.items():
+        default = getattr(v, "default", None)
+        if default is None or str(default).startswith("PydanticUndefined"):
+            field_type = getattr(v, "annotation", None) or v
+            char_defaults[k] = get_default_value(field_type, k)
+        else:
+            char_defaults[k] = default
+    char_default = Character(**char_defaults)
+    char_dict = char_default.dict() if hasattr(char_default, "dict") else char_default.__dict__
+
+    char_cursor = db.characters.find({})
+    char_updates = []
+    async for doc in char_cursor:
+        update_data = {}
+        for field, default in char_dict.items():
+            if field not in doc:
+                update_data[field] = default
+        for field in doc:
+            if field not in char_dict:
+                update_data[field] = None
+        if update_data:
+            update_op = {
+                "$set": {k: v for k, v in update_data.items() if v is not None},
+                "$unset": {k: "" for k, v in update_data.items() if v is None and k != "_id"}
+            }
+            char_updates.append(UpdateOne({"_id": doc["_id"]}, update_op))
+    if char_updates:
+        result = await db.characters.bulk_write(char_updates)
+        logger.info(f"Migrated {result.modified_count} character documents to latest schema.")
+    else:
+        logger.info("No character documents needed migration.")
+
+    # --- Player migration ---
+    player_fields = Player.model_fields if hasattr(Player, "model_fields") else Player.__annotations__
+    player_defaults = {}
+    for k, v in player_fields.items():
+        default = getattr(v, "default", None)
+        if default is None or str(default).startswith("PydanticUndefined"):
+            field_type = getattr(v, "annotation", None) or v
+            player_defaults[k] = get_default_value(field_type, k)
+        else:
+            player_defaults[k] = default
+    player_default = Player(**player_defaults)
+    player_dict = player_default.dict() if hasattr(player_default, "dict") else player_default.__dict__
+
+    player_cursor = db.players.find({})
+    player_updates = []
+    async for doc in player_cursor:
+        update_data = {}
+        for field, default in player_dict.items():
+            if field not in doc:
+                update_data[field] = default
+        for field in doc:
+            if field not in player_dict:
+                update_data[field] = None
+        if update_data:
+            update_op = {
+                "$set": {k: v for k, v in update_data.items() if v is not None},
+                "$unset": {k: "" for k, v in update_data.items() if v is None and k != "_id"}
+            }
+            player_updates.append(UpdateOne({"_id": doc["_id"]}, update_op))
+    if player_updates:
+        result = await db.players.bulk_write(player_updates)
+        logger.info(f"Migrated {result.modified_count} player documents to latest schema.")
+    else:
+        logger.info("No player documents needed migration.")
+
 
 async def initialize_application():
     global application, app_initialized, global_db
@@ -113,7 +209,7 @@ async def initialize_application():
             global_db = Database()
             await global_db.init_db()  
 
-        await migrate_character_schema(global_db)
+        await migrate_schema(global_db)
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
         application.bot_data["shop_system"] = shop_system
@@ -356,7 +452,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
     app_instance.add_handler(CallbackQueryHandler(view_weapons_char, pattern=r"^view_weapons_"))
     app_instance.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
-    app_instance.add_handler(CallbackQueryHandler(char_detail, pattern=r"^char_detail_"))
+
+    app_instance.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
 
     # Battle and travel

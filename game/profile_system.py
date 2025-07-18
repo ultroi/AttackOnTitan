@@ -628,11 +628,10 @@ def _create_char_profile_text(character, char_data) -> str:
 
 
 # --- UPDATED char_detail FUNCTION ---
+
 @maintenance_protected
 @ban_protected
-async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args or []
-    query_name = " ".join(args).strip().lower()
+async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None):
     db = context.bot_data.get("db") or Database()
     user_id = update.effective_user.id
     player = await db.get_player(str(user_id))
@@ -640,28 +639,52 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player or not player.owned_characters:
         await update.message.reply_text("❌ You do not own any characters.")
         return
-    # Robust partial/case-insensitive match
-    matched_name = None
-    for name in player.owned_characters:
-        if query_name == name.lower():
-            matched_name = name
-            break
-    if not matched_name:
+    # If char_name is provided (from callback), use it directly
+    if char_name:
+        matched_name = None
         for name in player.owned_characters:
-            if query_name and query_name in name.lower():
+            if char_name.lower() == name.lower():
                 matched_name = name
                 break
-    if not matched_name:
-        if update.message:
-            await update.message.reply_text("❌ No matching character found. Please check the name.")
-        elif update.callback_query:
-            # If message has photo, use edit_message_caption, else edit_message_text
-            msg = update.callback_query.message
-            if msg and getattr(msg, "photo", None):
-                await update.callback_query.edit_message_caption(caption="❌ No matching character found. Please check the name.", reply_markup=None)
+        if not matched_name:
+            # fallback: partial match
+            for name in player.owned_characters:
+                if char_name.lower() in name.lower():
+                    matched_name = name
+                    break
+        if not matched_name:
+            if update.callback_query:
+                msg = update.callback_query.message
+                if msg and getattr(msg, "photo", None):
+                    await update.callback_query.edit_message_caption(caption="❌ No matching character found. Please check the name.", reply_markup=None)
+                else:
+                    await update.callback_query.edit_message_text(text="❌ No matching character found. Please check the name.", reply_markup=None)
             else:
-                await update.callback_query.edit_message_text(text="❌ No matching character found. Please check the name.", reply_markup=None)
-        return
+                await update.message.reply_text("❌ No matching character found. Please check the name.")
+            return
+    else:
+        args = context.args or []
+        query_name = " ".join(args).strip().lower()
+        matched_name = None
+        for name in player.owned_characters:
+            if query_name == name.lower():
+                matched_name = name
+                break
+        if not matched_name:
+            for name in player.owned_characters:
+                if query_name and query_name in name.lower():
+                    matched_name = name
+                    break
+        if not matched_name:
+            if update.message:
+                await update.message.reply_text("❌ No matching character found. Please check the name.")
+            elif update.callback_query:
+                msg = update.callback_query.message
+                if msg and getattr(msg, "photo", None):
+                    await update.callback_query.edit_message_caption(caption="❌ No matching character found. Please check the name.", reply_markup=None)
+                else:
+                    await update.callback_query.edit_message_text(text="❌ No matching character found. Please check the name.", reply_markup=None)
+            return
     character = await db.get_character(user_id, matched_name)
     if not character:
         if update.message:
@@ -691,20 +714,44 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
          [InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     image_url = CHARACTER_IMAGES.get(character.name)
-    if image_url:
-        await update.message.reply_photo(
-            photo=image_url,
-            caption=profile_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-    else:
-        await update.message.reply_text(
-            profile_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
+    # If this is a callback query, edit the existing message
+    if update.callback_query:
+        msg = update.callback_query.message
+        if msg and getattr(msg, "photo", None):
+            await update.callback_query.edit_message_caption(
+                caption=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.callback_query.edit_message_text(
+                text=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+    # Otherwise, send a new message (for command usage)
+    elif update.message:
+        if image_url:
+            await update.message.reply_photo(
+                photo=image_url,
+                caption=profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                profile_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
 
+# Wrapper for char_detail to extract character name from callback data
+async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = getattr(update, 'callback_query', None)
+    char_name = None
+    if query and hasattr(query, 'data') and query.data.startswith("char_detail_"):
+        char_name = query.data.replace("char_detail_", "").replace("_", " ")
+    await char_detail(update, context, char_name=char_name)
 
 # --- Weapons View and Equip Handlers ---
 async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None, status_message: str = None):

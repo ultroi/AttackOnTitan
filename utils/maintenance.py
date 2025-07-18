@@ -29,7 +29,9 @@ def is_maintenance() -> bool:
 # Decorator for maintenance protection
 
 def maintenance_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[Update, CallbackContext], Any]:
-    async def wrapper(update: Update, context: CallbackContext):
+    async def wrapper(*args, **kwargs):
+        update = args[0] if args else None
+        context = args[1] if len(args) > 1 else None
         user_id = getattr(update.effective_user, "id", None)
         if is_maintenance():
             owner_ids = get_owner_ids()
@@ -38,7 +40,7 @@ def maintenance_protected(func: Callable[[Update, CallbackContext], Any]) -> Cal
                 if update.effective_message:
                     await update.effective_message.reply_text("Bot is under maintenance !!")
                 return
-        return await func(update, context)
+        return await func(*args, **kwargs)
     return wrapper
 
 # Command handlers

@@ -14,7 +14,9 @@ BAN_LOG_CHAT_ID = -1002873117075
 
 # Decorator to protect commands from banned users
 def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[Update, CallbackContext], Any]:
-    async def wrapper(update: Update, context: CallbackContext):
+    async def wrapper(*args, **kwargs):
+        update = args[0] if args else None
+        context = args[1] if len(args) > 1 else None
         user_id = getattr(update.effective_user, 'id', None)
         if user_id is None:
             if update.effective_message is not None:
@@ -46,7 +48,7 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
             if update.effective_message is not None:
                 await update.effective_message.reply_text("Error accessing database. Please try again later.")
             return
-        return await func(update, context)
+        return await func(*args, **kwargs)
     return wrapper
 
 
