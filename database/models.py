@@ -480,18 +480,16 @@ class Titan(BaseModel):
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
     "Easy": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth", "Long-Nosed",
-        "Small Round", "Thin-Legged", "One-Eyed", "Crawling Lizard-Like", "Tree Hanger",
-        "Tiny-Armed", "Tall Toothless", "Double-Jawed", "Half-Faced", "Wall Climber"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
     ],
     "Normal": [
-        "Abnormal", "Frenzied", "Swift", "Heavy", "Agile",
-        "Stealth", "Regenerating", "Berserker", "Savage", "Wild",
-        "Cunning", "Hunter", "Stalker", "Lurker", "Predator"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
     ],
     "Hard": [
-        "Small Round", "Thin-Legged", "One-Eyed",
-        "Cunning", "Hunter", "Stalker", "Lurker", "Predator"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
     ]
 }
 

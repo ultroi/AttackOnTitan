@@ -29,6 +29,11 @@ TITAN_TYPE_IMAGE_URLS = {
     "Potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
     "Bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
     "Gaping Mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
+    "Small Jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
+    "Leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
+    "Bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
+    "Staggering Creepers": "https://i.ibb.co/mFchdbj9/image.jpg",
+    "Wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
 # Pre-generated titan pool per user
@@ -279,7 +284,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if player_character.gas < 100:
-        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /profile to refill gas.")
+        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
         try:
             remove_player_activity(user_id)
         except NameError:
@@ -326,6 +331,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
     titan_gen_time = time.time()
+    logger.info(f"[EXPLORE] Generated titan for user {user_id_str}: {titan}")
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         try:
@@ -335,6 +341,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await db.store_titan(user_id_str, titan)
+    logger.info(f"[EXPLORE] Stored titan in DB for user {user_id_str}")
 
     battle_id = f"battle_{user_id}_{uuid4().hex}"
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id

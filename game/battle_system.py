@@ -190,10 +190,9 @@ class BattleSystem:
         damage_multipliers = {"Easy": 0.7, "Normal": 1.0, "Hard": 1.4}
         base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
         special_messages = []
-        # Titan special abilities
-        # ...existing code...
+
         # Calculate final damage
-        damage = int(base_damage * (1 - min(0.75, self.character.stats.DEF / 250)))
+        damage = int(base_damage * (1 - min(0.75, self.character.stats.DEF / 250))) + 25  # Ensure at least 25 extra damage
         if self.buffs.get("damage_reduction", 0):
             damage = int(damage * (1 - self.buffs["damage_reduction"]))
         if self.buffs.get("shield", 0) > 0:
@@ -522,6 +521,12 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     titan_obj = await db.get_titan(user_id)
     if not titan_obj:
         logger.warning(f"[BATTLE_START] No titan found for user_id: {user_id}")
+        # Debug: Check if titan data exists in bot_data
+        titan_data_debug = context.bot_data.get(f"last_titan_data_{user_id}")
+        logger.debug(f"[BATTLE_START] bot_data last_titan_data_{user_id}: {titan_data_debug}")
+        # Debug: Check if active battle id matches
+        active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+        logger.debug(f"[BATTLE_START] active_battle_id_{user_id}: {active_battle_id}, callback_data: {query.data}")
         await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
         return
     titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
@@ -724,7 +729,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         cleanup_battle(user_id, "error", battle)
         return
     # Use cached player/team info if available
-    # Ensure context.user_data is a dict
     if not hasattr(context, "user_data") or context.user_data is None:
         context.user_data = {}
     battle_cache = context.user_data.get("battle_cache", {})
@@ -739,7 +743,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     explore_count = player_data.get("explore_count", 0)
     send = context.bot.send_message
     chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
-    # Fast reward calculation and messaging
     # Batch DB updates for character and player
     if battle.titan_hp <= 0:
         rewards = battle.calculate_rewards(
@@ -790,27 +793,27 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         # Always send level up messages instantly
         if char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
-                # Prepare stat change details
                 stat_names = ["ATK", "DEF", "ACC", "INT", "SPD"]
                 stat_lines = []
                 for stat in stat_names:
-                    old = level_up.get(f"old_{stat.lower()}", None)
-                    new = level_up.get(f"new_{stat.lower()}", None)
-                    if old is not None and new is not None:
-                        stat_lines.append(f"{stat} : {old} ➜ {new}")
+                    old = level_up.get(f"old_{stat.lower()}")
+                    new = level_up.get(f"new_{stat.lower()}")
+                    if old is not None and new is not None and old != new:
+                        stat_lines.append(f"{stat}: {old} ➜ {new}")
                 msg = [
-                    f"🎊 <b>{battle.character.name} leveled up!!</b> ",
-                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
+                    f"🎊 <b>{battle.character.name} leveled Up !!</b>",
+                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}",
                 ]
                 if stat_lines:
                     msg.append("<b>Stats:</b>")
                     msg.extend(stat_lines)
-                if level_up["newly_unlocked_abilities"]:
+                else:
+                    msg.append("<i>No stat increases.</i>")
+                if level_up.get("newly_unlocked_abilities"):
                     msg.append(f"\n🌟 New abilities unlocked:")
                     for ability in level_up["newly_unlocked_abilities"]:
                         ability_type = "🔥" if ability["type"] == "ultimate" else "⚡" if ability["type"] == "active" else "🛡️"
                         msg.append(f"{ability_type} {ability['name']} ({ability['description']})")
-                # Send level up message immediately
                 await send(chat_id, "\n".join(msg), parse_mode=ParseMode.HTML)
 
         if player_level_info["total_level_ups"] > 0:
@@ -874,8 +877,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player_obj = await db.get_player(user_id)
             if player_obj:
                 inv = player_obj.inventory or {}
+                update_data = {}
                 if drop['type'] in ['bottle', 'cylinder']:
                     inv['gas'] = inv.get('gas', 0) + drop['amount']
+                    update_data['gas'] = getattr(player_obj, 'gas', 0) + drop['amount']
                     await query.message.reply_photo(
                         photo=drop['image'],
                         caption=drop['message'],
@@ -883,18 +888,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     )
                 elif drop['type'] == 'valors':
                     inv['valor'] = inv.get('valor', 0) + drop['amount']
+                    update_data['valor'] = getattr(player_obj, 'valor', 0) + drop['amount']
                     await query.message.reply_text(
                         drop['message'],
                         parse_mode=ParseMode.HTML
                     )
                 elif drop['type'] == 'crystals':
                     inv['crystal'] = inv.get('crystal', 0) + drop['amount']
+                    update_data['crystal'] = getattr(player_obj, 'crystal', 0) + drop['amount']
                     await query.message.reply_text(
                         drop['message'],
                         parse_mode=ParseMode.HTML
                     )
-                # Update player inventory in DB
-                await db.update_player(user_id, {"inventory": inv})
+                update_data['inventory'] = inv
+                await db.update_player(user_id, update_data)
             else:
                 # Fallback: just send message
                 if drop.get('image'):
@@ -952,7 +959,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 await send(chat_id, f"You have arrived at <b>{location}</b>!", parse_mode="HTML")
             except Exception:
                 pass
-    # Clear active battle id so user can explore again
+    # # Clear active battle id so user can explore again
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
     # Remove cached battle data after battle ends
