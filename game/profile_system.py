@@ -707,7 +707,7 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # --- Weapons View and Equip Handlers ---
-async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None):
+async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None, status_message: str = None):
     query = update.callback_query
     logger.info(f"[view_weapons_char] Callback data: {getattr(query, 'data', None)}")
     await query.answer()
@@ -732,20 +732,26 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         if item and getattr(item, 'type', None) == "weapon":
             weapons.append((k, item, v))
     logger.info(f"[view_weapons_char] weapons found: {len(weapons)}")
-    text = f"<b>Weapons for {character.name}:</b>\n"
+    text = ""
+    if status_message:
+        text += f"<b>{status_message}</b>\n"
+    text += f"<b>Weapons for {character.name}:</b>\n"
     keyboard = []
     for k, item, v in weapons:
         equipped = (character.equipped_weapon == k)
         name = getattr(item, 'name', k)
         if equipped:
-            text += f"- {name} (Equipped)\n"
+            text += f"- {name}  <b>(Equipped)</b>\n"
         else:
             text += f"- {name}\n"
         text += f"  <i>{getattr(item, 'description', '')}</i>\n"
-        # Use weapon key for callback, not display name
+        # Only show equip button if not equipped and not currently equipped
         if not equipped:
             safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', k)
             keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__{safe_key}")])
+    # Add 'Equip Basic Attack' button if any weapon is equipped
+    if character.equipped_weapon:
+        keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__basic_attack")])
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")])
     logger.info(f"[view_weapons_char] Updating message with weapons list.")
     # Prevent 'Message is not modified' error by checking current content and markup
@@ -798,18 +804,22 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     # Equip weapon
     last_weapon = character.equipped_weapon
-    character.equipped_weapon = weapon_key if weapon_key != "basic_attack" else None
+    # If basic_attack is selected, unequip any weapon
+    if weapon_key == "basic_attack":
+        character.equipped_weapon = None
+        status_message = f"Unequipped {last_weapon}. Equipped Basic Attack."
+    else:
+        character.equipped_weapon = weapon_key
+        if last_weapon and last_weapon != weapon_key:
+            status_message = f"Unequipped {last_weapon}. Equipped {weapon_key}."
+        else:
+            status_message = f"Equipped {weapon_key}."
     logger.info(f"[equip_weapon] Equipping weapon: {weapon_key}, last_weapon: {last_weapon}")
     await db.update_character(character)
-    # Call view_weapons_char with char_name argument
+    # Call view_weapons_char with char_name and status_message argument
     logger.info(f"[equip_weapon] Calling view_weapons_char to update UI for char_name: {char_name}")
-    await view_weapons_char(update, context, char_name=char_name)
-    if last_weapon and last_weapon != weapon_key:
-        logger.info(f"[equip_weapon] Unequipped {last_weapon}. Equipped {weapon_key}.")
-        await query.answer(f"Unequipped {last_weapon}. Equipped {weapon_key}.", show_alert=True)
-    else:
-        logger.info(f"[equip_weapon] Equipped {weapon_key}.")
-        await query.answer(f"Equipped {weapon_key}.", show_alert=True)
+    await view_weapons_char(update, context, char_name=char_name, status_message=status_message)
+    await query.answer(status_message, show_alert=True)
 
 
 

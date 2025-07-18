@@ -423,13 +423,18 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
     asyncio.create_task(_cleanup())
 
 
-def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
+async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
     """Generate keyboard buttons for valid abilities and actions."""
     keyboard = []
     def obfuscate_text(text):
         # Insert zero-width space (\u200B) between each character
         return ''.join(char + '\u200B' for char in text)
     character_data = get_character_data(battle.character.character_type)
+    # Debug: Log equipped_weapon and shop_items keys
+    equipped_weapon = getattr(battle.character, 'equipped_weapon', None)
+    shop_items = context.bot_data.get("shop_items") or {}
+    logger.info(f"[DEBUG] Equipped weapon: {equipped_weapon}")
+    logger.info(f"[DEBUG] Shop items keys: {list(shop_items.keys())}")
     if not character_data:
         logger.warning(f"No character data found for {battle.character.character_type}")
         keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
@@ -462,6 +467,16 @@ def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFA
                     obfuscate_text(f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)"),
                     callback_data=f"lowgas_{ability.name}"
                 )])
+    # Always refresh character equipped_weapon from DB before showing weapon button
+    db = context.bot_data.get("db") or Database()
+    refreshed_character = None
+    try:
+        if hasattr(battle.character, 'user_id') and hasattr(battle.character, 'name'):
+            refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+    except Exception:
+        pass
+    if refreshed_character:
+        battle.character = refreshed_character
     shop_items = context.bot_data.get("shop_items") or {}
     weapon = battle.get_equipped_weapon(shop_items)
     if battle.gas >= 20:
@@ -552,7 +567,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         })
     except ImportError:
         pass
-    keyboard = generate_ability_keyboard(battle, context)
+    keyboard = await generate_ability_keyboard(battle, context)
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     await query.edit_message_text(
@@ -606,7 +621,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         db = context.bot_data.get("db") or Database()
         refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
         if refreshed_character:
-            battle.character.equipped_weapon = refreshed_character.equipped_weapon
+            # Update all character fields to ensure latest equipped_weapon and stats
+            battle.character = refreshed_character
         weapon = battle.get_equipped_weapon(shop_items)
         if battle.gas >= 20:
             battle.gas -= 20
@@ -670,7 +686,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
-    keyboard = generate_ability_keyboard(battle, context)
+    keyboard = await generate_ability_keyboard(battle, context)
+    # Ensure keyboard is a list of lists of InlineKeyboardButton
+    if not keyboard or not isinstance(keyboard, list) or not all(isinstance(row, list) for row in keyboard):
+        keyboard = [[btn] for btn in keyboard if isinstance(btn, InlineKeyboardButton)]
     reply_markup = InlineKeyboardMarkup(keyboard)
     status = battle.get_battle_status()
     battle_message = (

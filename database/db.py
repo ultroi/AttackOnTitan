@@ -228,6 +228,7 @@ class Database:
             }, {
                 "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
                 "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1,
+                "equipped_weapon": 1,
                 "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
                 "unlocked_abilities": 1
             })
