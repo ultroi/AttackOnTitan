@@ -6,16 +6,15 @@ from typing import Optional
 from database.db_instance import get_database
 import time
 import os
-import httpx
 import json
 from datetime import datetime
 from typing import Optional, Dict, List
 import logging
-import hashlib
 import secrets
+import random
+import string
 from starlette.status import HTTP_303_SEE_OTHER
-from utils.owners import get_owner_ids
-from utils.mod_utils import is_mod
+from telegram import Bot
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -36,9 +35,11 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '.
 HCAPTCHA_TIMEOUT = 600 
 BAN_LOG_CHAT_ID = -1002873117075
 
-# Dashboard authentication
-DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"
 SESSION_COOKIE = "aot_dashboard_session"
+VERIFICATION_CODE_EXPIRY = 300  # 5 minutes
+ADMIN_GROUP_ID = -1002873117075  # Replace with your admin group/chat id
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+verification_codes = {}  # {code: (timestamp, ip)}
 
 # MongoDB session helpers
 import asyncio
@@ -162,90 +163,43 @@ def include_dashboard_route(app):
         
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, error: Optional[str] = None):
-        """Render login page"""
+        """Render login page and send verification code to admin group"""
+        client_ip = request.client.host if request.client else "unknown"
+        # Generate a 6-digit code
+        code = ''.join(random.choices(string.digits, k=6))
+        verification_codes[code] = (time.time(), client_ip)
+        # Send code to admin group via Telegram bot
+        if TELEGRAM_BOT_TOKEN:
+            try:
+                bot = Bot(token=TELEGRAM_BOT_TOKEN)
+                bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"[AoT Dashboard Login] Verification code: <b>{code}</b>\nIP: {client_ip}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"Failed to send verification code to admin group: {e}")
+        else:
+            logger.error("TELEGRAM_BOT_TOKEN not set in environment!")
         return templates.TemplateResponse("login.html", {"request": request, "error": error})
-        
+
     @app.post("/login", response_class=HTMLResponse)
-    async def login_post(
-        request: Request,
-        user_id: str = Form(...),
-        access_code: str = Form(...)
-    ):
-        """Process login attempt"""
-        try:
-            # Validate input
-            user_id_int = int(user_id)
-            client_ip = "unknown"
-            if hasattr(request, 'client') and request.client:
-                if hasattr(request.client, 'host'):
-                    client_ip = request.client.host
-
-            # Log the login attempt
-            log_details = {"attempt": "login", "success": False}
-
-            # Verify access code
-            if access_code != DASHBOARD_ACCESS_CODE:
-                log_dashboard_access(
-                    user_id=user_id_int,
-                    action="login_failed",
-                    ip_address=client_ip,
-                    details={"reason": "invalid_code"}
-                )
-                return templates.TemplateResponse(
-                    "login.html", 
-                    {"request": request, "error": "Invalid access code"}, 
-                    status_code=401
-                )
-
-            # Check if user is authorized
-            authorized = await is_authorized(user_id_int)
-            if not authorized:
-                log_dashboard_access(
-                    user_id=user_id_int,
-                    action="login_failed",
-                    ip_address=client_ip,
-                    details={"reason": "unauthorized_user"}
-                )
-                return templates.TemplateResponse(
-                    "login.html", 
-                    {"request": request, "error": "Unauthorized. Only owners and moderators can access."}, 
-                    status_code=403
-                )
-
-            # Create session with IP address
-            session_id = create_session(user_id_int, client_ip)
-
-            # Set session cookie on the actual response object being returned
-            redirect_response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
-
-            # Use secure=True if running under HTTPS (e.g., on Render or production)
-            # You can also make this dynamic based on request.url.scheme
-            is_https = request.url.scheme == "https"
-            redirect_response.set_cookie(
-                key=SESSION_COOKIE,
-                value=session_id,
-                httponly=True,
-                max_age=3600,
-                secure=is_https,  # Automatically set secure based on scheme
-                samesite="lax",
-                path="/"
-            )
-
-            logger.info(f"🔐 User {user_id_int} successfully logged in from IP {client_ip}")
-            return redirect_response
-        except ValueError:
-            return templates.TemplateResponse(
-                "login.html", 
-                {"request": request, "error": "Invalid user ID format. Must be a number."}, 
-                status_code=400
-            )
-        except Exception as e:
-            logger.error(f"Login error: {str(e)}")
-            return templates.TemplateResponse(
-                "login.html", 
-                {"request": request, "error": f"Login failed: {str(e)}"}, 
-                status_code=500
-            )
+    async def login_post(request: Request, verification_code: str = Form(...)):
+        client_ip = request.client.host if request.client else "unknown"
+        code_info = verification_codes.get(verification_code)
+        now = time.time()
+        # Validate code
+        if not code_info:
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid verification code."}, status_code=401)
+        code_time, code_ip = code_info
+        if now - code_time > VERIFICATION_CODE_EXPIRY:
+            del verification_codes[verification_code]
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Verification code expired. Please refresh to get a new code."}, status_code=401)
+        if code_ip != client_ip:
+            return templates.TemplateResponse("login.html", {"request": request, "error": "IP mismatch. Please use the code from your current device."}, status_code=401)
+        # Success: create session (no user_id, just mark as verified)
+        session_id = secrets.token_hex(16)
+        response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+        response.set_cookie(key=SESSION_COOKIE, value=session_id, httponly=True, max_age=3600)
+        # Remove used code
+        del verification_codes[verification_code]
+        return response
     
     @app.get("/logout")
     async def logout(request: Request, response: Response, session: Optional[str] = Cookie(None)):

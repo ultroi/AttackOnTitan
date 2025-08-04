@@ -135,19 +135,15 @@
     
     <form id="loginForm" method="POST" action="/login">
       <div class="form-group">
-        <label for="user_id">Telegram User ID</label>
-        <input type="text" id="user_id" name="user_id" placeholder="Enter your Telegram User ID" required>
-      </div>
-      <div class="form-group">
-        <label for="access_code">Access Code</label>
-        <input type="password" id="access_code" name="access_code" placeholder="Enter your access code" required>
+        <label for="verification_code">Verification Code</label>
+        <input type="text" id="verification_code" name="verification_code" placeholder="Enter the code sent to the admin group" required>
       </div>
       <button type="submit" class="login-btn" id="loginButton">
-        <i class="fas fa-sign-in-alt"></i> Login
+        <i class="fas fa-sign-in-alt"></i> Verify & Login
       </button>
       <div id="loading" style="display:none; text-align:center; margin-top:15px;">
         <i class="fas fa-circle-notch fa-spin" style="color: var(--primary); font-size: 24px;"></i>
-        <p style="margin-top:10px; color: var(--text-muted);">Logging in...</p>
+        <p style="margin-top:10px; color: var(--text-muted);">Verifying...</p>
       </div>
     </form>
     
@@ -170,7 +166,8 @@
     </script>
     
     <div class="note">
-      Only authorized owners and moderators can access the dashboard.
+      A verification code has been sent to the bot admin group.<br>
+      Enter the code here to access the dashboard.
     </div>
   </div>
 </body>
