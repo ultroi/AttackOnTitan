@@ -199,28 +199,22 @@ async def migrate_schema(db):
         logger.info("No player documents needed migration.")
 
 
+
 async def initialize_application():
     global application, app_initialized, global_db
     if application is None:
         application = Application.builder().token(TOKEN).build()
-        # Start scheduled tasks
-        start_scheduled_tasks(application.bot)
     try:
         # Initialize database and other services ONCE
         if global_db is None:
             # Use persistent DB connection for best performance
             motor_db = await get_persistent_database()
             global_db = Database()
-            await global_db.init_db()  
-
-        await migrate_schema(global_db)
+            await global_db.init_db()  # This will set up collections using motor_db internally
+            await migrate_schema(global_db)
         application.bot_data["db"] = global_db
-        shop_system = ShopSystem()
-        application.bot_data["shop_system"] = shop_system
-        # Ensure shop_items is always available for battle system
-        application.bot_data["shop_items"] = shop_system.shop_items
+        application.bot_data["shop_system"] = ShopSystem()
         register_handlers(application)
-
 
         
         async def error_handler(update: object, context):
