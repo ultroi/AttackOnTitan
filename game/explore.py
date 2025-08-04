@@ -1,4 +1,3 @@
-from multiprocessing import context
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -274,7 +273,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    Block if verification in progress
+    # Block if verification is in progress
     if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
         return
 
