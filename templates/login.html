@@ -153,9 +153,6 @@
         document.getElementById('loading').style.display = 'block';
         document.getElementById('loginButton').disabled = true;
         document.getElementById('loginButton').innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Processing...';
-        
-        // Let the form submit and handle redirect server-side
-        // The setTimeout ensures the form is visually responsive before submission
         setTimeout(function() {
           // If we're still here after 5 seconds, refresh the page
           setTimeout(function() {

@@ -33,36 +33,70 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     if player.level < 15:
-        await update.message.reply_text(f"⚠️ You must be at least **Level 15** to access the Central Bank. You are currently Level {player.level}.")
+        await update.message.reply_text(
+            f"⚠️ <b>Access Denied!</b>\n\n"
+            f"You must be at least <b>Level 15</b> to interact with the <b>Central Bank</b>.\n"
+            f"📉 Your Current Level: <code>{player.level}</code>",
+            parse_mode='HTML'
+        )
         return
 
     account = await db.get_bank_account(player.user_id)
 
     if account and account.opened:
-        # Player has an open account, show info
+        # Show image
+        await update.message.reply_photo(
+            photo="https://i.ibb.co/FqBX9JMp/image.jpg"
+        )
+
+        # Get central bank stats
+        stats = await bank_system.get_central_bank_stats()
+
+        # Get top 3 richest players
+        top_players_list = []
+        for i, p in enumerate(stats['top_3_richest']):
+            player_obj = await db.get_player(p['user_id'])
+            first_name = player_obj.name.split()[0] if player_obj and player_obj.name else p['user_id']
+            top_players_list.append(f"👑 <b>#{i+1}</b>: {first_name}")
+        top_players_str = '\n'.join(top_players_list) if top_players_list else "No players with accounts yet."
+
+        # Your balance
         info = bank_system.get_player_bank_info(account)
+
         msg = (
-            f"🏦 **Central Bank Account**\n\n"
-            f"Here are your current balances:\n"
-            f"- Marks: `{info['marks']}`\n"
-            f"- Valor: `{info['valor']}`\n"
-            f"- Crystals: `{info['crystal']}`\n"
+            f"🏦 <b>Central Bank Account Summary</b>\n"
+            f"────────────────────\n"
+            f"<b>🏰 Total Bank Reserves:</b>\n"
+            f"🔹 Marks: <code>{stats['total_reserve']['marks']}</code>\n"
+            f"🔸 Valor: <code>{stats['total_reserve']['valor']}</code>\n"
+            f"💎 Crystal: <code>{stats['total_reserve']['crystal']}</code>\n"
+            f"\n"
+            f"<b>👤 Your Account Balance:</b>\n"
+            f"🔹 Marks: <code>{info['marks']}</code>\n"
+            f"🔸 Valor: <code>{info['valor']}</code>\n"
+            f"💎 Crystal: <code>{info['crystal']}</code>\n"
+            f"\n"
+            f"🏅 <b>Top 3 Richest Players</b>:\n"
+            f"{top_players_str}"
         )
-        await update.message.reply_text(msg, parse_mode='Markdown')
+        await update.message.reply_text(msg, parse_mode='HTML')
+
     else:
-        # Player is eligible but hasn't opened an account, show open UI
+        # Account not yet opened
         msg = (
-            f"🏦 **Welcome to the Central Bank!**\n\n"
-            f"To open an account, you must pay a one-time fee. This will allow you to secure your assets.\n\n"
-            f"**Opening Fee:**\n"
-            f"- Marks: `{BANK_OPEN_FEE['marks']}`\n"
-            f"- Valor: `{BANK_OPEN_FEE['valor']}`\n"
-            f"- Crystals: `{BANK_OPEN_FEE['crystal']}`\n\n"
-            f"Click the button below to pay the fee from your inventory."
+            f"🏦 <b>Welcome to the Central Bank!</b>\n"
+            f"Secure your wealth with us and access exclusive features.\n\n"
+            f"📜 <b>Opening Fee:</b>\n"
+            f"🔹 Marks: <code>{BANK_OPEN_FEE['marks']}</code>\n"
+            f"🔸 Valor: <code>{BANK_OPEN_FEE['valor']}</code>\n"
+            f"💎 Crystal: <code>{BANK_OPEN_FEE['crystal']}</code>\n\n"
+            f"🔓 Click the button below to pay and activate your account."
         )
-        keyboard = [[InlineKeyboardButton("💳 Pay Fee & Open Account", callback_data="bank_open_account")]]
+        keyboard = [
+            [InlineKeyboardButton("💳 Pay & Open Account", callback_data="bank_open_account")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(msg, reply_markup=reply_markup, parse_mode='HTML')
 
 async def handle_deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles depositing currency into the bank. Usage: /deposit [currency] [amount]"""
@@ -146,31 +180,7 @@ async def handle_withdrawal_command(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text(status_message)
 
 
-async def handle_cb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays statistics for the Central Bank."""
-    db, bank_system, _ = await get_player_and_dependencies(update, context)
-    if not db:
-        return
 
-    stats = await bank_system.get_central_bank_stats()
-
-    top_players_list = []
-    for i, p in enumerate(stats['top_3_richest']):
-        # Assuming you can fetch player names for a better UI
-        player_name = p['user_id'] # Replace with actual name if available
-        top_players_list.append(f"{i+1}. {player_name} (Wealth: `{p['total']}`)")
-    
-    top_players_str = '\n'.join(top_players_list) if top_players_list else "No players with accounts yet."
-
-    msg = (
-        f"📊 **Central Bank Statistics**\n\n"
-        f"**Total Bank Reserves:**\n"
-        f"- Marks: `{stats['total_reserve']['marks']}`\n"
-        f"- Valor: `{stats['total_reserve']['valor']}`\n"
-        f"- Crystals: `{stats['total_reserve']['crystal']}`\n\n"
-        f"🏆 **Top 3 Richest Players:**\n{top_players_str}"
-    )
-    await update.message.reply_text(msg, parse_mode='Markdown')
 
 
 ## --- Callback Query Handler for Buttons ---

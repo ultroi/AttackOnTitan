@@ -11,12 +11,15 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import logging
 import secrets
+
 import random
 import string
 
 from starlette.status import HTTP_303_SEE_OTHER
 from telegram import Bot
 import httpx
+from utils.owners import get_owner_ids
+from utils.mod_utils import is_mod
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +51,8 @@ import asyncio
 
 async def save_dashboard_session(session_id: str, user_id: int, ip_address: str, expiry: float, created_at: float, last_activity: float):
     db = await get_database()
+    if db is None:
+        return
     await db["dashboard_sessions"].update_one(
         {"session_id": session_id},
         {"$set": {"user_id": user_id, "ip_address": ip_address, "expiry": expiry, "created_at": created_at, "last_activity": last_activity}},
@@ -56,10 +61,14 @@ async def save_dashboard_session(session_id: str, user_id: int, ip_address: str,
 
 async def get_dashboard_session(session_id: str):
     db = await get_database()
+    if db is None:
+        return None
     return await db["dashboard_sessions"].find_one({"session_id": session_id})
 
 async def delete_dashboard_session(session_id: str):
     db = await get_database()
+    if db is None:
+        return
     await db["dashboard_sessions"].delete_one({"session_id": session_id})
 
 # Access log tracking

@@ -42,7 +42,7 @@ from game.profile_system import (
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
 )
-from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_cb_command, handle_open_bank_callback
+from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command
@@ -547,7 +547,6 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("bank", handle_bank_command))
     app_instance.add_handler(CommandHandler("deposit", handle_deposit_command))
     app_instance.add_handler(CommandHandler("withdraw", handle_withdrawal_command))
-    app_instance.add_handler(CommandHandler("cb", handle_cb_command))
     app_instance.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
 
     # Character selection and team management
