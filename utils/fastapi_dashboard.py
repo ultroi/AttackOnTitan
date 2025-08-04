@@ -13,8 +13,10 @@ import logging
 import secrets
 import random
 import string
+
 from starlette.status import HTTP_303_SEE_OTHER
 from telegram import Bot
+import httpx
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +39,7 @@ BAN_LOG_CHAT_ID = -1002873117075
 
 SESSION_COOKIE = "aot_dashboard_session"
 VERIFICATION_CODE_EXPIRY = 300  # 5 minutes
-ADMIN_GROUP_ID = -1002873117075  # Replace with your admin group/chat id
+ADMIN_GROUP_ID = -1002463105932
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
 verification_codes = {}  # {code: (timestamp, ip)}
 
@@ -172,7 +174,7 @@ def include_dashboard_route(app):
         if TELEGRAM_BOT_TOKEN:
             try:
                 bot = Bot(token=TELEGRAM_BOT_TOKEN)
-                bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"[AoT Dashboard Login] Verification code: <b>{code}</b>\nIP: {client_ip}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", parse_mode="HTML")
+                await bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"[AoT Dashboard Login] Verification code: <b>{code}</b>\nIP: {client_ip}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", parse_mode="HTML")
             except Exception as e:
                 logger.error(f"Failed to send verification code to admin group: {e}")
         else:
