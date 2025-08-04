@@ -2,6 +2,7 @@ from fastapi import Request, Form, HTTPException, Depends, Cookie, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.security import APIKeyCookie
+from typing import Optional
 from database.db_instance import get_database
 import time
 import os
@@ -161,7 +162,6 @@ def include_dashboard_route(app):
     @app.post("/login", response_class=HTMLResponse)
     async def login_post(
         request: Request,
-        response: Response,
         user_id: str = Form(...),
         access_code: str = Form(...)
     ):
@@ -173,10 +173,10 @@ def include_dashboard_route(app):
             if hasattr(request, 'client') and request.client:
                 if hasattr(request.client, 'host'):
                     client_ip = request.client.host
-            
+
             # Log the login attempt
             log_details = {"attempt": "login", "success": False}
-            
+
             # Verify access code
             if access_code != DASHBOARD_ACCESS_CODE:
                 log_dashboard_access(
@@ -190,7 +190,7 @@ def include_dashboard_route(app):
                     {"request": request, "error": "Invalid access code"}, 
                     status_code=401
                 )
-            
+
             # Check if user is authorized
             authorized = await is_authorized(user_id_int)
             if not authorized:
@@ -205,22 +205,24 @@ def include_dashboard_route(app):
                     {"request": request, "error": "Unauthorized. Only owners and moderators can access."}, 
                     status_code=403
                 )
-            
+
             # Create session with IP address
             session_id = create_session(user_id_int, client_ip)
-            
-            # Set session cookie
-            response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
-            response.set_cookie(
+
+            # Set session cookie on the actual response object being returned
+            redirect_response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+            redirect_response.set_cookie(
                 key=SESSION_COOKIE,
                 value=session_id,
                 httponly=True,
                 max_age=3600,
                 secure=False,  # Set to True in production with HTTPS
+                samesite="lax",  # More permissive SameSite policy
+                path="/"        # Ensure cookie is available for all paths
             )
-            
+
             logger.info(f"🔐 User {user_id_int} successfully logged in from IP {client_ip}")
-            return response
+            return redirect_response
         except ValueError:
             return templates.TemplateResponse(
                 "login.html", 
@@ -260,15 +262,40 @@ def include_dashboard_route(app):
         return response
             
     @app.get("/dashboard", response_class=HTMLResponse)
-    async def dashboard(request: Request, user_id: Optional[int] = Depends(verify_session)):
+    async def dashboard(request: Request, session: Optional[str] = Cookie(None)):
         """Render dashboard page with authentication"""
-        if user_id is None:
-            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
-        
         # Get client IP
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
+            
+        # Manual session verification to avoid dependency issues
+        user_id = None
+        if session and session in active_sessions:
+            session_data = active_sessions[session]
+            current_time = time.time()
+            
+            # Check if session is expired
+            if session_data["expiry"] < current_time:
+                del active_sessions[session]
+            else:
+                # Extend session and update last activity
+                session_data["expiry"] = current_time + 3600
+                session_data["last_activity"] = current_time
+                user_id = session_data["user_id"]
+                
+                # Track session activity
+                await track_session_activity(session, request)
+        
+        if user_id is None:
+            # Log unauthorized access
+            log_dashboard_access(
+                user_id=0,
+                action="dashboard_access_denied",
+                ip_address=client_ip,
+                details={"reason": "invalid_session"}
+            )
+            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
             
         # Track dashboard access
         log_dashboard_access(

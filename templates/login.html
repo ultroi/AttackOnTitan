@@ -133,7 +133,7 @@
     </div>
     {% endif %}
     
-    <form method="POST" action="/login">
+    <form id="loginForm" method="POST" action="/login">
       <div class="form-group">
         <label for="user_id">Telegram User ID</label>
         <input type="text" id="user_id" name="user_id" placeholder="Enter your Telegram User ID" required>
@@ -142,10 +142,32 @@
         <label for="access_code">Access Code</label>
         <input type="password" id="access_code" name="access_code" placeholder="Enter your access code" required>
       </div>
-      <button type="submit" class="login-btn">
+      <button type="submit" class="login-btn" id="loginButton">
         <i class="fas fa-sign-in-alt"></i> Login
       </button>
+      <div id="loading" style="display:none; text-align:center; margin-top:15px;">
+        <i class="fas fa-circle-notch fa-spin" style="color: var(--primary); font-size: 24px;"></i>
+        <p style="margin-top:10px; color: var(--text-muted);">Logging in...</p>
+      </div>
     </form>
+    
+    <script>
+      document.getElementById('loginForm').addEventListener('submit', function(e) {
+        // Show loading
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loginButton').disabled = true;
+        document.getElementById('loginButton').innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Processing...';
+        
+        // Let the form submit and handle redirect server-side
+        // The setTimeout ensures the form is visually responsive before submission
+        setTimeout(function() {
+          // If we're still here after 5 seconds, refresh the page
+          setTimeout(function() {
+            window.location.href = '/dashboard';
+          }, 5000);
+        }, 500);
+      });
+    </script>
     
     <div class="note">
       Only authorized owners and moderators can access the dashboard.

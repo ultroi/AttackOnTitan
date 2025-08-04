@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import uvicorn
+import time
 from datetime import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -450,7 +451,7 @@ async def set_webhook(request: Request):
 async def monitor_dashboard(request: Request):
     try:
         # Get session cookie
-        from utils.fastapi_dashboard import verify_session, SESSION_COOKIE, log_dashboard_access
+        from utils.fastapi_dashboard import verify_session, SESSION_COOKIE, log_dashboard_access, active_sessions
         
         # Get client IP
         client_ip = "unknown"
@@ -459,7 +460,21 @@ async def monitor_dashboard(request: Request):
         
         session = request.cookies.get(SESSION_COOKIE)
         if session:
-            user_id = await verify_session(session)
+            # Manually verify session similar to our fix in the dashboard endpoint
+            user_id = None
+            if session in active_sessions:
+                session_data = active_sessions[session]
+                current_time = time.time()
+                
+                # Check if session is expired
+                if session_data["expiry"] < current_time:
+                    del active_sessions[session]
+                else:
+                    # Extend session and update last activity
+                    session_data["expiry"] = current_time + 3600
+                    session_data["last_activity"] = current_time
+                    user_id = session_data["user_id"]
+                    
             if not user_id:
                 # Log unauthorized access attempt
                 log_dashboard_access(
