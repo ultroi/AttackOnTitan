@@ -40,6 +40,7 @@ from game.profile_system import (
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
 )
+from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_cb_command, handle_open_bank_callback
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command
@@ -47,6 +48,7 @@ from game.explore import explore, close_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
+from utils.scheduled_tasks import start_scheduled_tasks
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 from game.captcha import button
 
@@ -201,6 +203,8 @@ async def initialize_application():
     global application, app_initialized, global_db
     if application is None:
         application = Application.builder().token(TOKEN).build()
+        # Start scheduled tasks
+        start_scheduled_tasks(application.bot)
     try:
         # Initialize database and other services ONCE
         if global_db is None:
@@ -293,8 +297,10 @@ async def shutdown_application():
     if application and app_initialized:
         logger.info("Starting graceful shutdown...")
         try:
-            # The only call needed here is shutdown(), which cleans up resources.
-            # run_polling() already handles stopping the updater and the application tasks.
+            # Stop receiving updates first
+            await application.updater.stop()
+            # Then stop the application
+            await application.stop()
             await application.shutdown()
             logger.info("Shutdown completed successfully")
         except Exception as e:
@@ -302,37 +308,51 @@ async def shutdown_application():
         finally:
             app_initialized = False
 
-# @app.post("/webhook")
-# async def webhook(request: Request):
-#     client_ip = request.client.host
-#     logger.info(f"Received webhook request from IP: {client_ip}")
-#
-#     if not is_ip_allowed(client_ip):
-#         logger.warning(f"Unauthorized IP blocked: {client_ip}")
-#         return Response(status_code=403)
-#
-#     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
-#     if token != SECRET_TOKEN:
-#         logger.warning("Invalid secret token received")
-#         return Response(status_code=403)
-#
-#     try:
-#         json_data = await request.json()
-#         if not json_data:
-#             logger.warning("Empty webhook payload received")
-#             return Response(status_code=400)
-#
-#         logger.debug(f"Webhook payload: {json_data}")
-#
-#         # Use global application and db
-#         if not app_initialized:
-#             await initialize_application()
-#         update = Update.de_json(json_data, application.bot)
-#         await application.process_update(update)
-#         return Response(status_code=200)
-#     except Exception as e:
-#         logger.error(f"Webhook processing error: {e}")
-#         return Response(status_code=500)
+def handle_shutdown(signum, frame):
+    """Handle shutdown signals."""
+    logger.info(f"Received shutdown signal {signum}")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(shutdown_application())
+    except Exception as e:
+        logger.error(f"Error during shutdown handling: {e}")
+    finally:
+        loop.close()
+        if loop.is_running():
+            loop.stop()
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    client_ip = request.client.host
+    logger.info(f"Received webhook request from IP: {client_ip}")
+
+    if not is_ip_allowed(client_ip):
+        logger.warning(f"Unauthorized IP blocked: {client_ip}")
+        return Response(status_code=403)
+
+    token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
+    if token != SECRET_TOKEN:
+        logger.warning("Invalid secret token received")
+        return Response(status_code=403)
+
+    try:
+        json_data = await request.json()
+        if not json_data:
+            logger.warning("Empty webhook payload received")
+            return Response(status_code=400)
+
+        logger.debug(f"Webhook payload: {json_data}")
+
+        # Use global application and db
+        if not app_initialized:
+            await initialize_application()
+        update = Update.de_json(json_data, application.bot)
+        await application.process_update(update)
+        return Response(status_code=200)
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
+        return Response(status_code=500)
 
 @app.api_route("/", methods=["GET", "POST", "HEAD"])
 async def index():
@@ -427,6 +447,13 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("mm", maintenance))
     app_instance.add_handler(CommandHandler("add", add_resource_command))
 
+    # Bank system handlers
+    app_instance.add_handler(CommandHandler("bank", handle_bank_command))
+    app_instance.add_handler(CommandHandler("deposit", handle_deposit_command))
+    app_instance.add_handler(CommandHandler("withdraw", handle_withdrawal_command))
+    app_instance.add_handler(CommandHandler("cb", handle_cb_command))
+    app_instance.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
+
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
@@ -495,33 +522,36 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def main():
-    """Initializes and runs the bot application."""
-    
-    # Initialize the application
-    bot_app = await initialize_application()
-    
-    # Start fetching updates from Telegram
-    await bot_app.updater.start_polling(drop_pending_updates=True)
-    
-    logger.info("Bot is now running and polling for updates...")
-
-    # The main loop to keep the bot alive
     try:
-        # This will run forever until a signal like Ctrl+C is received
-        while True:
-            await asyncio.sleep(3600)
-            
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Received exit signal, shutting down gracefully...")
+        await asyncio.sleep(2)
+        logger.info(f"Starting bot in {ENV} environment")
         
-    finally:
-        # Graceful shutdown sequence
-        if bot_app.updater and bot_app.updater.is_running:
-            await bot_app.updater.stop()
-        if bot_app.running:
-            await bot_app.stop()
-        await bot_app.shutdown()
-        logger.info("Bot has been shut down.")
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, handle_shutdown)
+        signal.signal(signal.SIGTERM, handle_shutdown)
+        
+        # Initialize application before starting server
+        await initialize_application()
+        
+        # Configure and start server
+        config = uvicorn.Config(
+            app=app,
+            host="0.0.0.0",
+            port=int(os.environ.get('PORT', 5000)),
+            log_level="info"
+        )
+        server = uvicorn.Server(config)
+        
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            logger.info("Server shutdown requested")
+        finally:
+            await shutdown_application()
+                
+    except Exception as e:
+        logger.error(f"Bot crashed with error: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     if os.name == "nt":

@@ -65,6 +65,8 @@ class BattleSystem:
             "focused_turns": 0,
             "ally_died": False
         }
+        # Auto-unlock abilities based on current level
+        self.character._check_ability_unlocks()
         self.apply_passives("battle_start")
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
@@ -450,10 +452,10 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
                 continue
             gas_cost = ability.gas_cost or 0
             ability_display_name = ability.name
-            prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else "🔄"
+            prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else " "
             if battle.ability_cooldowns.get(ability.name, 0) == 0 and battle.gas >= gas_cost:
                 keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"{prefix} {ability_display_name} ({gas_cost} gas)"),
+                    obfuscate_text(f"{prefix} {ability_display_name}"),
                     callback_data=f"ability_{ability.name}"
                 )])
             elif battle.ability_cooldowns.get(ability.name, 0) > 0:
@@ -562,6 +564,9 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     battle = BattleSystem(character, titan, player)
     async with active_battles_lock:
         active_battles[user_id] = battle
+    # Reset explore spam count when battle starts
+    if "explore_spam_count" in context.bot_data:
+        context.bot_data["explore_spam_count"][user_id] = 0
     try:
         from utils.monitor import track_player_action
         username = update.effective_user.username or update.effective_user.first_name or "Unknown"

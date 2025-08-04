@@ -154,9 +154,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
-     # Only allow in private chat
-    if update.effective_chat and update.effective_chat.type != "private":
-        await _reply_error(update, "This command can only be used in private chat.")
+    # Only use in private chats
+    if not update.effective_chat or update.effective_chat.type != "private":
+        await _reply_error(update, "This command can only be used in private chats.")
         return
 
     # Show persistent keyboard only the first time
@@ -193,6 +193,85 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         if update.message:
             await update.message.reply_text("You need to create a profile first with /start")
+        return
+    
+    # --- SPAM PROTECTION ---
+    if "explore_spam_count" not in context.bot_data:
+        context.bot_data["explore_spam_count"] = {}
+    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0)
+
+    try:
+        from game.battle_system import active_battles, active_battles_lock
+    except ImportError:
+        active_battles = {}
+        active_battles_lock = None
+
+    is_in_battle = False
+    if active_battles_lock:
+        async with active_battles_lock:
+            if user_id_str in active_battles:
+                is_in_battle = True
+    elif user_id_str in active_battles:
+        is_in_battle = True
+
+    if is_in_battle:
+        # Reset the spam count for this user
+        context.bot_data["explore_spam_count"][user_id_str] = 0
+        first_name = update.effective_user.first_name or "Player"
+        await _reply_error(update, f"{first_name} is currently battling !!")
+        try:
+            from utils.monitor import remove_player_activity
+            remove_player_activity(user_id)
+        except Exception:
+            pass
+        return
+
+    # If not in battle, increment spam count
+    spam_count += 1
+    context.bot_data["explore_spam_count"][user_id_str] = spam_count
+
+    # Warn at 15 explores
+    if spam_count == 15:
+        if update.message:
+            await update.message.reply_text("⚠️ Warning: Don't Spam, you will be banned.")
+
+    # Ban at 20 explores
+    if spam_count >= 20:
+        # Directly insert ban in DB, bypassing mod/owner check
+        db = context.bot_data.get("db")
+        # Removed local import to prevent UnboundLocalError
+        expiry = int(time.time()) + 24*3600
+        reason = "Spamming explore without battle"
+        await db.bans.update_one(
+            {"user_id": user_id},
+            {"$set": {"user_id": user_id, "expiry": expiry, "reason": reason, "banned_by": user_id, "banned_at": int(time.time())}},
+            upsert=True
+        )
+        # Notify user
+        if update.message:
+            await update.message.reply_text("You are banned for spamming explore without battle.")
+        context.bot_data["explore_spam_count"][user_id_str] = 0
+
+        # Send ban log message to group (same format as ban_user)
+        bot_username = None
+        try:
+            bot_username = (await context.bot.get_me()).username
+        except Exception:
+            bot_username = "Bot"
+        time_str = "24 hours"
+        msg = (
+            f"<b>#BanEvent</b>\n\n"
+            f"<b>Target</b> : <a href=\"tg://user?id={user_id}\">{update.effective_user.first_name}</a>\n"
+            f"<b>Target ID</b> : <code>{user_id}</code>\n"
+            f"<b>By</b> : <a href=\"tg://user?id={context.bot.id}\">{bot_username}</a>\n"
+            f"<b>Reason</b> : <code>Spamming explore without battle</code>\n"
+            f"<b>Time</b> : <code>{time_str}</code>"
+        )
+        BAN_LOG_CHAT_ID = -1002873117075
+        try:
+            await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
         return
 
     # Block if verification in progress
@@ -300,6 +379,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for dir in directions.keys()
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+        # --- Clear active battle if present ---
+        try:
+            from game.battle_system import active_battles
+            user_id_str = str(user_id)
+            if user_id_str in active_battles:
+                active_battles.pop(user_id_str, None)
+            # Also clear active_battle_id in bot_data if present
+            battle_id_key = f"active_battle_id_{user_id_str}"
+            if battle_id_key in context.bot_data:
+                context.bot_data.pop(battle_id_key, None)
+        except Exception:
+            pass
         try:
             if update.message:
                 await update.message.reply_text(

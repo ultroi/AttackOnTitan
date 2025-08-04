@@ -6,6 +6,21 @@ from database.characters import CharacterData, get_character_data, AbilityEffect
 from motor.motor_asyncio import AsyncIOMotorClient
 from database.schemas import Ability  # <-- Import Ability
 
+class BankAccount(BaseModel):
+    user_id: str
+    opened: bool = False
+    opened_at: Optional[datetime] = None
+    marks_balance: int = 0
+    valor_balance: int = 0
+    crystal_balance: int = 0
+    last_deposit: Optional[datetime] = None
+    penalty_applied: bool = False
+    penalty_rate: float = 2.5
+    penalty_start_date: Optional[datetime] = None
+    total_wealth: Optional[int] = None  # Added for central bank stats
+    last_tax_check: Optional[datetime] = None  # Track when tax was last checked
+    tax_history: List[Dict] = Field(default_factory=list)  # Track tax collection history
+
 class CharacterStats(BaseModel):
     ATK: int = 10
     DEF: int = 10
@@ -133,10 +148,20 @@ class Character(BaseModel):
             self._check_ability_unlocks()
 
     def _check_ability_unlocks(self) -> None:
-        for ability in self.active_abilities + self.passive_abilities + self.ultimate_abilities:
-            if not ability.is_unlocked and self.level >= ability.level_required:
-                ability.is_unlocked = True
-                self.unlocked_abilities[ability.name] = True
+        # Get character data to ensure we have all possible abilities
+        character_data = get_character_data(self.character_type)
+        if character_data:
+            all_abilities = []
+            # Add abilities from character data
+            for ability_list_name in ["active_abilities", "passive_abilities", "ultimate_abilities"]:
+                ability_list = getattr(character_data, ability_list_name, [])
+                all_abilities.extend(ability_list)
+            
+            # Check each ability for unlocks
+            for ability in all_abilities:
+                if self.level >= ability.level_required:
+                    ability.is_unlocked = True
+                    self.unlocked_abilities[ability.name] = True
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""

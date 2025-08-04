@@ -32,13 +32,14 @@ async def update_battle_status(query: Update.callback_query, battle: BattleSyste
         keyboard = []
         for ability_type in ["active", "ultimate"]:
             for ability_name, ability in battle.character.get_abilities().get(ability_type, {}).items():
-                if (battle.character.unlocked_abilities.get(ability_name, False) and
-                    not ability.disabled_against_titans and
-                    battle.ability_cooldowns.get(ability_name, 0) == 0):
-                    keyboard.append([InlineKeyboardButton(
-                        f"{ability.name} ({ability.gas_cost} gas)",
-                        callback_data=f"ability_{ability.name}"
-                    )])
+                # Fix for level 25 abilities not showing up
+                if ability.level_required <= battle.character.level:
+                    if (not ability.disabled_against_titans and
+                        battle.ability_cooldowns.get(ability_name, 0) == 0):
+                        keyboard.append([InlineKeyboardButton(
+                            f"{ability.name} ({ability.gas_cost} gas)",
+                            callback_data=f"ability_{ability.name}"
+                        )])
         keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(

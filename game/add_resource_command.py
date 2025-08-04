@@ -23,18 +23,95 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
     args = context.args if context.args is not None else []
     if not isinstance(args, list):
         args = list(args)
+    # --- Custom: /add char level <char_name> <level_number> [user_id] ---
+    if len(args) >= 3 and args[0].lower() == "char" and args[1].lower() == "level":
+        char_name = args[2]
+        try:
+            target_level = int(args[3]) if len(args) >= 4 else None
+        except ValueError:
+            if message:
+                await message.reply_text("Level must be a number.")
+            return
+        if target_level is None:
+            if message:
+                await message.reply_text("Usage: /add char level <char_name> <level_number> [user_id]")
+            return
+        # Determine user id
+        target_user_id = None
+        if len(args) >= 5:
+            target_user_id = args[4]
+        elif message:
+            reply_to = getattr(message, "reply_to_message", None)
+            if reply_to is not None:
+                from_user = getattr(reply_to, "from_user", None)
+                if from_user is not None and hasattr(from_user, "id"):
+                    target_user_id = from_user.id
+        if not target_user_id:
+            target_user_id = user_id
+        try:
+            target_user_id_int = int(target_user_id)
+        except (TypeError, ValueError):
+            if message:
+                await message.reply_text("Invalid user ID.")
+            return
+        db = context.bot_data.get("db")
+        if not isinstance(db, Database):
+            if message:
+                await message.reply_text("Database not initialized.")
+            return
+        
+        # Try exact match first
+        character = await db.get_character(target_user_id_int, char_name)
+        # If not found, try case-insensitive and partial search
+        if not character:
+            player_chars = await db.get_player_characters(target_user_id_int)
+            match = None
+            # 1. Try case-insensitive full match
+            for c in player_chars:
+                if c.name.lower() == char_name.lower():
+                    match = c
+                    break
+            # 2. If still not found, try case-insensitive partial (substring) match
+            if not match:
+                for c in player_chars:
+                    if char_name.lower() in c.name.lower():
+                        match = c
+                        break
+            character = match
+        if not character:
+            if message:
+                await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
+            return
+        if target_level <= character.level:
+            if message:
+                await message.reply_text(f"Character is already level {character.level} or higher.")
+            return
+        level_ups = []
+        while character.level < target_level:
+            result = character.level_up()
+            level_ups.append(result)
+        await db.update_character(character)
+        if message:
+            await message.reply_text(f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
+        return
+
+    # --- Default: player resource/level add ---
     if len(args) < 2:
         if message:
-            await message.reply_text("Usage: /add <gems|crystal|gas|valor> <amount> [user_id]")
+            await message.reply_text("Usage: /add <gems|crystal|gas|valor|level> <amount> [user_id]")
         return
     resource = args[0].lower()
     amount = args[1]
     target_user_id = None
     if len(args) >= 3:
         target_user_id = args[2]
-    elif message and getattr(message, "reply_to_message", None) and getattr(message.reply_to_message, "from_user", None):
-        target_user_id = message.reply_to_message.from_user.id
-    else:
+    elif message:
+        reply_to = getattr(message, "reply_to_message", None)
+        if reply_to is not None:
+            from_user = getattr(reply_to, "from_user", None)
+            if from_user is not None and hasattr(from_user, "id"):
+                target_user_id = from_user.id
+    if not target_user_id:
         if message:
             await message.reply_text("Please specify a user ID or reply to a user's message.")
         return
@@ -48,9 +125,9 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if message:
             await message.reply_text("Amount must be a number.")
         return
-    if resource not in ["marks", "crystal", "gas", "valor"]:
+    if resource not in ["marks", "crystal", "gas", "valor", "level"]:
         if message:
-            await message.reply_text("Resource must be one of: gems, crystal, gas, valor.")
+            await message.reply_text("Resource must be one of: gems, crystal, gas, valor, level.")
         return
     db = context.bot_data.get("db")
     if not isinstance(db, Database):
@@ -77,6 +154,20 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         update_data["gas"] = getattr(player, "gas", 0) + amount
     elif resource == "valor":
         update_data["valor"] = getattr(player, "valor", 0) + amount
+    elif resource == "level":
+        target_level = amount
+        if target_level <= player.level:
+            if message:
+                await message.reply_text(f"User is already level {player.level} or higher.")
+            return
+        level_ups = []
+        while player.level < target_level:
+            level_up_data = player.level_up()
+            level_ups.append(level_up_data)
+        await db.update_player(target_user_id_int, player.dict())
+        if message:
+            await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
+        return
     await db.update_player(target_user_id_int, update_data)
     if message:
         await message.reply_text(f"Added {amount} {resource} to user {target_user_id_int}.")

@@ -14,12 +14,18 @@ def hlink(name, url):
 def hcode(text):
     return f'<code>{text}</code>'
 
-async def reset_user_data(db, user_id: str):
-    await db.characters.delete_many({"user_id": user_id})
-    await db.players.delete_many({"user_id": user_id})
-    await db.titans.delete_many({"user_id": user_id})
-    await db.equipment.delete_many({"user_id": user_id})
-    await db.shop_purchases_collection.delete_many({"user_id": user_id})
+async def reset_user_data(self, user_id: str):
+    """Delete all data for a user: player, characters, titans, equipment, shop purchases, bank accounts."""
+    try:
+        await self.characters.delete_many({"user_id": user_id})
+        await self.players.delete_many({"user_id": user_id})
+        await self.titans.delete_many({"user_id": user_id})
+        await self.equipment.delete_many({"user_id": user_id})
+        await self.shop_purchases_collection.delete_many({"user_id": user_id})
+        if self.bank_accounts is not None:
+            await self.bank_accounts.delete_many({"user_id": user_id})
+    except Exception as e:
+        raise
 
 async def send_reset_log(context: ContextTypes.DEFAULT_TYPE, target_user, by_user, reason):
     name_link = hlink(target_user.first_name, f"tg://user?id={target_user.id}")

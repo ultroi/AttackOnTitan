@@ -28,6 +28,8 @@ class Database:
         self.equipment = None
         self.shop_purchases = None
         self.shop_purchases_collection = None  # For shop_system compatibility
+        self.bank_accounts = None
+        self.bans = None
 
     async def init_db(self):
         try:
@@ -41,6 +43,8 @@ class Database:
             self.equipment = self.db.equipment
             self.shop_purchases = self.db.shop_purchases
             self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
+            self.bank_accounts = self.db.bank_accounts
+            self.bans = self.db.bans
             # Test the connection
             await self.db.command('ping')
             # Create indexes for faster queries
@@ -55,11 +59,44 @@ class Database:
                 await self.characters.drop_index(char_index_name)
             await self.characters.create_index([("user_id", 1), ("name", 1)], name=char_index_name, unique=True, background=True)
             await self.titans.create_index("user_id")
+            await self.bank_accounts.create_index("user_id", name="user_id_1", unique=True, background=True)
             logger.info("Database connection verified (Motor) and indexes created")
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
             logger.info("Continuing with limited functionality - database operations may be slower")
             raise
+
+    # --- Banking System Methods ---
+    async def get_bank_account(self, user_id: str):
+        try:
+            doc = await self.bank_accounts.find_one({"user_id": user_id})
+            from database.models import BankAccount
+            return BankAccount(**doc) if doc else None
+        except Exception as e:
+            logger.error(f"Failed to get bank account: {e}")
+            return None
+
+    async def save_bank_account(self, account):
+        try:
+            account_dict = account.dict() if hasattr(account, 'dict') else account
+            account_dict["updated_at"] = datetime.now(timezone.utc)
+            await self.bank_accounts.update_one(
+                {"user_id": account.user_id},
+                {"$set": account_dict},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to save bank account: {e}")
+
+    async def get_all_bank_accounts(self):
+        try:
+            cursor = self.bank_accounts.find({})
+            docs = await cursor.to_list(None)
+            from database.models import BankAccount
+            return [BankAccount(**doc) for doc in docs]
+        except Exception as e:
+            logger.error(f"Failed to get all bank accounts: {e}")
+            return []
 
     # Player operations
     async def create_player(self, user_id: int, username: str, name: str, referral_code: str = None, referred_by: str = None) -> Player:
@@ -147,6 +184,22 @@ class Database:
             logger.error(f"Failed to update player: {e}")
             raise
 
+    async def save_player(self, player: Player) -> Optional[Player]:
+        """Save (update) the player document in the database."""
+        try:
+            player.updated_at = datetime.now(timezone.utc)
+            player_dict = player.dict() if hasattr(player, 'dict') else player.__dict__
+            result = await self.players.find_one_and_update(
+                {"user_id": str(player.user_id)},
+                {"$set": player_dict},
+                return_document=True
+            )
+            return Player(**result) if result else None
+        except Exception as e:
+            logger.error(f"Failed to save player: {e}")
+            raise
+
+        
     async def get_player_characters(self, user_id: int) -> List[Character]:
         try:
             cursor = self.characters.find({"user_id": str(user_id)})
