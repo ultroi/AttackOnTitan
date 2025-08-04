@@ -211,14 +211,18 @@ def include_dashboard_route(app):
 
             # Set session cookie on the actual response object being returned
             redirect_response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+
+            # Use secure=True if running under HTTPS (e.g., on Render or production)
+            # You can also make this dynamic based on request.url.scheme
+            is_https = request.url.scheme == "https"
             redirect_response.set_cookie(
                 key=SESSION_COOKIE,
                 value=session_id,
                 httponly=True,
                 max_age=3600,
-                secure=False,  # Set to True in production with HTTPS
-                samesite="lax",  # More permissive SameSite policy
-                path="/"        # Ensure cookie is available for all paths
+                secure=is_https,  # Automatically set secure based on scheme
+                samesite="lax",
+                path="/"
             )
 
             logger.info(f"🔐 User {user_id_int} successfully logged in from IP {client_ip}")

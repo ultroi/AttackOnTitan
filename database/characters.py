@@ -828,6 +828,9 @@ CHARACTER_IMAGES = {
 
 def get_character_data(character_name: str) -> Optional[CharacterData]:
     """Safe character data retrieval"""
+    if not character_name or not str(character_name).strip():
+        logger.warning(f"Character data not found: character_name is empty or None")
+        return None
     character = CHARACTERS.get(character_name)
     if not character:
         logger.warning(f"Character data not found for: {character_name}")
