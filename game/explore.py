@@ -274,50 +274,50 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # Block if verification in progress
-    # if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
-    #     return
+    Block if verification in progress
+    if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
+        return
 
-    # now = time.time()
-    # last_explore = getattr(player, "last_explore_time", None)
+    now = time.time()
+    last_explore = getattr(player, "last_explore_time", None)
 
-    # # Check inactivity
-    # inactive = False
-    # INACTIVITY_THRESHOLD = 1500
-    # if last_explore is not None:
-    #     inactivity_duration = now - last_explore
-    #     if inactivity_duration > INACTIVITY_THRESHOLD:
-    #         inactive = True
-    # else:
-    #     pass
+    # Check inactivity
+    inactive = False
+    INACTIVITY_THRESHOLD = 1500
+    if last_explore is not None:
+        inactivity_duration = now - last_explore
+        if inactivity_duration > INACTIVITY_THRESHOLD:
+            inactive = True
+    else:
+        pass
 
-    # # If inactive and not verified
-    # if inactive and not getattr(player, "hcaptcha_verified", False):
-    #     if not context.user_data.get("hcaptcha_prompted", False):
-    #         context.user_data["hcaptcha_prompted"] = True
-    #         timestamp = int(now)
-    #         verification_url = (
-    #             f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
-    #         )
-    #         await update.message.reply_text(
-    #             "🔒 <b>Verification Required</b>\n\n"
-    #             "You were inactive for more than 2 minutes.\n"
-    #             "Complete hCaptcha to continue exploring:",
-    #             reply_markup=InlineKeyboardMarkup([
-    #                 [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
-    #             ]),
-    #             parse_mode=ParseMode.HTML,
-    #         )
-    #         await db.update_player(user_id_str, {"hcaptcha_start_time": timestamp})
-    #         return
+    # If inactive and not verified
+    if inactive and not getattr(player, "hcaptcha_verified", False):
+        if not context.user_data.get("hcaptcha_prompted", False):
+            context.user_data["hcaptcha_prompted"] = True
+            timestamp = int(now)
+            verification_url = (
+                f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+            )
+            await update.message.reply_text(
+                "🔒 <b>Verification Required</b>\n\n"
+                "You were inactive for more than 2 minutes.\n"
+                "Complete hCaptcha to continue exploring:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            await db.update_player(user_id_str, {"hcaptcha_start_time": timestamp})
+            return
 
-    # # Reset verification flag if verified
-    # if getattr(player, "hcaptcha_verified", False):
-    #     context.user_data["hcaptcha_prompted"] = False
-    #     await db.update_player(user_id_str, {"hcaptcha_verified": False})
+    # Reset verification flag if verified
+    if getattr(player, "hcaptcha_verified", False):
+        context.user_data["hcaptcha_prompted"] = False
+        await db.update_player(user_id_str, {"hcaptcha_verified": False})
 
-    # # Always update last_explore_time
-    # await db.update_player(user_id_str, {"last_explore_time": now})
+    # Always update last_explore_time
+    await db.update_player(user_id_str, {"last_explore_time": now})
 
     # Check for active battle before allowing explore
     try:

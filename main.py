@@ -67,7 +67,12 @@ ALLOWED_IPS = [
     "91.108.56.0/22",     # Telegram IP range
     "149.154.160.0/20",   # Telegram IP range
     "95.161.64.0/20",     # Telegram IP range
-    "64.29.17.131"        # Your Vercel IP
+    "35.197.0.0/16",      # Render IP range
+    "35.235.0.0/16",      # Render IP range
+    "35.236.0.0/16",      # Additional Render IP range
+    "35.237.0.0/16",      # Additional Render IP range
+    "34.0.0.0/8",         # Additional potential Render IP range
+    "0.0.0.0/0"           # Allow all IPs for testing (remove in production)
 ]
 
 # Configure logging
@@ -203,6 +208,9 @@ async def migrate_schema(db):
 async def initialize_application():
     global application, app_initialized, global_db
     if application is None:
+        if not TOKEN:
+            logger.error("TELEGRAM_TOKEN is not set or is None")
+            return None
         application = Application.builder().token(TOKEN).build()
     try:
         # Initialize database and other services ONCE
@@ -292,7 +300,8 @@ async def shutdown_application():
         logger.info("Starting graceful shutdown...")
         try:
             # Stop receiving updates first
-            await application.updater.stop()
+            if hasattr(application, 'updater') and application.updater is not None:
+                await application.updater.stop()
             # Then stop the application
             await application.stop()
             await application.shutdown()
@@ -319,16 +328,21 @@ def handle_shutdown(signum, frame):
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "unknown"
     logger.info(f"Received webhook request from IP: {client_ip}")
 
-    if not is_ip_allowed(client_ip):
+    # Log all headers for debugging
+    headers = dict(request.headers)
+    logger.info(f"Webhook headers: {headers}")
+
+    # For now, skip IP check if we're on Render
+    if client_ip != "unknown" and ENV != "development" and not is_ip_allowed(client_ip):
         logger.warning(f"Unauthorized IP blocked: {client_ip}")
         return Response(status_code=403)
 
     token = request.headers.get('X-Telegram-Bot-Api-Secret-Token')
     if token != SECRET_TOKEN:
-        logger.warning("Invalid secret token received")
+        logger.warning(f"Invalid secret token received: {token}")
         return Response(status_code=403)
 
     try:
@@ -337,16 +351,30 @@ async def webhook(request: Request):
             logger.warning("Empty webhook payload received")
             return Response(status_code=400)
 
-        logger.debug(f"Webhook payload: {json_data}")
+        logger.info(f"Webhook payload: {json_data}")
 
         # Use global application and db
         if not app_initialized:
-            await initialize_application()
-        update = Update.de_json(json_data, application.bot)
-        await application.process_update(update)
+            logger.info("Initializing application for webhook")
+            app_instance = await initialize_application()
+        else:
+            app_instance = application
+            
+        if not app_instance:
+            logger.error("Application not initialized, cannot process webhook")
+            return Response(status_code=500)
+            
+        update = Update.de_json(json_data, app_instance.bot)
+        if update:
+            logger.info(f"Processing update ID: {update.update_id}")
+            await app_instance.process_update(update)
+            logger.info(f"Successfully processed update ID: {update.update_id}")
+        else:
+            logger.warning("Failed to parse update from webhook data")
+        
         return Response(status_code=200)
     except Exception as e:
-        logger.error(f"Webhook processing error: {e}")
+        logger.error(f"Webhook processing error: {e}", exc_info=True)
         return Response(status_code=500)
 
 @app.api_route("/", methods=["GET", "POST", "HEAD"])
@@ -526,13 +554,31 @@ async def main():
         signal.signal(signal.SIGTERM, handle_shutdown)
         
         # Initialize application before starting server
-        await initialize_application()
+        app_instance = await initialize_application()
+        
+        # Set webhook for Telegram
+        if ENV != "development" and app_instance:
+            webhook_url = "https://attackontitangamebot.onrender.com/webhook"
+            logger.info(f"Setting webhook to: {webhook_url}")
+            try:
+                await app_instance.bot.set_webhook(
+                    url=webhook_url,
+                    secret_token=SECRET_TOKEN,
+                    drop_pending_updates=True,
+                    allowed_updates=["message", "callback_query"]
+                )
+                webhook_info = await app_instance.bot.get_webhook_info()
+                logger.info(f"Webhook info: {webhook_info}")
+            except Exception as e:
+                logger.error(f"Failed to set webhook: {e}", exc_info=True)
         
         # Configure and start server
+        port = int(os.environ.get('PORT', 10000))
+        logger.info(f"Starting server on port {port}")
         config = uvicorn.Config(
             app=app,
             host="0.0.0.0",
-            port=int(os.environ.get('PORT', 5000)),
+            port=port,
             log_level="info"
         )
         server = uvicorn.Server(config)
