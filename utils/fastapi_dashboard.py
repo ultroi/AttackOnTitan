@@ -37,9 +37,27 @@ HCAPTCHA_TIMEOUT = 600
 BAN_LOG_CHAT_ID = -1002873117075
 
 # Dashboard authentication
-DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"  
-active_sessions: Dict[str, Dict] = {}
+DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"
 SESSION_COOKIE = "aot_dashboard_session"
+
+# MongoDB session helpers
+import asyncio
+
+async def save_dashboard_session(session_id: str, user_id: int, ip_address: str, expiry: float, created_at: float, last_activity: float):
+    db = await get_database()
+    await db["dashboard_sessions"].update_one(
+        {"session_id": session_id},
+        {"$set": {"user_id": user_id, "ip_address": ip_address, "expiry": expiry, "created_at": created_at, "last_activity": last_activity}},
+        upsert=True
+    )
+
+async def get_dashboard_session(session_id: str):
+    db = await get_database()
+    return await db["dashboard_sessions"].find_one({"session_id": session_id})
+
+async def delete_dashboard_session(session_id: str):
+    db = await get_database()
+    await db["dashboard_sessions"].delete_one({"session_id": session_id})
 
 # Access log tracking
 dashboard_access_log: List[Dict] = []  # Keeps track of recent dashboard accesses
@@ -70,66 +88,54 @@ def create_session(user_id: int, ip_address: str = "unknown") -> str:
     """Create a new session for authenticated user"""
     session_id = secrets.token_hex(16)
     timestamp = time.time()
-    active_sessions[session_id] = {
-        "user_id": user_id,
-        "expiry": timestamp + 3600,  # 1 hour session
-        "created_at": timestamp,
-        "ip_address": ip_address,
-        "last_activity": timestamp
-    }
-    
-    # Log new session creation
+    expiry = timestamp + 3600
+    asyncio.create_task(save_dashboard_session(session_id, user_id, ip_address, expiry, timestamp, timestamp))
     log_dashboard_access(
-        user_id=user_id, 
-        action="login", 
-        ip_address=ip_address, 
+        user_id=user_id,
+        action="login",
+        ip_address=ip_address,
         details={"session_id": session_id}
     )
     return session_id
 
 async def verify_session(session: Optional[str] = Cookie(None)) -> Optional[int]:
     """Verify user session, return user_id if valid or None if invalid"""
-    if not session or session not in active_sessions:
+    if not session:
         return None
-    
-    session_data = active_sessions[session]
+    session_data = await get_dashboard_session(session)
+    if not session_data:
+        return None
     current_time = time.time()
-    
-    # Check if session is expired
     if session_data["expiry"] < current_time:
-        del active_sessions[session]
+        await delete_dashboard_session(session)
         return None
-    
     # Extend session and update last activity
-    session_data["expiry"] = current_time + 3600
-    session_data["last_activity"] = current_time
-    
+    new_expiry = current_time + 3600
+    await save_dashboard_session(session, session_data["user_id"], session_data.get("ip_address", "unknown"), new_expiry, session_data.get("created_at", current_time), current_time)
     return session_data["user_id"]
 
 async def track_session_activity(session: str, request: Request) -> None:
     """Track session activity for logging purposes"""
-    if session in active_sessions:
-        session_data = active_sessions[session]
+    session_data = await get_dashboard_session(session)
+    if session_data:
         current_time = time.time()
         client_ip = "unknown"
         path = "unknown"
-        
-        # Safely get client IP and path
         if request:
             if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
                 client_ip = request.client.host
             if hasattr(request, 'url') and request.url and hasattr(request.url, 'path'):
                 path = request.url.path
-        
         # Track activity every 5 minutes
-        if current_time - session_data.get("last_logged", 0) > 300:
+        last_logged = session_data.get("last_logged", 0)
+        if current_time - last_logged > 300:
             log_dashboard_access(
                 user_id=session_data["user_id"],
                 action="access",
                 ip_address=client_ip,
                 details={"path": path}
             )
-            session_data["last_logged"] = current_time
+            await save_dashboard_session(session, session_data["user_id"], client_ip, session_data["expiry"], session_data.get("created_at", current_time), current_time)
 
 async def is_authorized(user_id: int) -> bool:
     """Check if user is authorized (owner or mod)"""
@@ -248,9 +254,9 @@ def include_dashboard_route(app):
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
             
-        if session and session in active_sessions:
-            user_id = active_sessions[session].get("user_id", 0)
-            # Log the logout only if we have a valid user_id
+        if session:
+            session_data = await get_dashboard_session(session)
+            user_id = session_data["user_id"] if session_data else 0
             if user_id:
                 log_dashboard_access(
                     user_id=user_id,
@@ -259,8 +265,7 @@ def include_dashboard_route(app):
                     details={"session_id": session}
                 )
             logger.info(f"👋 User {user_id} logged out from IP {client_ip}")
-            del active_sessions[session]
-            
+            await delete_dashboard_session(session)
         response = RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
         response.delete_cookie(SESSION_COOKIE)
         return response
@@ -272,27 +277,21 @@ def include_dashboard_route(app):
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
-            
+
         # Manual session verification to avoid dependency issues
         user_id = None
-        if session and session in active_sessions:
-            session_data = active_sessions[session]
+        session_data = None
+        if session:
+            session_data = await get_dashboard_session(session)
             current_time = time.time()
-            
-            # Check if session is expired
-            if session_data["expiry"] < current_time:
-                del active_sessions[session]
-            else:
+            if session_data and session_data["expiry"] >= current_time:
                 # Extend session and update last activity
-                session_data["expiry"] = current_time + 3600
-                session_data["last_activity"] = current_time
+                new_expiry = current_time + 3600
+                await save_dashboard_session(session, session_data["user_id"], session_data.get("ip_address", "unknown"), new_expiry, session_data.get("created_at", current_time), current_time)
                 user_id = session_data["user_id"]
-                
                 # Track session activity
                 await track_session_activity(session, request)
-        
         if user_id is None:
-            # Log unauthorized access
             log_dashboard_access(
                 user_id=0,
                 action="dashboard_access_denied",
@@ -300,22 +299,17 @@ def include_dashboard_route(app):
                 details={"reason": "invalid_session"}
             )
             return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
-            
-        # Track dashboard access
         log_dashboard_access(
             user_id=user_id,
             action="dashboard_view",
             ip_address=client_ip,
             details={}
         )
-        
-        # Get user role (owner or mod)
         user_role = "Owner" if user_id in get_owner_ids() else "Moderator"
-        
         return templates.TemplateResponse(
-            "dashboard.html", 
+            "dashboard.html",
             {
-                "request": request, 
+                "request": request,
                 "user_id": user_id,
                 "user_role": user_role,
                 "login_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
