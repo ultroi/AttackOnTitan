@@ -363,13 +363,25 @@
   <div class="container">
     <header>
       <h1><i class="fas fa-robot"></i> AoT Bot Live Dashboard</h1>
-      <div style="display: flex; gap: 10px;">
-        <button class="refresh-btn" id="refresh-btn">
-          <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-        <a href="/logout" class="refresh-btn" style="text-decoration: none; background-color: var(--danger);">
-          <i class="fas fa-sign-out-alt"></i> Logout
-        </a>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px;">
+        <div class="user-info" style="background: var(--bg-panel-light); padding: 5px 10px; border-radius: 5px; font-size: 14px;">
+          <i class="fas fa-user-shield"></i> 
+          <strong>{{ user_role }}</strong> ID: <strong>{{ user_id }}</strong><br>
+          <small style="color: var(--text-muted);"><i class="fas fa-clock"></i> Accessed: {{ login_time }}</small>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="refresh-btn" id="refresh-btn">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+          {% if user_role == "Owner" %}
+          <a href="/access_logs" class="refresh-btn" style="text-decoration: none; background-color: var(--info);">
+            <i class="fas fa-list"></i> Access Logs
+          </a>
+          {% endif %}
+          <a href="/logout" class="refresh-btn" style="text-decoration: none; background-color: var(--danger);">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </a>
+        </div>
       </div>
     </header>
     

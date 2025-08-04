@@ -450,21 +450,53 @@ async def set_webhook(request: Request):
 async def monitor_dashboard(request: Request):
     try:
         # Get session cookie
-        from utils.fastapi_dashboard import verify_session, SESSION_COOKIE
+        from utils.fastapi_dashboard import verify_session, SESSION_COOKIE, log_dashboard_access
+        
+        # Get client IP
+        client_ip = "unknown"
+        if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+            client_ip = request.client.host
         
         session = request.cookies.get(SESSION_COOKIE)
         if session:
             user_id = await verify_session(session)
             if not user_id:
-                return {"error": "Unauthorized: Session expired", "status": "error"}, 401
+                # Log unauthorized access attempt
+                log_dashboard_access(
+                    user_id=0,  # Unknown user
+                    action="api_access_denied",
+                    ip_address=client_ip,
+                    details={"reason": "session_expired"}
+                )
+                return {"error": "Unauthorized: Session expired", "status": "error", "code": 401}
         else:
-            return {"error": "Unauthorized: No session", "status": "error"}, 401
+            # Log unauthorized access attempt with no session
+            log_dashboard_access(
+                user_id=0,  # Unknown user
+                action="api_access_denied",
+                ip_address=client_ip,
+                details={"reason": "no_session"}
+            )
+            return {"error": "Unauthorized: No session", "status": "error", "code": 401}
             
         from utils.monitor import resource_monitor
         logger.info("Monitor dashboard API called by user ID: " + str(user_id))
+        
+        # Log successful API access
+        log_dashboard_access(
+            user_id=user_id,
+            action="api_access",
+            ip_address=client_ip,
+            details={"endpoint": "/monitor"}
+        )
+        
         live_players = resource_monitor.get_live_player_stats()
         logger.info(f"Got live player stats: {len(live_players.get('players', []))} players")
-        return {"live_players": live_players, "status": "success"}
+        return {
+            "live_players": live_players, 
+            "status": "success",
+            "user_id": user_id  # Return user ID to frontend for verification
+        }
     except Exception as e:
         logger.error(f"Error in /monitor endpoint: {str(e)}")
         import traceback

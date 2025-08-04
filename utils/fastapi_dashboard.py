@@ -6,7 +6,9 @@ from database.db_instance import get_database
 import time
 import os
 import httpx
-from typing import Optional, Dict
+import json
+from datetime import datetime
+from typing import Optional, Dict, List
 import logging
 import hashlib
 import secrets
@@ -18,25 +20,70 @@ from utils.mod_utils import is_mod
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Create a file handler for security logs
+os.makedirs("logs", exist_ok=True)
+security_log_file = os.path.join("logs", "dashboard_access.log")
+security_handler = logging.FileHandler(security_log_file)
+security_handler.setLevel(logging.INFO)
+security_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+security_handler.setFormatter(security_formatter)
+logger.addHandler(security_handler)
+
 # Set up Jinja2 templates
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '../templates'))
 
-HCAPTCHA_TIMEOUT = 600  # 10 minutes in seconds
+HCAPTCHA_TIMEOUT = 600 
 BAN_LOG_CHAT_ID = -1002873117075
 
 # Dashboard authentication
-DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"  # Change this to a strong password
-active_sessions: Dict[str, Dict] = {}  # {session_id: {"user_id": int, "expiry": timestamp}}
+DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"  
+active_sessions: Dict[str, Dict] = {}
 SESSION_COOKIE = "aot_dashboard_session"
 
+# Access log tracking
+dashboard_access_log: List[Dict] = []  # Keeps track of recent dashboard accesses
+
+def log_dashboard_access(user_id: int, action: str, ip_address: str, details: Optional[Dict] = None):
+    """Log dashboard access attempt"""
+    timestamp = datetime.now().isoformat()
+    log_entry = {
+        "timestamp": timestamp,
+        "user_id": user_id,
+        "action": action,  # login, access, logout, etc.
+        "ip_address": ip_address,
+        "details": details or {}
+    }
+    
+    # Save to memory log (recent entries)
+    dashboard_access_log.append(log_entry)
+    if len(dashboard_access_log) > 100:  # Keep only last 100 entries in memory
+        dashboard_access_log.pop(0)
+    
+    # Log to security log file
+    logger.info(f"DASHBOARD_ACCESS: user_id={user_id}, action={action}, ip={ip_address}, details={json.dumps(details or {})}")
+    
+    # For critical actions, could also notify owners via Telegram
+
 # Session management
-def create_session(user_id: int) -> str:
+def create_session(user_id: int, ip_address: str = "unknown") -> str:
     """Create a new session for authenticated user"""
     session_id = secrets.token_hex(16)
+    timestamp = time.time()
     active_sessions[session_id] = {
         "user_id": user_id,
-        "expiry": time.time() + 3600  # 1 hour session
+        "expiry": timestamp + 3600,  # 1 hour session
+        "created_at": timestamp,
+        "ip_address": ip_address,
+        "last_activity": timestamp
     }
+    
+    # Log new session creation
+    log_dashboard_access(
+        user_id=user_id, 
+        action="login", 
+        ip_address=ip_address, 
+        details={"session_id": session_id}
+    )
     return session_id
 
 async def verify_session(session: Optional[str] = Cookie(None)) -> Optional[int]:
@@ -45,14 +92,43 @@ async def verify_session(session: Optional[str] = Cookie(None)) -> Optional[int]
         return None
     
     session_data = active_sessions[session]
+    current_time = time.time()
+    
     # Check if session is expired
-    if session_data["expiry"] < time.time():
+    if session_data["expiry"] < current_time:
         del active_sessions[session]
         return None
     
-    # Extend session
-    session_data["expiry"] = time.time() + 3600
+    # Extend session and update last activity
+    session_data["expiry"] = current_time + 3600
+    session_data["last_activity"] = current_time
+    
     return session_data["user_id"]
+
+async def track_session_activity(session: str, request: Request) -> None:
+    """Track session activity for logging purposes"""
+    if session in active_sessions:
+        session_data = active_sessions[session]
+        current_time = time.time()
+        client_ip = "unknown"
+        path = "unknown"
+        
+        # Safely get client IP and path
+        if request:
+            if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+                client_ip = request.client.host
+            if hasattr(request, 'url') and request.url and hasattr(request.url, 'path'):
+                path = request.url.path
+        
+        # Track activity every 5 minutes
+        if current_time - session_data.get("last_logged", 0) > 300:
+            log_dashboard_access(
+                user_id=session_data["user_id"],
+                action="access",
+                ip_address=client_ip,
+                details={"path": path}
+            )
+            session_data["last_logged"] = current_time
 
 async def is_authorized(user_id: int) -> bool:
     """Check if user is authorized (owner or mod)"""
@@ -93,9 +169,22 @@ def include_dashboard_route(app):
         try:
             # Validate input
             user_id_int = int(user_id)
+            client_ip = "unknown"
+            if hasattr(request, 'client') and request.client:
+                if hasattr(request.client, 'host'):
+                    client_ip = request.client.host
+            
+            # Log the login attempt
+            log_details = {"attempt": "login", "success": False}
             
             # Verify access code
             if access_code != DASHBOARD_ACCESS_CODE:
+                log_dashboard_access(
+                    user_id=user_id_int,
+                    action="login_failed",
+                    ip_address=client_ip,
+                    details={"reason": "invalid_code"}
+                )
                 return templates.TemplateResponse(
                     "login.html", 
                     {"request": request, "error": "Invalid access code"}, 
@@ -105,14 +194,20 @@ def include_dashboard_route(app):
             # Check if user is authorized
             authorized = await is_authorized(user_id_int)
             if not authorized:
+                log_dashboard_access(
+                    user_id=user_id_int,
+                    action="login_failed",
+                    ip_address=client_ip,
+                    details={"reason": "unauthorized_user"}
+                )
                 return templates.TemplateResponse(
                     "login.html", 
                     {"request": request, "error": "Unauthorized. Only owners and moderators can access."}, 
                     status_code=403
                 )
             
-            # Create session
-            session_id = create_session(user_id_int)
+            # Create session with IP address
+            session_id = create_session(user_id_int, client_ip)
             
             # Set session cookie
             response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
@@ -124,6 +219,7 @@ def include_dashboard_route(app):
                 secure=False,  # Set to True in production with HTTPS
             )
             
+            logger.info(f"🔐 User {user_id_int} successfully logged in from IP {client_ip}")
             return response
         except ValueError:
             return templates.TemplateResponse(
@@ -140,9 +236,23 @@ def include_dashboard_route(app):
             )
     
     @app.get("/logout")
-    async def logout(response: Response, session: Optional[str] = Cookie(None)):
+    async def logout(request: Request, response: Response, session: Optional[str] = Cookie(None)):
         """Log out and clear session"""
+        client_ip = "unknown"
+        if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+            client_ip = request.client.host
+            
         if session and session in active_sessions:
+            user_id = active_sessions[session].get("user_id", 0)
+            # Log the logout only if we have a valid user_id
+            if user_id:
+                log_dashboard_access(
+                    user_id=user_id,
+                    action="logout",
+                    ip_address=client_ip,
+                    details={"session_id": session}
+                )
+            logger.info(f"👋 User {user_id} logged out from IP {client_ip}")
             del active_sessions[session]
             
         response = RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
@@ -154,8 +264,73 @@ def include_dashboard_route(app):
         """Render dashboard page with authentication"""
         if user_id is None:
             return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
+        
+        # Get client IP
+        client_ip = "unknown"
+        if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+            client_ip = request.client.host
             
-        return templates.TemplateResponse("dashboard.html", {"request": request, "user_id": user_id})
+        # Track dashboard access
+        log_dashboard_access(
+            user_id=user_id,
+            action="dashboard_view",
+            ip_address=client_ip,
+            details={}
+        )
+        
+        # Get user role (owner or mod)
+        user_role = "Owner" if user_id in get_owner_ids() else "Moderator"
+        
+        return templates.TemplateResponse(
+            "dashboard.html", 
+            {
+                "request": request, 
+                "user_id": user_id,
+                "user_role": user_role,
+                "login_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+        )
+    
+    @app.get("/access_logs", response_class=HTMLResponse)
+    async def access_logs_page(request: Request, user_id: Optional[int] = Depends(verify_session)):
+        """View access logs page (only for owners)"""
+        if user_id is None:
+            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
+        
+        # Only owners can access the logs page
+        if user_id not in get_owner_ids():
+            return RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+        
+        # Get client IP
+        client_ip = "unknown"
+        if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+            client_ip = request.client.host
+            
+        # Track access logs page view
+        log_dashboard_access(
+            user_id=user_id,
+            action="logs_page_view",
+            ip_address=client_ip,
+            details={}
+        )
+        
+        return templates.TemplateResponse("access_logs.html", {"request": request, "user_id": user_id})
+        
+    @app.get("/access_logs_data")
+    async def access_logs_data(request: Request, user_id: Optional[int] = Depends(verify_session)):
+        """API endpoint for access logs data (only for owners)"""
+        if user_id is None:
+            return {"error": "Unauthorized", "status": "error"}
+        
+        # Only owners can access the logs
+        if user_id not in get_owner_ids():
+            return {"error": "Forbidden", "status": "error"}
+        
+        # Return the logs data
+        return {
+            "status": "success",
+            "logs": dashboard_access_log
+        }
 
     @app.get("/hcaptcha", response_class=HTMLResponse)
     async def hcaptcha_page(
