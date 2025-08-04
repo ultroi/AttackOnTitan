@@ -296,12 +296,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["hcaptcha_prompted"] = True
             timestamp = int(now)
             verification_url = (
-                f"https://attackontitan-j5yh.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+                f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
             )
             await update.message.reply_text(
                 "🔒 <b>Verification Required</b>\n\n"
-                "You were inactive for more than 2 minutes.\n"
-                "Complete hCaptcha to continue exploring:",
+                "Complete hCaptcha to continue exploring\n",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
                 ]),

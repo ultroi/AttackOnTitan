@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Global configuration
-PORT = 8080  # Fixed port for both Flask and ngrok
-DEBUG = False  # Set to True to enable debug mode
+PORT = 8080  
+DEBUG = False  
 
 # Database configuration
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")  # Updated to match .env file
