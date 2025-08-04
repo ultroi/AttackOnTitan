@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AoT Bot Admin Login</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary: #ffb347;
+      --primary-dark: #ff9a00;
+      --bg-dark: #12161f;
+      --bg-panel: #1e2332;
+      --bg-panel-light: #2a3248;
+      --text-light: #f1f1f1;
+      --text-muted: #a0a8c0;
+      --success: #4ecdc4;
+      --danger: #ff6b6b;
+      --warning: #ffe66d;
+      --info: #6b8cff;
+      --border-radius: 10px;
+      --transition: all 0.3s ease;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      background: var(--bg-dark);
+      color: var(--text-light);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      padding: 20px;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .login-container {
+      background: var(--bg-panel);
+      border-radius: var(--border-radius);
+      padding: 30px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+    
+    h1 {
+      color: var(--primary);
+      font-size: 24px;
+      margin-bottom: 20px;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 12px 15px;
+      border: none;
+      background: var(--bg-panel-light);
+      color: var(--text-light);
+      border-radius: 5px;
+      font-size: 16px;
+    }
+    
+    input[type="text"]:focus, input[type="password"]:focus {
+      outline: 2px solid var(--primary);
+    }
+    
+    .login-btn {
+      width: 100%;
+      background: var(--primary);
+      color: var(--bg-dark);
+      border: none;
+      padding: 12px;
+      border-radius: 5px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .login-btn:hover {
+      background: var(--primary-dark);
+    }
+    
+    .error-message {
+      background: rgba(255, 107, 107, 0.2);
+      color: var(--danger);
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .note {
+      margin-top: 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <h1><i class="fas fa-shield-alt"></i> Admin Dashboard Login</h1>
+    
+    {% if error %}
+    <div class="error-message">
+      {{ error }}
+    </div>
+    {% endif %}
+    
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label for="user_id">Telegram User ID</label>
+        <input type="text" id="user_id" name="user_id" placeholder="Enter your Telegram User ID" required>
+      </div>
+      <div class="form-group">
+        <label for="access_code">Access Code</label>
+        <input type="password" id="access_code" name="access_code" placeholder="Enter your access code" required>
+      </div>
+      <button type="submit" class="login-btn">
+        <i class="fas fa-sign-in-alt"></i> Login
+      </button>
+    </form>
+    
+    <div class="note">
+      Only authorized owners and moderators can access the dashboard.
+    </div>
+  </div>
+</body>
+</html>

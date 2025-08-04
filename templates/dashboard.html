@@ -363,9 +363,14 @@
   <div class="container">
     <header>
       <h1><i class="fas fa-robot"></i> AoT Bot Live Dashboard</h1>
-      <button class="refresh-btn" id="refresh-btn">
-        <i class="fas fa-sync-alt"></i> Refresh
-      </button>
+      <div style="display: flex; gap: 10px;">
+        <button class="refresh-btn" id="refresh-btn">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+        <a href="/logout" class="refresh-btn" style="text-decoration: none; background-color: var(--danger);">
+          <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+      </div>
     </header>
     
     <div class="stats-container" id="stats-container">
@@ -445,9 +450,22 @@
     function fetchAndUpdate() {
       refreshBtn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Refreshing...';
       
-      fetch('https://attackontitan-j5yh.onrender.com/monitor')
-        .then(response => response.json())
+      fetch('/monitor')
+        .then(response => {
+          if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+              // Redirect to login page if unauthorized
+              window.location.href = '/login';
+              throw new Error('Unauthorized: Please log in');
+            }
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
         .then(data => {
+          if (data.status === 'error') {
+            throw new Error(data.error || 'Unknown error occurred');
+          }
           updateDashboard(data);
           refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
         })

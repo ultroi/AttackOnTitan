@@ -5,6 +5,7 @@ import uvicorn
 from datetime import datetime
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -84,8 +85,17 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI()
-# Register dashboard route for FastAPI
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+# Register dashboard route for FastAPI
 include_dashboard_route(app)
 
 # Global application and db instance for persistent server
@@ -437,13 +447,29 @@ async def set_webhook(request: Request):
 
 
 @app.get("/monitor")
-async def monitor_dashboard():
+async def monitor_dashboard(request: Request):
     try:
+        # Get session cookie
+        from utils.fastapi_dashboard import verify_session, SESSION_COOKIE
+        
+        session = request.cookies.get(SESSION_COOKIE)
+        if session:
+            user_id = await verify_session(session)
+            if not user_id:
+                return {"error": "Unauthorized: Session expired", "status": "error"}, 401
+        else:
+            return {"error": "Unauthorized: No session", "status": "error"}, 401
+            
         from utils.monitor import resource_monitor
+        logger.info("Monitor dashboard API called by user ID: " + str(user_id))
         live_players = resource_monitor.get_live_player_stats()
-        return {"live_players": live_players}
+        logger.info(f"Got live player stats: {len(live_players.get('players', []))} players")
+        return {"live_players": live_players, "status": "success"}
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Error in /monitor endpoint: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {"error": str(e), "details": traceback.format_exc(), "status": "error"}
     
 
 

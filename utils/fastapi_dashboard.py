@@ -1,12 +1,18 @@
-from fastapi import Request, Form, HTTPException
+from fastapi import Request, Form, HTTPException, Depends, Cookie, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.security import APIKeyCookie
 from database.db_instance import get_database
 import time
 import os
 import httpx
-from typing import Optional
+from typing import Optional, Dict
 import logging
+import hashlib
+import secrets
+from starlette.status import HTTP_303_SEE_OTHER
+from utils.owners import get_owner_ids
+from utils.mod_utils import is_mod
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,6 +23,42 @@ templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '.
 
 HCAPTCHA_TIMEOUT = 600  # 10 minutes in seconds
 BAN_LOG_CHAT_ID = -1002873117075
+
+# Dashboard authentication
+DASHBOARD_ACCESS_CODE = "Attack0nTitanAdmin"  # Change this to a strong password
+active_sessions: Dict[str, Dict] = {}  # {session_id: {"user_id": int, "expiry": timestamp}}
+SESSION_COOKIE = "aot_dashboard_session"
+
+# Session management
+def create_session(user_id: int) -> str:
+    """Create a new session for authenticated user"""
+    session_id = secrets.token_hex(16)
+    active_sessions[session_id] = {
+        "user_id": user_id,
+        "expiry": time.time() + 3600  # 1 hour session
+    }
+    return session_id
+
+async def verify_session(session: Optional[str] = Cookie(None)) -> Optional[int]:
+    """Verify user session, return user_id if valid or None if invalid"""
+    if not session or session not in active_sessions:
+        return None
+    
+    session_data = active_sessions[session]
+    # Check if session is expired
+    if session_data["expiry"] < time.time():
+        del active_sessions[session]
+        return None
+    
+    # Extend session
+    session_data["expiry"] = time.time() + 3600
+    return session_data["user_id"]
+
+async def is_authorized(user_id: int) -> bool:
+    """Check if user is authorized (owner or mod)"""
+    if user_id in get_owner_ids():
+        return True
+    return await is_mod(user_id)
 
 def include_dashboard_route(app):
     @app.get("/error", response_class=HTMLResponse)
@@ -34,10 +76,86 @@ def include_dashboard_route(app):
     @app.get("/hcaptcha_timeout", response_class=HTMLResponse)
     async def hcaptcha_timeout(request: Request):
         return templates.TemplateResponse("hcaptcha_timeout.html", {"request": request})
-
+        
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_page(request: Request, error: Optional[str] = None):
+        """Render login page"""
+        return templates.TemplateResponse("login.html", {"request": request, "error": error})
+        
+    @app.post("/login", response_class=HTMLResponse)
+    async def login_post(
+        request: Request,
+        response: Response,
+        user_id: str = Form(...),
+        access_code: str = Form(...)
+    ):
+        """Process login attempt"""
+        try:
+            # Validate input
+            user_id_int = int(user_id)
+            
+            # Verify access code
+            if access_code != DASHBOARD_ACCESS_CODE:
+                return templates.TemplateResponse(
+                    "login.html", 
+                    {"request": request, "error": "Invalid access code"}, 
+                    status_code=401
+                )
+            
+            # Check if user is authorized
+            authorized = await is_authorized(user_id_int)
+            if not authorized:
+                return templates.TemplateResponse(
+                    "login.html", 
+                    {"request": request, "error": "Unauthorized. Only owners and moderators can access."}, 
+                    status_code=403
+                )
+            
+            # Create session
+            session_id = create_session(user_id_int)
+            
+            # Set session cookie
+            response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+            response.set_cookie(
+                key=SESSION_COOKIE,
+                value=session_id,
+                httponly=True,
+                max_age=3600,
+                secure=False,  # Set to True in production with HTTPS
+            )
+            
+            return response
+        except ValueError:
+            return templates.TemplateResponse(
+                "login.html", 
+                {"request": request, "error": "Invalid user ID format. Must be a number."}, 
+                status_code=400
+            )
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            return templates.TemplateResponse(
+                "login.html", 
+                {"request": request, "error": f"Login failed: {str(e)}"}, 
+                status_code=500
+            )
+    
+    @app.get("/logout")
+    async def logout(response: Response, session: Optional[str] = Cookie(None)):
+        """Log out and clear session"""
+        if session and session in active_sessions:
+            del active_sessions[session]
+            
+        response = RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
+        response.delete_cookie(SESSION_COOKIE)
+        return response
+            
     @app.get("/dashboard", response_class=HTMLResponse)
-    async def dashboard(request: Request):
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+    async def dashboard(request: Request, user_id: Optional[int] = Depends(verify_session)):
+        """Render dashboard page with authentication"""
+        if user_id is None:
+            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
+            
+        return templates.TemplateResponse("dashboard.html", {"request": request, "user_id": user_id})
 
     @app.get("/hcaptcha", response_class=HTMLResponse)
     async def hcaptcha_page(
