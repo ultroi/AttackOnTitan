@@ -18,6 +18,8 @@ from game.map_system import show_map, MAP_IMAGE_URL
 from database.db import Database
 from database.db_instance import get_persistent_database
 import signal
+# Scheduler import
+from game.scheduler import start_scheduler
 from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
 from utils.mod_utils import promote_mod, demote_mod
@@ -521,6 +523,7 @@ async def monitor_dashboard(request: Request):
 
 
 def register_handlers(app_instance):
+
     # Command handlers
     app_instance.add_handler(CommandHandler("start", start_character_selection))
     app_instance.add_handler(CommandHandler("inv", profile))
@@ -627,7 +630,10 @@ async def main():
         
         # Initialize application before starting server
         app_instance = await initialize_application()
-        
+
+        # Start the midnight tax scheduler
+        start_scheduler()
+
         # Set webhook for Telegram
         if ENV != "development" and app_instance:
             webhook_url = "https://attackontitangamebot.onrender.com/webhook"
@@ -643,7 +649,7 @@ async def main():
                 logger.info(f"Webhook info: {webhook_info}")
             except Exception as e:
                 logger.error(f"Failed to set webhook: {e}", exc_info=True)
-        
+
         # Configure and start server
         port = int(os.environ.get('PORT', 10000))
         logger.info(f"Starting server on port {port}")
@@ -654,7 +660,7 @@ async def main():
             log_level="info"
         )
         server = uvicorn.Server(config)
-        
+
         try:
             await server.serve()
         except asyncio.CancelledError:

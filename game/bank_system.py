@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List
-from database.models import BankAccount, Player # Assuming Player model is available
+from database.models import BankAccount, Player 
 
 # --- Constants ---
 BANK_OPEN_LEVEL = 15
@@ -12,7 +12,7 @@ LATE_DEPOSIT_PENALTY = 5.0
 
 # Tax System Constants
 TAX_THRESHOLDS = {
-    'marks': 100000,
+    'marks': 80000,
     'valor': 1500,
     'crystal': 500
 }
@@ -160,11 +160,6 @@ class BankSystem:
                 return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
         return "No penalty applied."
 
-    
-
-
-
-
 
     def get_current_tax_rate(self, account: BankAccount):
         # Returns current penalty/tax rate for player
@@ -174,10 +169,6 @@ class BankSystem:
         return 0.0
 
     async def check_and_apply_midnight_tax(self) -> List[dict]:
-        """
-        Checks all players' inventories at midnight and applies 8% tax if they exceed thresholds.
-        Returns a list of tax collection reports for notification purposes.
-        """
         tax_reports = []
         all_players = await self.db.get_all_players()
         central_bank = await self.db.get_bank_account("central_bank")
@@ -194,7 +185,7 @@ class BankSystem:
             )
 
         for player in all_players:
-            tax_report = {"user_id": player.user_id, "taxes": {}}
+            tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
             tax_applied = False
 
             # Check each currency
@@ -213,6 +204,10 @@ class BankSystem:
                     setattr(central_bank, bank_balance_field, current_bank_balance + tax_amount)
                     
                     tax_report["taxes"][currency] = tax_amount
+                    # Add user message for this currency
+                    tax_report["messages"].append(
+                        f"💸 Tax Alert: `{tax_amount}` {currency} has been deducted from your account as tax."
+                    )
                     tax_applied = True
 
             if tax_applied:
@@ -223,8 +218,3 @@ class BankSystem:
         await self.db.save_bank_account(central_bank)
         
         return tax_reports
-
-
-
-
-

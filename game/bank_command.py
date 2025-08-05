@@ -11,21 +11,28 @@ async def get_player_and_dependencies(update: Update, context: ContextTypes.DEFA
     """A helper function to get db, bank_system, and player objects."""
     db = context.bot_data.get("db")
     if not db:
-        await update.message.reply_text("❌ Database not initialized. Please try again later.")
+        if hasattr(update, "message") and update.message is not None:
+            await update.message.reply_text("❌ Database not initialized. Please try again later.")
         return None, None, None
 
     bank_system = BankSystem(db)
-    user_id = str(update.effective_user.id)
-    player = await db.get_player(user_id) # Assuming a get_player method exists
+    user_id = str(update.effective_user.id) if hasattr(update, "effective_user") and update.effective_user is not None and hasattr(update.effective_user, "id") else None
+    if user_id is None:
+        if hasattr(update, "message") and update.message is not None:
+            await update.message.reply_text("❌ Internal error: user not found.")
+        return None, None, None
+    player = await db.get_player(user_id) 
 
     if not player:
-        await update.message.reply_text("❌ You don't have a character yet. Use /start to create one.")
+        if hasattr(update, "message") and update.message is not None:
+            await update.message.reply_text("❌ You don't have a character yet. Use /start to create one.")
         return None, None, None
 
     return db, bank_system, player
 
-## --- Main Command Handlers ---
 
+
+## --- Main Command Handlers ---
 async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows bank account info or provides an option to open one."""
     db, bank_system, player = await get_player_and_dependencies(update, context)
@@ -34,9 +41,7 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if player.level < 15:
         await update.message.reply_text(
-            f"⚠️ <b>Access Denied!</b>\n\n"
-            f"You must be at least <b>Level 15</b> to interact with the <b>Central Bank</b>.\n"
-            f"📉 Your Current Level: <code>{player.level}</code>",
+            f"You must be at least <b>Level 15</b> to interact with the <b>Central Bank</b>.\n",
             parse_mode='HTML'
         )
         return
@@ -44,11 +49,6 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     account = await db.get_bank_account(player.user_id)
 
     if account and account.opened:
-        # Show image
-        await update.message.reply_photo(
-            photo="https://i.ibb.co/FqBX9JMp/image.jpg"
-        )
-
         # Get central bank stats
         stats = await bank_system.get_central_bank_stats()
 
@@ -63,7 +63,7 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Your balance
         info = bank_system.get_player_bank_info(account)
 
-        msg = (
+        caption = (
             f"🏦 <b>Central Bank Account Summary</b>\n"
             f"────────────────────\n"
             f"<b>🏰 Total Bank Reserves:</b>\n"
@@ -79,7 +79,11 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🏅 <b>Top 3 Richest Players</b>:\n"
             f"{top_players_str}"
         )
-        await update.message.reply_text(msg, parse_mode='HTML')
+        await update.message.reply_photo(
+            photo="https://i.ibb.co/FqBX9JMp/image.jpg",
+            caption=caption,
+            parse_mode='HTML'
+        )
 
     else:
         # Account not yet opened
