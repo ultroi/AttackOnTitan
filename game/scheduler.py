@@ -1,5 +1,5 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from AttackOnTitan.game.bank_system import BankSystem
+from game.bank_system import BankSystem
 from database.db_instance import db_instance
 import asyncio
 

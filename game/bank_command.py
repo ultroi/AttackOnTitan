@@ -185,10 +185,7 @@ async def handle_withdrawal_command(update: Update, context: ContextTypes.DEFAUL
 
 
 
-
-
 ## --- Callback Query Handler for Buttons ---
-
 async def handle_open_bank_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the 'Open Account' button press."""
     query = update.callback_query
