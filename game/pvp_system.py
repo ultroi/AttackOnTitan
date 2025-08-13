@@ -868,13 +868,8 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
             
         await update.message.reply_text(
-            "PVP SYSTEM\n\n"
             "Challenge other players to battles!\n"
-            "Reply to another player's message with /pvp to challenge them.\n\n"
-            "Your PVP Stats:\n"
-            f"Wins: {getattr(player, 'pvp_wins', 0)}\n"
-            f"Losses: {getattr(player, 'pvp_losses', 0)}\n"
-            f"Battle Rating: {getattr(player, 'battle_rating', 1000)}\n"
+            "Reply to another player's message with /pvp to challenge them."
         )
 
 
@@ -1005,7 +1000,7 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         # Start battle
         await safe_api_call(
             query.edit_message_text,
-            "BATTLE BEGINS,",
+            "!! BATTLE BEGINS !!",
             reply_markup=None
         )
         
@@ -1456,18 +1451,37 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
         # Create the appropriate header based on whether it's a surrender or regular battle end
         header = "<b>🏳️ PVP BATTLE SURRENDER 🏳️</b>" if is_surrender else "<b>⚔️ PVP BATTLE ENDED ⚔️</b>"
         
-        # For surrender, we only need the victory message since it already contains all the needed details
-        # For regular battle end, we include both victory message and the detailed message
-        content = victory_message if is_surrender else f"{victory_message}\n\n{message}"
+        # Format the battle outcome message according to the requested format
+        if is_surrender:
+            # For surrender, maintain the custom surrender message
+            battle_outcome = victory_message
+        else:
+            # New format with blockquote for player names and all text in bold
+            if battle.winner:
+                # Extract first names for blockquote
+                winner_first_name = battle.challenger_player.name.split()[0] if battle.winner == battle.challenger.name else battle.defender_player.name.split()[0]
+                loser_first_name = battle.defender_player.name.split()[0] if battle.winner == battle.challenger.name else battle.challenger_player.name.split()[0]
+                
+                battle_outcome = (
+                    f"<b>🏆 {winner_mention} <i>defeated</i> {loser_mention} !</b>\n\n"
+                    f"<blockquote><b>{winner_first_name}</b></blockquote>\n"
+                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor</b>\n\n"
+                    f"<blockquote><b>{loser_first_name}</b></blockquote>\n"
+                    f"<b>Gain: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks</b>"
+                )
+            else:
+                # Handle draws (though this may be rare)
+                battle_outcome = (
+                    f"<b>🔄 The battle between {challenger_mention} and {defender_mention} ended in a draw!</b>\n\n"
+                    f"<b>Both players receive:</b>\n"
+                    f"<b>XP: {rewards['winner']['xp']}, Marks: {rewards['winner']['marks']}</b>"
+                )
         
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"{header}\n\n"
-                f"{content}\n\n"
-                f"<b>Rewards:</b>\n"
-                f"<b>Winner:</b> <b>{rewards['winner']['xp']}</b> XP, <b>{rewards['winner']['marks']}</b> Marks, <b>{rewards['winner']['valor']}</b> Valor\n"
-                f"<b>Loser:</b> <b>{rewards['loser']['xp']}</b> XP, <b>{rewards['loser']['marks']}</b> Marks"
+                f"{battle_outcome}"
             ),
             parse_mode=ParseMode.HTML
         )
@@ -1595,18 +1609,28 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     winner_char_name = battle.defender.name
                     loser_char_name = battle.challenger.name
                 
-                # Format the victory message with hyperlinks
-                victory_message = f"🏆 {winner_mention}'s {winner_char_name} won by timeout against {loser_mention}'s {loser_char_name}!"
+                # Extract first names for blockquote
+                winner_first_name = battle.challenger_player.name.split()[0] if battle.winner == battle.challenger.name else battle.defender_player.name.split()[0]
+                loser_first_name = battle.defender_player.name.split()[0] if battle.winner == battle.challenger.name else battle.challenger_player.name.split()[0]
+                
+                # Format timeout message
+                timeout_header = f"<b>⏰ PVP BATTLE TIMED OUT ⏰</b>"
+                timeout_message = f"<b>🏆 {winner_mention} <i>defeated</i> {loser_mention} by timeout!</b>"
+                
+                # Format the battle outcome with blockquotes and bold text
+                battle_outcome = (
+                    f"{timeout_message}\n\n"
+                    f"<blockquote><b>{winner_first_name}</b></blockquote>\n"
+                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor</b>\n\n"
+                    f"<blockquote><b>{loser_first_name}</b></blockquote>\n"
+                    f"<b>Gain: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks</b>"
+                )
                 
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=(
-                        f"<b>⚔️ PVP BATTLE TIMED OUT ⚔️</b>\n\n"
-                        f"{victory_message}\n\n"
-                        f"{message}\n\n"
-                        f"<b>Rewards:</b>\n"
-                        f"<b>Winner:</b> <b>{rewards['winner']['xp']}</b> XP, <b>{rewards['winner']['marks']}</b> Marks, <b>{rewards['winner']['valor']}</b> Valor\n"
-                        f"<b>Loser:</b> <b>{rewards['loser']['xp']}</b> XP, <b>{rewards['loser']['marks']}</b> Marks"
+                        f"{timeout_header}\n\n"
+                        f"{battle_outcome}"
                     ),
                     parse_mode=ParseMode.HTML
                 )
