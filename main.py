@@ -243,7 +243,27 @@ async def initialize_application():
             if isinstance(context.error, asyncio.CancelledError):
                 logger.warning(f"Task cancelled for update {update}")
                 return
+                
+            # Special handling for rate limiting errors
+            from telegram.error import RetryAfter
+            if isinstance(context.error, RetryAfter):
+                retry_seconds = context.error.retry_after
+                logger.warning(f"Rate limited. Retry after {retry_seconds} seconds")
+                
+                # For rate limit errors, only notify the user if possible, but don't send to error group
+                if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
+                    try:
+                        if update.effective_message:
+                            await asyncio.sleep(min(retry_seconds, 5))  # Wait a bit before sending the message
+                            await update.effective_message.reply_text(
+                                f"Bot is being rate limited. Please try again in {int(retry_seconds)} seconds."
+                            )
+                    except Exception as e:
+                        logger.error(f"Failed to notify user about rate limit: {e}")
+                return
+                
             logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+            
             # Prepare detailed error message
             command = None
             if isinstance(update, TelegramUpdate):
@@ -259,6 +279,7 @@ async def initialize_application():
                 f"<b>User:</b> <code>{user_id_str}</code>\n"
                 f"<b>Error:</b>\n<pre>{repr(context.error)}</pre>\n"
             )
+            
             # Send error to group
             try:
                 await context.bot.send_message(
@@ -268,6 +289,7 @@ async def initialize_application():
                 )
             except Exception as e:
                 logger.error(f"Failed to send error to group: {e}")
+                
             # Notify user
             if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                 try:

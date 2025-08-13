@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, User
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram import error
 from database.db import Database
 from database.models import Character, Player, TeamMember
 from database.schemas import Ability, CharacterStats
@@ -17,6 +18,45 @@ logger = logging.getLogger(__name__)
 # Global dictionaries to track PVP challenges and battles
 pvp_challenges: Dict[str, Dict[str, Any]] = {}
 active_pvp_battles: Dict[str, 'PvPBattleSystem'] = {}
+
+# Rate limiting parameters
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 1.0
+MAX_RETRY_DELAY = 30.0
+
+async def safe_api_call(api_func, *args, **kwargs):
+    retries = 0
+    delay = BASE_RETRY_DELAY
+    
+    while True:
+        try:
+            return await api_func(*args, **kwargs)
+        except error.RetryAfter as e:
+            retries += 1
+            if retries > MAX_RETRIES:
+                logger.error(f"Max retries exceeded for {api_func.__name__}: {e}")
+                raise
+                
+            # Calculate delay with exponential backoff
+            retry_after = float(e.retry_after)
+            # Use the greater of suggested retry time or calculated backoff
+            delay = max(retry_after, min(delay * 2, MAX_RETRY_DELAY))
+            
+            logger.info(f"Rate limited. Retrying {api_func.__name__} after {delay:.1f}s (retry {retries}/{MAX_RETRIES})")
+            await asyncio.sleep(delay)
+        except error.TimedOut:
+            retries += 1
+            if retries > MAX_RETRIES:
+                logger.error(f"Max retries exceeded for {api_func.__name__}: Timed out")
+                raise
+                
+            delay = min(delay * 2, MAX_RETRY_DELAY)
+            logger.info(f"Request timed out. Retrying {api_func.__name__} after {delay:.1f}s (retry {retries}/{MAX_RETRIES})")
+            await asyncio.sleep(delay)
+        except Exception as e:
+            # For other exceptions, don't retry
+            logger.error(f"Error in {api_func.__name__}: {e}")
+            raise
 
 class PvPBattleSystem:
     """
@@ -53,16 +93,16 @@ class PvPBattleSystem:
         self.winner: Optional[str] = None
         self.winner_char: Optional[Character] = None
         
-        # Ability cooldowns for both characters
+        # Ability cooldowns for both characters - ensure clean ability names
         self.challenger_cooldowns: Dict[str, int] = {
-            ability.name: 0 for ability in (
+            ability.name.strip().lstrip('_'): 0 for ability in (
                 (challenger.active_abilities or []) +
                 (challenger.passive_abilities or []) +
                 (challenger.ultimate_abilities or [])
             )
         }
         self.defender_cooldowns: Dict[str, int] = {
-            ability.name: 0 for ability in (
+            ability.name.strip().lstrip('_'): 0 for ability in (
                 (defender.active_abilities or []) +
                 (defender.passive_abilities or []) +
                 (defender.ultimate_abilities or [])
@@ -189,17 +229,23 @@ class PvPBattleSystem:
             return "Error: Character abilities not found", {}
         
         ability = None
+        # Clean any potential leading or trailing whitespace and any leading underscores from ability name
+        cleaned_ability_name = ability_name.strip().lstrip('_')
+        
+        # Debug logging to help diagnose the issue
+        logger.debug(f"Looking for ability: '{cleaned_ability_name}' (original: '{ability_name}')")
+        
         for ability_type in ["active", "passive", "ultimate"]:
             abilities = getattr(character_data, f"{ability_type}_abilities", [])
             for ab in abilities:
-                if ab.name == ability_name:
+                if ab.name == cleaned_ability_name:
                     ability = ab
                     break
             if ability:
                 break
                 
         if not ability:
-            return f"Error: Ability {ability_name} not found", {}
+            return f"Error: Ability {cleaned_ability_name} not found", {}
             
         # Check cooldown
         if cooldowns.get(ability_name, 0) > 0:
@@ -281,8 +327,8 @@ class PvPBattleSystem:
             logger.error(f"Error applying ability {ability_name}: {e}")
             return f"Error using {ability_name}: {str(e)}", {}
             
-        # Apply cooldown
-        cooldowns[ability_name] = ability.cooldown or 1
+        # Apply cooldown - use the cleaned ability name
+        cooldowns[cleaned_ability_name] = ability.cooldown or 1
         
         # Check if battle has ended
         if self.challenger_hp <= 0 or self.defender_hp <= 0:
@@ -394,7 +440,16 @@ class PvPBattleSystem:
         challenger_bar = "█" * int(challenger_hp_percent * 10) + "▒" * (10 - int(challenger_hp_percent * 10))
         defender_bar = "█" * int(defender_hp_percent * 10) + "▒" * (10 - int(defender_hp_percent * 10))
         
-        status_message = f"Turn: {self.turn_count + 1}\nCurrent Turn: {self.current_turn}\n"
+        # Get player info for linking current turn player's name
+        if self.current_turn == self.challenger.name:
+            current_player_id = self.challenger_player.user_id
+            current_player_first_name = self.challenger_player.name
+        else:
+            current_player_id = self.defender_player.user_id
+            current_player_first_name = self.defender_player.name
+            
+        # Create status message with hyperlinked player name for current turn
+        status_message = f"Turn: {self.turn_count + 1}\nCurrent Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}</a>\n"
         
         # Add buffs and debuffs to status message
         if self.challenger_debuffs:
@@ -432,7 +487,9 @@ class PvPBattleSystem:
             "challenger_bar": challenger_bar,
             "defender_bar": defender_bar,
             "status_message": status_message,
-            "current_turn": self.current_turn
+            "current_turn": self.current_turn,
+            "current_player_first_name": current_player_first_name,
+            "current_player_id": current_player_id
         }
         
     async def calculate_rewards(self, db: Database) -> Dict:
@@ -541,21 +598,24 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
             gas_cost = ability.gas_cost or 0
             prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else " "
             
+            # Make sure ability name has no leading/trailing whitespace or underscores
+            clean_ability_name = ability.name.strip().lstrip('_')
+            
             # Add available abilities
-            if cooldowns.get(ability.name, 0) == 0 and gas >= gas_cost:
+            if cooldowns.get(clean_ability_name, 0) == 0 and gas >= gas_cost:
                 keyboard.append([InlineKeyboardButton(
-                    f"{prefix} {ability.name}",
-                    callback_data=f"pvp_ability_{ability.name}"
+                    f"{prefix} {clean_ability_name}",
+                    callback_data=f"pvp_ability_{clean_ability_name}"
                 )])
-            elif cooldowns.get(ability.name, 0) > 0:
+            elif cooldowns.get(clean_ability_name, 0) > 0:
                 keyboard.append([InlineKeyboardButton(
-                    f"⏳ {prefix} {ability.name} (CD: {cooldowns[ability.name]})",
-                    callback_data=f"pvp_cooldown_{ability.name}"
+                    f"⏳ {prefix} {clean_ability_name} (CD: {cooldowns[clean_ability_name]})",
+                    callback_data=f"pvp_cooldown_{clean_ability_name}"
                 )])
             elif gas < gas_cost and gas_cost > 0:
                 keyboard.append([InlineKeyboardButton(
-                    f"⛽ {prefix} {ability.name} (Need {gas_cost} gas)",
-                    callback_data=f"pvp_lowgas_{ability.name}"
+                    f"⛽ {prefix} {clean_ability_name} (Need {gas_cost} gas)",
+                    callback_data=f"pvp_lowgas_{clean_ability_name}"
                 )])
                 
     # Add basic attack button
@@ -780,32 +840,39 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     if not query or not update.effective_user:
         return
+    
+    try:
+        # Acknowledge the button press with retry logic
+        await safe_api_call(query.answer)
         
-    await query.answer()  # Acknowledge the button press
-    
-    callback_data = query.data
-    user_id = str(update.effective_user.id)
-    
-    if callback_data.startswith("pvp_accept_"):
-        await handle_pvp_accept(update, context)
-    elif callback_data.startswith("pvp_decline_"):
-        await handle_pvp_decline(update, context)
-    elif callback_data.startswith("pvp_cancel_"):
-        await handle_pvp_cancel(update, context)
-    elif callback_data.startswith("pvp_dome_"):
-        await handle_pvp_accept(update, context, dome=True)
-    elif callback_data == "pvp_basic_attack":
-        await handle_pvp_basic_attack(update, context)
-    elif callback_data.startswith("pvp_ability_"):
-        ability_name = callback_data[11:]  # Remove "pvp_ability_" prefix
-        await handle_pvp_ability(update, context, ability_name)
-    elif callback_data == "pvp_surrender":
-        await handle_pvp_surrender(update, context)
-    elif callback_data == "pvp_switch":
-        await handle_pvp_switch(update, context)
-    elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
-        # Just show a message for abilities on cooldown or with insufficient gas
-        await query.answer("This ability is not available right now.", show_alert=True)
+        callback_data = query.data
+        user_id = str(update.effective_user.id)
+        
+        if callback_data.startswith("pvp_accept_"):
+            await handle_pvp_accept(update, context)
+        elif callback_data.startswith("pvp_decline_"):
+            await handle_pvp_decline(update, context)
+        elif callback_data.startswith("pvp_cancel_"):
+            await handle_pvp_cancel(update, context)
+        elif callback_data.startswith("pvp_dome_"):
+            await handle_pvp_accept(update, context, dome=True)
+        elif callback_data == "pvp_basic_attack":
+            await handle_pvp_basic_attack(update, context)
+        elif callback_data.startswith("pvp_ability_"):
+            ability_name = callback_data[11:].strip()  # Remove "pvp_ability_" prefix and any whitespace
+            logger.debug(f"Received ability callback: {ability_name}")
+            await handle_pvp_ability(update, context, ability_name)
+        elif callback_data == "pvp_surrender":
+            await handle_pvp_surrender(update, context)
+        elif callback_data == "pvp_switch":
+            await handle_pvp_switch(update, context)
+        elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
+            # Just show a message for abilities on cooldown or with insufficient gas
+            await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error in pvp_callback_handler: {e}")
+        # If we get here, something went wrong with handling the callback
+        # We'll silently fail since the user might try again
 
 
 async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, dome: bool = False) -> None:
@@ -818,7 +885,7 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     # Verify challenge exists
     if challenge_id not in pvp_challenges:
-        await query.edit_message_text("This challenge is no longer available.")
+        await safe_api_call(query.edit_message_text, "This challenge is no longer available.")
         return
         
     challenge_data = pvp_challenges[challenge_id]
@@ -826,7 +893,7 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     # Only the defender can accept
     if user_id != challenge_data["defender_id"]:
-        await query.answer("Only the challenged player can accept this battle!")
+        await safe_api_call(query.answer, "Only the challenged player can accept this battle!")
         return
         
     # Check if either player is already in a battle
@@ -834,12 +901,12 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     async with active_battles_lock:
         if challenger_id in active_battles:
-            await query.edit_message_text(f"{challenge_data['challenger_name']} is now in a battle with a titan!")
+            await safe_api_call(query.edit_message_text, f"{challenge_data['challenger_name']} is now in a battle with a titan!")
             del pvp_challenges[challenge_id]
             return
             
         if user_id in active_battles:
-            await query.edit_message_text("You are now in a battle with a titan!")
+            await safe_api_call(query.edit_message_text, "You are now in a battle with a titan!")
             del pvp_challenges[challenge_id]
             return
     
@@ -859,33 +926,37 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # Clean up challenge
     del pvp_challenges[challenge_id]
     
-    # Start battle
-    await query.edit_message_text(
-        "BATTLE BEGINS,",
-        reply_markup=None
-    )
-    
-    # Send battle display
-    status = battle.get_battle_status()
-    keyboard = await generate_pvp_ability_keyboard(battle, context)
-    
-    await query.message.reply_text(
-        text=(
-            f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-            f"<b>| {battle.challenger.name} |</b> «\n"
-            f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-            f"{status['challenger_bar']}\n"
-            f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-            f"<b>| {battle.defender.name} |</b> «\n"
-            f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-            f"{status['defender_bar']}\n"
-            f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-            f"{status['status_message']}\n"
-            f"<b>Current Turn:</b> {status['current_turn']}"
-        ),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        # Start battle
+        await safe_api_call(
+            query.edit_message_text,
+            "BATTLE BEGINS,",
+            reply_markup=None
+        )
+        
+        # Send battle display
+        status = battle.get_battle_status()
+        keyboard = await generate_pvp_ability_keyboard(battle, context)
+        
+        await safe_api_call(
+            query.message.reply_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"{status['challenger_bar']}\n"
+                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
+                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"{status['defender_bar']}\n"
+                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
+                f"{status['status_message']}"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error sending battle start messages: {e}")
     
     # Set timeout task to end battle if inactive
     battle.timeout_task = asyncio.create_task(
@@ -903,7 +974,7 @@ async def handle_pvp_decline(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Verify challenge exists
     if challenge_id not in pvp_challenges:
-        await query.edit_message_text("This challenge is no longer available.")
+        await safe_api_call(query.edit_message_text, "This challenge is no longer available.")
         return
         
     challenge_data = pvp_challenges[challenge_id]
@@ -911,16 +982,20 @@ async def handle_pvp_decline(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     # Only the defender can decline
     if user_id != challenge_data["defender_id"]:
-        await query.answer("Only the challenged player can decline this battle!")
+        await safe_api_call(query.answer, "Only the challenged player can decline this battle!")
         return
         
     # Clean up challenge
     del pvp_challenges[challenge_id]
     
     # Update message
-    await query.edit_message_text(
-        f"{challenge_data['defender_name']} declined the challenge from {challenge_data['challenger_name']}."
-    )
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            f"{challenge_data['defender_name']} declined the challenge from {challenge_data['challenger_name']}."
+        )
+    except Exception as e:
+        logger.error(f"Error updating message on challenge decline: {e}")
 
 
 async def handle_pvp_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -933,7 +1008,7 @@ async def handle_pvp_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Verify challenge exists
     if challenge_id not in pvp_challenges:
-        await query.edit_message_text("This challenge is no longer available.")
+        await safe_api_call(query.edit_message_text, "This challenge is no longer available.")
         return
         
     challenge_data = pvp_challenges[challenge_id]
@@ -941,16 +1016,20 @@ async def handle_pvp_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Only the challenger can cancel
     if user_id != challenge_data["challenger_id"]:
-        await query.answer("Only the challenger can cancel this battle request!")
+        await safe_api_call(query.answer, "Only the challenger can cancel this battle request!")
         return
         
     # Clean up challenge
     del pvp_challenges[challenge_id]
     
     # Update message
-    await query.edit_message_text(
-        f"{challenge_data['challenger_name']} cancelled the challenge to {challenge_data['defender_name']}."
-    )
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            f"{challenge_data['challenger_name']} cancelled the challenge to {challenge_data['defender_name']}."
+        )
+    except Exception as e:
+        logger.error(f"Error updating message on challenge cancel: {e}")
 
 
 async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE, ability_name: str) -> None:
@@ -963,7 +1042,7 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await query.edit_message_text("You are not in an active PVP battle.")
+        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
         return
         
     battle = active_pvp_battles[user_id]
@@ -971,7 +1050,7 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Check if it's user's turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await query.answer("It's not your turn!", show_alert=True)
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
         return
         
     # Use the ability
@@ -993,24 +1072,29 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     status = battle.get_battle_status()
     keyboard = await generate_pvp_ability_keyboard(battle, context)
     
-    await query.edit_message_text(
-        text=(
-            f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-            f"{message}\n\n"
-            f"<b>| {battle.challenger.name} |</b> «\n"
-            f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-            f"{status['challenger_bar']}\n"
-            f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-            f"<b>| {battle.defender.name} |</b> «\n"
-            f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-            f"{status['defender_bar']}\n"
-            f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-            f"{status['status_message']}\n"
-            f"<b>Current Turn:</b> {status['current_turn']}"
-        ),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"{message}\n\n"
+                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"{status['challenger_bar']}\n"
+                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
+                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"{status['defender_bar']}\n"
+                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
+                f"{status['status_message']}\n"
+                f"<b>Current Turn:</b> {status['current_turn']}"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Failed to update battle message: {e}")
+        # We'll still set the timeout task even if updating the message fails
     
     # Set timeout task
     battle.timeout_task = asyncio.create_task(
@@ -1028,7 +1112,7 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await query.edit_message_text("You are not in an active PVP battle.")
+        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
         return
         
     battle = active_pvp_battles[user_id]
@@ -1036,7 +1120,7 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     # Check if it's user's turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await query.answer("It's not your turn!", show_alert=True)
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
         return
     
     if battle.timeout_task:
@@ -1058,24 +1142,30 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     status = battle.get_battle_status()
     keyboard = await generate_pvp_ability_keyboard(battle, context)
     
-    await query.edit_message_text(
-        text=(
-            f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-            f"{message}\n\n"
-            f"<b>| {battle.challenger.name} |</b> «\n"
-            f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-            f"{status['challenger_bar']}\n"
-            f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-            f"<b>| {battle.defender.name} |</b> «\n"
-            f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-            f"{status['defender_bar']}\n"
-            f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-            f"{status['status_message']}\n"
-            f"<b>Current Turn:</b> {status['current_turn']}"
-        ),
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML
-    )
+    # Use safe API call with retry logic for rate limiting
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"{message}\n\n"
+                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"{status['challenger_bar']}\n"
+                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
+                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"{status['defender_bar']}\n"
+                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
+                f"{status['status_message']}\n"
+                f"<b>Current Turn:</b> {status['current_turn']}"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Failed to update battle message: {e}")
+        # We'll still set the timeout task even if updating the message fails
     
     # Set timeout task
     battle.timeout_task = asyncio.create_task(
@@ -1093,7 +1183,7 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await query.edit_message_text("You are not in an active PVP battle.")
+        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
         return
         
     battle = active_pvp_battles[user_id]
@@ -1101,7 +1191,7 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
     # Only allow surrender on your turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await query.answer("You can only surrender on your turn!", show_alert=True)
+        await safe_api_call(query.answer, "You can only surrender on your turn!", show_alert=True)
         return
     
     if battle.timeout_task:
@@ -1125,7 +1215,7 @@ async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await query.edit_message_text("You are not in an active PVP battle.")
+        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
         return
         
     battle = active_pvp_battles[user_id]
@@ -1133,12 +1223,12 @@ async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Check if it's user's turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await query.answer("It's not your turn!", show_alert=True)
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
         return
     
     # Handle switch (placeholder for future implementation)
     message = battle.switch_character()
-    await query.answer(message, show_alert=True)
+    await safe_api_call(query.answer, message, show_alert=True)
 
 
 async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TYPE, battle: PvPBattleSystem, message: str) -> None:
@@ -1154,7 +1244,10 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     # Get DB instance
     db = context.bot_data.get("db")
     if not db:
-        await query.edit_message_text(f"{message}\n\nError: Database not available.")
+        await safe_api_call(
+            query.edit_message_text, 
+            f"{message}\n\nError: Database not available."
+        )
         return
         
     # Calculate rewards
@@ -1162,17 +1255,22 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Update message with battle results
     winner_name = battle.winner if battle.winner else "Nobody"
-    await query.edit_message_text(
-        text=(
-            f"<b>⚔️ PVP BATTLE ENDED ⚔️</b>\n\n"
-            f"{message}\n\n"
-            f"<b>Winner:</b> {winner_name}\n\n"
-            f"<b>Rewards:</b>\n"
-            f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
-            f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
-        ),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ENDED ⚔️</b>\n\n"
+                f"{message}\n\n"
+                f"<b>Winner:</b> {winner_name}\n\n"
+                f"<b>Rewards:</b>\n"
+                f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
+                f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
+            ),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Failed to update battle end message: {e}")
+        # Continue with database updates even if message update fails
     
     # Apply rewards and update statistics
     challenger_id = battle.challenger.user_id
