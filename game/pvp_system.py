@@ -647,10 +647,14 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not challenger_player or not challenger_player.team:
             await update.message.reply_text("You don't have any characters in your team!")
             return
-            
-        challenger_char_name = challenger_player.team[0]
-        if isinstance(challenger_char_name, dict):
-            challenger_char_name = challenger_char_name["character_name"]
+        
+        # Handle the TeamMember object or other formats
+        if isinstance(challenger_player.team[0], TeamMember):
+            challenger_char_name = challenger_player.team[0].character_name
+        elif isinstance(challenger_player.team[0], dict):
+            challenger_char_name = challenger_player.team[0].get("character_name")
+        else:
+            challenger_char_name = challenger_player.team[0]
             
         challenger_char = await db.get_character(user_id, challenger_char_name)
         if not challenger_char:
@@ -663,13 +667,22 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text(f"{defender_player.name} doesn't have any characters in their team!")
             return
             
-        defender_char_name = defender_player.team[0]
-        if isinstance(defender_char_name, dict):
-            defender_char_name = defender_char_name["character_name"]
+        # Handle the TeamMember object or other formats for defender
+        if isinstance(defender_player.team[0], TeamMember):
+            defender_char_name = defender_player.team[0].character_name
+        elif isinstance(defender_player.team[0], dict):
+            defender_char_name = defender_player.team[0].get("character_name")
+        else:
+            defender_char_name = defender_player.team[0]
             
-        defender_char = await db.get_character(target_id, defender_char_name)
-        if not defender_char:
-            await update.message.reply_text(f"{defender_player.name}'s primary character was not found!")
+        try:
+            defender_char = await db.get_character(target_id, defender_char_name)
+            if not defender_char:
+                await update.message.reply_text(f"{defender_player.name}'s primary character was not found!")
+                return
+        except Exception as e:
+            logger.error(f"Error getting defender character: {e}")
+            await update.message.reply_text(f"Error retrieving {defender_player.name}'s character. They may need to set up their team properly.")
             return
         
         # Generate a unique challenge ID
@@ -1226,9 +1239,10 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     
     try:
         # Make sure battle.winner is not None before passing to track_battle_end
-        if battle.winner:
+        if battle.winner and winner_id:
             track_battle_end(int(winner_id), battle.winner, "pvp_victory")
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error in track_battle_end: {e}")
         pass
 
 
