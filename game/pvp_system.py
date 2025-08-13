@@ -1069,7 +1069,17 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     # Check if it's user's turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        # Apply a small penalty for trying to act out of turn - reduce gas slightly
+        if user_id == battle.challenger.user_id:
+            battle.challenger_gas = max(0, battle.challenger_gas - 5)  # -5 gas penalty
+            current_name = battle.challenger.name
+            turn_name = battle.defender.name
+        else:
+            battle.defender_gas = max(0, battle.defender_gas - 5)  # -5 gas penalty
+            current_name = battle.defender.name
+            turn_name = battle.challenger.name
+            
+        await safe_api_call(query.answer, f"Wait! It's {turn_name}'s turn now! (-5 gas for impatience)", show_alert=True)
         return
         
     # Use the ability
@@ -1139,7 +1149,17 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     # Check if it's user's turn
     if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        # Apply a small penalty for trying to act out of turn - reduce gas slightly
+        if user_id == battle.challenger.user_id:
+            battle.challenger_gas = max(0, battle.challenger_gas - 5)  # -5 gas penalty
+            current_name = battle.challenger.name
+            turn_name = battle.defender.name
+        else:
+            battle.defender_gas = max(0, battle.defender_gas - 5)  # -5 gas penalty
+            current_name = battle.defender.name
+            turn_name = battle.challenger.name
+            
+        await safe_api_call(query.answer, f"Wait! It's {turn_name}'s turn now! (-5 gas for impatience)", show_alert=True)
         return
     
     if battle.timeout_task:
@@ -1214,7 +1234,17 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
         # Only allow surrender on your turn
         if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
         (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-            await safe_api_call(query.answer, "You can only surrender on your turn!", show_alert=True)
+            # Apply a small penalty for trying to act out of turn - reduce gas slightly
+            if user_id == battle.challenger.user_id:
+                battle.challenger_gas = max(0, battle.challenger_gas - 5)  # -5 gas penalty
+                current_name = battle.challenger.name
+                turn_name = battle.defender.name
+            else:
+                battle.defender_gas = max(0, battle.defender_gas - 5)  # -5 gas penalty
+                current_name = battle.defender.name
+                turn_name = battle.challenger.name
+                
+            await safe_api_call(query.answer, f"Wait! It's {turn_name}'s turn now! You can only surrender on your turn! (-5 gas for impatience)", show_alert=True)
             return
     except Exception as e:
         logger.warning(f"Could not answer callback query during surrender check: {e}")
