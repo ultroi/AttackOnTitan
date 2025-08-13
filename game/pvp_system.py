@@ -263,7 +263,21 @@ class PvPBattleSystem:
         # Check gas cost
         gas_cost = ability.gas_cost or 20
         if gas < gas_cost:
-            return f"Not enough gas to use {ability_name}!", {}
+            # End the battle automatically if player doesn't have enough gas
+            message = f"Not enough gas to use {ability_name}! Battle automatically ends."
+            
+            # Set battle as ended
+            self.battle_ended = True
+            
+            # Set the opponent as winner
+            if self.current_turn == self.challenger.name:
+                self.winner = self.defender.name
+                self.winner_char = self.defender
+            else:
+                self.winner = self.challenger.name
+                self.winner_char = self.challenger
+                
+            return message, {"insufficient_gas": True}
             
         # Deduct gas
         if self.current_turn == self.challenger.name:
@@ -370,7 +384,21 @@ class PvPBattleSystem:
             
         # Check gas cost - basic attacks cost 20 gas
         if gas < 20:
-            return f"Not enough gas to perform a basic attack!", {}
+            # End the battle automatically if player doesn't have enough gas
+            message = f"Not enough gas to perform a basic attack! Battle automatically ends."
+            
+            # Set battle as ended
+            self.battle_ended = True
+            
+            # Set the opponent as winner
+            if self.current_turn == self.challenger.name:
+                self.winner = self.defender.name
+                self.winner_char = self.defender
+            else:
+                self.winner = self.challenger.name
+                self.winner_char = self.challenger
+                
+            return message, {"insufficient_gas": True}
             
         # Deduct gas
         if self.current_turn == self.challenger.name:
@@ -636,7 +664,7 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
                 )])
             elif gas < gas_cost and gas_cost > 0:
                 keyboard.append([InlineKeyboardButton(
-                    f"⛽ {prefix} {clean_ability_name} (Need {gas_cost} gas)",
+                    f"⛽ {prefix} {clean_ability_name} (Need {gas_cost} gas - will lose battle)",
                     callback_data=f"pvp_lowgas_{clean_ability_name}"
                 )])
                 
@@ -651,15 +679,16 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
             keyboard.append([InlineKeyboardButton("⚔️ Basic Attack", callback_data="pvp_basic_attack")])
     else:
         if weapon:
-            keyboard.append([InlineKeyboardButton(f"⛽ {weapon.name} (Low Gas)", callback_data="pvp_lowgas_basic_attack")])
+            keyboard.append([InlineKeyboardButton(f"⛽ {weapon.name} (Low Gas - will lose battle)", callback_data="pvp_lowgas_basic_attack")])
         else:
-            keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Low Gas)", callback_data="pvp_lowgas_basic_attack")])
+            keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Low Gas - will lose battle)", callback_data="pvp_lowgas_basic_attack")])
     
     # Add switch and surrender buttons
     if battle.switches_remaining > 0:
-        keyboard.append([InlineKeyboardButton(f"🔄 Switch ({battle.switches_remaining})", callback_data="pvp_switch")])
-        
-    keyboard.append([InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")])
+        keyboard.append([
+            InlineKeyboardButton(f"🔄 Switch ({battle.switches_remaining})", callback_data="pvp_switch"),
+            InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
+        ])
     
     return keyboard
 
@@ -895,9 +924,12 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif callback_data == "pvp_switch":
             await handle_pvp_switch(update, context)
         elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
-            # Just show a message for abilities on cooldown or with insufficient gas
+            # Show a message for abilities on cooldown or with insufficient gas
             try:
-                await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
+                if callback_data.startswith("pvp_lowgas_"):
+                    await safe_api_call(query.answer, "Not enough gas! Using an ability without sufficient gas will end the battle and you will lose.", show_alert=True)
+                else:
+                    await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
             except Exception as e:
                 # Just log the error if the callback query is already expired
                 logger.debug(f"Could not answer callback query for cooldown/lowgas: {e}")
@@ -1109,7 +1141,7 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
         battle.timeout_task.cancel()
         battle.timeout_task = None
     
-    # Check if battle has ended
+    # Check if battle has ended due to insufficient gas or other reasons
     if battle.battle_ended:
         await handle_pvp_battle_end(update, context, battle, message)
         return
@@ -1195,7 +1227,7 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     # Use basic attack
     message, effects = await battle.use_basic_attack(context)
     
-    # Check if battle has ended
+    # Check if battle has ended due to insufficient gas or other reasons
     if battle.battle_ended:
         await handle_pvp_battle_end(update, context, battle, message)
         return
