@@ -694,7 +694,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 try:
                     base_damage = battle.character.stats.ATK or 25
-                    total_damage = max(1, base_damage + random.randint(-2, 3))
+                    total_damage = max(1, base_damage + random.randint(25, 35))
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
                 except Exception as e:
                     logger.error(f"Error calculating basic attack damage: {e}")

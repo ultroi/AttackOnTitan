@@ -419,7 +419,7 @@ class PvPBattleSystem:
         else:
             try:
                 base_damage = current_char.stats.ATK or 25
-                total_damage = max(1, base_damage + random.randint(-2, 3))
+                total_damage = max(1, base_damage + random.randint(25, 35))
                 weapon_name = "basic strike"
             except Exception as e:
                 logger.error(f"Error calculating basic attack damage: {e}")
