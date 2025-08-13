@@ -416,41 +416,34 @@ def golden_hour_reflex_effect(ctx: BattleContext) -> AbilityEffect:
     if isinstance(ctx, dict):
         character_stats = ctx.get("character_stats", {})
         atk = character_stats.get("ATK", 0)
-        attack_count = ctx.get("attack_count", 0)
         titan_hp = ctx.get("titan_hp", 0)
-        just_dodged = ctx.get("just_dodged", False)
-        just_killed = ctx.get("just_killed", False)
     else:
         atk = ctx.character_stats.ATK
-        attack_count = ctx.attack_count
         titan_hp = ctx.titan_hp
-        just_dodged = ctx.just_dodged
-        just_killed = ctx.just_killed
-    if attack_count <= 1:
-        buffs = {
-            "dodge": 1.0,
-            "crit_rate": 1.1,
-            "reflex_counter": 2
-        }
-        message = "⚡ Golden Reflex! Dodged attack! +10% Crit for next 2 moves"
-        if 75 < titan_hp <= 100:
-            buffs["bonus_dash"] = 1.0
-            message += ", gained Bonus Dash to weak spot"
-        elif titan_hp > 100:
-            buffs["defense_ignore"] = 0.15
-            message += ", Strike Window activated (15% Defense ignore)"
-        return create_effect(
-            message=message,
-            buffs=buffs,
-            counter_attack={
-                "damage": atk * 1.5,
-                "type": "slash",
-                "message": "🔥 Mina strikes back instantly!"
-            }
-        )
+    
+    # When explicitly used, activate dodge for next attack
+    buffs = {
+        "dodge": 1.0,
+        "crit_rate": 1.1,
+        "reflex_counter": 2
+    }
+    message = "⚡ Golden Reflex activated! Ready to dodge next attack! +10% Crit for next 2 moves"
+    
+    if 75 < titan_hp <= 100:
+        buffs["bonus_dash"] = 1.0
+        message += ", gained Bonus Dash to weak spot"
+    elif titan_hp > 100:
+        buffs["defense_ignore"] = 0.15
+        message += ", Strike Window activated (15% Defense ignore)"
+    
     return create_effect(
-        message="Golden Reflex: Ready... +5% Evasion",
-        buffs={"evasion": 0.05}
+        message=message,
+        buffs=buffs,
+        counter_attack={
+            "damage": atk * 1.5,
+            "type": "slash",
+            "message": "🔥 Mina strikes back instantly!"
+        }
     )
 
 def rookie_courage_effect(ctx: BattleContext) -> AbilityEffect:
@@ -763,7 +756,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         passive_abilities=[
             {
                 "name": "Golden Hour Reflex",
-                "description": "First 2 attacks from Titans < 10m are auto-dodged. Each dodge +10% Crit Rate for 2 moves. VS Normal: Dodge adds Bonus Dash. VS Difficult: Dodge triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
+                "description": "When activated, allows dodging the next attack and grants +10% Crit Rate for 2 moves. VS Normal: Adds Bonus Dash. VS Difficult: Triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
                 "type": "passive",
                 "gas_cost": 20,
                 "is_unlocked": True,
