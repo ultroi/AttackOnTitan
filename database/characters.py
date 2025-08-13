@@ -421,13 +421,13 @@ def golden_hour_reflex_effect(ctx: BattleContext) -> AbilityEffect:
         atk = ctx.character_stats.ATK
         titan_hp = ctx.titan_hp
     
-    # When explicitly used, activate dodge for next attack
+    # When explicitly used, activate dodge for next attack only
     buffs = {
-        "dodge": 1.0,
-        "crit_rate": 1.1,
-        "reflex_counter": 2
+        "dodge": 1.0,  # Will dodge the NEXT attack only
+        "crit_rate": 1.1,  # +10% crit rate
+        "reflex_counter": 2  # Counter for tracking the crit rate bonus duration
     }
-    message = "⚡ Golden Reflex activated! Ready to dodge next attack! +10% Crit for next 2 moves"
+    message = "⚡ Golden Hour Reflex activated! Will dodge the next attack! +10% Crit for next 2 moves"
     
     if 75 < titan_hp <= 100:
         buffs["bonus_dash"] = 1.0
@@ -766,7 +766,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Golden Hour Reflex",
-                "description": "When activated, allows dodging the next attack and grants +10% Crit Rate for 2 moves. VS Normal: Adds Bonus Dash. VS Difficult: Triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
+                "description": "When activated, allows dodging only the next attack (one time) and grants +10% Crit Rate for 2 turns. VS Normal: Adds Bonus Dash. VS Difficult: Triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
                 "type": "active",
                 "gas_cost": 20,
                 "cooldown": 5,

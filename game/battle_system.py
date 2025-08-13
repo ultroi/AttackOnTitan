@@ -185,7 +185,14 @@ class BattleSystem:
             self.titan_debuffs["delay"] -= 1
             return 0, f"{self.titan.name} is delayed and cannot attack this turn!"
         if self.buffs.get("dodge", 0) > 0 or self.trigger_states["dodge_count"] > 0:
-            self.trigger_states["dodge_count"] = max(0, self.trigger_states["dodge_count"] - 1)
+            # Process dodge from Golden Hour Reflex
+            if self.buffs.get("dodge", 0) > 0:
+                # Remove dodge after use (one-time dodge)
+                del self.buffs["dodge"]
+            else:
+                self.trigger_states["dodge_count"] = max(0, self.trigger_states["dodge_count"] - 1)
+            
+            # Apply any passive abilities triggered by dodge
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
         base_damage = max(15, self.titan.level * 8 + 10)
@@ -297,8 +304,19 @@ class BattleSystem:
                 self.titan_debuffs[debuff] -= 1
                 if self.titan_debuffs[debuff] <= 0:
                     del self.titan_debuffs[debuff]
+                    
+        # Process special buffs that need to be tracked
+        if "reflex_counter" in self.buffs:
+            self.buffs["reflex_counter"] -= 1
+            if self.buffs["reflex_counter"] <= 0:
+                del self.buffs["reflex_counter"]
+                # Remove crit_rate buff when reflex_counter expires
+                if "crit_rate" in self.buffs:
+                    del self.buffs["crit_rate"]
+                    
+        # Process other generic buffs
         for buff in list(self.buffs.keys()):
-            if isinstance(self.buffs[buff], (int, float)) and buff not in ["shield", "items_dropped"]:
+            if isinstance(self.buffs[buff], (int, float)) and buff not in ["shield", "items_dropped", "reflex_counter"]:
                 if self.buffs[buff] > 1:
                     self.buffs[buff] -= 1
                     if self.buffs[buff] <= 0:
