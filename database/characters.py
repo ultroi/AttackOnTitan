@@ -816,8 +816,6 @@ CHARACTER_IMAGES = {
 def get_character_data(character_name: str) -> Optional[CharacterData]:
     """Safe character data retrieval"""
     if not character_name or not str(character_name).strip():
-        # Don't log warning for empty or None character_name as this is an expected case
-        # during initialization and normal game operation
         return None
     character = CHARACTERS.get(character_name)
     if not character:
