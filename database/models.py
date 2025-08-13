@@ -64,10 +64,11 @@ class Character(BaseModel):
     def __init__(self, **data):
         super().__init__(**data)
         # Initialize max HP and current HP based on character_type
-        character_data = get_character_data(self.character_type)
-        if character_data:
-            self.stats.HP = character_data.get_max_hp(self.level)
-            self.current_hp = self.stats.HP
+        if hasattr(self, 'character_type') and self.character_type:
+            character_data = get_character_data(self.character_type)
+            if character_data:
+                self.stats.HP = character_data.get_max_hp(self.level)
+                self.current_hp = self.stats.HP
 
     @property
     def xp_to_next_level(self) -> int:
@@ -105,9 +106,13 @@ class Character(BaseModel):
         return int(total_exp)
 
     def get_abilities(self) -> Dict[str, Dict[str, Any]]:
+        if not hasattr(self, 'character_type') or not self.character_type:
+            return {"active": {}, "passive": {}, "ultimate": {}}
+            
         character_data = get_character_data(self.character_type)
         if character_data is None:
-            return {}
+            return {"active": {}, "passive": {}, "ultimate": {}}
+            
         return {
             "active": {a.name: a for a in getattr(character_data, "active_abilities", [])},
             "passive": {a.name: a for a in getattr(character_data, "passive_abilities", [])},
@@ -120,28 +125,31 @@ class Character(BaseModel):
             self.xp -= self.xp_to_next_level
             if self.xp < 0:
                 self.xp = 0
-            character_data = get_character_data(self.character_type)
-            if character_data:
-                # --- Progressive stat scaling toward max_potential ---
-                max_potential = getattr(character_data, 'max_potential', None)
-                base_stats = character_data.base_stats.dict() if hasattr(character_data, 'base_stats') else {}
-                if max_potential:
-                    for stat in ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']:
-                        base = base_stats.get(stat, getattr(self.stats, stat, 0))
-                        max_val = max_potential.get(stat, base)
-                        # Linear scaling: stat increases each level to reach max_potential at level 125
-                        stat_increase = (max_val - base) / (125 - 1)
-                        new_val = getattr(self.stats, stat, 0) + stat_increase
-                        # Cap at max_potential
-                        if stat == 'HP':
-                            setattr(self.stats, stat, int(round(min(new_val, max_val))))
-                        else:
-                            setattr(self.stats, stat, int(round(min(new_val, max_val))))
-                # Update max HP and current HP
-                new_max_hp = character_data.get_max_hp(self.level)
-                hp_increase = new_max_hp - self.stats.HP
-                self.stats.HP = new_max_hp
-                self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
+                
+            if hasattr(self, 'character_type') and self.character_type:
+                character_data = get_character_data(self.character_type)
+                if character_data:
+                    # --- Progressive stat scaling toward max_potential ---
+                    max_potential = getattr(character_data, 'max_potential', None)
+                    base_stats = character_data.base_stats.dict() if hasattr(character_data, 'base_stats') else {}
+                    if max_potential:
+                        for stat in ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                            base = base_stats.get(stat, getattr(self.stats, stat, 0))
+                            max_val = max_potential.get(stat, base)
+                            # Linear scaling: stat increases each level to reach max_potential at level 125
+                            stat_increase = (max_val - base) / (125 - 1)
+                            new_val = getattr(self.stats, stat, 0) + stat_increase
+                            # Cap at max_potential
+                            if stat == 'HP':
+                                setattr(self.stats, stat, int(round(min(new_val, max_val))))
+                            else:
+                                setattr(self.stats, stat, int(round(min(new_val, max_val))))
+                    # Update max HP and current HP
+                    new_max_hp = character_data.get_max_hp(self.level)
+                    hp_increase = new_max_hp - self.stats.HP
+                    self.stats.HP = new_max_hp
+                    self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
+                
             self.max_gas += 250
             self.gas = self.max_gas 
             # Check for ability unlocks
@@ -149,6 +157,9 @@ class Character(BaseModel):
 
     def _check_ability_unlocks(self) -> None:
         # Get character data to ensure we have all possible abilities
+        if not hasattr(self, 'character_type') or not self.character_type:
+            return
+            
         character_data = get_character_data(self.character_type)
         if character_data:
             all_abilities = []
@@ -212,6 +223,9 @@ class Character(BaseModel):
     
     def _get_hp_increase(self, old_level: int, new_level: int) -> int:
         """Calculate HP increase from level up."""
+        if not hasattr(self, 'character_type') or not self.character_type:
+            return 0
+            
         character_data = get_character_data(self.character_type)
         if character_data:
             old_hp = character_data.get_max_hp(old_level)
@@ -221,6 +235,9 @@ class Character(BaseModel):
 
     def unlock_abilities(self) -> None:
         # Unlock abilities based on level requirements for all types
+        if not hasattr(self, 'character_type') or not self.character_type:
+            return
+            
         abilities = self.get_abilities()
         
         for ability_type in ["passive", "active", "ultimate"]:
