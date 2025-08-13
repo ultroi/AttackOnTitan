@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, User
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
-from database.models import Character, Player
+from database.models import Character, Player, TeamMember
 from database.schemas import Ability, CharacterStats
 from game.battle_system import BattleSystem, active_battles, active_battles_lock, cleanup_battle
 from utils.monitor import track_battle_end
