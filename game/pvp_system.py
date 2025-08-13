@@ -53,6 +53,15 @@ async def safe_api_call(api_func, *args, **kwargs):
             delay = min(delay * 2, MAX_RETRY_DELAY)
             logger.info(f"Request timed out. Retrying {api_func.__name__} after {delay:.1f}s (retry {retries}/{MAX_RETRIES})")
             await asyncio.sleep(delay)
+        except error.BadRequest as e:
+            # Special handling for callback query expired errors
+            if "Query is too old" in str(e) or "query id is invalid" in str(e):
+                logger.warning(f"Callback query expired: {e}")
+                # Raise a specific exception that can be caught and handled appropriately
+                raise error.BadRequest(f"Query is too old and response timeout expired or query id is invalid")
+            # For other BadRequest errors, don't retry
+            logger.error(f"Bad request in {api_func.__name__}: {e}")
+            raise
         except Exception as e:
             # For other exceptions, don't retry
             logger.error(f"Error in {api_func.__name__}: {e}")
@@ -843,7 +852,13 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     
     try:
         # Acknowledge the button press with retry logic
-        await safe_api_call(query.answer)
+        try:
+            await safe_api_call(query.answer)
+        except Exception as e:
+            # Handle expired callback queries gracefully
+            logger.error(f"Error in answer: {e}")
+            # Continue processing even if the acknowledgment fails
+            # This allows the bot to still process the action even if the UI can't be updated
         
         callback_data = query.data
         user_id = str(update.effective_user.id)
@@ -868,7 +883,11 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await handle_pvp_switch(update, context)
         elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
             # Just show a message for abilities on cooldown or with insufficient gas
-            await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
+            try:
+                await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
+            except Exception as e:
+                # Just log the error if the callback query is already expired
+                logger.debug(f"Could not answer callback query for cooldown/lowgas: {e}")
     except Exception as e:
         logger.error(f"Error in pvp_callback_handler: {e}")
         # If we get here, something went wrong with handling the callback
@@ -1183,16 +1202,23 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
+        try:
+            await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
+        except Exception as e:
+            logger.error(f"Error editing message during surrender: {e}")
         return
         
     battle = active_pvp_battles[user_id]
     
-    # Only allow surrender on your turn
-    if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
-       (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
-        await safe_api_call(query.answer, "You can only surrender on your turn!", show_alert=True)
-        return
+    try:
+        # Only allow surrender on your turn
+        if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
+        (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
+            await safe_api_call(query.answer, "You can only surrender on your turn!", show_alert=True)
+            return
+    except Exception as e:
+        logger.warning(f"Could not answer callback query during surrender check: {e}")
+        # Continue even if answering the callback fails - the user might still want to surrender
     
     if battle.timeout_task:
         battle.timeout_task.cancel()
@@ -1202,7 +1228,17 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
     message = battle.surrender()
     
     # Handle battle end
-    await handle_pvp_battle_end(update, context, battle, message)
+    try:
+        await handle_pvp_battle_end(update, context, battle, message)
+    except Exception as e:
+        logger.error(f"Error handling battle end after surrender: {e}")
+        # Clean up battle data even if there was an error
+        if user_id in active_pvp_battles:
+            del active_pvp_battles[user_id]
+        opponent_id = battle.challenger.user_id if user_id != battle.challenger.user_id else battle.defender.user_id
+        if opponent_id in active_pvp_battles:
+            del active_pvp_battles[opponent_id]
+        battle.dispose()
 
 
 async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1314,17 +1350,17 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
         )
         
     # Update characters with final HP and gas
-    await db.update_character(Character(
-        **battle.challenger.dict(),
-        current_hp=battle.challenger_hp,
-        gas=battle.challenger_gas
-    ))
+    # Create a copy of the character dictionary and update the HP and gas values
+    challenger_data = battle.challenger.dict()
+    challenger_data['current_hp'] = battle.challenger_hp  # Replace the existing current_hp
+    challenger_data['gas'] = battle.challenger_gas        # Replace the existing gas
+    await db.update_character(Character(**challenger_data))
     
-    await db.update_character(Character(
-        **battle.defender.dict(),
-        current_hp=battle.defender_hp,
-        gas=battle.defender_gas
-    ))
+    # Do the same for the defender
+    defender_data = battle.defender.dict()
+    defender_data['current_hp'] = battle.defender_hp
+    defender_data['gas'] = battle.defender_gas
+    await db.update_character(Character(**defender_data))
     
     # Clean up battle data
     if challenger_id in active_pvp_battles:
@@ -1426,18 +1462,16 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 }
             )
                 
-            # Update characters with final HP and gas
-            await db.update_character(Character(
-                **battle.challenger.dict(),
-                current_hp=battle.challenger_hp,
-                gas=battle.challenger_gas
-            ))
+            # Update characters with final HP and gas - avoid duplicate parameters
+            challenger_data = battle.challenger.dict()
+            challenger_data['current_hp'] = battle.challenger_hp
+            challenger_data['gas'] = battle.challenger_gas
+            await db.update_character(Character(**challenger_data))
                 
-            await db.update_character(Character(
-                **battle.defender.dict(),
-                current_hp=battle.defender_hp,
-                gas=battle.defender_gas
-            ))
+            defender_data = battle.defender.dict()
+            defender_data['current_hp'] = battle.defender_hp
+            defender_data['gas'] = battle.defender_gas
+            await db.update_character(Character(**defender_data))
                 
             # Clean up battle data
             if challenger_id in active_pvp_battles:
