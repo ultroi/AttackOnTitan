@@ -832,13 +832,14 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             message = await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text=(
-                    f"Challenge Issued:\n"
-                    f"{challenger_player.name} vs {defender_player.name}\n\n"
-                    f"{defender_player.name}, the challenge is set\n"
-                    f"The battlefield awaits your decision\n\n"
-                    f"⚔️ Switches Allowed : {10}\n"
+                    f"<b>Challenge Issued:</b>\n"
+                    f"<b><a href='tg://user?id={challenger_player.user_id}'>{challenger_player.name}</a> vs <a href='tg://user?id={defender_player.user_id}'>{defender_player.name}</a></b>\n\n"
+                    f"<b><a href='tg://user?id={defender_player.user_id}'>{defender_player.name}</a>, the challenge is set</b>\n"
+                    f"<b>The battlefield awaits your decision</b>\n\n"
+                    f"<b>⚔️ Switches Allowed : {10}</b>\n"
                 ),
-                reply_markup=InlineKeyboardMarkup(keyboard)
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
             )
             
             # Schedule challenge expiration
