@@ -458,7 +458,16 @@ class PvPBattleSystem:
             current_player_first_name = self.defender_player.name
             
         # Create status message with hyperlinked player name for current turn
-        status_message = f"Turn: {self.turn_count + 1}\nCurrent Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}</a>\n"
+        challenger_player_name = self.challenger_player.name
+        defender_player_name = self.defender_player.name
+        
+        # Clearly display which player controls which character
+        status_message = (
+            f"Turn: {self.turn_count + 1}\n"
+            f"Current Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}'s {self.current_turn}</a>\n\n"
+            f"👤 {challenger_player_name} controls {self.challenger.name}\n"
+            f"👤 {defender_player_name} controls {self.defender.name}\n\n"
+        )
         
         # Add buffs and debuffs to status message
         if self.challenger_debuffs:
@@ -957,15 +966,19 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         status = battle.get_battle_status()
         keyboard = await generate_pvp_ability_keyboard(battle, context)
         
+        # Get player names for display
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
         await safe_api_call(
             query.message.reply_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
                 f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
                 f"{status['challenger_bar']}\n"
                 f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
                 f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"{status['defender_bar']}\n"
                 f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
@@ -1102,21 +1115,24 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     keyboard = await generate_pvp_ability_keyboard(battle, context)
     
     try:
+        # Create a more clear display showing player names with their characters
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
                 f"{message}\n\n"
-                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
                 f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
                 f"{status['challenger_bar']}\n"
                 f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
                 f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"{status['defender_bar']}\n"
                 f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-                f"{status['status_message']}\n"
-                f"<b>Current Turn:</b> {status['current_turn']}"
+                f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
@@ -1183,21 +1199,24 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     
     # Use safe API call with retry logic for rate limiting
     try:
+        # Create a more clear display showing player names with their characters
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
                 f"{message}\n\n"
-                f"<b>| {battle.challenger.name} |</b> «\n"
+                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
                 f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
                 f"{status['challenger_bar']}\n"
                 f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {battle.defender.name} |</b> «\n"
+                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
                 f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"{status['defender_bar']}\n"
                 f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-                f"{status['status_message']}\n"
-                f"<b>Current Turn:</b> {status['current_turn']}"
+                f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
@@ -1321,13 +1340,20 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Update message with battle results
     winner_name = battle.winner if battle.winner else "Nobody"
+    
+    # Get player names to show clearly who won
+    if battle.winner == battle.challenger.name:
+        winner_player_name = battle.challenger_player.name
+    else:
+        winner_player_name = battle.defender_player.name
+        
     try:
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ENDED ⚔️</b>\n\n"
                 f"{message}\n\n"
-                f"<b>Winner:</b> {winner_name}\n\n"
+                f"<b>Winner:</b> {winner_player_name}'s {winner_name}\n\n"
                 f"<b>Rewards:</b>\n"
                 f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
                 f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
@@ -1428,12 +1454,12 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 # Challenger timed out, defender wins
                 battle.winner = battle.defender.name
                 battle.winner_char = battle.defender
-                message = f"⏰ {battle.challenger.name} took too long to move. {battle.defender.name} wins by default!"
+                message = f"⏰ {battle.challenger_player.name}'s {battle.challenger.name} took too long to move. {battle.defender_player.name}'s {battle.defender.name} wins by default!"
             else:
                 # Defender timed out, challenger wins
                 battle.winner = battle.challenger.name
                 battle.winner_char = battle.challenger
-                message = f"⏰ {battle.defender.name} took too long to move. {battle.challenger.name} wins by default!"
+                message = f"⏰ {battle.defender_player.name}'s {battle.defender.name} took too long to move. {battle.challenger_player.name}'s {battle.challenger.name} wins by default!"
                 
             battle.battle_ended = True
             
@@ -1447,7 +1473,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     text=(
                         f"<b>⚔️ PVP BATTLE TIMED OUT ⚔️</b>\n\n"
                         f"{message}\n\n"
-                        f"<b>Winner:</b> {battle.winner}\n\n"
+                        f"<b>Winner:</b> {battle.challenger_player.name if battle.winner == battle.challenger.name else battle.defender_player.name}'s {battle.winner}\n\n"
                         f"<b>Rewards:</b>\n"
                         f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
                         f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
