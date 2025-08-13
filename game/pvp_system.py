@@ -990,7 +990,6 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             f"<blockquote><b>{battle.defender.name}</b>\n"
             f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
             f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
-            f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
@@ -1144,7 +1143,6 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 f"<blockquote><b>{battle.defender.name}</b>\n"
                 f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
-                f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
@@ -1232,7 +1230,6 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
                 f"<blockquote><b>{battle.defender.name}</b>\n"
                 f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
-                f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
