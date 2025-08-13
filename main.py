@@ -55,6 +55,7 @@ from game.battle_system import handle_battle_action, active_battles
 from utils.scheduled_tasks import start_scheduled_tasks
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 from game.captcha import button
+from game.pvp_system import pvp_command, pvp_callback_handler
 
 # Load environment variables
 load_dotenv()
@@ -551,6 +552,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("deposit", handle_deposit_command))
     app_instance.add_handler(CommandHandler("withdraw", handle_withdrawal_command))
     app_instance.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
+    
+    # PVP system handlers
+    app_instance.add_handler(CommandHandler("pvp", pvp_command))
+    app_instance.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
 
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))

@@ -321,6 +321,11 @@ class Player(BaseModel):
     hcaptcha_start_time: Optional[float] = None
     explore_start_time: Optional[float] = None
     last_explore_time: Optional[float] = None
+    # PvP related fields
+    pvp_wins: int = 0
+    pvp_losses: int = 0
+    battle_rating: int = 1000
+    pvp_matches: List[Dict[str, Any]] = Field(default_factory=list)  # Store recent match history
 
     @property
 
@@ -340,6 +345,7 @@ class Player(BaseModel):
         base_exp = {
             'titan_kill': random.randint(10, 20),
             'pvp_win': 30,
+            'pvp_loss': 15,
             'shop_purchase': random.randint(10, 15),
             'daily_explore': 50,
             'achievement': random.randint(100, 500)
