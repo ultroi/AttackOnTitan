@@ -152,7 +152,18 @@ class Database:
             })
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(f"get_player query time: {elapsed:.2f} ms")
-            return Player(**player_data) if player_data else None
+            
+            # Create a Player object
+            if player_data:
+                # Convert team members to proper TeamMember objects if present
+                if "team" in player_data and player_data["team"]:
+                    from database.models import TeamMember
+                    player_data["team"] = [
+                        TeamMember(**member) if isinstance(member, dict) else member
+                        for member in player_data["team"]
+                    ]
+                return Player(**player_data)
+            return None
         except (PyMongoError, ConnectionError) as e:
             logger.error(f"Failed to get player: {e}")
             raise
@@ -168,7 +179,9 @@ class Database:
                 update_data['total_xp'] = max(0, update_data['total_xp'])
             if 'team' in update_data:
                 update_data['team'] = [
-                    member.dict() if hasattr(member, 'dict') else member
+                    {"character_name": member.character_name, "position": member.position} 
+                    if hasattr(member, 'character_name') else 
+                    (member.dict() if hasattr(member, 'dict') else member)
                     for member in update_data['team']
                 ]
             update_data["updated_at"] = datetime.now(timezone.utc)
@@ -189,6 +202,16 @@ class Database:
         try:
             player.updated_at = datetime.now(timezone.utc)
             player_dict = player.dict() if hasattr(player, 'dict') else player.__dict__
+            
+            # Properly serialize TeamMember objects in the team list
+            if 'team' in player_dict and player_dict['team']:
+                player_dict['team'] = [
+                    {"character_name": member.character_name, "position": member.position} 
+                    if hasattr(member, 'character_name') else 
+                    (member if isinstance(member, dict) else member)
+                    for member in player_dict['team']
+                ]
+                
             result = await self.players.find_one_and_update(
                 {"user_id": str(player.user_id)},
                 {"$set": player_dict},

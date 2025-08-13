@@ -649,7 +649,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         
         # Handle the TeamMember object or other formats
-        if isinstance(challenger_player.team[0], TeamMember):
+        if hasattr(challenger_player.team[0], 'character_name'):
             challenger_char_name = challenger_player.team[0].character_name
         elif isinstance(challenger_player.team[0], dict):
             challenger_char_name = challenger_player.team[0].get("character_name")
@@ -668,7 +668,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
             
         # Handle the TeamMember object or other formats for defender
-        if isinstance(defender_player.team[0], TeamMember):
+        if hasattr(defender_player.team[0], 'character_name'):
             defender_char_name = defender_player.team[0].character_name
         elif isinstance(defender_player.team[0], dict):
             defender_char_name = defender_player.team[0].get("character_name")

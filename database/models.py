@@ -279,6 +279,13 @@ class Character(BaseModel):
 class TeamMember(BaseModel):
     character_name: str
     position: int
+    
+    def dict(self, *args, **kwargs):
+        """Explicitly define dict method to ensure proper serialization for MongoDB"""
+        return {
+            "character_name": self.character_name,
+            "position": self.position
+        }
 
 class DailyExplores(BaseModel):
     """Model to track daily explores with dates"""
