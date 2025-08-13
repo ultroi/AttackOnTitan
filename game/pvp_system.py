@@ -462,11 +462,15 @@ class PvPBattleSystem:
         defender_player_name = self.defender_player.name
         
         # Clearly display which player controls which character
+        # Add "«" symbol next to the current turn player
+        challenger_indicator = " « Turn" if self.current_turn == self.challenger.name else ""
+        defender_indicator = " « Turn" if self.current_turn == self.defender.name else ""
+        
         status_message = (
             f"Turn: {self.turn_count + 1}\n"
             f"Current Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}'s {self.current_turn}</a>\n\n"
-            f"👤 {challenger_player_name} controls {self.challenger.name}\n"
-            f"👤 {defender_player_name} controls {self.defender.name}\n\n"
+            f"👤 {challenger_player_name} controls {self.challenger.name}{challenger_indicator}\n"
+            f"👤 {defender_player_name} controls {self.defender.name}{defender_indicator}\n\n"
         )
         
         # Add buffs and debuffs to status message
@@ -970,19 +974,23 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
         await safe_api_call(
             query.message.reply_text,
             text=(
-                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
-                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-                f"{status['challenger_bar']}\n"
-                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
-                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-                f"{status['defender_bar']}\n"
-                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
-                f"{status['status_message']}"
+            f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+            f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+            f"<blockquote><b>{battle.challenger.name}</b>\n"
+            f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+            f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+            f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+            f"<blockquote><b>{battle.defender.name}</b>\n"
+            f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+            f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
+            f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
@@ -1119,19 +1127,23 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"{message}\n\n"
-                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
-                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-                f"{status['challenger_bar']}\n"
-                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
-                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-                f"{status['defender_bar']}\n"
-                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
+                f"<code>{message}</code>\n\n"
+                f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
+                f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+                f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
+                f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
                 f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
@@ -1203,19 +1215,23 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
                 f"{message}\n\n"
-                f"<b>| {challenger_player_name}'s {battle.challenger.name} |</b> «\n"
-                f"<b>HP:</b> {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
-                f"{status['challenger_bar']}\n"
-                f"<b>Gas:</b> {status['challenger_gas']}/{battle.challenger.max_gas}\n\n"
-                f"<b>| {defender_player_name}'s {battle.defender.name} |</b> «\n"
-                f"<b>HP:</b> {status['defender_hp']}/{battle.defender.stats.HP}\n"
-                f"{status['defender_bar']}\n"
-                f"<b>Gas:</b> {status['defender_gas']}/{battle.defender.max_gas}\n\n"
+                f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
+                f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+                f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
+                f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
                 f"{status['status_message']}"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
