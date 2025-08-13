@@ -452,11 +452,21 @@ class PvPBattleSystem:
         if self.current_turn == self.challenger.name:
             self.winner = self.defender.name
             self.winner_char = self.defender
-            message = f"🏳️ {self.challenger.name} has surrendered! {self.defender.name} wins!"
+            surrendered_player = self.challenger_player.name
+            surrendered_char = self.challenger.name
+            winner_player = self.defender_player.name
+            winner_char = self.defender.name
         else:
             self.winner = self.challenger.name
             self.winner_char = self.challenger
-            message = f"🏳️ {self.defender.name} has surrendered! {self.challenger.name} wins!"
+            surrendered_player = self.defender_player.name
+            surrendered_char = self.defender.name
+            winner_player = self.challenger_player.name
+            winner_char = self.challenger.name
+            
+        # The actual message will be formatted in handle_pvp_battle_end
+        # This is just a basic message that will be enhanced with player mentions
+        message = f"🏳️ {surrendered_player}'s {surrendered_char} has surrendered! {winner_player}'s {winner_char} wins the battle!"
             
         self.battle_ended = True
         return message
@@ -1322,9 +1332,28 @@ async def handle_pvp_surrender(update: Update, context: ContextTypes.DEFAULT_TYP
     # Process surrender
     message = battle.surrender()
     
-    # Handle battle end
+    # Create custom surrender message
+    if user_id == battle.challenger.user_id:
+        surrendering_player_name = battle.challenger_player.name
+        surrendering_char_name = battle.challenger.name
+        winner_player_name = battle.defender_player.name
+        winner_char_name = battle.defender.name
+    else:
+        surrendering_player_name = battle.defender_player.name
+        surrendering_char_name = battle.defender.name
+        winner_player_name = battle.challenger_player.name
+        winner_char_name = battle.challenger.name
+    
+    # Enhanced surrender message with emojis and formatting
+    surrender_message = (
+        f"<b>🏳️ SURRENDER 🏳️</b>\n\n"
+        f"{surrendering_player_name}'s <b>{surrendering_char_name}</b> has waved the white flag!\n"
+        f"{winner_player_name}'s <b>{winner_char_name}</b> claims victory without further combat!"
+    )
+    
+    # Handle battle end with the custom surrender message
     try:
-        await handle_pvp_battle_end(update, context, battle, message)
+        await handle_pvp_battle_end(update, context, battle, surrender_message)
     except Exception as e:
         logger.error(f"Error handling battle end after surrender: {e}")
         # Clean up battle data even if there was an error
@@ -1394,15 +1423,51 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
         winner_player_name = battle.defender_player.name
         
     try:
+        # Get player IDs and names for proper hyperlinks
+        challenger_id = battle.challenger.user_id
+        defender_id = battle.defender.user_id
+        challenger_mention = f'<a href="tg://user?id={challenger_id}">{battle.challenger_player.name}</a>'
+        defender_mention = f'<a href="tg://user?id={defender_id}">{battle.defender_player.name}</a>'
+        
+        # Determine winner and loser mentions
+        if battle.winner == battle.challenger.name:
+            winner_mention = challenger_mention
+            loser_mention = defender_mention
+            winner_char_name = battle.challenger.name
+            loser_char_name = battle.defender.name
+        else:
+            winner_mention = defender_mention
+            loser_mention = challenger_mention
+            winner_char_name = battle.defender.name
+            loser_char_name = battle.challenger.name
+        
+        # Check if message contains surrender indicators - if so, we'll use the custom surrender message
+        is_surrender = "surrender" in message.lower() or "🏳️" in message
+        
+        # Format the victory message with hyperlinks
+        if is_surrender:
+            # Replace player names with hyperlinked mentions in the surrender message
+            victory_message = message.replace(battle.challenger_player.name, challenger_mention).replace(battle.defender_player.name, defender_mention)
+        elif battle.winner:  # If there is a winner (not a draw)
+            victory_message = f"🏆 {winner_mention}'s {winner_char_name} defeated {loser_mention}'s {loser_char_name}!"
+        else:
+            victory_message = f"🔄 The battle between {challenger_mention}'s {battle.challenger.name} and {defender_mention}'s {battle.defender.name} ended in a draw!"
+        
+        # Create the appropriate header based on whether it's a surrender or regular battle end
+        header = "<b>🏳️ PVP BATTLE SURRENDER 🏳️</b>" if is_surrender else "<b>⚔️ PVP BATTLE ENDED ⚔️</b>"
+        
+        # For surrender, we only need the victory message since it already contains all the needed details
+        # For regular battle end, we include both victory message and the detailed message
+        content = victory_message if is_surrender else f"{victory_message}\n\n{message}"
+        
         await safe_api_call(
             query.edit_message_text,
             text=(
-                f"<b>⚔️ PVP BATTLE ENDED ⚔️</b>\n\n"
-                f"{message}\n\n"
-                f"<b>Winner:</b> {winner_player_name}'s {winner_name}\n\n"
+                f"{header}\n\n"
+                f"{content}\n\n"
                 f"<b>Rewards:</b>\n"
-                f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
-                f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
+                f"<b>Winner:</b> <b>{rewards['winner']['xp']}</b> XP, <b>{rewards['winner']['marks']}</b> Marks, <b>{rewards['winner']['valor']}</b> Valor\n"
+                f"<b>Loser:</b> <b>{rewards['loser']['xp']}</b> XP, <b>{rewards['loser']['marks']}</b> Marks"
             ),
             parse_mode=ParseMode.HTML
         )
@@ -1514,15 +1579,34 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
             
             # Send timeout message
             try:
+                # Get player mentions for proper hyperlinks
+                challenger_mention = f'<a href="tg://user?id={challenger_id}">{battle.challenger_player.name}</a>'
+                defender_mention = f'<a href="tg://user?id={defender_id}">{battle.defender_player.name}</a>'
+                
+                # Determine winner and loser mentions
+                if battle.winner == battle.challenger.name:
+                    winner_mention = challenger_mention
+                    loser_mention = defender_mention
+                    winner_char_name = battle.challenger.name
+                    loser_char_name = battle.defender.name
+                else:
+                    winner_mention = defender_mention
+                    loser_mention = challenger_mention
+                    winner_char_name = battle.defender.name
+                    loser_char_name = battle.challenger.name
+                
+                # Format the victory message with hyperlinks
+                victory_message = f"🏆 {winner_mention}'s {winner_char_name} won by timeout against {loser_mention}'s {loser_char_name}!"
+                
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=(
                         f"<b>⚔️ PVP BATTLE TIMED OUT ⚔️</b>\n\n"
+                        f"{victory_message}\n\n"
                         f"{message}\n\n"
-                        f"<b>Winner:</b> {battle.challenger_player.name if battle.winner == battle.challenger.name else battle.defender_player.name}'s {battle.winner}\n\n"
                         f"<b>Rewards:</b>\n"
-                        f"Winner: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor\n"
-                        f"Loser: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks"
+                        f"<b>Winner:</b> <b>{rewards['winner']['xp']}</b> XP, <b>{rewards['winner']['marks']}</b> Marks, <b>{rewards['winner']['valor']}</b> Valor\n"
+                        f"<b>Loser:</b> <b>{rewards['loser']['xp']}</b> XP, <b>{rewards['loser']['marks']}</b> Marks"
                     ),
                     parse_mode=ParseMode.HTML
                 )
