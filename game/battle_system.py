@@ -410,6 +410,8 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
                 except (ImportError, AttributeError):
                     pass
                 try:
+                    # Mark battle as ended before disposal
+                    battle_instance.battle_ended = True
                     battle_instance.dispose()
                 except Exception as e:
                     logger.warning(f"Error disposing battle for user {user_id}: {e}")
@@ -601,15 +603,43 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     if not query or not update.effective_user:
         return
-    await query.answer()
+    
     user_id = str(update.effective_user.id)
     async with active_battles_lock:
         if user_id not in active_battles or active_battles[user_id].battle_ended:
+            await query.answer("This battle has already ended or doesn't exist.")
             return
         battle = active_battles[user_id]
     action = query.data
     if not action:
         return
+        
+    # Handle cooldown and low gas ability clicks with informative alerts
+    if action.startswith("cooldown_"):
+        ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
+        cooldown = battle.ability_cooldowns.get(ability_name, 0)
+        await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
+        return
+    elif action.startswith("lowgas_"):
+        ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
+        if ability_name == "basic_attack":
+            await query.answer("Not enough gas for basic attack! You need at least 20 gas.", show_alert=True)
+        else:
+            character_data = get_character_data(battle.character.character_type)
+            ability_gas = 20  # Default gas cost
+            if character_data:
+                for ability_type in ["active", "passive", "ultimate"]:
+                    abilities = getattr(character_data, f"{ability_type}_abilities", [])
+                    for ability in abilities:
+                        if ability and ability.name == ability_name:
+                            ability_gas = ability.gas_cost or 20
+                            break
+            await query.answer(f"Not enough gas to use {ability_name}! You need {ability_gas} gas.", show_alert=True)
+        return
+        
+    # Regular answer for valid actions
+    await query.answer()
+    
     full_message = []
     effects = {}
     if battle.timeout_task:

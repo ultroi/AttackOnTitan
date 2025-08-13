@@ -108,7 +108,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "cancel_selection": lambda data: show_character_selection(update, context),
             "birthplace_": lambda data: create_character(update, context),
             "ability_": lambda data: handle_battle_action(update, context),
-            "action_run": lambda data: handle_battle_action(update, context),
+            "action_": lambda data: handle_battle_action(update, context),
+            "cooldown_": lambda data: handle_battle_action(update, context),
+            "lowgas_": lambda data: handle_battle_action(update, context),
             "battle_": lambda data: handle_battle_start(update, context),
             "location_": lambda data: create_character(update, context),
         }
