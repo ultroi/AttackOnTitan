@@ -755,14 +755,6 @@ CHARACTERS: Dict[str, CharacterData] = {
         max_potential={"HP": 1250, "ATK": 130, "DEF": 120, "ACC": 120, "INT": 110, "SPD": 125},
         passive_abilities=[
             {
-                "name": "Golden Hour Reflex",
-                "description": "When activated, allows dodging the next attack and grants +10% Crit Rate for 2 moves. VS Normal: Adds Bonus Dash. VS Difficult: Triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
-                "type": "passive",
-                "gas_cost": 20,
-                "is_unlocked": True,
-                "effect_function": golden_hour_reflex_effect
-            },
-            {
                 "name": "Rookie Courage",
                 "description": "+5% Movement Speed to allies within 15m. If ally dies in range: Double Action Round, +20% Titan Damage (3 moves). VS Titans >100 HP: +15% Crit Rate, +10 INT. Multiple ally deaths: ODM cooldowns reset.",
                 "type": "passive",
@@ -772,6 +764,15 @@ CHARACTERS: Dict[str, CharacterData] = {
             }
         ],
         active_abilities=[
+            {
+                "name": "Golden Hour Reflex",
+                "description": "When activated, allows dodging the next attack and grants +10% Crit Rate for 2 moves. VS Normal: Adds Bonus Dash. VS Difficult: Triggers Strike Window (next ODM attack ignores 15% Titan Defense).",
+                "type": "active",
+                "gas_cost": 20,
+                "cooldown": 5,
+                "is_unlocked": True,
+                "effect_function": golden_hour_reflex_effect
+            },
             {
                 "name": "Nape Cutter Dash",
                 "description": "High-speed ODM slice. 2x damage at Full Gas. Easy Titans: Auto-Crit if HP <25%. Normal: -10 Agility for 1 turn. Difficult: +50% damage after dodge/kill.",
