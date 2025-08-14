@@ -174,103 +174,62 @@ def include_dashboard_route(app):
         
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, error: Optional[str] = None):
-        """Render login page and send verification code to admin group"""
-        client_ip = request.client.host if request.client else "unknown"
-        # Generate a 6-digit code
-        code = ''.join(random.choices(string.digits, k=6))
-        verification_codes[code] = (time.time(), client_ip)
-        # Send code to admin group via Telegram bot
-        if TELEGRAM_BOT_TOKEN:
-            try:
-                bot = Bot(token=TELEGRAM_BOT_TOKEN)
-                await bot.send_message(chat_id=ADMIN_GROUP_ID, text=f"[AoT Dashboard Login] Verification code: <b>{code}</b>\nIP: {client_ip}\nTime: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", parse_mode="HTML")
-            except Exception as e:
-                logger.error(f"Failed to send verification code to admin group: {e}")
-        else:
-            logger.error("TELEGRAM_BOT_TOKEN not set in environment!")
-        return templates.TemplateResponse("login.html", {"request": request, "error": error})
+        """Automatically redirect to dashboard without login"""
+        # Simply redirect to dashboard without any verification
+        return RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
 
     @app.post("/login", response_class=HTMLResponse)
-    async def login_post(request: Request, verification_code: str = Form(...)):
-        client_ip = request.client.host if request.client else "unknown"
-        code_info = verification_codes.get(verification_code)
-        now = time.time()
-        # Validate code
-        if not code_info:
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid verification code."}, status_code=401)
-        code_time, code_ip = code_info
-        if now - code_time > VERIFICATION_CODE_EXPIRY:
-            del verification_codes[verification_code]
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Verification code expired. Please refresh to get a new code."}, status_code=401)
-        if code_ip != client_ip:
-            return templates.TemplateResponse("login.html", {"request": request, "error": "IP mismatch. Please use the code from your current device."}, status_code=401)
-        # Success: create session (no user_id, just mark as verified)
-        session_id = secrets.token_hex(16)
+    async def login_post(request: Request):
+        """Automatically redirect to dashboard without verification"""
+        # Create a redirect response to the dashboard
         response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
+        # Set a dummy session cookie
+        session_id = secrets.token_hex(16)
         response.set_cookie(key=SESSION_COOKIE, value=session_id, httponly=True, max_age=3600)
-        # Remove used code
-        del verification_codes[verification_code]
         return response
     
     @app.get("/logout")
     async def logout(request: Request, response: Response, session: Optional[str] = Cookie(None)):
-        """Log out and clear session"""
+        """Log out and redirect back to dashboard instead of login page"""
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
             
-        if session:
-            session_data = await get_dashboard_session(session)
-            user_id = session_data["user_id"] if session_data else 0
-            if user_id:
-                log_dashboard_access(
-                    user_id=user_id,
-                    action="logout",
-                    ip_address=client_ip,
-                    details={"session_id": session}
-                )
-            logger.info(f"👋 User {user_id} logged out from IP {client_ip}")
-            await delete_dashboard_session(session)
-        response = RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
-        response.delete_cookie(SESSION_COOKIE)
+        # Log the action but don't actually require login to access dashboard
+        log_dashboard_access(
+            user_id=123456789,
+            action="logout_redirect",
+            ip_address=client_ip,
+            details={"direct_access": True}
+        )
+        
+        # Redirect directly back to dashboard instead of login
+        response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
         return response
             
     @app.get("/dashboard", response_class=HTMLResponse)
     async def dashboard(request: Request, session: Optional[str] = Cookie(None)):
-        """Render dashboard page with authentication"""
+        """Render dashboard page without authentication"""
         # Get client IP
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
 
-        # Manual session verification to avoid dependency issues
-        user_id = None
-        session_data = None
-        if session:
-            session_data = await get_dashboard_session(session)
-            current_time = time.time()
-            if session_data and session_data["expiry"] >= current_time:
-                # Extend session and update last activity
-                new_expiry = current_time + 3600
-                await save_dashboard_session(session, session_data["user_id"], session_data.get("ip_address", "unknown"), new_expiry, session_data.get("created_at", current_time), current_time)
-                user_id = session_data["user_id"]
-                # Track session activity
-                await track_session_activity(session, request)
-        if user_id is None:
-            log_dashboard_access(
-                user_id=0,
-                action="dashboard_access_denied",
-                ip_address=client_ip,
-                details={"reason": "invalid_session"}
-            )
-            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
+        # Set default admin user ID for direct access without authentication
+        user_id = 123456789  # Default admin user ID
+        
+        # Log the access for monitoring purposes
         log_dashboard_access(
             user_id=user_id,
             action="dashboard_view",
             ip_address=client_ip,
-            details={}
+            details={"direct_access": True}
         )
-        user_role = "Owner" if user_id in get_owner_ids() else "Moderator"
+        
+        # Always set user role as Owner for full access
+        user_role = "Owner"
+        
+        # Return the dashboard template directly without authentication
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -282,41 +241,30 @@ def include_dashboard_route(app):
         )
     
     @app.get("/access_logs", response_class=HTMLResponse)
-    async def access_logs_page(request: Request, user_id: Optional[int] = Depends(verify_session)):
-        """View access logs page (only for owners)"""
-        if user_id is None:
-            return RedirectResponse("/login", status_code=HTTP_303_SEE_OTHER)
-        
-        # Only owners can access the logs page
-        if user_id not in get_owner_ids():
-            return RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
-        
+    async def access_logs_page(request: Request):
+        """View access logs page without authentication"""
         # Get client IP
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
-            
+        
+        # Set default admin user ID for direct access
+        user_id = 123456789
+        
         # Track access logs page view
         log_dashboard_access(
             user_id=user_id,
             action="logs_page_view",
             ip_address=client_ip,
-            details={}
+            details={"direct_access": True}
         )
         
         return templates.TemplateResponse("access_logs.html", {"request": request, "user_id": user_id})
         
     @app.get("/access_logs_data")
-    async def access_logs_data(request: Request, user_id: Optional[int] = Depends(verify_session)):
-        """API endpoint for access logs data (only for owners)"""
-        if user_id is None:
-            return {"error": "Unauthorized", "status": "error"}
-        
-        # Only owners can access the logs
-        if user_id not in get_owner_ids():
-            return {"error": "Forbidden", "status": "error"}
-        
-        # Return the logs data
+    async def access_logs_data(request: Request):
+        """API endpoint for access logs data without authentication"""
+        # Return the logs data without any authentication checks
         return {
             "status": "success",
             "logs": dashboard_access_log

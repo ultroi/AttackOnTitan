@@ -255,8 +255,12 @@ async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = resource_monitor.get_formatted_live_status()
         # Use the same domain as where the bot is hosted
         dashboard_url = "https://attackontitangamebot.onrender.com/dashboard"
-        status += f"\n\n<b>🔗 Live Dashboard:</b> <a href='{dashboard_url}'>Open Dashboard</a>"
+        # Make dashboard link more prominent
+        status += f"\n\n<b>🔗 Live Dashboard:</b> <a href='{dashboard_url}'>Click here to access the Dashboard</a>"
         await update.message.reply_text(status, parse_mode="HTML", disable_web_page_preview=True)
     except Exception as e:
         logger.error(f"Error in /monitor command: {e}")
-        await update.message.reply_text("Failed to fetch live monitor status.")
+        # Still provide dashboard link even if status fails
+        dashboard_url = "https://attackontitangamebot.onrender.com/dashboard"
+        error_msg = f"Failed to fetch live monitor status. <a href='{dashboard_url}'>Access the Dashboard here</a>"
+        await update.message.reply_text(error_msg, parse_mode="HTML", disable_web_page_preview=True)
