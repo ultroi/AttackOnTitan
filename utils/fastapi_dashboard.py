@@ -95,12 +95,24 @@ def log_dashboard_access(user_id: int, action: str, ip_address: str, details: Op
     
     # For critical actions, could also notify owners via Telegram
 
+# In-memory session cache
+active_sessions = {}  # {session_id: {"user_id": user_id, "ip_address": ip, "expiry": expiry, "created_at": timestamp, "last_activity": timestamp}}
+
 # Session management
 def create_session(user_id: int, ip_address: str = "unknown") -> str:
     """Create a new session for authenticated user"""
     session_id = secrets.token_hex(16)
     timestamp = time.time()
     expiry = timestamp + 3600
+    # Store in memory cache
+    active_sessions[session_id] = {
+        "user_id": user_id,
+        "ip_address": ip_address,
+        "expiry": expiry,
+        "created_at": timestamp,
+        "last_activity": timestamp
+    }
+    # Also save to database
     asyncio.create_task(save_dashboard_session(session_id, user_id, ip_address, expiry, timestamp, timestamp))
     log_dashboard_access(
         user_id=user_id,
@@ -114,16 +126,66 @@ async def verify_session(session: Optional[str] = Cookie(None)) -> Optional[int]
     """Verify user session, return user_id if valid or None if invalid"""
     if not session:
         return None
+    
+    # First check in-memory active_sessions
+    if session in active_sessions:
+        session_data = active_sessions[session]
+        current_time = time.time()
+        
+        if session_data["expiry"] < current_time:
+            # Remove expired session from memory
+            del active_sessions[session]
+            # Also remove from database
+            await delete_dashboard_session(session)
+            return None
+            
+        # Extend session and update last activity
+        new_expiry = current_time + 3600
+        session_data["expiry"] = new_expiry
+        session_data["last_activity"] = current_time
+        
+        # Also update in database asynchronously
+        asyncio.create_task(save_dashboard_session(
+            session, 
+            session_data["user_id"], 
+            session_data.get("ip_address", "unknown"), 
+            new_expiry, 
+            session_data.get("created_at", current_time), 
+            current_time
+        ))
+        
+        return session_data["user_id"]
+    
+    # If not found in memory, try database
     session_data = await get_dashboard_session(session)
     if not session_data:
         return None
+        
     current_time = time.time()
     if session_data["expiry"] < current_time:
         await delete_dashboard_session(session)
         return None
-    # Extend session and update last activity
+        
+    # Extend session, update last activity and restore to memory
     new_expiry = current_time + 3600
-    await save_dashboard_session(session, session_data["user_id"], session_data.get("ip_address", "unknown"), new_expiry, session_data.get("created_at", current_time), current_time)
+    await save_dashboard_session(
+        session, 
+        session_data["user_id"], 
+        session_data.get("ip_address", "unknown"), 
+        new_expiry, 
+        session_data.get("created_at", current_time), 
+        current_time
+    )
+    
+    # Also add to in-memory cache
+    active_sessions[session] = {
+        "user_id": session_data["user_id"],
+        "ip_address": session_data.get("ip_address", "unknown"),
+        "expiry": new_expiry,
+        "created_at": session_data.get("created_at", current_time),
+        "last_activity": current_time
+    }
+    
     return session_data["user_id"]
 
 async def track_session_activity(session: str, request: Request) -> None:
@@ -181,10 +243,17 @@ def include_dashboard_route(app):
     @app.post("/login", response_class=HTMLResponse)
     async def login_post(request: Request):
         """Automatically redirect to dashboard without verification"""
+        # Get client IP
+        client_ip = "unknown"
+        if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
+            client_ip = request.client.host
+            
+        # Create a new session using our session management function
+        user_id = 123456789  # Default admin user ID
+        session_id = create_session(user_id, ip_address=client_ip)
+        
         # Create a redirect response to the dashboard
         response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
-        # Set a dummy session cookie
-        session_id = secrets.token_hex(16)
         response.set_cookie(key=SESSION_COOKIE, value=session_id, httponly=True, max_age=3600)
         return response
     
@@ -194,14 +263,34 @@ def include_dashboard_route(app):
         client_ip = "unknown"
         if hasattr(request, 'client') and request.client and hasattr(request.client, 'host'):
             client_ip = request.client.host
+        
+        # Clean up session if provided
+        if session:
+            # Remove from in-memory cache if exists
+            if session in active_sessions:
+                user_id = active_sessions[session].get("user_id", 123456789)
+                del active_sessions[session]
+            else:
+                user_id = 123456789
+                
+            # Also remove from database
+            await delete_dashboard_session(session)
             
-        # Log the action but don't actually require login to access dashboard
-        log_dashboard_access(
-            user_id=123456789,
-            action="logout_redirect",
-            ip_address=client_ip,
-            details={"direct_access": True}
-        )
+            # Log the logout action
+            log_dashboard_access(
+                user_id=user_id,
+                action="logout",
+                ip_address=client_ip,
+                details={"session_id": session}
+            )
+        else:
+            # Log the action but don't actually require login to access dashboard
+            log_dashboard_access(
+                user_id=123456789,
+                action="logout_redirect",
+                ip_address=client_ip,
+                details={"direct_access": True}
+            )
         
         # Redirect directly back to dashboard instead of login
         response = RedirectResponse("/dashboard", status_code=HTTP_303_SEE_OTHER)
