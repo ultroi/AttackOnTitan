@@ -554,226 +554,193 @@
     
     // Filter players based on search input
     function filterPlayers() {
-      try {
-        const searchTerm = playerSearch.value.toLowerCase();
-        filteredPlayers = allPlayers.filter(player => {
-          try {
-            if (!player) return false;
-            
-            // Safely handle username - ensure it's a string
-            const username = player.username || 'Unknown';
-            const name = String(username);
-            
-            // Safely handle user_id - ensure it's a string
-            const userId = player.user_id;
-            const id = userId ? String(userId) : '';
-            
-            return name.toLowerCase().includes(searchTerm) || id.toLowerCase().includes(searchTerm);
-          } catch (err) {
-            console.error('Error filtering player:', err, player);
-            return false;
-          }
-        });
-        
-        renderPlayersTable();
-      } catch (err) {
-        console.error('Error in filterPlayers:', err);
-      }
+      const searchTerm = playerSearch.value.toLowerCase();
+      filteredPlayers = allPlayers.filter(player => {
+        try {
+          // Safely handle username - ensure it's a string
+          const name = (player.username || 'Unknown').toString().toLowerCase();
+          
+          // Safely handle user_id - ensure it's a string
+          const id = player.user_id ? String(player.user_id).toLowerCase() : '';
+          
+          return name.includes(searchTerm) || id.includes(searchTerm);
+        } catch (err) {
+          console.error('Error filtering player:', err, player);
+          return false;
+        }
+      });
+      
+      renderPlayersTable();
     }
     
     // Render players table
     function renderPlayersTable() {
+      if (filteredPlayers.length === 0) {
+        activePlayersBody.innerHTML = `
+          <tr>
+            <td colspan="3" class="empty-state">
+              <i class="fas fa-user-slash"></i><br>
+              No players found
+            </td>
+          </tr>
+        `;
+        return;
+      }
+      
       try {
-        if (filteredPlayers.length === 0) {
-          activePlayersBody.innerHTML = `
-            <tr>
-              <td colspan="3" class="empty-state">
-                <i class="fas fa-user-slash"></i><br>
-                No players found
-              </td>
-            </tr>
-          `;
-          return;
-        }
-        
         // Sort by most recent activity
         const sortedPlayers = [...filteredPlayers].sort((a, b) => (b.duration || 0) - (a.duration || 0));
         
-        let tableHTML = '';
-        
-        for (let player of sortedPlayers) {
+        activePlayersBody.innerHTML = sortedPlayers.map(player => {
           try {
-            // Skip invalid player objects
-            if (!player) continue;
-            
             // Safely extract player data with defaults
             const username = player.username || 'Unknown';
-            const user_id = player.user_id ? String(player.user_id) : '';
+            const user_id = String(player.user_id || '');  // Ensure user_id is a string
             const action = player.action || 'Unknown';
             
+            const name = username;
             // Safely generate initials
-            let initials = 'U';
-            try {
-              const name = String(username);
-              initials = name
-                .split(' ')
-                .filter(part => part && part.length > 0)
-                .map(n => n[0] || '')
-                .join('')
-                .toUpperCase() || 'U';
-            } catch (e) {
-              console.error('Error generating initials:', e);
-            }
+            const initials = (name.split(' ')
+              .filter(part => part && part.length > 0)
+              .map(n => n[0] || '')
+              .join('')
+              .toUpperCase()) || 'U';
             
             let status = '';
             let statusClass = '';
             
             // Safely check action string
-            try {
-              const actionStr = String(action).toLowerCase();
-              if (actionStr.includes('exploring')) {
-                status = 'Exploring';
-                statusClass = 'exploring';
-              } else if (actionStr.includes('battle') || action === '🔥 In Battle') {
-                status = 'Battling';
-                statusClass = 'battling';
-              } else if (String(action).startsWith('🏁')) {
-                status = 'Ended';
-                statusClass = 'ended';
-              } else {
-                status = action;
-              }
-            } catch (e) {
-              console.error('Error determining status:', e);
-              status = 'Unknown';
-              statusClass = '';
+            const actionStr = String(action).toLowerCase();
+            if (actionStr.includes('exploring')) {
+              status = 'Exploring';
+              statusClass = 'exploring';
+            } else if (actionStr.includes('battle') || action === '🔥 In Battle') {
+              status = 'Battling';
+              statusClass = 'battling';
+            } else if (action.startsWith('🏁')) {
+              status = 'Ended';
+              statusClass = 'ended';
+            } else {
+              status = action;
             }
-            
-            tableHTML += `
-              <tr>
-                <td>
-                  <div class="user-cell">
-                    <div class="user-avatar">${initials.substring(0, 2)}</div>
-                    <div>
-                      <div>${username}</div>
-                      <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span class="status-badge badge-${statusClass}">${status}</span>
-                </td>
-                <td>
-                  <button class="action-btn tooltip" onclick="copyToClipboard('${user_id}')">
-                    <i class="far fa-copy"></i>
-                    <span class="tooltiptext">Copy ID</span>
-                  </button>
-                  <button class="action-btn tooltip" onclick="showPlayerDetails('${user_id}')">
-                    <i class="fas fa-search"></i>
-                    <span class="tooltiptext">View Details</span>
-                  </button>
-                </td>
-              </tr>
-            `;
           } catch (err) {
-            console.error('Error rendering player row:', err);
-            // Continue with the next player if one fails
-            continue;
+            console.error('Error processing player data:', err, player);
+            return ''; // Skip this player if error
           }
-        }
+          
+          // Continue with the HTML generation for this player
+          return `
+            <tr>
+              <td>
+                <div class="user-cell">
+                  <div class="user-avatar">${initials.substring(0, 2)}</div>
+                  <div>
+                    <div>${name}</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="status-badge badge-${statusClass}">${status}</span>
+              </td>
+              <td>
+                <button class="action-btn tooltip" onclick="copyToClipboard('${user_id}')">
+                  <i class="far fa-copy"></i>
+                  <span class="tooltiptext">Copy ID</span>
+                </button>
+                <button class="action-btn tooltip" onclick="showPlayerDetails('${user_id}')">
+                  <i class="fas fa-search"></i>
+                  <span class="tooltiptext">View Details</span>
+                </button>
+              </td>
+            </tr>
+          `;
         
-        activePlayersBody.innerHTML = tableHTML;
-        
-        // Update logs
-        updateLogs(sortedPlayers);
-      } catch (err) {
-        console.error('Error in renderPlayersTable:', err);
-        showError('Error rendering player data: ' + err.message);
-      }
+        return `
+          <tr>
+            <td>
+              <div class="user-cell">
+                <div class="user-avatar">${initials.substring(0, 2)}</div>
+                <div>
+                  <div>${name}</div>
+                  <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="status-badge badge-${statusClass}">${status}</span>
+            </td>
+            <td>
+              <button class="action-btn tooltip" onclick="copyToClipboard('${user_id}')">
+                <i class="far fa-copy"></i>
+                <span class="tooltiptext">Copy ID</span>
+              </button>
+              <button class="action-btn tooltip" onclick="showPlayerDetails('${user_id}')">
+                <i class="fas fa-search"></i>
+                <span class="tooltiptext">View Details</span>
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+      
+      // Update logs
+      updateLogs(sortedPlayers);
     }
     
     // Update activity logs
     function updateLogs(players) {
-      try {
-        // Show only the latest log per user, exclude 'Ended' status
-        const logs = [];
-        const addedPlayers = new Set();
+      // Show only the latest log per user, exclude 'Ended' status
+      const logs = [];
+      const addedPlayers = new Set();
+      
+      players.forEach(player => {
+        const { username, user_id, action, duration } = player;
+        const name = username || 'Unknown';
         
-        for (let player of players) {
-          try {
-            if (!player) continue;
-            
-            const username = player.username || 'Unknown';
-            const user_id = player.user_id ? String(player.user_id) : '';
-            const action = player.action || 'Unknown';
-            const duration = player.duration || 0;
-            
-            // Skip ended actions and players we've already added
-            if (String(action).startsWith('🏁') || addedPlayers.has(user_id)) continue;
-            
-            addedPlayers.add(user_id);
-            
-            let status = '';
-            let statusClass = '';
-            
-            if (String(action).toLowerCase().includes('exploring')) {
-              status = 'Exploring';
-              statusClass = 'exploring';
-            } else if (String(action).toLowerCase().includes('battle') || action === '🔥 In Battle') {
-              status = 'Battling';
-              statusClass = 'battling';
-            } else {
-              status = action;
-            }
-            
-            const timeAgo = Math.round(duration);
-            
-            // Generate user initial safely
-            let initial = 'U';
-            try {
-              initial = String(username).substring(0, 1).toUpperCase() || 'U';
-            } catch (e) {
-              console.error('Error generating initial:', e);
-            }
-            
-            logs.push(`
-              <div class="log-entry">
-                <div class="log-user">
-                  <div class="user-avatar">${initial}</div>
-                  <div>
-                    ${username}
-                    <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
-                  </div>
-                  <span class="status-badge badge-${statusClass}">${status}</span>
-                </div>
-                <div class="log-time">${timeAgo}s ago</div>
-              </div>
-            `);
-          } catch (err) {
-            console.error('Error processing log entry:', err);
-            // Continue with next player if one fails
-            continue;
-          }
-        }
+        if (action.startsWith('🏁') || addedPlayers.has(user_id)) return;
         
-        if (logs.length === 0) {
-          logContainer.innerHTML = `
-            <div class="empty-state">
-              <i class="fas fa-comment-slash"></i><br>
-              No recent activity
-            </div>
-          `;
+        addedPlayers.add(user_id);
+        
+        let status = '';
+        let statusClass = '';
+        
+        if (action.includes('exploring')) {
+          status = 'Exploring';
+          statusClass = 'exploring';
+        } else if (action.includes('Battle') || action.includes('battle') || action === '🔥 In Battle') {
+          status = 'Battling';
+          statusClass = 'battling';
         } else {
-          logContainer.innerHTML = logs.join('');
+          status = action;
         }
-      } catch (err) {
-        console.error('Error in updateLogs:', err);
+        
+        const timeAgo = Math.round(duration || 0);
+        
+        logs.push(`
+          <div class="log-entry">
+            <div class="log-user">
+              <div class="user-avatar">${name.substring(0, 1).toUpperCase()}</div>
+              <div>
+                ${name}
+                <div style="font-size: 12px; color: var(--text-muted);">${user_id}</div>
+              </div>
+              <span class="status-badge badge-${statusClass}">${status}</span>
+            </div>
+            <div class="log-time">${timeAgo}s ago</div>
+          </div>
+        `);
+      });
+      
+      if (logs.length === 0) {
         logContainer.innerHTML = `
           <div class="empty-state">
-            <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i><br>
-            Error loading logs
+            <i class="fas fa-comment-slash"></i><br>
+            No recent activity
           </div>
         `;
+      } else {
+        logContainer.innerHTML = logs.join('');
       }
     }
     
