@@ -540,9 +540,6 @@ async def monitor_dashboard(request: Request):
                 details={"reason": "no_session", "using_default_access": True}
             )
             
-        from utils.monitor import resource_monitor
-        logger.info("Monitor dashboard API called by user ID: " + str(user_id))
-        
         # Log successful API access
         log_dashboard_access(
             user_id=user_id,
@@ -551,31 +548,56 @@ async def monitor_dashboard(request: Request):
             details={"endpoint": "/monitor"}
         )
         
-        live_players = resource_monitor.get_live_player_stats()
-        logger.info(f"Got live player stats: {len(live_players.get('players', []))} players")
-        
-        # Also include active sessions info for monitoring
+        # Get active sessions info
         active_session_count = len(active_sessions)
-        
-        # Process active sessions for display
         formatted_sessions = []
         current_time = time.time()
-        for sess_id, sess_data in active_sessions.items():
-            # Only include minimal info for security
-            formatted_sessions.append({
-                "user_id": sess_data.get("user_id", "unknown"),
-                "ip": sess_data.get("ip_address", "unknown"),
-                "created": datetime.fromtimestamp(sess_data.get("created_at", current_time)).strftime("%Y-%m-%d %H:%M:%S"),
-                "expires_in": int(sess_data.get("expiry", 0) - current_time),
-                "last_active": datetime.fromtimestamp(sess_data.get("last_activity", current_time)).strftime("%Y-%m-%d %H:%M:%S")
-            })
+        
+        # Format session data with error handling
+        try:
+            for sess_id, sess_data in active_sessions.items():
+                # Only include minimal info for security
+                formatted_sessions.append({
+                    "user_id": sess_data.get("user_id", "unknown"),
+                    "ip": sess_data.get("ip_address", "unknown"),
+                    "created": datetime.fromtimestamp(sess_data.get("created_at", current_time)).strftime("%Y-%m-%d %H:%M:%S"),
+                    "expires_in": int(sess_data.get("expiry", 0) - current_time),
+                    "last_active": datetime.fromtimestamp(sess_data.get("last_activity", current_time)).strftime("%Y-%m-%d %H:%M:%S")
+                })
+        except Exception as e:
+            logger.error(f"Error formatting session data: {e}")
+            # Continue with empty sessions list if there's an error
+            formatted_sessions = []
             
+        # Get live player stats with error handling
+        try:
+            # Import here to avoid circular imports
+            from utils.monitor import resource_monitor
+            logger.info("Monitor dashboard API called by user ID: " + str(user_id))
+            
+            live_players = resource_monitor.get_live_player_stats()
+            player_count = len(live_players.get('players', []))
+            logger.info(f"Got live player stats: {player_count} players")
+        except Exception as e:
+            logger.error(f"Error getting live player stats: {e}")
+            # Provide fallback data structure
+            live_players = {
+                "total_active": 0,
+                "in_battle": 0,
+                "exploring": 0,
+                "ended": 0,
+                "players": []
+            }
+            
+        # Build and return response
         return {
             "live_players": live_players, 
             "status": "success",
             "user_id": user_id,  # Return user ID to frontend for verification
             "active_sessions_count": active_session_count,
-            "active_sessions": formatted_sessions
+            "active_sessions": formatted_sessions,
+            "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "version": "1.0.1"  # Add version for debugging
         }
     except Exception as e:
         logger.error(f"Error in /monitor endpoint: {str(e)}")

@@ -470,46 +470,86 @@
               window.location.href = '/login';
               throw new Error('Unauthorized: Please log in');
             }
-            throw new Error('Network response was not ok');
+            throw new Error('Network response was not ok: ' + response.status);
           }
           return response.json();
         })
         .then(data => {
+          console.log('Response data:', data); // Debug logging
+          
           if (data.status === 'error') {
+            console.error('Server returned error:', data.error, data.details);
             throw new Error(data.error || 'Unknown error occurred');
           }
+          
+          if (!data.live_players) {
+            console.error('Missing live_players data in response:', data);
+            throw new Error('Invalid data format: missing player information');
+          }
+          
           updateDashboard(data);
           refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
         })
         .catch(err => {
           console.error('Error fetching data:', err);
-          showError();
+          showError(err.message);
           refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+          
+          // Try again after a longer delay when there's an error
+          setTimeout(fetchAndUpdate, 5000);
+          return; // Prevent the normal refresh from scheduling
         });
     }
     
     // Update dashboard with new data
     function updateDashboard(data) {
-      // Use backend stats directly
-      const stats = data.live_players || {};
-      document.getElementById('exploring-count').textContent = stats.exploring || 0;
-      document.getElementById('battling-count').textContent = stats.in_battle || 0;
-      document.getElementById('ended-count').textContent = stats.ended || 0;
+      // Handle sessions data if available
+      if (data.active_sessions_count !== undefined) {
+        console.log(`Active sessions: ${data.active_sessions_count}`);
+      }
       
-      // Player table and logs (optional, keep as is)
-      const playersRaw = stats.players || [];
-      const uniquePlayersMap = {};
-      playersRaw.forEach(player => {
-        const id = player.user_id;
-        if (!uniquePlayersMap[id] || (uniquePlayersMap[id].username === 'Unknown' && player.username && player.username !== 'Unknown')) {
-          uniquePlayersMap[id] = player;
-        }
-      });
-      allPlayers = Object.values(uniquePlayersMap);
-      filterPlayers();
-      
-      // Auto-refresh every 2 seconds
-      setTimeout(fetchAndUpdate, 2000);
+      try {
+        // Use backend stats directly with fallbacks for missing data
+        const stats = data.live_players || {};
+        
+        // Update stat counters with fallback values
+        document.getElementById('exploring-count').textContent = stats.exploring !== undefined ? stats.exploring : 0;
+        document.getElementById('battling-count').textContent = stats.in_battle !== undefined ? stats.in_battle : 0;
+        document.getElementById('ended-count').textContent = stats.ended !== undefined ? stats.ended : 0;
+        
+        // Process players data with safety checks
+        const playersRaw = Array.isArray(stats.players) ? stats.players : [];
+        const uniquePlayersMap = {};
+        
+        playersRaw.forEach(player => {
+          if (!player || typeof player !== 'object') return;
+          
+          // Ensure user_id exists and convert to string if needed
+          const id = player.user_id ? String(player.user_id) : null;
+          if (!id) return;
+          
+          // Only add or replace if it's a better quality entry
+          if (!uniquePlayersMap[id] || 
+              (uniquePlayersMap[id].username === 'Unknown' && 
+               player.username && 
+               player.username !== 'Unknown')) {
+            uniquePlayersMap[id] = player;
+          }
+        });
+        
+        allPlayers = Object.values(uniquePlayersMap);
+        filterPlayers();
+        
+        // If we successfully processed data, schedule next update
+        setTimeout(fetchAndUpdate, 2000);
+        
+      } catch (err) {
+        console.error('Error processing dashboard data:', err);
+        showError('Error processing data: ' + err.message);
+        
+        // Try again after a delay
+        setTimeout(fetchAndUpdate, 5000);
+      }
     }
     
     // Filter players based on search input
@@ -651,22 +691,36 @@
     }
     
     // Show error state
-    function showError() {
+    function showError(errorMessage) {
+      const errorDetails = errorMessage ? `<div style="font-size: 12px; color: var(--danger);">${errorMessage}</div>` : '';
+      
       activePlayersBody.innerHTML = `
         <tr>
           <td colspan="3" class="empty-state">
-            <i class="fas fa-exclamation-triangle"></i><br>
+            <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i><br>
             Error loading data
+            ${errorDetails}
+            <div style="margin-top: 10px; font-size: 14px;">
+              <button onclick="fetchAndUpdate()" class="action-btn">
+                <i class="fas fa-sync-alt"></i> Try Again
+              </button>
+            </div>
           </td>
         </tr>
       `;
       
       logContainer.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-exclamation-triangle"></i><br>
+          <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i><br>
           Error loading logs
+          ${errorDetails}
         </div>
       `;
+      
+      // Also update the stats to show error state
+      document.getElementById('exploring-count').textContent = '-';
+      document.getElementById('battling-count').textContent = '-';
+      document.getElementById('ended-count').textContent = '-';
     }
     
     // Utility functions
