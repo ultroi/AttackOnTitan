@@ -24,6 +24,9 @@ MAX_RETRIES = 5
 BASE_RETRY_DELAY = 1.0
 MAX_RETRY_DELAY = 30.0
 
+# Anti-spam protection: track last interaction time for each user
+pvp_button_cooldowns: Dict[str, Dict[str, float]] = {}
+
 async def safe_api_call(api_func, *args, **kwargs):
     retries = 0
     delay = BASE_RETRY_DELAY
@@ -528,6 +531,12 @@ class PvPBattleSystem:
             self.defender_hp = max(0, self.defender_hp - total_damage)
         else:
             self.challenger_hp = max(0, self.challenger_hp - total_damage)
+        
+        # Check if this was a critical hit    
+        is_critical = "CRITICAL" in weapon_name
+        if is_critical:
+            effects["critical"] = True
+            weapon_name = weapon_name.replace(" (CRITICAL)", "")
             
         message = f"⚔️ {current_char.name} attacks with {weapon_name}, dealing {total_damage} damage!"
         effects["damage"] = total_damage
@@ -1391,15 +1400,48 @@ async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Get first names for display
+        challenger_first_name = challenger_player_name.split()[0] if challenger_player_name else "Player 1"
+        defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
+        
         # Add the "«" symbol to indicate whose turn it is
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        # Format battle message with player's first name instead of character name
+        battle_message = message
+        
+        # Replace character name with player's first name in the message
+        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+            battle_message = battle_message.replace(battle.defender.name, defender_first_name)
+        else:
+            battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
+        
+        # Format effects display
+        effect_text = ""
+        if effects:
+            effect_lines = []
+            if effects.get("heal", 0) > 0:
+                effect_lines.append(f"💚 Healing: {effects['heal']}")
+            if effects.get("attack_boost", 0) > 0:
+                effect_lines.append(f"💪 Attack +{int((effects['attack_boost']-1)*100)}%")
+            if effects.get("cooldown_reduction", 0) > 0:
+                effect_lines.append(f"⏱️ Cooldowns reduced by {effects['cooldown_reduction']} turn(s)")
+            if effects.get("accuracy_boost", 0) > 0:
+                effect_lines.append(f"🎯 Accuracy +{effects['accuracy_boost']}")
+            if effects.get("defense_boost", 0) > 0:
+                effect_lines.append(f"🛡️ Defense +{effects['defense_boost']}")
+            if effects.get("crit_boost", 0) > 0:
+                effect_lines.append(f"✨ Critical chance +{effects['crit_boost']}%")
+                
+            if effect_lines:
+                effect_text = "\n" + "\n".join(effect_lines)
         
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"<code>{message}</code>\n\n"
+                f"<code>{battle_message}{effect_text}</code>\n\n"
                 f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
                 f"<blockquote><b>{battle.challenger.name}</b>\n"
                 f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
@@ -1467,6 +1509,27 @@ async def handle_pvp_back_to_battle(update: Update, context: ContextTypes.DEFAUL
     except Exception as e:
         logger.error(f"Failed to update battle message: {e}")
 
+async def check_button_cooldown(user_id: str, action: str, cooldown_secs: float = 1.0) -> bool:
+    """
+    Check if a user's action is on cooldown.
+    Returns True if the action can proceed (not on cooldown), False otherwise.
+    """
+    current_time = datetime.now(timezone.utc).timestamp()
+    
+    # Initialize user's cooldown dict if not exists
+    if user_id not in pvp_button_cooldowns:
+        pvp_button_cooldowns[user_id] = {}
+    
+    # Check if this specific action is on cooldown
+    if action in pvp_button_cooldowns[user_id]:
+        last_time = pvp_button_cooldowns[user_id][action]
+        if current_time - last_time < cooldown_secs:
+            return False
+    
+    # Update the last action time
+    pvp_button_cooldowns[user_id][action] = current_time
+    return True
+
 async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle PvP-related callback queries."""
     query = update.callback_query
@@ -1485,6 +1548,29 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         
         callback_data = query.data
         user_id = str(update.effective_user.id)
+        
+        # Anti-spam protection
+        # Different cooldowns for different actions
+        cooldown = 0.5  # Default cooldown in seconds
+        
+        if callback_data.startswith("pvp_ability_") or callback_data == "pvp_basic_attack":
+            # Combat actions have a shorter cooldown
+            cooldown = 0.8
+        elif callback_data in ["pvp_show_items", "pvp_back_to_battle"]:
+            # UI navigation should be responsive
+            cooldown = 0.5
+        elif callback_data.startswith("pvp_use_item_"):
+            # Item usage - a bit longer to prevent double-using items
+            cooldown = 1.0
+        elif callback_data == "pvp_surrender":
+            # Surrender has a longer cooldown to prevent accidental double-clicks
+            cooldown = 2.0
+        
+        # Skip cooldown check for certain non-critical actions
+        if not callback_data.startswith("pvp_cooldown_") and not callback_data.startswith("pvp_lowgas_") and not callback_data == "pvp_no_items":
+            if not await check_button_cooldown(user_id, callback_data, cooldown):
+                # Silently ignore rapid button presses without showing any error message
+                return
         
         if callback_data.startswith("pvp_accept_"):
             await handle_pvp_accept(update, context)
@@ -1752,15 +1838,63 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Get first names for display
+        challenger_first_name = challenger_player_name.split()[0] if challenger_player_name else "Player 1"
+        defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
+        
         # Add the "«" symbol to indicate whose turn it is
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        # Determine which player used the ability
+        player_first_name = ""
+        if battle.current_turn == battle.challenger.name:
+            player_first_name = defender_first_name  # The player who just finished their turn
+        else:
+            player_first_name = challenger_first_name  # The player who just finished their turn
+        
+        # Format battle message with effects on separate lines
+        battle_message = message
+        
+        # Replace character name with player's first name in the message
+        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+            battle_message = battle_message.replace(battle.defender.name, defender_first_name)
+        else:
+            battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
+        
+        # Format effects display
+        effect_text = ""
+        if effects:
+            effect_lines = []
+            if effects.get("damage", 0) > 0:
+                effect_lines.append(f"⚔️ Damage: {effects['damage']}")
+            if effects.get("heal", 0) > 0:
+                effect_lines.append(f"💚 Healing: {effects['heal']}")
+            if effects.get("shield", 0) > 0:
+                effect_lines.append(f"🛡️ Shield: {effects['shield']}")
+            if effects.get("stun", 0) > 0:
+                effect_lines.append(f"⚡ Stun: {effects['stun']} turns")
+            if effects.get("bleed"):
+                effect_lines.append(f"🩸 Bleeding applied")
+            if effects.get("attack_boost", 0) > 0:
+                effect_lines.append(f"💪 Attack +{int((effects['attack_boost']-1)*100)}%")
+            if effects.get("accuracy_boost", 0) > 0:
+                effect_lines.append(f"🎯 Accuracy +{effects['accuracy_boost']}")
+            if effects.get("defense_boost", 0) > 0:
+                effect_lines.append(f"🛡️ Defense +{effects['defense_boost']}")
+            if effects.get("crit_boost", 0) > 0:
+                effect_lines.append(f"✨ Critical chance +{effects['crit_boost']}%")
+            if effects.get("cooldown_reduction", 0) > 0:
+                effect_lines.append(f"⏱️ Cooldowns -${effects['cooldown_reduction']} turn(s)")
+                
+            if effect_lines:
+                effect_text = "\n" + "\n".join(effect_lines)
         
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"<code>{message}</code>\n\n"
+                f"<code>{battle_message}{effect_text}</code>\n\n"
                 f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
                 f"<blockquote><b>{battle.challenger.name}</b>\n"
                 f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
@@ -1856,15 +1990,40 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
+        # Get first names for display
+        challenger_first_name = challenger_player_name.split()[0] if challenger_player_name else "Player 1"
+        defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
+        
         # Add the "«" symbol to indicate whose turn it is
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        # Format battle message with player's first name instead of character name
+        battle_message = message
+        
+        # Replace character name with player's first name in the message
+        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+            battle_message = battle_message.replace(battle.defender.name, defender_first_name)
+        else:
+            battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
+        
+        # Format effects display
+        effect_text = ""
+        if effects:
+            effect_lines = []
+            if effects.get("damage", 0) > 0:
+                effect_lines.append(f"⚔️ Damage: {effects['damage']}")
+            if effects.get("critical", False):
+                effect_lines.append(f"✨ Critical hit!")
+                
+            if effect_lines:
+                effect_text = "\n" + "\n".join(effect_lines)
         
         await safe_api_call(
             query.edit_message_text,
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
-                f"{message}\n\n"
+                f"<code>{battle_message}{effect_text}</code>\n\n"
                 f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
                 f"<blockquote><b>{battle.challenger.name}</b>\n"
                 f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"

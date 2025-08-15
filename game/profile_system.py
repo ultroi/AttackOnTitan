@@ -40,7 +40,7 @@ async def handle_unauthorized(update: Update):
     message = getattr(update, 'message', None)
     if callback_query:
         try:
-            await callback_query.answer("⚠️ You are not authorized to view this!", show_alert=True)
+            await callback_query.answer("⚠️ You cannot use this button !", show_alert=True)
         except Exception as e:
             logger.error(f"Error handling unauthorized access: {e}")
     elif message:
@@ -781,26 +781,47 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     logger.info(f"[view_weapons_char] weapons found: {len(weapons)}")
     text = ""
     if status_message:
-        text += f"<b>{status_message}</b>\n"
-    text += f"<b>Weapons for {character.name}:</b>\n"
+        text += f"<b>{status_message}</b>\n\n"
+    text += f"<b>🗡️ Weapons for {character.name}:</b>\n\n"
     keyboard = []
+    
+    # Check if Basic Attack is equipped
+    basic_attack_equipped = character.equipped_weapon is None
+    
+    # First add Basic Attack option
+    if basic_attack_equipped:
+        text += f"• <b>Basic Attack</b> <i>(Equipped)</i>\n"
+    else:
+        text += f"• <b>Basic Attack</b>\n"
+    
+    # Add all other weapons
     for k, item, v in weapons:
         equipped = (character.equipped_weapon == k)
         name = getattr(item, 'name', k)
+        
+        # Add weapon name with equipped status if applicable
         if equipped:
-            text += f"- {name}  <b>(Equipped)</b>\n"
+            text += f"• <b>{name}</b> <i>(Equipped)</i>\n"
         else:
-            text += f"- {name}\n"
-        text += f"  <i>{getattr(item, 'description', '')}</i>\n"
-        # Only show equip button if not equipped and not currently equipped
+            text += f"• <b>{name}</b>\n"
+        
+        # Add description under the weapon name
+        description = getattr(item, 'description', '')
+        if description:
+            text += f"  <i>{description}</i>\n"
+        
+        # Only show equip button if not equipped
         if not equipped:
             safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', k)
             keyboard.append([InlineKeyboardButton(f"Equip {name}", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__{safe_key}")])
-    # Add 'Equip Basic Attack' button if any weapon is equipped
-    if character.equipped_weapon:
+    
+    # Add 'Equip Basic Attack' button if not currently equipped
+    if not basic_attack_equipped:
         keyboard.append([InlineKeyboardButton("Equip Basic Attack", callback_data=f"equip_weapon_{character.name.replace(' ', '_')}__basic_attack")])
+    
     keyboard.append([InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")])
     logger.info(f"[view_weapons_char] Updating message with weapons list.")
+    
     # Prevent 'Message is not modified' error by checking current content and markup
     current_message = getattr(query, "message", None)
     new_markup = InlineKeyboardMarkup(keyboard)
@@ -854,13 +875,10 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # If basic_attack is selected, unequip any weapon
     if weapon_key == "basic_attack":
         character.equipped_weapon = None
-        status_message = f"Unequipped {last_weapon}. Equipped Basic Attack."
+        status_message = f"Basic Attack equipped successfully."
     else:
         character.equipped_weapon = weapon_key
-        if last_weapon and last_weapon != weapon_key:
-            status_message = f"Unequipped {last_weapon}. Equipped {weapon_key}."
-        else:
-            status_message = f"Equipped {weapon_key}."
+        status_message = f"{weapon_key} equipped successfully."
     logger.info(f"[equip_weapon] Equipping weapon: {weapon_key}, last_weapon: {last_weapon}")
     await db.update_character(character)
     # Call view_weapons_char with char_name and status_message argument
@@ -936,30 +954,12 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = update.callback_query
-    await query.answer()
     owner_id = context.user_data.get('owner_id')
     # Always try to close the profile, but show alert if unauthorized
     if not query:
         return
     if str(query.from_user.id) != owner_id:
-        await query.answer("You are not authorized to use this button!", show_alert=True)
-        # Still try to close the message for safety
-        try:
-            await query.message.delete()
-        except Exception:
-            try:
-                if getattr(query.message, "photo", None):
-                    await query.edit_message_caption(
-                        caption="Profile closed.",
-                        reply_markup=None
-                    )
-                else:
-                    await query.edit_message_text(
-                        text="Profile closed.",
-                        reply_markup=None
-                    )
-            except Exception as e2:
-                logger.error(f"Error closing profile: {e2}")
+        await query.answer("⚠️ You cannot access this!", show_alert=True)
         return
     await query.answer("Profile closed.")
     try:
