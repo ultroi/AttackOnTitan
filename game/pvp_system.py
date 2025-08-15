@@ -126,6 +126,12 @@ class PvPBattleSystem:
         
         # Character switched count (for PVP balancing)
         self.switches_remaining: int = 10  # Default max switches
+        
+        # Track used items
+        self.challenger_used_item: bool = False
+        self.defender_used_item: bool = False
+        self.challenger_active_items: Dict[str, Any] = {}
+        self.defender_active_items: Dict[str, Any] = {}
 
     def dispose(self) -> None:
         """Clean up battle resources and reset state."""
@@ -141,6 +147,8 @@ class PvPBattleSystem:
         self.defender_debuffs.clear()
         self.challenger_cooldowns.clear()
         self.defender_cooldowns.clear()
+        self.challenger_active_items.clear()
+        self.defender_active_items.clear()
     
     def get_equipped_weapon(self, character: Character, shop_items: Dict):
         """Get character's equipped weapon from shop items"""
@@ -153,8 +161,12 @@ class PvPBattleSystem:
         self.turn_count += 1
         if self.current_turn == self.challenger.name:
             self.current_turn = self.defender.name
+            # Reset used item flag for the next player's turn
+            self.defender_used_item = False
         else:
             self.current_turn = self.challenger.name
+            # Reset used item flag for the next player's turn
+            self.challenger_used_item = False
         
         # Update cooldowns for current player
         self.update_cooldowns()
@@ -305,6 +317,40 @@ class PvPBattleSystem:
         try:
             if ability.effect_function:
                 from database.characters import AbilityEffect
+                
+                # Apply any item effects to the context before executing ability
+                if self.current_turn == self.challenger.name:
+                    # Check for attack boost from items
+                    attack_boost = self.challenger_buffs.get("attack_boost", 1.0)
+                    if attack_boost > 1.0:
+                        # Apply attack boost to character stats
+                        if "character_stats" in ctx and "ATK" in ctx["character_stats"]:
+                            ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
+                    
+                    # Apply accuracy boost from items
+                    accuracy_boost = self.challenger_buffs.get("accuracy_boost", 0)
+                    if accuracy_boost > 0 and "character_stats" in ctx and "ACC" in ctx["character_stats"]:
+                        ctx["character_stats"]["ACC"] = ctx["character_stats"]["ACC"] + accuracy_boost
+                        
+                    # Apply defense boost from items to character stats
+                    defense_boost = self.challenger_buffs.get("defense_boost", 0)
+                    if defense_boost > 0 and "character_stats" in ctx and "DEF" in ctx["character_stats"]:
+                        ctx["character_stats"]["DEF"] = ctx["character_stats"]["DEF"] + defense_boost
+                else:
+                    # Same logic for defender
+                    attack_boost = self.defender_buffs.get("attack_boost", 1.0)
+                    if attack_boost > 1.0:
+                        if "character_stats" in ctx and "ATK" in ctx["character_stats"]:
+                            ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
+                    
+                    accuracy_boost = self.defender_buffs.get("accuracy_boost", 0)
+                    if accuracy_boost > 0 and "character_stats" in ctx and "ACC" in ctx["character_stats"]:
+                        ctx["character_stats"]["ACC"] = ctx["character_stats"]["ACC"] + accuracy_boost
+                        
+                    defense_boost = self.defender_buffs.get("defense_boost", 0)
+                    if defense_boost > 0 and "character_stats" in ctx and "DEF" in ctx["character_stats"]:
+                        ctx["character_stats"]["DEF"] = ctx["character_stats"]["DEF"] + defense_boost
+                
                 effect = ability.effect_function(ctx)
                 if effect:
                     # Apply the effect
@@ -437,17 +483,45 @@ class PvPBattleSystem:
         if weapon:
             damage_min = weapon.attributes.get("damage_min", 10)
             damage_max = weapon.attributes.get("damage_max", 20)
-            total_damage = random.randint(int(damage_min), int(damage_max))
+            base_damage = random.randint(int(damage_min), int(damage_max))
             weapon_name = weapon.name
         else:
             try:
-                base_damage = current_char.stats.ATK or 25
-                total_damage = max(1, base_damage + random.randint(25, 35))
+                base_atk = current_char.stats.ATK or 25
+                base_damage = max(1, base_atk + random.randint(25, 35))
                 weapon_name = "basic strike"
             except Exception as e:
                 logger.error(f"Error calculating basic attack damage: {e}")
-                total_damage = 10
+                base_damage = 10
                 weapon_name = "basic strike"
+                
+        # Apply item effects
+        damage_multiplier = 1.0
+        
+        # Check for attack boost from items
+        if self.current_turn == self.challenger.name:
+            attack_boost = self.challenger_buffs.get("attack_boost", 1.0)
+            if attack_boost > 1.0:
+                damage_multiplier *= attack_boost
+            
+            # Check for item effects on critical hits
+            crit_boost = self.challenger_buffs.get("crit_boost", 0)
+            if crit_boost > 0 and random.randint(1, 100) <= crit_boost:
+                damage_multiplier *= 1.5
+                weapon_name = f"{weapon_name} (CRITICAL)"
+        else:
+            attack_boost = self.defender_buffs.get("attack_boost", 1.0)
+            if attack_boost > 1.0:
+                damage_multiplier *= attack_boost
+                
+            # Check for item effects on critical hits
+            crit_boost = self.defender_buffs.get("crit_boost", 0)
+            if crit_boost > 0 and random.randint(1, 100) <= crit_boost:
+                damage_multiplier *= 1.5
+                weapon_name = f"{weapon_name} (CRITICAL)"
+                
+        # Apply the multiplier
+        total_damage = int(base_damage * damage_multiplier)
                 
         # Apply damage
         if self.current_turn == self.challenger.name:
@@ -501,6 +575,158 @@ class PvPBattleSystem:
             
         self.switches_remaining -= 1
         return f"Character switch feature is not implemented yet. Switches remaining: {self.switches_remaining}"
+        
+    async def use_item(self, item_key: str, context: ContextTypes.DEFAULT_TYPE) -> Tuple[str, Dict]:
+        """
+        Use an item in PvP battle. Returns message and effects.
+        """
+        message = ""
+        effects = {}
+        
+        # Determine current character and player
+        if self.current_turn == self.challenger.name:
+            current_char = self.challenger
+            opponent_char = self.defender
+            current_player = self.challenger_player
+            used_item = self.challenger_used_item
+            active_items = self.challenger_active_items
+        else:
+            current_char = self.defender
+            opponent_char = self.challenger
+            current_player = self.defender_player
+            used_item = self.defender_used_item
+            active_items = self.defender_active_items
+        
+        # Check if player already used an item this turn
+        if used_item:
+            return "You've already used an item this turn!", {}
+        
+        # Get DB instance and refresh player
+        db = context.bot_data.get("db") or Database()
+        try:
+            updated_player = await db.get_player(str(current_player.user_id))
+            if not updated_player:
+                return "Error: Player not found!", {}
+                
+            # Check if player has the item
+            if item_key not in updated_player.inventory or updated_player.inventory[item_key] <= 0:
+                return f"You don't have any {item_key} in your inventory!", {}
+        except Exception as e:
+            logger.error(f"Error refreshing player data: {e}")
+            return "Error retrieving player data.", {}
+        
+        # Get the item from shop_items
+        shop_items = context.bot_data.get("shop_items", {})
+        item = shop_items.get(item_key)
+        
+        if not item:
+            return f"Item {item_key} not found in shop database!", {}
+        
+        # Check if the item is a utility
+        if item.type != "utility":
+            return f"{item.name} cannot be used in battle!", {}
+        
+        # Apply item effect based on its attributes
+        buff_name = item.attributes.get("buff_name", "Unknown Effect")
+        
+        # Apply different effects based on the item
+        if item_key == "time_contract":
+            # Reduce cooldowns
+            cooldown_reduction = item.attributes.get("cooldown_reduction", 1)
+            if self.current_turn == self.challenger.name:
+                for ability_name in self.challenger_cooldowns:
+                    if self.challenger_cooldowns[ability_name] > 0:
+                        self.challenger_cooldowns[ability_name] = max(0, self.challenger_cooldowns[ability_name] - cooldown_reduction)
+            else:
+                for ability_name in self.defender_cooldowns:
+                    if self.defender_cooldowns[ability_name] > 0:
+                        self.defender_cooldowns[ability_name] = max(0, self.defender_cooldowns[ability_name] - cooldown_reduction)
+            message = f"⏱️ {current_char.name} used a Time Contract! All ability cooldowns reduced by {cooldown_reduction} turns!"
+            effects["cooldown_reduction"] = cooldown_reduction
+            active_items[item_key] = {"name": buff_name, "effect": "cooldown_reduction", "value": cooldown_reduction}
+            
+        elif item_key == "training_dummy":
+            # Increase attack and add buffs
+            attack_multiplier = item.attributes.get("attack_multiplier", 1.05)
+            if self.current_turn == self.challenger.name:
+                self.challenger_buffs["attack_boost"] = attack_multiplier
+            else:
+                self.defender_buffs["attack_boost"] = attack_multiplier
+            message = f"🎯 {current_char.name} used a Training Dummy! Attack power increased by {int((attack_multiplier-1)*100)}%!"
+            effects["attack_boost"] = attack_multiplier
+            active_items[item_key] = {"name": buff_name, "effect": "attack_boost", "value": attack_multiplier}
+            
+        elif item_key == "battle_journal":
+            # Increase accuracy and defense
+            accuracy_bonus = item.attributes.get("accuracy_bonus", 5)
+            defense_bonus = item.attributes.get("defense_bonus", 5)
+            if self.current_turn == self.challenger.name:
+                self.challenger_buffs["accuracy_boost"] = accuracy_bonus
+                self.challenger_buffs["defense_boost"] = defense_bonus
+            else:
+                self.defender_buffs["accuracy_boost"] = accuracy_bonus
+                self.defender_buffs["defense_boost"] = defense_bonus
+            message = f"📖 {current_char.name} used a Battle Journal! Accuracy +{accuracy_bonus} and Defense +{defense_bonus}!"
+            effects["accuracy_boost"] = accuracy_bonus
+            effects["defense_boost"] = defense_bonus
+            active_items[item_key] = {"name": buff_name, "effect": "stat_boost", "accuracy": accuracy_bonus, "defense": defense_bonus}
+            
+        elif item_key == "titan_biology_manual":
+            # Critical rate boost in PvP
+            crit_bonus = 15  # 15% crit chance increase in PvP
+            if self.current_turn == self.challenger.name:
+                self.challenger_buffs["crit_boost"] = crit_bonus
+            else:
+                self.defender_buffs["crit_boost"] = crit_bonus
+            message = f"📚 {current_char.name} used a Titan Biology Manual! Critical hit chance +{crit_bonus}%!"
+            effects["crit_boost"] = crit_bonus
+            active_items[item_key] = {"name": buff_name, "effect": "crit_boost", "value": crit_bonus}
+            
+        elif item_key == "bounty_permit":
+            # Special case for bounty permit in PvP - small HP recovery
+            heal_amount = int(current_char.stats.HP * 0.15)  # 15% HP recovery
+            if self.current_turn == self.challenger.name:
+                self.challenger_hp = min(self.challenger.stats.HP, self.challenger_hp + heal_amount)
+            else:
+                self.defender_hp = min(self.defender.stats.HP, self.defender_hp + heal_amount)
+            message = f"📜 {current_char.name} used a Bounty Permit for emergency aid! Recovered {heal_amount} HP!"
+            effects["heal"] = heal_amount
+            active_items[item_key] = {"name": buff_name, "effect": "heal", "value": heal_amount}
+        
+        else:
+            # Generic effect for unknown utility items
+            if self.current_turn == self.challenger.name:
+                self.challenger_buffs["item_boost"] = 1
+            else:
+                self.defender_buffs["item_boost"] = 1
+            message = f"🧪 {current_char.name} used {item.name}! Applied {buff_name} effect."
+            effects["unknown_item"] = True
+            active_items[item_key] = {"name": buff_name, "effect": "unknown"}
+        
+        # Consume the item (reduce quantity by 1)
+        updated_inventory = updated_player.inventory.copy()
+        updated_inventory[item_key] -= 1
+        if updated_inventory[item_key] <= 0:
+            del updated_inventory[item_key]
+        
+        # Update player inventory in database
+        try:
+            # Convert to int if needed, some DB functions expect int user_id
+            user_id = int(current_player.user_id) if current_player.user_id else 0
+            await db.update_player(user_id, {"inventory": updated_inventory})
+        except Exception as e:
+            logger.error(f"Error updating player inventory: {e}")
+            # Still continue with the battle even if DB update fails
+        
+        # Mark that player used an item this turn
+        if self.current_turn == self.challenger.name:
+            self.challenger_used_item = True
+        else:
+            self.defender_used_item = True
+        
+        return message, effects
+    
+
         
     def get_battle_status(self) -> Dict:
         """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
@@ -561,6 +787,17 @@ class PvPBattleSystem:
                 
         if self.switches_remaining > 0:
             status_message += f"🔄 Switches left: {self.switches_remaining}\n"
+            
+        # Add active items to status message
+        if self.challenger_active_items:
+            items_display = [f"{item_data['name']}" for _, item_data in self.challenger_active_items.items()]
+            if items_display:
+                status_message += f"🎒 {self.challenger.name} active items: {', '.join(items_display)}\n"
+                
+        if self.defender_active_items:
+            items_display = [f"{item_data['name']}" for _, item_data in self.defender_active_items.items()]
+            if items_display:
+                status_message += f"🎒 {self.defender.name} active items: {', '.join(items_display)}\n"
             
         return {
             "challenger_hp": int(self.challenger_hp),
@@ -735,6 +972,23 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
             keyboard.append([InlineKeyboardButton(f"⛽ {weapon.name} (Low Gas - will lose battle)", callback_data="pvp_lowgas_basic_attack")])
         else:
             keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Low Gas - will lose battle)", callback_data="pvp_lowgas_basic_attack")])
+    
+    # Add items button
+    db = context.bot_data.get("db") or Database()
+    shop_items = context.bot_data.get("shop_items") or {}
+    
+    # Get player's utility items
+    if battle.current_turn == battle.challenger.name:
+        used_item = battle.challenger_used_item
+        player_id = battle.challenger.user_id
+    else:
+        used_item = battle.defender_used_item
+        player_id = battle.defender.user_id
+        
+    # Only show items button if player hasn't used an item yet this turn
+    if not used_item:
+        # Show items button
+        keyboard.append([InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items")])
     
     # Add switch and surrender buttons
     if battle.switches_remaining > 0:
@@ -939,6 +1193,220 @@ async def expire_challenge(challenge_id: str, message, context: ContextTypes.DEF
         logger.error(f"Error in challenge expiration task: {e}")
 
 
+async def generate_pvp_items_keyboard(battle: PvPBattleSystem, context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
+    """Generate keyboard buttons for available items in PvP."""
+    keyboard = []
+    
+    # Determine current character and player
+    if battle.current_turn == battle.challenger.name:
+        current_player = battle.challenger_player
+    else:
+        current_player = battle.defender_player
+    
+    # Get DB instance and refresh player
+    db = context.bot_data.get("db") or Database()
+    shop_items = context.bot_data.get("shop_items") or {}
+    
+    try:
+        player = await db.get_player(str(current_player.user_id))
+        if not player:
+            keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")])
+            return keyboard
+            
+        # Check for utility items in inventory
+        has_items = False
+        utility_items = []
+        
+        for item_key, quantity in player.inventory.items():
+            if item_key in shop_items and shop_items[item_key].type == "utility" and quantity > 0:
+                item = shop_items[item_key]
+                utility_items.append((item_key, item.name, quantity))
+                has_items = True
+        
+        # Sort items by name
+        utility_items.sort(key=lambda x: x[1])
+        
+        # Add buttons for each item (3 per row)
+        row = []
+        for idx, (item_key, item_name, quantity) in enumerate(utility_items):
+            row.append(InlineKeyboardButton(f"{item_name} ({quantity})", callback_data=f"pvp_use_item_{item_key}"))
+            if len(row) == 2 or idx == len(utility_items) - 1:
+                keyboard.append(row)
+                row = []
+        
+        if not has_items:
+            keyboard.append([InlineKeyboardButton("No utility items available", callback_data="pvp_no_items")])
+    except Exception as e:
+        logger.error(f"Error generating items keyboard: {e}")
+    
+    # Add back button
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")])
+    return keyboard
+
+async def handle_pvp_show_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle showing available items in PvP."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Check if user is in a PVP battle
+    if user_id not in active_pvp_battles:
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
+        return
+        
+    battle = active_pvp_battles[user_id]
+    
+    # Check if it's user's turn
+    if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
+       (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        return
+        
+    # Check if player already used an item this turn
+    if (user_id == battle.challenger.user_id and battle.challenger_used_item) or \
+       (user_id == battle.defender.user_id and battle.defender_used_item):
+        await safe_api_call(query.answer, "You've already used an item this turn!", show_alert=True)
+        return
+    
+    # Generate items keyboard
+    keyboard = await generate_pvp_items_keyboard(battle, context)
+    
+    # Update message with items menu
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            "🎒 <b>Select an item to use in battle:</b>\n\n"
+            "<i>Using an item will consume 1 quantity. Effects apply immediately.</i>",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error showing items menu: {e}")
+
+async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle using an item in PvP."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Check if user is in a PVP battle
+    if user_id not in active_pvp_battles:
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
+        return
+        
+    battle = active_pvp_battles[user_id]
+    
+    # Check if it's user's turn
+    if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
+       (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        return
+    
+    # Check if player already used an item this turn
+    if (user_id == battle.challenger.user_id and battle.challenger_used_item) or \
+       (user_id == battle.defender.user_id and battle.defender_used_item):
+        await safe_api_call(query.answer, "You've already used an item this turn!", show_alert=True)
+        return
+        
+    # Extract item key from callback data
+    item_key = query.data.replace("pvp_use_item_", "")
+    
+    # Use the item
+    message, effects = await battle.use_item(item_key, context)
+    
+    if battle.timeout_task:
+        battle.timeout_task.cancel()
+        battle.timeout_task = None
+    
+    # Update battle display
+    status = battle.get_battle_status()
+    keyboard = await generate_pvp_ability_keyboard(battle, context)
+    
+    try:
+        # Create a more clear display showing player names with their characters
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"<code>{message}</code>\n\n"
+                f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
+                f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+                f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
+                f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Failed to update battle message after using item: {e}")
+    
+    # Set timeout task
+    battle.timeout_task = asyncio.create_task(
+        pvp_battle_timeout(battle.challenger.user_id, battle.defender.user_id, battle, context, query.message.chat_id)
+    )
+
+async def handle_pvp_back_to_battle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle going back to battle from items menu."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Check if user is in a PVP battle
+    if user_id not in active_pvp_battles:
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
+        return
+        
+    battle = active_pvp_battles[user_id]
+    
+    # Update battle display
+    status = battle.get_battle_status()
+    keyboard = await generate_pvp_ability_keyboard(battle, context)
+    
+    try:
+        # Create a more clear display showing player names with their characters
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
+                f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+                f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
+                f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Failed to update battle message: {e}")
+
 async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle PvP-related callback queries."""
     query = update.callback_query
@@ -976,6 +1444,14 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await handle_pvp_surrender(update, context)
         elif callback_data == "pvp_switch":
             await handle_pvp_switch(update, context)
+        elif callback_data == "pvp_show_items":
+            await handle_pvp_show_items(update, context)
+        elif callback_data.startswith("pvp_use_item_"):
+            await handle_pvp_use_item(update, context)
+        elif callback_data == "pvp_back_to_battle":
+            await handle_pvp_back_to_battle(update, context)
+        elif callback_data == "pvp_no_items":
+            await safe_api_call(query.answer, "You don't have any utility items to use.", show_alert=True)
         elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
             # Show a message for abilities on cooldown or with insufficient gas
             try:
@@ -1035,6 +1511,11 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         defender_player=challenge_data["defender_player"],
         challenge_id=challenge_id
     )
+    
+    # Ensure shop_items are available in context
+    if "shop_items" not in context.bot_data and hasattr(context, 'bot_data'):
+        from game.shop_system import shop_system
+        context.bot_data["shop_items"] = shop_system.shop_items
     
     # Store battle in active PvP battles
     active_pvp_battles[challenger_id] = battle
@@ -1613,6 +2094,10 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     if defender_id in active_pvp_battles:
         del active_pvp_battles[defender_id]
         
+    # Clear all item effects before disposing
+    battle.challenger_active_items.clear()
+    battle.defender_active_items.clear()
+    
     # Dispose battle resources
     battle.dispose()
     
