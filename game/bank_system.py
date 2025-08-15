@@ -104,6 +104,7 @@ class BankSystem:
     async def get_central_bank_stats(self):
         """Returns overall stats for the /cb command (no weekly cap)."""
         all_accounts = await self.db.get_all_bank_accounts()
+        central_bank = next((acc for acc in all_accounts if acc.user_id == "central_bank"), None)
 
         # Calculate total reserves for each currency
         total_reserve = {
@@ -125,9 +126,21 @@ class BankSystem:
 
         top_3 = [{'user_id': acc.user_id, 'total': acc.total_wealth} for acc in sorted_accounts[:3]]
 
+        # Get tax collection history
+        tax_history = []
+        if central_bank and hasattr(central_bank, 'tax_history'):
+            tax_history = central_bank.tax_history[-5:]  # Get last 5 tax collections
+        
+        # Get last tax check time
+        last_tax_check = None
+        if central_bank and hasattr(central_bank, 'last_tax_check'):
+            last_tax_check = central_bank.last_tax_check
+
         return {
             'total_reserve': total_reserve,
-            'top_3_richest': top_3
+            'top_3_richest': top_3,
+            'tax_history': tax_history,
+            'last_tax_check': last_tax_check
         }
 
     def get_player_bank_info(self, account: BankAccount):
@@ -137,6 +150,26 @@ class BankSystem:
             'valor': account.valor_balance,
             'crystal': account.crystal_balance
         }
+        
+    async def check_player_tax_status(self, player) -> dict:
+        """Check if a player would be taxed and return tax info."""
+        tax_info = {
+            'would_be_taxed': False, 
+            'taxes': {},
+            'thresholds': TAX_THRESHOLDS,
+            'tax_rate': f"{TAX_RATE * 100:.1f}%"
+        }
+        
+        for currency in ["marks", "valor", "crystal"]:
+            player_balance = getattr(player, currency)
+            tax_info[f'{currency}_balance'] = player_balance
+            
+            if player_balance > TAX_THRESHOLDS[currency]:
+                tax_amount = int(player_balance * TAX_RATE)
+                tax_info['would_be_taxed'] = True
+                tax_info['taxes'][currency] = tax_amount
+        
+        return tax_info
 
     def apply_opening_penalty(self, player: Player, account: BankAccount) -> str:
         # Penalty starts 1 week after crossing level 15
@@ -173,6 +206,9 @@ class BankSystem:
         all_players = await self.db.get_all_players()
         central_bank = await self.db.get_bank_account("central_bank")
         
+        # Get current date at exactly midnight for tracking
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
         if not central_bank:
             # Create central bank account if it doesn't exist
             central_bank = BankAccount(
@@ -181,8 +217,21 @@ class BankSystem:
                 opened_at=datetime.now(),
                 marks_balance=0,
                 valor_balance=0,
-                crystal_balance=0
+                crystal_balance=0,
+                last_tax_check=today
             )
+
+        # Check if tax has already been applied today
+        if central_bank.last_tax_check and central_bank.last_tax_check.date() == today.date():
+            print(f"Tax already applied today at {central_bank.last_tax_check}")
+            return []  # Tax already applied today, skip
+            
+        # Update central bank's last tax check time
+        central_bank.last_tax_check = today
+        
+        # Track total tax collected for logging
+        total_tax_collected = {"marks": 0, "valor": 0, "crystal": 0}
+        players_taxed = 0
 
         for player in all_players:
             tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
@@ -204,6 +253,8 @@ class BankSystem:
                     setattr(central_bank, bank_balance_field, current_bank_balance + tax_amount)
                     
                     tax_report["taxes"][currency] = tax_amount
+                    total_tax_collected[currency] += tax_amount
+                    
                     # Add user message for this currency
                     tax_report["messages"].append(
                         f"💸 Tax Alert: `{tax_amount}` {currency} has been deducted from your account as tax."
@@ -211,10 +262,33 @@ class BankSystem:
                     tax_applied = True
 
             if tax_applied:
+                players_taxed += 1
+                
+                # Record tax transaction in player's history
+                if not hasattr(player, 'tax_history'):
+                    player.tax_history = []
+                
+                tax_record = {
+                    "date": today.isoformat(),
+                    "taxes": tax_report["taxes"]
+                }
+                
+                player.tax_history = player.tax_history[-9:] + [tax_record]  # Keep last 10 entries
                 await self.db.save_player(player)
                 tax_reports.append(tax_report)
 
+        # Add tax collection record to central bank
+        if not hasattr(central_bank, 'tax_history'):
+            central_bank.tax_history = []
+            
+        central_bank.tax_history = central_bank.tax_history[-9:] + [{
+            "date": today.isoformat(),
+            "total_collected": total_tax_collected,
+            "players_taxed": players_taxed
+        }]
+        
         # Save central bank changes
         await self.db.save_bank_account(central_bank)
         
+        print(f"Tax applied to {players_taxed} players. Total collected: {total_tax_collected}")
         return tax_reports

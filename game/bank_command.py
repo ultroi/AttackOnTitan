@@ -63,6 +63,27 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Your balance
         info = bank_system.get_player_bank_info(account)
 
+        # Check player tax status
+        tax_info = await bank_system.check_player_tax_status(player)
+        tax_status = "💰 <b>Tax Status:</b>\n"
+        
+        if tax_info["would_be_taxed"]:
+            tax_status += "<b>⚠️ You will be taxed at midnight:</b>\n"
+            for currency, amount in tax_info["taxes"].items():
+                tax_status += f"- {currency.capitalize()}: <code>{amount}</code>\n"
+        else:
+            tax_status += "✅ You are below all tax thresholds\n"
+        
+        # Get tax history if available
+        tax_history = ""
+        if 'tax_history' in stats and stats['tax_history']:
+            last_tax = stats['tax_history'][-1]
+            tax_history = f"\n🗓 <b>Last Tax Collection:</b>\n"
+            tax_history += f"📆 Date: <code>{last_tax['date'].split('T')[0]}</code>\n"
+            tax_history += f"👥 Players taxed: <code>{last_tax.get('players_taxed', 0)}</code>\n"
+            collected = last_tax.get('total_collected', {})
+            tax_history += f"💸 Collected: <code>{collected.get('marks', 0)}</code> marks, <code>{collected.get('valor', 0)}</code> valor, <code>{collected.get('crystal', 0)}</code> crystal\n"
+        
         caption = (
             f"🏦 <b>Central Bank Account Summary</b>\n"
             f"────────────────────\n"
@@ -76,8 +97,10 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🔸 Valor: <code>{info['valor']}</code>\n"
             f"💎 Crystal: <code>{info['crystal']}</code>\n"
             f"\n"
+            f"{tax_status}\n"
             f"🏅 <b>Top 3 Richest Players</b>:\n"
             f"{top_players_str}"
+            f"{tax_history}"
         )
         await update.message.reply_photo(
             photo="https://i.ibb.co/FqBX9JMp/image.jpg",

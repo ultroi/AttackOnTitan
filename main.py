@@ -30,34 +30,33 @@ from database.models import Character, Player
 from pymongo import UpdateOne
 from typing import List, Dict
 
-# Import handlers
-from game.start import (
-    show_character_selection,
-    show_character_details, confirm_character_selection,
-    create_character, back_to_selection,
-    start_character_selection
-)
-from game.add_resource_command import add_resource_command
-from game.profile_system import (
-    profile, char_detail,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
-    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
-)
-from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
-from utils.fastapi_dashboard import include_dashboard_route
-from utils.monitor import monitor_command
-from utils.extra import buy_command, give_command
-from game.explore import explore, close_keyboard
-from game.callback_handlers import button_callback, handle_travel_decision
-from game.shop_system import ShopSystem
-from game.battle_system import handle_battle_action, active_battles
-from utils.scheduled_tasks import start_scheduled_tasks
-from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
-from game.captcha import button
-from game.pvp_system import pvp_command, pvp_callback_handler
-
-# Load environment variables
+    # Import handlers
+    from game.start import (
+        show_character_selection,
+        show_character_details, confirm_character_selection,
+        create_character, back_to_selection,
+        start_character_selection
+    )
+    from game.add_resource_command import add_resource_command
+    from game.profile_system import (
+        profile, char_detail,
+        show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
+        show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info, 
+        fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
+    )
+    from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
+    from utils.fastapi_dashboard import include_dashboard_route
+    from utils.monitor import monitor_command
+    from utils.extra import buy_command, give_command
+    from game.explore import explore, close_keyboard
+    from game.callback_handlers import button_callback, handle_travel_decision
+    from game.shop_system import ShopSystem
+    from game.battle_system import handle_battle_action, active_battles
+    from utils.scheduled_tasks import start_scheduled_tasks
+    from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
+    from game.captcha import button
+    from game.pvp_system import pvp_command, pvp_callback_handler
+    from game.tax_command import tax_status_command, force_tax_check_command# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 if TOKEN is None:
@@ -630,6 +629,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CommandHandler("mm", maintenance))
     app_instance.add_handler(CommandHandler("add", add_resource_command))
+    
+    # Tax system commands
+    app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
+    app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", handle_bank_command))
@@ -720,8 +723,8 @@ async def main():
         # Initialize application before starting server
         app_instance = await initialize_application()
 
-        # Start the midnight tax scheduler
-        start_scheduler()
+        # Start the midnight tax scheduler with bot instance
+        start_scheduler(app_instance.bot)
 
         # Set webhook for Telegram
         if ENV != "development" and app_instance:
