@@ -251,6 +251,32 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to delete player: {e}")
             raise
+            
+    async def get_all_players(self) -> List[Player]:
+        """Get all players from the database."""
+        try:
+            import time
+            start = time.perf_counter()
+            cursor = self.players.find({})
+            players_data = await cursor.to_list(None)
+            
+            # Convert team members to proper TeamMember objects if present
+            from database.models import TeamMember
+            players = []
+            for player_data in players_data:
+                if "team" in player_data and player_data["team"]:
+                    player_data["team"] = [
+                        TeamMember(**member) if isinstance(member, dict) else member
+                        for member in player_data["team"]
+                    ]
+                players.append(Player(**player_data))
+            
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"get_all_players query time: {elapsed:.2f} ms")
+            return players
+        except Exception as e:
+            logger.error(f"Failed to get all players: {e}")
+            return []
 
     # Character operations
     async def create_character(self, user_id: str, name: str, character_type: str, current_hp: int) -> Character:
