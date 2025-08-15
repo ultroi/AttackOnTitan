@@ -408,7 +408,30 @@ class PvPBattleSystem:
             
         # Get equipped weapon for damage calculation
         shop_items = context.bot_data.get("shop_items") or {}
+        
+        # Try to refresh character data from DB first
+        db = context.bot_data.get("db") or Database()
+        refreshed_character = None
+        try:
+            if hasattr(current_char, 'user_id') and hasattr(current_char, 'name'):
+                refreshed_character = await db.get_character(int(current_char.user_id), current_char.name)
+                if refreshed_character:
+                    # Update current character with refreshed data
+                    if self.current_turn == self.challenger.name:
+                        self.challenger = refreshed_character
+                        current_char = refreshed_character
+                    else:
+                        self.defender = refreshed_character
+                        current_char = refreshed_character
+        except Exception as e:
+            logger.error(f"Error refreshing character data in use_basic_attack: {e}")
+        
+        # Debug log to see equipped weapon
+        logger.debug(f"Equipped weapon for {current_char.name}: {current_char.equipped_weapon}")
+        
+        # Now get the weapon with latest data
         weapon = self.get_equipped_weapon(current_char, shop_items)
+        logger.debug(f"Found weapon: {weapon.name if weapon else 'None'}")
         
         # Calculate damage
         if weapon:
@@ -630,6 +653,23 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
         current_char = battle.defender
         cooldowns = battle.defender_cooldowns
         gas = battle.defender_gas
+    
+    # Always refresh character from DB before showing abilities and weapon
+    db = context.bot_data.get("db") or Database()
+    refreshed_character = None
+    try:
+        if hasattr(current_char, 'user_id') and hasattr(current_char, 'name'):
+            refreshed_character = await db.get_character(int(current_char.user_id), current_char.name)
+            if refreshed_character:
+                # Update the character in the battle system with refreshed data
+                if battle.current_turn == battle.challenger.name:
+                    battle.challenger = refreshed_character
+                    current_char = refreshed_character
+                else:
+                    battle.defender = refreshed_character
+                    current_char = refreshed_character
+    except Exception as e:
+        logger.error(f"Error refreshing character data: {e}")
         
     from database.characters import get_character_data
     character_data = get_character_data(current_char.character_type)
@@ -680,7 +720,10 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
                 
     # Add basic attack button
     shop_items = context.bot_data.get("shop_items") or {}
+    # Log equipped weapon for debugging
+    logger.debug(f"Equipped weapon for {current_char.name}: {current_char.equipped_weapon}")
     weapon = battle.get_equipped_weapon(current_char, shop_items)
+    logger.debug(f"Found weapon object: {weapon.name if weapon else 'None'}")
     
     if gas >= 20:
         if weapon:
@@ -697,6 +740,10 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
     if battle.switches_remaining > 0:
         keyboard.append([
             InlineKeyboardButton(f"🔄 Switch ({battle.switches_remaining})", callback_data="pvp_switch"),
+            InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
+        ])
+    else:
+        keyboard.append([
             InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
         ])
     
@@ -1230,7 +1277,24 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
         battle.timeout_task.cancel()
         battle.timeout_task = None
     
-    # Use basic attack
+    # Refresh character data for weapon information
+    db = context.bot_data.get("db") or Database()
+    if battle.current_turn == battle.challenger.name:
+        try:
+            refreshed_character = await db.get_character(int(battle.challenger.user_id), battle.challenger.name)
+            if refreshed_character:
+                battle.challenger = refreshed_character
+        except Exception as e:
+            logger.error(f"Error refreshing challenger character: {e}")
+    else:
+        try:
+            refreshed_character = await db.get_character(int(battle.defender.user_id), battle.defender.name)
+            if refreshed_character:
+                battle.defender = refreshed_character
+        except Exception as e:
+            logger.error(f"Error refreshing defender character: {e}")
+    
+    # Use basic attack with refreshed character data
     message, effects = await battle.use_basic_attack(context)
     
     # Check if battle has ended due to insufficient gas or other reasons

@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#12161f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>AoT Bot Live Dashboard</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -49,6 +52,8 @@
       margin-bottom: 30px;
       padding-bottom: 15px;
       border-bottom: 1px solid var(--bg-panel-light);
+      flex-wrap: wrap;
+      gap: 15px;
     }
     
     h1 {
@@ -57,6 +62,13 @@
       display: flex;
       align-items: center;
       gap: 10px;
+      width: 100%;
+    }
+    
+    @media (min-width: 768px) {
+      h1 {
+        width: auto;
+      }
     }
     
     h1 i {
@@ -74,13 +86,23 @@
     
     .dashboard {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 20px;
     }
     
-    @media (max-width: 768px) {
+    @media (min-width: 992px) {
       .dashboard {
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .container {
+        padding: 0;
+      }
+      
+      body {
+        padding: 10px;
       }
     }
     
@@ -98,8 +120,8 @@
     
     .stats-container {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 10px;
       margin-bottom: 25px;
     }
     
@@ -109,6 +131,13 @@
       border-radius: var(--border-radius);
       text-align: center;
       transition: var(--transition);
+    }
+    
+    @media (min-width: 768px) {
+      .stats-container {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+      }
     }
     
     .stat-card:hover {
@@ -142,16 +171,28 @@
       color: var(--warning);
     }
     
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin-top: 15px;
+    }
+    
     table {
       width: 100%;
+      min-width: 480px;
       border-collapse: collapse;
-      margin-top: 15px;
     }
     
     th, td {
       padding: 12px 15px;
       text-align: left;
       border-bottom: 1px solid var(--bg-panel-light);
+    }
+    
+    @media (max-width: 480px) {
+      th, td {
+        padding: 8px 10px;
+      }
     }
     
     th {
@@ -284,7 +325,8 @@
       padding: 10px 15px;
       border-radius: 5px;
       color: var(--text-light);
-      width: 250px;
+      width: 100%;
+      max-width: 400px;
       margin-bottom: 15px;
     }
     
@@ -357,29 +399,123 @@
       visibility: visible;
       opacity: 1;
     }
+    
+    /* Responsive header styles */
+    .header-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      width: 100%;
+    }
+    
+    @media (min-width: 768px) {
+      .header-controls {
+        width: auto;
+      }
+    }
+    
+    .user-info {
+      background: var(--bg-panel-light);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 14px;
+      width: 100%;
+      text-align: center;
+    }
+    
+    @media (min-width: 480px) {
+      .user-info {
+        text-align: right;
+        width: auto;
+      }
+    }
+    
+    .user-info small {
+      color: var(--text-muted);
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    
+    @media (min-width: 480px) {
+      .button-group {
+        justify-content: flex-end;
+        width: auto;
+      }
+    }
+    
+    .refresh-btn {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border: none;
+      padding: 8px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: var(--transition);
+      flex: 1;
+      justify-content: center;
+      min-width: 80px;
+    }
+    
+    @media (min-width: 480px) {
+      .refresh-btn {
+        flex: 0 0 auto;
+      }
+    }
+    
+    .access-logs-btn {
+      text-decoration: none;
+      background-color: var(--info);
+    }
+    
+    .logout-btn {
+      text-decoration: none;
+      background-color: var(--danger);
+    }
+    
+    @media (max-width: 360px) {
+      .btn-text {
+        display: none;
+      }
+      
+      .refresh-btn {
+        padding: 8px;
+        min-width: 40px;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1><i class="fas fa-robot"></i> AoT Bot Live Dashboard</h1>
-      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 10px;">
-        <div class="user-info" style="background: var(--bg-panel-light); padding: 5px 10px; border-radius: 5px; font-size: 14px;">
+      <div class="header-controls">
+        <div class="user-info">
           <i class="fas fa-user-shield"></i> 
           <strong>{{ user_role }}</strong> ID: <strong>{{ user_id }}</strong><br>
-          <small style="color: var(--text-muted);"><i class="fas fa-clock"></i> Accessed: {{ login_time }}</small>
+          <small><i class="fas fa-clock"></i> Accessed: {{ login_time }}</small>
         </div>
-        <div style="display: flex; gap: 10px;">
+        <div class="button-group">
           <button class="refresh-btn" id="refresh-btn">
-            <i class="fas fa-sync-alt"></i> Refresh
+            <i class="fas fa-sync-alt"></i> <span class="btn-text">Refresh</span>
           </button>
           {% if user_role == "Owner" %}
-          <a href="/access_logs" class="refresh-btn" style="text-decoration: none; background-color: var(--info);">
-            <i class="fas fa-list"></i> Access Logs
+          <a href="/access_logs" class="refresh-btn access-logs-btn">
+            <i class="fas fa-list"></i> <span class="btn-text">Access Logs</span>
           </a>
           {% endif %}
-          <a href="/logout" class="refresh-btn" style="text-decoration: none; background-color: var(--danger);">
-            <i class="fas fa-sign-out-alt"></i> Logout
+          <a href="/logout" class="refresh-btn logout-btn">
+            <i class="fas fa-sign-out-alt"></i> <span class="btn-text">Logout</span>
           </a>
         </div>
       </div>
@@ -404,23 +540,25 @@
       <div class="panel">
         <h2><i class="fas fa-users"></i> Active Players</h2>
         <input type="text" class="search-box" id="player-search" placeholder="Search players...">
-        <table id="active-players-table">
-          <thead>
-            <tr>
-              <th>Player</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="active-players-body">
-            <tr>
-              <td colspan="3" class="empty-state">
-                <i class="fas fa-spinner pulse"></i><br>
-                Loading player data...
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-container">
+          <table id="active-players-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="active-players-body">
+              <tr>
+                <td colspan="3" class="empty-state">
+                  <i class="fas fa-spinner pulse"></i><br>
+                  Loading player data...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
       
       <div class="panel">
@@ -832,7 +970,8 @@
       const toast = document.createElement('div');
       toast.style.position = 'fixed';
       toast.style.bottom = '20px';
-      toast.style.right = '20px';
+      toast.style.left = '50%';
+      toast.style.transform = 'translateX(-50%) translateY(100px)';
       toast.style.backgroundColor = 'var(--bg-panel)';
       toast.style.color = 'var(--text-light)';
       toast.style.padding = '12px 20px';
@@ -840,19 +979,20 @@
       toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
       toast.style.zIndex = '1000';
       toast.style.transition = 'all 0.3s ease';
-      toast.style.transform = 'translateY(100px)';
       toast.style.opacity = '0';
+      toast.style.maxWidth = '90%';
+      toast.style.textAlign = 'center';
       toast.textContent = message;
       
       document.body.appendChild(toast);
       
       setTimeout(() => {
-        toast.style.transform = 'translateY(0)';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
         toast.style.opacity = '1';
       }, 10);
       
       setTimeout(() => {
-        toast.style.transform = 'translateY(100px)';
+        toast.style.transform = 'translateX(-50%) translateY(100px)';
         toast.style.opacity = '0';
         setTimeout(() => {
           document.body.removeChild(toast);
