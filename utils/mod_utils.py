@@ -1,12 +1,35 @@
 from typing import Callable, Any
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import CallbackContext, ContextTypes
 from telegram.constants import ParseMode
 import time
+import functools
 from utils.owners import get_owner_ids
 from database.db_instance import get_database
 
 MOD_COLLECTION = "mods"
+
+def mod_only(func):
+    @functools.wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        if not update.effective_user:
+            return
+        
+        user_id = update.effective_user.id
+        
+        # Check if user is an owner (owners have mod privileges)
+        if user_id in get_owner_ids():
+            return await func(update, context, *args, **kwargs)
+            
+        # Check if user is a mod
+        is_moderator = await is_mod(user_id)
+        if is_moderator:
+            return await func(update, context, *args, **kwargs)
+        else:
+            if update.effective_message:
+                await update.effective_message.reply_text("This command is only available for moderators.")
+            return
+    return wrapper
 
 async def is_mod(user_id: int) -> bool:
     db = await get_database()
