@@ -162,37 +162,36 @@ class ShopSystem:
         now = datetime.now(timezone.utc)
         next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         time_until_refresh = next_midnight - now
-        hours = int(time_until_refresh.total_seconds() // 3600)
-        minutes = int((time_until_refresh.total_seconds() % 3600) // 60)
-
-        #cslculate time left 
+        
+        # Calculate time left for shop refresh
         total_seconds = int(time_until_refresh.total_seconds())
         hours, remainder = divmod(total_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         time_left = f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
-
     
         refresh_cost = await self._get_refresh_cost(context, user_id=player.user_id)
 
         header = (
-            "═══════════════════════\n"
-            "<b>ATTACK ON TITAN SHOP</b>\n"
-            "═══════════════════════\n\n"
-            "<b> Your Resources</b>\n"
-            f"🎯 Marks: <code>{player.marks:,}</code>\n"
+            "═════════════════════════════\n"
+            "       <b>ATTACK ON TITAN SHOP</b>       \n"
+            "═════════════════════════════\n\n"
+            "<b>💰 Your Resources</b>\n"
+            f"🎯 Marks:    <code>{player.marks:,}</code>\n"
             f"💎 Crystals: <code>{player.crystal:,}</code>\n"
-            f"⚡ Valor: <code>{player.valor:,}</code>\n"
-            f"🛢️ Gas: <code>{player.gas:,}</code>\n\n"
-            "<b>💱 Exchange</b>\n"
-            "• 2 Marks ➜ 1 Gas\n"
-            "• 25000 Marks ➜ 1 Crystal\n"
-            "• 500 Marks ➜ 1 Valor\n"
-            "• 1 Crystal ➜ 50 Valor\n\n"
-            "<code>/buy item_name quantity</code>\nE.g., /buy gas 20 or /buy crystal 100\n\n"
+            f"⚡ Valor:    <code>{player.valor:,}</code>\n"
+            f"🛢️ Gas:      <code>{player.gas:,}</code>\n\n"
+            "<b>💱 Exchange Rates</b>\n"
+            "• 2 Marks    ➜ 1 Gas\n"
+            "• 25,000 Marks ➜ 1 Crystal\n"
+            "• 500 Marks   ➜ 1 Valor\n"
+            "• 1 Crystal   ➜ 50 Valor\n\n"
+            "<b>📋 How to Purchase</b>\n"
+            "<code>/buy item_name quantity</code>\n"
+            "Example: <code>/buy gas 20</code> or <code>/buy crystal 100</code>\n\n"
             "<b>⏰ Shop Information</b>\n"
-            f"• <b>Next Free Refresh:</b> {time_left} Left\n"
+            f"• <b>Next Free Refresh:</b> {time_left}\n"
             f"• <b>Manual Refresh Cost:</b> {refresh_cost} Valor\n\n"
-            "═══════════════════════\n"
+            "═════════════════════════════\n"
         )
         keyboard = [
             [InlineKeyboardButton("⚔️ Weapons", callback_data="shop_weapons"),
@@ -217,6 +216,9 @@ class ShopSystem:
 
         # Use random selection for shop items, persist per user until refresh
         paged_items = self._get_random_shop_items(category, str(player.user_id), context)
+        
+        # Sort items by price (ascending order)
+        paged_items.sort(key=lambda x: x[1].price)
         paged_items = paged_items[:10]  # Limit to 10 items per section
 
         category_names = {
@@ -227,11 +229,11 @@ class ShopSystem:
             "barracks": "🏛️ Barracks Quartermaster",
             "hollow": "💀 Black Market"
         }
-        # Custom UI for weapons
-        if category == "weapons":
-            message = f"<b>WEAPONS</b> (<i>Damage</i>) [<code>Price Currency</code>] \n═══════════════════════\n\n"
-        else:
-            message = f" <b>{category_names.get(category, category.title())}</b>\n═══════════════════════\n\n"
+        
+        # Header with divider
+        message = f"<b>{category_names.get(category, category.title())}</b>\n"
+        message += "═══════════════════════\n\n"
+        
         keyboard = []
         db = await self._get_db(context)
 
@@ -239,36 +241,54 @@ class ShopSystem:
         for idx, (item_key, item) in enumerate(paged_items, start=1):
             price_str = f"{item.price:,} {item.currency.title()}"
             rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
-            # Custom UI for weapons
-            if category == "weapons":
-                damage = item.attributes.get("attack") or item.attributes.get("damage") or "-"
-                weapon_heading = f"<b>{idx}. {item.name}</b>  ({damage})  [<code>{price_str}</code>]"
-                other_attrs = ""
-                for attr, val in item.attributes.items():
-                    if attr not in ["attack", "damage"]:
-                        other_attrs += f"{attr.title()}: <code>{val}</code>  "
-                item_text = (
-                    f"{weapon_heading}\n"
-                    f"{other_attrs}\n"
-                    f"📝<b>:</b> <i>{item.description}</i>\n\n"
-                )
-            else:
-                damage_info = f" | DMG: {getattr(item, 'damage_range', '')}" if getattr(item, 'damage_range', None) else ""
-                item_text = (
-                    f"{rarity_emoji.get(item.rarity, '⚪')} <b>{idx}. {item.name}</b>\n"
-                    f"💰 <b>{price_str}</b>{damage_info}\n"
-                    f"📝 {item.description}\n"
-                )
+            
+            # Get rarity symbol and create consistent header format
+            rarity_symbol = rarity_emoji.get(item.rarity, '⚪')
+            item_header = f"{rarity_symbol} <b>{idx}. {item.name}</b>"
+            
+            # Handle damage attributes consistently for all item types
+            damage_info = ""
+            if "damage_min" in item.attributes and "damage_max" in item.attributes:
+                damage_min = item.attributes["damage_min"]
+                damage_max = item.attributes["damage_max"]
+                damage_info = f" | ⚔️ DMG: <code>{damage_min}-{damage_max}</code>"
+            
+            # Format price information consistently
+            price_info = f"💰 <b>{price_str}</b>{damage_info}"
+            
+            # Collect all other attributes
+            other_attrs = []
+            important_attrs = ["speed", "accuracy", "defense", "area_damage"]
+            for attr_name in important_attrs:
+                if attr_name in item.attributes and item.attributes[attr_name]:
+                    attr_display_name = attr_name.replace('_', ' ').title()
+                    attr_value = item.attributes[attr_name]
+                    other_attrs.append(f"{attr_display_name}: <code>{attr_value}</code>")
+            
+            # Construct the full item text with consistent formatting
+            item_text = f"{item_header}\n{price_info}\n"
+            
+            if other_attrs:
+                item_text += f"📊 {' | '.join(other_attrs)}\n"
+                
+            # Always add description at the end
+            item_text += f"📝 <i>{item.description}</i>\n\n"
+            
             message += item_text
+            
+            # Add purchase buttons for affordable items
             if await self._can_afford(player, item):
                 row.append(InlineKeyboardButton(f"🛒 {idx}", callback_data=f"buy_{item_key}"))
                 if len(row) == 3:
                     keyboard.append(row)
                     row = []
+        
         if row:
             keyboard.append(row)
+            
         keyboard.append([InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")])
         message += "\n<i>Buttons will only show for items you can afford and purchase.</i>"
+        
         return message, InlineKeyboardMarkup(keyboard)
 
     def _get_category_items(self, category: str) -> Dict[str, Equipment]:
@@ -499,7 +519,8 @@ class ShopSystem:
                 all(k in all_keys for k in selected_keys)
             ):
                 selected = [item for item in all_items if item[0] in selected_keys]
-                selected.sort(key=lambda x: selected_keys.index(x[0]))
+                # Sort by price (ascending order)
+                selected.sort(key=lambda x: x[1].price)
                 return selected
         # If not present or invalid, randomize and store
         if category == "hollow":
@@ -508,7 +529,10 @@ class ShopSystem:
         else:
             pick_count = min(12, len(all_items))
             selected = random.sample(all_items, pick_count)
+        # Store the keys for persistence
         shop_random_selections[key] = [item[0] for item in selected]
+        # Sort by price (ascending order)
+        selected.sort(key=lambda x: x[1].price)
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):

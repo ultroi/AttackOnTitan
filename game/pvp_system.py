@@ -973,7 +973,7 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
         else:
             keyboard.append([InlineKeyboardButton("⛽ Basic Attack (Low Gas - will lose battle)", callback_data="pvp_lowgas_basic_attack")])
     
-    # Add items button
+    # Get player's utility items info for the "Use Item" button
     db = context.bot_data.get("db") or Database()
     shop_items = context.bot_data.get("shop_items") or {}
     
@@ -984,22 +984,25 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
     else:
         used_item = battle.defender_used_item
         player_id = battle.defender.user_id
-        
-    # Only show items button if player hasn't used an item yet this turn
-    if not used_item:
-        # Show items button
-        keyboard.append([InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items")])
     
-    # Add switch and surrender buttons
+    # Add switch and surrender buttons (without item button for now)
     if battle.switches_remaining > 0:
-        keyboard.append([
+        switch_surrender_row = [
             InlineKeyboardButton(f"🔄 Switch ({battle.switches_remaining})", callback_data="pvp_switch"),
             InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
-        ])
+        ]
     else:
-        keyboard.append([
+        switch_surrender_row = [
             InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
-        ])
+        ]
+        
+    # Add the "Use Item" button to the switch/surrender row if player hasn't used an item yet
+    if not used_item:
+        # Insert Use Item button at the beginning of the last row
+        switch_surrender_row.insert(0, InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items"))
+    
+    # Add the row to the keyboard
+    keyboard.append(switch_surrender_row)
     
     return keyboard
 
@@ -1226,7 +1229,7 @@ async def generate_pvp_items_keyboard(battle: PvPBattleSystem, context: ContextT
         # Sort items by name
         utility_items.sort(key=lambda x: x[1])
         
-        # Add buttons for each item (3 per row)
+        # Add buttons for each item (2 per row)
         row = []
         for idx, (item_key, item_name, quantity) in enumerate(utility_items):
             row.append(InlineKeyboardButton(f"{item_name} ({quantity})", callback_data=f"pvp_use_item_{item_key}"))
@@ -1235,11 +1238,11 @@ async def generate_pvp_items_keyboard(battle: PvPBattleSystem, context: ContextT
                 row = []
         
         if not has_items:
-            keyboard.append([InlineKeyboardButton("No utility items available", callback_data="pvp_no_items")])
+            keyboard.append([InlineKeyboardButton("No items available", callback_data="pvp_no_items")])
     except Exception as e:
         logger.error(f"Error generating items keyboard: {e}")
     
-    # Add back button
+    # Always add back button in a new row
     keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")])
     return keyboard
 
@@ -1270,15 +1273,59 @@ async def handle_pvp_show_items(update: Update, context: ContextTypes.DEFAULT_TY
         await safe_api_call(query.answer, "You've already used an item this turn!", show_alert=True)
         return
     
-    # Generate items keyboard
-    keyboard = await generate_pvp_items_keyboard(battle, context)
+    # Get DB instance and refresh player
+    db = context.bot_data.get("db") or Database()
+    shop_items = context.bot_data.get("shop_items") or {}
     
-    # Update message with items menu
     try:
+        # Determine current player
+        if battle.current_turn == battle.challenger.name:
+            current_player = battle.challenger_player
+        else:
+            current_player = battle.defender_player
+            
+        player = await db.get_player(str(current_player.user_id))
+        if not player:
+            # Generate keyboard with just back button
+            keyboard = [[InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")]]
+            
+            await safe_api_call(
+                query.edit_message_text,
+                "🎒 <b>Select an item to use in battle:</b>\n\n"
+                "You don't have any items to use.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Check for utility items in inventory
+        utility_items = []
+        item_list_text = ""
+        
+        for item_key, quantity in player.inventory.items():
+            if item_key in shop_items and shop_items[item_key].type == "utility" and quantity > 0:
+                item = shop_items[item_key]
+                utility_items.append((item_key, item.name, quantity))
+                
+        # Sort items by name
+        utility_items.sort(key=lambda x: x[1])
+        
+        # Create text list of items and their quantities
+        if utility_items:
+            item_list_text = "Available items:\n"
+            for item_key, item_name, quantity in utility_items:
+                item_list_text += f"• <b>{item_name}</b> - {quantity} available\n"
+            item_list_text += "\n"
+        else:
+            item_list_text = "You don't have any utility items to use.\n\n"
+        
+        # Generate items keyboard
+        keyboard = await generate_pvp_items_keyboard(battle, context)
+        
+        # Update message with items menu
         await safe_api_call(
             query.edit_message_text,
-            "🎒 <b>Select an item to use in battle:</b>\n\n"
-            "<i>Using an item will consume 1 quantity. Effects apply immediately.</i>",
+            f"🎒 <b>Select an item to use in battle:</b>\n\n{item_list_text}",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
@@ -1321,6 +1368,19 @@ async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE
     if battle.timeout_task:
         battle.timeout_task.cancel()
         battle.timeout_task = None
+    
+    # Switch turn after using item (item usage is considered a full turn)
+    if battle.current_turn == battle.challenger.name:
+        battle.current_turn = battle.defender.name
+    else:
+        battle.current_turn = battle.challenger.name
+    
+    # Increment turn counter
+    battle.turn_count += 1
+    
+    # Reset used_item flags for the new turn
+    battle.challenger_used_item = False
+    battle.defender_used_item = False
     
     # Update battle display
     status = battle.get_battle_status()
