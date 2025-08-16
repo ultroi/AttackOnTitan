@@ -540,19 +540,46 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error("Database not initialized")
         await query.edit_message_text("Internal error: Database not initialized.")
         return
-    titan_obj = await db.get_titan(user_id)
+    # Try to init DB if it's not already initialized
+    if not db.titans:
+        try:
+            await db.init_db()
+        except Exception as e:
+            logger.error(f"Error initializing database in battle_start: {e}")
+    
+    # Try to get titan from database
+    titan_obj = None
+    try:
+        titan_obj = await db.get_titan(user_id)
+    except Exception as e:
+        logger.error(f"Error retrieving titan from database: {e}")
+    
+    # If no titan in database, try to get from bot_data
     if not titan_obj:
         logger.warning(f"[BATTLE_START] No titan found for user_id: {user_id}")
-        # Debug: Check if titan data exists in bot_data
-        titan_data_debug = context.bot_data.get(f"last_titan_data_{user_id}")
-        logger.debug(f"[BATTLE_START] bot_data last_titan_data_{user_id}: {titan_data_debug}")
-        # Debug: Check if active battle id matches
-        active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
-        logger.debug(f"[BATTLE_START] active_battle_id_{user_id}: {active_battle_id}, callback_data: {query.data}")
-        await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
-        return
-    titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
-    titan = Titan(**titan_data)
+        # Check if titan data exists in bot_data as fallback
+        titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
+        
+        if titan_data:
+            logger.info(f"[BATTLE_START] Found titan data in bot_data: {titan_data.get('name', 'Unknown')}")
+            # Create titan object from saved data
+            from database.models import Titan
+            titan_obj = Titan(**titan_data)
+            
+            # Try to store it in database as a recovery measure
+            try:
+                await db.store_titan(user_id, titan_obj)
+                logger.info(f"[BATTLE_START] Re-stored titan in database from bot_data: {titan_obj.name}")
+            except Exception as e:
+                logger.error(f"Failed to re-store titan in database: {e}")
+        else:
+            # No titan found anywhere
+            active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+            logger.debug(f"[BATTLE_START] active_battle_id_{user_id}: {active_battle_id}, callback_data: {query.data}")
+            await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
+            return
+    # Use the titan object we just got directly
+    titan = titan_obj
     # Ensure context.user_data is a dict
     if not hasattr(context, "user_data") or context.user_data is None:
         context.user_data = {}

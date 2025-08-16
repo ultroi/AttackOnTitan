@@ -407,19 +407,29 @@ class Database:
         return titan
 
     async def store_titan(self, user_id: str, titan: Titan):
-        """Store titan with minimal fields for better performance."""
-        # Only store essential fields for exploration
+        """Store titan with all necessary fields for battle."""
+        # Create a more complete document to ensure all required fields are present
+        titan_dict = titan.dict()
+        
+        # Make sure essential fields are present
         titan_doc = {
             "user_id": user_id,
             "name": titan.name,
             "level": titan.level,
             "max_hp": titan.max_hp,
+            "current_hp": titan.max_hp,  # Initialize current HP
             "difficulty": titan.difficulty,
             "xp_reward": titan.xp_reward,
+            "abilities": titan_dict.get("abilities", []),
+            "spawn_areas": titan_dict.get("spawn_areas", []),
+            "min_level_requirement": titan_dict.get("min_level_requirement", 1),
+            "internal_name": titan_dict.get("internal_name", None),
+            "drop_table": titan_dict.get("drop_table", {}),
+            "created_at": titan_dict.get("created_at", datetime.now(timezone.utc)),
             "updated_at": datetime.now(timezone.utc)
         }
         
-        # Use faster upsert with minimal fields
+        # Use faster upsert with more complete fields
         await self.titans.update_one(
             {"user_id": user_id},
             {"$set": titan_doc},
@@ -427,7 +437,18 @@ class Database:
         )
 
     async def get_titan(self, user_id: str) -> Optional[Titan]:
+        # Make sure database is initialized
+        if not self.titans:
+            await self.init_db()
+            
         titan_data = await self.titans.find_one({"user_id": user_id})
+        
+        # Debug logging
+        if titan_data:
+            logger.info(f"Found titan for user {user_id}: {titan_data.get('name')}")
+        else:
+            logger.warning(f"No titan found for user {user_id} in database")
+            
         return Titan(**titan_data) if titan_data else None
 
     async def delete_titan(self, user_id: str):

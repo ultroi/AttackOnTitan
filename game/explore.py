@@ -490,20 +490,33 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         return
-
-    # Store titan in database in background
-    async def store_titan_bg():
-        try:
-            await db.store_titan(user_id_str, titan)
-        except Exception:
-            pass
     
-    # Now create the task with a proper coroutine
-    asyncio.create_task(store_titan_bg())
+    logger.info(f"Generated titan for {user_id_str}: {titan.name} (level {titan.level})")
+
+    # Store titan in database BEFORE showing the battle button
+    # This ensures the titan is available when the user clicks the battle button
+    try:
+        # Make sure database is initialized
+        if not db.titans:
+            await db.init_db()
+            
+        # Store the titan
+        await db.store_titan(user_id_str, titan)
+        
+        # Also store the titan in bot_data as a fallback
+        context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
+        
+        logger.info(f"Stored titan for user {user_id_str}: {titan.name} (level {titan.level})")
+    except Exception as e:
+        logger.error(f"Error storing titan: {str(e)}")
+        # Continue execution - we'll log the error but still try to show the titan
 
     # Generate battle ID
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"  # Using shorter UUID for speed
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+    
+    # Log battle ID for debugging
+    logger.info(f"Setting active_battle_id_{user_id} to {battle_id}")
 
     # Create reply markup
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
