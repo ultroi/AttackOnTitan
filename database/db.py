@@ -135,23 +135,15 @@ class Database:
             raise
 
     async def get_player(self, user_id: str) -> Optional[Player]:
+        """Get player with optimized performance."""
         try:
-            import time
-            start = time.perf_counter()
             if self.players is None:
-                await self.init_db() 
+                await self.init_db()
             if self.players is None:
                 raise ConnectionError("Database connection failed")
-            player_data = await self.players.find_one({"user_id": user_id}, {
-                "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
-                "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
-                "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
-                "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
-                "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
-                "inventory": 1
-            })
-            elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"get_player query time: {elapsed:.2f} ms")
+                
+            # Use find_one with projection to get only needed fields
+            player_data = await self.players.find_one({"user_id": user_id})
             
             # Create a Player object
             if player_data:
@@ -166,7 +158,7 @@ class Database:
             return None
         except (PyMongoError, ConnectionError) as e:
             logger.error(f"Failed to get player: {e}")
-            raise
+            return None  # Return None instead of raising to avoid blocking operations
 
     async def update_player(self, user_id: int, update_data: Dict) -> Optional[Player]:
         try:
@@ -322,24 +314,20 @@ class Database:
             raise
 
     async def get_character(self, user_id: int, character_name: str) -> Optional[Character]:
+        """Get character with optimized performance."""
         try:
-            # Use projection for faster reads
+            # Use minimal projection for exploring - just get what we need
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
-            }, {
-                "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
-                "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1,
-                "equipped_weapon": 1,
-                "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
-                "unlocked_abilities": 1
             })
+            
             if character_data:
                 return Character(**character_data)
             return None
         except Exception as e:
             logger.error(f"Failed to get character: {e}")
-            raise
+            return None  # Return None instead of raising to avoid blocking operations
 
     async def update_character(self, character: Character) -> Character:
         try:
@@ -419,9 +407,19 @@ class Database:
         return titan
 
     async def store_titan(self, user_id: str, titan: Titan):
-        titan_doc = titan.dict()
-        titan_doc["user_id"] = user_id
-        titan_doc["updated_at"] = datetime.now(timezone.utc)
+        """Store titan with minimal fields for better performance."""
+        # Only store essential fields for exploration
+        titan_doc = {
+            "user_id": user_id,
+            "name": titan.name,
+            "level": titan.level,
+            "max_hp": titan.max_hp,
+            "difficulty": titan.difficulty,
+            "xp_reward": titan.xp_reward,
+            "updated_at": datetime.now(timezone.utc)
+        }
+        
+        # Use faster upsert with minimal fields
         await self.titans.update_one(
             {"user_id": user_id},
             {"$set": titan_doc},

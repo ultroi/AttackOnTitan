@@ -722,6 +722,14 @@ async def main():
         signal.signal(signal.SIGINT, handle_shutdown)
         signal.signal(signal.SIGTERM, handle_shutdown)
         
+        # Pre-initialize titan templates for faster explore responses
+        try:
+            from game.explore import initialize_titan_pools
+            await initialize_titan_pools()
+            logger.info("Pre-initialized titan templates for faster exploration")
+        except Exception as e:
+            logger.error(f"Failed to initialize titan templates: {e}")
+        
         # Initialize application before starting server
         app_instance = await initialize_application()
 
