@@ -298,16 +298,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if captcha_triggered:
             return
 
-    # Get titan - this is one of the critical operations
+    # Get titan and store it in DB concurrently for better performance
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         return
 
-    # Store titan in background to speed up response
+    # Start titan storage in background immediately
     titan_store_task = asyncio.create_task(db.store_titan(user_id_str, titan))
 
-    # Prepare battle UI immediately without waiting for DB storage
+    # Prepare battle UI immediately
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"  # Using shorter UUID for faster processing
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
 
@@ -316,13 +316,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Get titan image URL using optimized dictionary lookup
     titan_name_lower = titan.name.lower()
-    titan_image_url = None
-    for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
-        if titan_type in titan_name_lower:  # Keys are already lowercase
-            titan_image_url = url
-            break
-
+    titan_image_url = next((url for type_, url in TITAN_TYPE_IMAGE_URLS.items() if type_ in titan_name_lower), None)
     image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
+
     reply_text = (
         f"<code>-------------------------</code>\n"
         f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
@@ -330,36 +326,41 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<code>-------------------------</code>\n"
     )
 
-    # Send the message - critical for user response time
+    # Common message parameters
+    message_params = {
+        "text": reply_text,
+        "reply_markup": reply_markup,
+        "parse_mode": ParseMode.HTML,
+        "disable_web_page_preview": True 
+    }
+
+    # Send the message with proper error handling and logging
     sent_message = None
     try:
         if update.message:
-            sent_message = await update.message.reply_text(
-                text=reply_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False  # Consider setting to True for faster response
-            )
+            # For new messages, use reply_text
+            sent_message = await update.message.reply_text(**message_params)
         elif update.callback_query and update.callback_query.message:
             try:
-                sent_message = await update.callback_query.message.edit_text(
-                    text=reply_text,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False  # Consider setting to True for faster response
+                # Prioritize message editing for faster response
+                sent_message = await update.callback_query.message.edit_text(**message_params)
+            except Exception as e:
+                # If edit fails, immediately send new message
+                sent_message = await update.callback_query.message.chat.send_message(**message_params)
+                # Log edit failure
+                logger.warning(
+                    f"Edit message failed for user {user_id_str}, sending new message. Error: {str(e)}"
                 )
-            except Exception:
-                sent_message = await update.callback_query.message.chat.send_message(
-                    text=reply_text,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
-                )
-    except Exception:
+    except Exception as e:
+        # Log error and notify user
+        logger.error(
+            f"Message send/edit failed for user {user_id_str}: {str(e)}", 
+            exc_info=True
+        )
         await _reply_error(update, "An error occurred while displaying the titan.")
         return
 
-    # Wait for titan storage to complete if it hasn't already
+    # Wait for titan storage to complete in background
     await titan_store_task
     
     # Move all cleanup and timeout tasks to background after message is sent
