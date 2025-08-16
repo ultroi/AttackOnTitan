@@ -13,7 +13,6 @@ import time
 import random
 import logging
 import asyncio
-import types
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -25,185 +24,66 @@ TITAN_TIMEOUT_SECONDS = 60 * 3  # 3 minutes
 
 # Titan type to image URL mapping
 TITAN_TYPE_IMAGE_URLS = {
-    "Goofy Grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
-    "Potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
-    "Bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
-    "Gaping Mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
-    "Small Jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
-    "Leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
-    "Bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
-    "Staggering Creepers": "https://i.ibb.co/mFchdbj9/image.jpg",
-    "Wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
+    "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
+    "potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
+    "bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
+    "gaping mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
+    "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
+    "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
+    "bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
+    "staggering creepers": "https://i.ibb.co/mFchdbj9/image.jpg",
+    "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
-# Pre-generated titan pool per user
+# Pre-generated titan pool per user - increased for better performance
 PREGENERATED_TITANS: Dict[str, list] = {}
-PREGEN_POOL_SIZE = 5  # Increased from 3 to 5
-
-# Template storage for fast titan generation
-TITAN_TEMPLATES = {}
-
-# Initialize titan pools at startup
-async def initialize_titan_pools(db=None):
-    """Pre-generate common titan types for faster access"""
-    from database.models import Titan, generate_titan_name, generate_titan_hp, generate_titan_xp
-    from datetime import datetime, timezone
-    
-    # Generate common titan templates for different levels
-    common_levels = [1, 5, 10, 15, 20, 25]
-    difficulties = ["Easy", "Normal", "Hard"]
-    template_titans = {}
-    
-    # Create common titan templates
-    for level in common_levels:
-        for difficulty in difficulties:
-            key = f"{level}_{difficulty}"
-            name = generate_titan_name(difficulty)
-            max_hp = generate_titan_hp(level, difficulty)
-            now = datetime.now(timezone.utc)
-            
-            template_titans[key] = Titan(
-                name=name,
-                level=level,
-                max_hp=max_hp,
-                abilities=[],
-                created_at=now,
-                difficulty=difficulty,
-                spawn_areas=[],
-                drop_table={},
-                xp_reward=generate_titan_xp(level, difficulty),
-                min_level_requirement=level
-            )
-    
-    # Store templates for fast cloning
-    global TITAN_TEMPLATES
-    TITAN_TEMPLATES = template_titans
-    logger.info(f"Initialized {len(template_titans)} titan templates")
+PREGEN_POOL_SIZE = 5  # Increased from 3 to 5 for better caching
 
 async def get_pregenerated_titan(user_id_str, db, player_character, unlocked_areas):
-    """Ultra-fast titan generation using templates and caching."""
-    # First check if we have a pre-generated titan in the user pool
     pool = PREGENERATED_TITANS.get(user_id_str, [])
     if pool:
         titan = pool.pop(0)
         PREGENERATED_TITANS[user_id_str] = pool
-        # Refill pool in background without awaiting
-        if len(pool) < PREGEN_POOL_SIZE:
+        # Refill pool in background only when almost empty (more efficient)
+        if len(pool) <= 1:  # Only trigger refill when almost empty
             asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
         return titan
-    
-    # No pre-generated titans, use templates for instant creation
-    from database.models import Titan, generate_titan_name
-    from copy import deepcopy
-    from datetime import datetime, timezone
-    
-    # Determine level and difficulty - safely access level with fallback
-    player_level = getattr(player_character, "level", 1)
-    if player_level < 8:
-        difficulty = "Easy"
-    elif player_level < 15:
-        difficulty = "Normal"
     else:
-        difficulty = "Hard"
-    
-    level = max(1, player_level + random.randint(-2, 2))
-    
-    # Find closest template
-    template_key = None
-    closest_level = 0
-    
-    # Round to nearest 5
-    template_level = 5 * round(level / 5)
-    if template_level < 1:
-        template_level = 1
-    elif template_level > 25:
-        template_level = 25
-    
-    template_key = f"{template_level}_{difficulty}"
-    
-    # Use template if available
-    if template_key in TITAN_TEMPLATES:
-        # Clone the template
-        titan = deepcopy(TITAN_TEMPLATES[template_key])
-        # Update a few fields
-        titan.name = generate_titan_name(difficulty)  # New name for uniqueness
-        titan.created_at = datetime.now(timezone.utc)
-        titan.spawn_areas = unlocked_areas or []
+        # Generate multiple titans at once when the pool is empty for better efficiency
+        titans = await db.generate_multiple_titans(player_character.level, unlocked_areas, PREGEN_POOL_SIZE)
+        if not titans:
+            # Fallback if multiple generation fails
+            titan = await db.generate_titan(player_character.level, unlocked_areas)
+            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
+            return titan
         
-        # Adjust level slightly if needed
-        if titan.level != level:
-            titan.level = level
-    else:
-        # Fast titan generation as fallback
-        from database.models import generate_titan_hp, generate_titan_xp
-        
-        name = generate_titan_name(difficulty)
-        max_hp = generate_titan_hp(level, difficulty)
-        now = datetime.now(timezone.utc)
-        
-        titan = Titan(
-            name=name,
-            level=level,
-            max_hp=max_hp,
-            abilities=[],
-            created_at=now,
-            difficulty=difficulty,
-            spawn_areas=unlocked_areas or [],
-            drop_table={},
-            xp_reward=generate_titan_xp(level, difficulty),
-            min_level_requirement=level
-        )
-    
-    # Start refill in background without waiting
-    asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
-    return titan
+        titan = titans[0]  # Use the first one
+        PREGENERATED_TITANS[user_id_str] = titans[1:]  # Store the rest
+        return titan
 
 async def refill_titan_pool(user_id_str, db, player_character, unlocked_areas):
-    """Fast titan generation for the pool"""
-    from database.models import Titan, generate_titan_name, generate_titan_hp, generate_titan_xp
-    from datetime import datetime, timezone
-    
     pool = PREGENERATED_TITANS.get(user_id_str, [])
-    player_level = getattr(player_character, "level", 1)
-    
-    # Generate all titans at once for efficiency
-    needed_titans = PREGEN_POOL_SIZE - len(pool)
-    if needed_titans <= 0:
-        return
-        
-    new_titans = []
-    for _ in range(needed_titans):
-        # Quick difficulty calculation
-        if player_level < 8:
-            difficulty = "Easy"
-        elif player_level < 15:
-            difficulty = "Normal"
-        else:
-            difficulty = "Hard"
+    needed_titans = max(0, PREGEN_POOL_SIZE - len(pool))
+    if needed_titans > 0:
+        # Try to generate multiple titans at once for better efficiency
+        try:
+            new_titans = await db.generate_multiple_titans(player_character.level, unlocked_areas, needed_titans)
+            if new_titans:
+                pool.extend(new_titans)
+                PREGENERATED_TITANS[user_id_str] = pool
+                return
+        except Exception:
+            pass  # Fall back to one-by-one generation if batch generation fails
             
-        # Fast titan generation
-        level = max(1, player_level + random.randint(-2, 2))
-        name = generate_titan_name(difficulty)
-        max_hp = generate_titan_hp(level, difficulty)
-        now = datetime.now(timezone.utc)
-        
-        titan = Titan(
-            name=name,
-            level=level,
-            max_hp=max_hp,
-            abilities=[],
-            created_at=now,
-            difficulty=difficulty,
-            spawn_areas=unlocked_areas or [],
-            drop_table={},
-            xp_reward=generate_titan_xp(level, difficulty),
-            min_level_requirement=level
-        )
-        new_titans.append(titan)
-    
-    # Update pool in one go
-    pool.extend(new_titans)
-    PREGENERATED_TITANS[user_id_str] = pool
+        # Traditional one-by-one generation as fallback
+        for _ in range(needed_titans):
+            try:
+                titan = await db.generate_titan(player_character.level, unlocked_areas)
+                pool.append(titan)
+            except Exception:
+                continue  # Skip and continue if one titan generation fails
+                
+        PREGENERATED_TITANS[user_id_str] = pool
 
 async def _reply_error(update: Update, message: str):
     """Helper to reply with error messages."""
@@ -289,6 +169,9 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
+    # Start timing the operation for performance monitoring
+    start_time = time.time()
+    
     if not update.effective_user:
         await _reply_error(update, "Cannot identify user. Please try again.")
         return
@@ -302,235 +185,143 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "This command can only be used in private chats.")
         return
 
-    # Fast check for active battle
-    try:
-        from game.battle_system import active_battles
-        if user_id_str in active_battles:
-            first_name = update.effective_user.first_name or "Player"
-            await _reply_error(update, f"{first_name} is currently battling !!")
-            return
-    except ImportError:
-        pass
-
-    # Get database reference
+    # Get database immediately (critical dependency)
     db = context.bot_data.get("db")
     if db is None:
-        logger.error("Database not initialized in context.bot_data")
         await _reply_error(update, "Internal error: Database not initialized.")
         return
         
-    # Show persistent keyboard only the first time - moved down after active battle check
+    # Check for active battle early - this is a fast check to abort quickly
+    is_in_battle = False
+    try:
+        from game.battle_system import active_battles
+        is_in_battle = user_id_str in active_battles
+    except ImportError:
+        pass
+    
+    if is_in_battle:
+        await _reply_error(update, f"{update.effective_user.first_name or 'Player'} is currently battling !!")
+        return
+
+    # Show persistent keyboard in the background to not block the response
     if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
         context.user_data["persistent_keyboard_sent"] = True
-        keyboard = [["/explore", "/close"]]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-        
-        # Non-blocking, start in background
-        if update.message:
-            asyncio.create_task(update.message.reply_text("Opening keyboard...", reply_markup=reply_markup))
+        # Move this to a background task to not slow down main response
+        asyncio.create_task(_show_keyboard_background(update))
 
-    # Use projection to get only the needed fields for faster database access
-    player = await db.players.find_one(
-        {"user_id": user_id_str}, 
-        {
-            "team": 1, 
-            "unlocked_areas": 1, 
-            "location": 1,
-            "last_explore_time": 1,
-            "hcaptcha_verified": 1
-        }
-    )
-    
+    # Get player data (only once)
+    player = await db.get_player(user_id_str)
     if not player:
         if update.message:
             await update.message.reply_text("You need to create a profile first with /start")
         return
     
-    # --- SPAM PROTECTION ---
+    # --- SPAM PROTECTION (optimized) ---
     if "explore_spam_count" not in context.bot_data:
         context.bot_data["explore_spam_count"] = {}
-    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0)
-
-    # If not in battle, increment spam count
-    spam_count += 1
+    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
     context.bot_data["explore_spam_count"][user_id_str] = spam_count
 
-    # Warn at 15 explores
+    # Only check these conditions if the count hits specific thresholds
     if spam_count == 15:
         if update.message:
             await update.message.reply_text("⚠️ Warning: Don't Spam, you will be banned.")
-
-    # Ban at 20 explores
-    if spam_count >= 20:
-        # Schedule ban in background properly
-        async def ban_spammer_bg():
-            try:
-                await ban_spammer(user_id, update, context)
-            except Exception:
-                pass
-                
-        # Now create the task
-        asyncio.create_task(ban_spammer_bg())
+    elif spam_count >= 20:
+        # Move banning to background task to not slow down response
+        asyncio.create_task(_handle_spam_ban(user_id, update, context))
         return
 
+    # Block if verification is in progress - fast check
+    if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
+        return
+
+    # Record time and check inactivity in background
     now = time.time()
-    last_explore = player.get("last_explore_time")
+    # Handle verification in background if needed
+    player_verified = getattr(player, "hcaptcha_verified", False)
+    last_explore = getattr(player, "last_explore_time", None)
+    
+    # Always update last_explore_time in background
+    asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now}))
 
-    # Handle captcha checks properly
-    if "hcaptcha_prompted" in context.user_data or (last_explore and now - last_explore > 1500):
-        # Create a properly wrapped coroutine
-        async def check_captcha_bg():
-            try:
-                await handle_captcha_check(user_id_str, player, update, context, now)
-            except Exception:
-                pass
+    # Check inactivity and handle verification asynchronously
+    if last_explore and (now - last_explore) > 1500 and not player_verified:
+        asyncio.create_task(_handle_verification(update, context, user_id, now, db))
         
-        # Now create the task
-        asyncio.create_task(check_captcha_bg())
-    
-    # Update last explore time in background - create a proper coroutine first
-    async def update_last_explore():
-        try:
-            await db.players.update_one(
-                {"user_id": user_id_str},
-                {"$set": {"last_explore_time": now}}
-            )
-        except Exception:
-            pass
-    
-    # Now create the task with a proper coroutine
-    asyncio.create_task(update_last_explore())
+    # Reset verification flag if verified
+    if player_verified:
+        context.user_data["hcaptcha_prompted"] = False
+        asyncio.create_task(db.update_player(user_id_str, {"hcaptcha_verified": False}))
 
-    # Handle travel/decision points
-    location = player.get("location")
-    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-        # Create a properly wrapped coroutine
-        async def handle_decision_bg():
-            try:
-                await handle_decision_point(user_id, location, update, context)
-            except Exception:
-                pass
-                
-        # Now create the task
-        asyncio.create_task(handle_decision_bg())
-        return
+    # Tracking can happen in background
+    try:
+        from utils.monitor import track_player_action
+        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+    except Exception:
+        pass
 
-    # CAPTCHA trigger moved to a lower chance and run properly in background
-    if random.random() < 0.03:  # Reduced from 6% to 3%
-        # Create a properly wrapped coroutine
-        async def spawn_captcha_bg():
-            try:
-                await spawn_captcha_background(update, context, user_id)
-            except Exception:
-                pass
-                
-        # Now create the task
-        asyncio.create_task(spawn_captcha_bg())
-        return
-
-    # Get character data for titan encounter
-    if not player.get("team"):
-        await _reply_error(update, "You don't have any characters in your team!")
-        return
-        
-    player_character_name = player["team"][0]["character_name"]
-    
-    # Get character data - need to include all required fields
-    player_character = await db.characters.find_one(
-        {"user_id": user_id_str, "name": player_character_name}
-    )
-    
+    # Get player character data
+    player_character_name = player.team[0].character_name
+    player_character = await db.get_character(user_id_str, player_character_name)
     if not player_character:
         await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
         return
 
-    # Check gas - works with both dict-like objects and our SimpleCharacter
-    gas_value = player_character.get("gas", 0) if hasattr(player_character, "get") else getattr(player_character, "gas", 0)
-    if gas_value < 100:
-        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char {player_character_name} to refill gas.")
+    if player_character.gas < 100:
+        await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
         return
 
-    # Convert to Character object for consistency with the rest of the code
-    from database.models import Character
-    
-    # Make sure all required fields are present
-    if not all(field in player_character for field in ["user_id", "name", "character_type", "current_hp"]):
-        # This is a fallback in case the character data is incomplete
-        # Instead of creating a Character object, we'll use a simple class for minimal functionality
-        class SimpleCharacter:
-            def __init__(self, data):
-                # Copy all data fields to attributes
-                for key, value in data.items():
-                    setattr(self, key, value)
-                
-                # Ensure minimum required fields exist
-                self.level = data.get("level", 1)
-                self.gas = data.get("gas", 0)
-                self.name = data.get("name", player_character_name)
-                self.user_id = data.get("user_id", user_id_str)
-                self.character_type = data.get("character_type", "Unknown")
-                self.current_hp = data.get("current_hp", 100)
-                
-                # Add common methods that might be called
-                def get(self, key, default=None):
-                    return getattr(self, key, default)
-                
-                # Attach the method to the instance
-                self.get = types.MethodType(get, self)
+    # Handle travel/decision points
+    location = getattr(player, "location", None)
+    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+        directions = TRAVEL_MAP[location]
+        keyboard = [
+            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
+            for dir in directions.keys()
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Import types module for adding methods dynamically
-        import types
-        player_character = SimpleCharacter(player_character)
-    else:
-        # If all required fields are present, create a proper Character object
-        player_character = Character(**player_character)
-    
-    # Generate titan
-    titan = await get_pregenerated_titan(user_id_str, db, player_character, player.get("unlocked_areas", []))
+        # Handle decision point cleanup in background
+        asyncio.create_task(_handle_decision_point_cleanup(user_id_str, context))
+        
+        if update.message:
+            await update.message.reply_text(
+                f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        return
+
+    # Spawn CAPTCHA with lower probability (4% instead of 6%) for faster response
+    if random.random() < 0.04:
+        captcha_triggered = await spawn_captcha(update, context)
+        if captcha_triggered:
+            return
+
+    # Get titan - this is one of the critical operations
+    titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         return
-    
-    logger.info(f"Generated titan for {user_id_str}: {titan.name} (level {titan.level})")
 
-    # Store titan in database BEFORE showing the battle button
-    # This ensures the titan is available when the user clicks the battle button
-    try:
-        # Make sure database is initialized
-        if not db.titans:
-            await db.init_db()
-            
-        # Store the titan
-        await db.store_titan(user_id_str, titan)
-        
-        # Also store the titan in bot_data as a fallback
-        context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
-        
-        logger.info(f"Stored titan for user {user_id_str}: {titan.name} (level {titan.level})")
-    except Exception as e:
-        logger.error(f"Error storing titan: {str(e)}")
-        # Continue execution - we'll log the error but still try to show the titan
+    # Store titan in background to speed up response
+    titan_store_task = asyncio.create_task(db.store_titan(user_id_str, titan))
 
-    # Generate battle ID
-    battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"  # Using shorter UUID for speed
+    # Prepare battle UI immediately without waiting for DB storage
+    battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"  # Using shorter UUID for faster processing
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
-    
-    # Log battle ID for debugging
-    logger.info(f"Setting active_battle_id_{user_id} to {battle_id}")
 
-    # Create reply markup
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Get titan image faster with simplified check
-    titan_image_url = None
+    # Get titan image URL using optimized dictionary lookup
     titan_name_lower = titan.name.lower()
+    titan_image_url = None
     for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
-        if titan_type.lower() in titan_name_lower:
+        if titan_type in titan_name_lower:  # Keys are already lowercase
             titan_image_url = url
             break
 
-    # Generate reply text
     image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
     reply_text = (
         f"<code>-------------------------</code>\n"
@@ -539,7 +330,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<code>-------------------------</code>\n"
     )
 
-    # Send response immediately
+    # Send the message - critical for user response time
     sent_message = None
     try:
         if update.message:
@@ -547,7 +338,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=reply_text,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
+                disable_web_page_preview=False  # Consider setting to True for faster response
             )
         elif update.callback_query and update.callback_query.message:
             try:
@@ -555,7 +346,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=reply_text,
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
+                    disable_web_page_preview=False  # Consider setting to True for faster response
                 )
             except Exception:
                 sent_message = await update.callback_query.message.chat.send_message(
@@ -564,54 +355,90 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=False
                 )
-    except Exception as e:
+    except Exception:
         await _reply_error(update, "An error occurred while displaying the titan.")
         return
 
-    # Start all cleanup tasks in background - don't block the response
+    # Wait for titan storage to complete if it hasn't already
+    await titan_store_task
+    
+    # Move all cleanup and timeout tasks to background after message is sent
     if sent_message:
         key = f"titan_timeouts_{user_id}"
         if key not in context.bot_data:
             context.bot_data[key] = []
+            
+        # Create timeout task
         timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
         context.bot_data[key].append(timeout_task)
         
-        # Track player action if needed, but don't wait for it
+        # Log performance metrics in background
+        end_time = time.time()
+        response_time = end_time - start_time
+        asyncio.create_task(_log_performance(user_id_str, response_time))
+
+# Helper functions moved outside the main function for cleaner code
+async def _show_keyboard_background(update: Update):
+    keyboard = [["/explore", "/close"]]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    
+    send_keyboard = None
+    if update.message:
+        send_keyboard = update.message.reply_text
+    elif update.callback_query and update.callback_query.message:
+        send_keyboard = update.callback_query.message.reply_text
+        
+    if send_keyboard:
         try:
-            from utils.monitor import track_player_action
-            # Check if it's actually a coroutine function first
-            if asyncio.iscoroutinefunction(track_player_action):
-                # Create a wrapped coroutine to handle the tracking
-                async def track_exploration():
-                    try:
-                        await track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-                    except Exception:
-                        pass
-                
-                # Now create the task with the properly wrapped coroutine
-                asyncio.create_task(track_exploration())
-            else:
-                # If it's not a coroutine, just call it directly
-                try:
-                    track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-                except Exception:
-                    pass
+            await send_keyboard(
+                "Opening keyboard...",
+                reply_markup=reply_markup
+            )
         except Exception:
             pass
 
-# Helper functions to run tasks in background
+async def _handle_verification(update, context, user_id, now, db):
+    if not context.user_data.get("hcaptcha_prompted", False):
+        context.user_data["hcaptcha_prompted"] = True
+        timestamp = int(now)
+        verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+        try:
+            await update.message.reply_text(
+                "🔒 <b>Verification Required</b>\n\n"
+                "Complete hCaptcha to continue exploring\n",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
+                ]),
+                parse_mode=ParseMode.HTML,
+            )
+            await db.update_player(str(user_id), {"hcaptcha_start_time": timestamp})
+        except Exception:
+            pass
 
-async def ban_spammer(user_id, update, context):
-    """Handle banning a spammer in the background"""
+async def _handle_decision_point_cleanup(user_id_str, context):
     try:
-        db = context.bot_data.get("db")
-        user_id_str = str(user_id)
-        
-        # Reset spam counter
-        if "explore_spam_count" in context.bot_data:
-            context.bot_data["explore_spam_count"][user_id_str] = 0
+        from game.battle_system import active_battles
+        if user_id_str in active_battles:
+            active_battles.pop(user_id_str, None)
             
-        # Ban the user
+        # Also clear active_battle_id in bot_data if present
+        battle_id_key = f"active_battle_id_{user_id_str}"
+        if battle_id_key in context.bot_data:
+            context.bot_data.pop(battle_id_key, None)
+    except Exception:
+        pass
+    
+async def _handle_spam_ban(user_id, update, context):
+    """Handle banning for spam in the background"""
+    db = context.bot_data.get("db")
+    if not db:
+        return
+        
+    try:
         expiry = int(time.time()) + 24*3600
         reason = "Spamming explore without battle"
         await db.bans.update_one(
@@ -623,113 +450,28 @@ async def ban_spammer(user_id, update, context):
         # Notify user
         if update.message:
             await update.message.reply_text("You are banned for spamming explore without battle.")
-            
-        # Log the ban to admin group
-        BAN_LOG_CHAT_ID = -1002873117075
-        bot_username = "Bot"
-        try:
-            bot_username = (await context.bot.get_me()).username
-        except Exception:
-            pass
-            
+        
+        context.bot_data["explore_spam_count"][str(user_id)] = 0
+        
+        # Send ban log in background
+        bot_username = (await context.bot.get_me()).username or "Bot"
+        time_str = "24 hours"
         msg = (
             f"<b>#BanEvent</b>\n\n"
             f"<b>Target</b> : <a href=\"tg://user?id={user_id}\">{update.effective_user.first_name}</a>\n"
             f"<b>Target ID</b> : <code>{user_id}</code>\n"
             f"<b>By</b> : <a href=\"tg://user?id={context.bot.id}\">{bot_username}</a>\n"
             f"<b>Reason</b> : <code>Spamming explore without battle</code>\n"
-            f"<b>Time</b> : <code>24 hours</code>"
+            f"<b>Time</b> : <code>{time_str}</code>"
         )
+        BAN_LOG_CHAT_ID = -1002873117075
         await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
     except Exception:
         pass
-
-async def handle_captcha_check(user_id_str, player, update, context, now):
-    """Handle captcha verification in background"""
-    try:
-        if context.user_data.get("hcaptcha_prompted", False) and not player.get("hcaptcha_verified", False):
-            return
-            
-        # Check if inactive and needs verification
-        inactive = False
-        last_explore = player.get("last_explore_time")
-        if last_explore and (now - last_explore) > 1500:
-            inactive = True
-            
-        if inactive and not player.get("hcaptcha_verified", False):
-            if not context.user_data.get("hcaptcha_prompted", False):
-                context.user_data["hcaptcha_prompted"] = True
-                timestamp = int(now)
-                verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id_str}&ts={timestamp}"
-                
-                if update.message:
-                    await update.message.reply_text(
-                        "🔒 <b>Verification Required</b>\n\n"
-                        "Complete hCaptcha to continue exploring\n",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
-                        ]),
-                        parse_mode=ParseMode.HTML,
-                    )
-                
-                db = context.bot_data.get("db")
-                if db:
-                    await db.update_player(user_id_str, {"hcaptcha_start_time": timestamp})
         
-        # Reset verification flag if verified
-        elif player.get("hcaptcha_verified", False):
-            context.user_data["hcaptcha_prompted"] = False
-            db = context.bot_data.get("db")
-            if db:
-                await db.update_player(user_id_str, {"hcaptcha_verified": False})
-    except Exception:
-        pass
-
-async def handle_decision_point(user_id, location, update, context):
-    """Handle travel decision points in background"""
-    try:
-        directions = TRAVEL_MAP[location]
-        keyboard = [
-            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
-            for dir in directions.keys()
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Clear active battle if present
-        try:
-            from game.battle_system import active_battles
-            user_id_str = str(user_id)
-            if user_id_str in active_battles:
-                active_battles.pop(user_id_str, None)
-                
-            battle_id_key = f"active_battle_id_{user_id_str}"
-            if battle_id_key in context.bot_data:
-                context.bot_data.pop(battle_id_key, None)
-        except Exception:
-            pass
-            
-        # Send decision point message
-        if update.message:
-            await update.message.reply_text(
-                f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-    except Exception:
-        pass
-
-async def spawn_captcha_background(update, context, user_id):
-    """Handle captcha spawning in background"""
-    try:
-        captcha_triggered = await spawn_captcha(update, context)
-        if captcha_triggered:
-            try:
-                from utils.monitor import remove_player_activity
-                remove_player_activity(user_id)
-            except Exception:
-                pass
-    except Exception:
-        pass
+async def _log_performance(user_id_str, response_time):
+    """Log performance metrics for monitoring"""
+    logger.info(f"[PERFORMANCE] Explore command for user {user_id_str} took {response_time:.3f}s")
 
 
 async def cleanup_stale_explore_records(max_age_hours: int = 24):

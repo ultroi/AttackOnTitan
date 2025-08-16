@@ -20,16 +20,12 @@ async def initialize_database() -> AsyncIOMotorDatabase:
     async with _init_lock:
         if not _initialized:
             try:
-                # Initialize the connection with optimized options for faster response
+                # Initialize the connection with explicit options
                 client = motor.motor_asyncio.AsyncIOMotorClient(
                     MONGO_URI,
-                    maxPoolSize=25,  # Increased for more concurrent connections
-                    minPoolSize=5,   # Keep minimum connections open
-                    connectTimeoutMS=3000,  # Reduced timeout for faster failure
-                    serverSelectionTimeoutMS=3000,  # Reduced timeout for faster failure
-                    socketTimeoutMS=3000,  # Reduced socket timeout
-                    maxIdleTimeMS=60000,  # Keep connections alive longer
-                    waitQueueTimeoutMS=2000  # Fail faster on connection queue timeouts
+                    maxPoolSize=15, 
+                    connectTimeoutMS=5000, 
+                    serverSelectionTimeoutMS=5000
                 )
                 _db_instance = client[DB_NAME]
                 
