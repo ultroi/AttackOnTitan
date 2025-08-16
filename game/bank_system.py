@@ -220,6 +220,8 @@ class BankSystem:
                 crystal_balance=0,
                 last_tax_check=today
             )
+            # Save the central bank account
+            await self.db.save_bank_account(central_bank)
 
         # Check if tax has already been applied today
         if central_bank.last_tax_check and central_bank.last_tax_check.date() == today.date():
@@ -232,24 +234,39 @@ class BankSystem:
         # Track total tax collected for logging
         total_tax_collected = {"marks": 0, "valor": 0, "crystal": 0}
         players_taxed = 0
+        
+        import logging
+        logger = logging.getLogger("bank_system")
+        logger.info(f"Starting midnight tax collection for {len(all_players)} players")
 
         for player in all_players:
             tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
             tax_applied = False
+            
+            # Skip players without a user_id
+            if not player.user_id:
+                continue
 
             # Check each currency
             for currency in ["marks", "valor", "crystal"]:
-                player_balance = getattr(player, currency)
+                player_balance = getattr(player, currency, 0)
+                # Add logging to debug tax calculation
+                logger.info(f"Checking tax for player {player.user_id}, {currency}: {player_balance} (threshold: {TAX_THRESHOLDS[currency]})")
+                
                 if player_balance > TAX_THRESHOLDS[currency]:
                     # Calculate tax
                     tax_amount = int(player_balance * TAX_RATE)
                     
-                    # Deduct tax from player
-                    setattr(player, currency, player_balance - tax_amount)
+                    # Debug log
+                    logger.info(f"Tax calculated for {player.user_id}: {tax_amount} {currency}")
+                    
+                    # Deduct tax from player's INVENTORY (not bank account)
+                    new_balance = player_balance - tax_amount
+                    setattr(player, currency, new_balance)
                     
                     # Add tax to central bank
                     bank_balance_field = f"{currency}_balance"
-                    current_bank_balance = getattr(central_bank, bank_balance_field)
+                    current_bank_balance = getattr(central_bank, bank_balance_field, 0)
                     setattr(central_bank, bank_balance_field, current_bank_balance + tax_amount)
                     
                     tax_report["taxes"][currency] = tax_amount
@@ -257,7 +274,7 @@ class BankSystem:
                     
                     # Add user message for this currency
                     tax_report["messages"].append(
-                        f"💸 Tax Alert: `{tax_amount}` {currency} has been deducted from your account as tax."
+                        f"💸 Tax Alert: `{tax_amount}` {currency} has been deducted from your inventory as tax."
                     )
                     tax_applied = True
 
@@ -273,22 +290,43 @@ class BankSystem:
                     "taxes": tax_report["taxes"]
                 }
                 
-                player.tax_history = player.tax_history[-9:] + [tax_record]  # Keep last 10 entries
-                await self.db.save_player(player)
+                # Keep last 10 entries
+                if isinstance(player.tax_history, list):
+                    player.tax_history = player.tax_history[-9:] + [tax_record]
+                else:
+                    player.tax_history = [tax_record]
+                    
+                # Save player to database with updated balances and history
+                try:
+                    await self.db.save_player(player)
+                    logger.info(f"Saved player {player.user_id} after tax collection")
+                except Exception as e:
+                    logger.error(f"Error saving player {player.user_id}: {e}")
+                
                 tax_reports.append(tax_report)
 
         # Add tax collection record to central bank
         if not hasattr(central_bank, 'tax_history'):
             central_bank.tax_history = []
+        
+        # Make sure tax_history is a list    
+        if not isinstance(central_bank.tax_history, list):
+            central_bank.tax_history = []
             
-        central_bank.tax_history = central_bank.tax_history[-9:] + [{
+        tax_record = {
             "date": today.isoformat(),
             "total_collected": total_tax_collected,
             "players_taxed": players_taxed
-        }]
+        }
+        
+        central_bank.tax_history = central_bank.tax_history[-9:] + [tax_record]
         
         # Save central bank changes
-        await self.db.save_bank_account(central_bank)
+        try:
+            await self.db.save_bank_account(central_bank)
+            logger.info(f"Saved central bank after tax collection. Total collected: {total_tax_collected}")
+        except Exception as e:
+            logger.error(f"Error saving central bank: {e}")
         
-        print(f"Tax applied to {players_taxed} players. Total collected: {total_tax_collected}")
+        logger.info(f"Tax applied to {players_taxed} players. Total collected: {total_tax_collected}")
         return tax_reports
