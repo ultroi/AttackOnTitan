@@ -13,6 +13,7 @@ import time
 import random
 import logging
 import asyncio
+import types
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -96,8 +97,8 @@ async def get_pregenerated_titan(user_id_str, db, player_character, unlocked_are
     from copy import deepcopy
     from datetime import datetime, timezone
     
-    # Determine level and difficulty
-    player_level = player_character.level
+    # Determine level and difficulty - safely access level with fallback
+    player_level = getattr(player_character, "level", 1)
     if player_level < 8:
         difficulty = "Easy"
     elif player_level < 15:
@@ -163,7 +164,7 @@ async def refill_titan_pool(user_id_str, db, player_character, unlocked_areas):
     from datetime import datetime, timezone
     
     pool = PREGENERATED_TITANS.get(user_id_str, [])
-    player_level = player_character.level
+    player_level = getattr(player_character, "level", 1)
     
     # Generate all titans at once for efficiency
     needed_titans = PREGEN_POOL_SIZE - len(pool)
@@ -434,23 +435,55 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     player_character_name = player["team"][0]["character_name"]
     
-    # Fast character check with minimal fields
+    # Get character data - need to include all required fields
     player_character = await db.characters.find_one(
-        {"user_id": user_id_str, "name": player_character_name},
-        {"gas": 1, "level": 1}
+        {"user_id": user_id_str, "name": player_character_name}
     )
     
     if not player_character:
         await _reply_error(update, f"Error: Your character {player_character_name} was not found.")
         return
 
-    if player_character["gas"] < 100:
+    # Check gas - works with both dict-like objects and our SimpleCharacter
+    gas_value = player_character.get("gas", 0) if hasattr(player_character, "get") else getattr(player_character, "gas", 0)
+    if gas_value < 100:
         await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char {player_character_name} to refill gas.")
         return
 
     # Convert to Character object for consistency with the rest of the code
     from database.models import Character
-    player_character = Character(**player_character)
+    
+    # Make sure all required fields are present
+    if not all(field in player_character for field in ["user_id", "name", "character_type", "current_hp"]):
+        # This is a fallback in case the character data is incomplete
+        # Instead of creating a Character object, we'll use a simple class for minimal functionality
+        class SimpleCharacter:
+            def __init__(self, data):
+                # Copy all data fields to attributes
+                for key, value in data.items():
+                    setattr(self, key, value)
+                
+                # Ensure minimum required fields exist
+                self.level = data.get("level", 1)
+                self.gas = data.get("gas", 0)
+                self.name = data.get("name", player_character_name)
+                self.user_id = data.get("user_id", user_id_str)
+                self.character_type = data.get("character_type", "Unknown")
+                self.current_hp = data.get("current_hp", 100)
+                
+                # Add common methods that might be called
+                def get(self, key, default=None):
+                    return getattr(self, key, default)
+                
+                # Attach the method to the instance
+                self.get = types.MethodType(get, self)
+        
+        # Import types module for adding methods dynamically
+        import types
+        player_character = SimpleCharacter(player_character)
+    else:
+        # If all required fields are present, create a proper Character object
+        player_character = Character(**player_character)
     
     # Generate titan
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.get("unlocked_areas", []))
