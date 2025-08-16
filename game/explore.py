@@ -361,32 +361,70 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Ban at 20 explores
     if spam_count >= 20:
-        # Schedule ban in background
-        asyncio.create_task(ban_spammer(user_id, update, context))
+        # Schedule ban in background properly
+        async def ban_spammer_bg():
+            try:
+                await ban_spammer(user_id, update, context)
+            except Exception:
+                pass
+                
+        # Now create the task
+        asyncio.create_task(ban_spammer_bg())
         return
 
     now = time.time()
     last_explore = player.get("last_explore_time")
 
-    # Handle captcha checks in background
+    # Handle captcha checks properly
     if "hcaptcha_prompted" in context.user_data or (last_explore and now - last_explore > 1500):
-        asyncio.create_task(handle_captcha_check(user_id_str, player, update, context, now))
+        # Create a properly wrapped coroutine
+        async def check_captcha_bg():
+            try:
+                await handle_captcha_check(user_id_str, player, update, context, now)
+            except Exception:
+                pass
+        
+        # Now create the task
+        asyncio.create_task(check_captcha_bg())
     
-    # Update last explore time in background - don't wait for it
-    asyncio.create_task(db.players.update_one(
-        {"user_id": user_id_str},
-        {"$set": {"last_explore_time": now}}
-    ))
+    # Update last explore time in background - create a proper coroutine first
+    async def update_last_explore():
+        try:
+            await db.players.update_one(
+                {"user_id": user_id_str},
+                {"$set": {"last_explore_time": now}}
+            )
+        except Exception:
+            pass
+    
+    # Now create the task with a proper coroutine
+    asyncio.create_task(update_last_explore())
 
     # Handle travel/decision points
     location = player.get("location")
     if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-        asyncio.create_task(handle_decision_point(user_id, location, update, context))
+        # Create a properly wrapped coroutine
+        async def handle_decision_bg():
+            try:
+                await handle_decision_point(user_id, location, update, context)
+            except Exception:
+                pass
+                
+        # Now create the task
+        asyncio.create_task(handle_decision_bg())
         return
 
-    # CAPTCHA trigger moved to a lower chance and run in background
+    # CAPTCHA trigger moved to a lower chance and run properly in background
     if random.random() < 0.03:  # Reduced from 6% to 3%
-        asyncio.create_task(spawn_captcha_background(update, context, user_id))
+        # Create a properly wrapped coroutine
+        async def spawn_captcha_bg():
+            try:
+                await spawn_captcha_background(update, context, user_id)
+            except Exception:
+                pass
+                
+        # Now create the task
+        asyncio.create_task(spawn_captcha_bg())
         return
 
     # Get character data for titan encounter
@@ -420,8 +458,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "No titans found in your level range.")
         return
 
-    # Store titan in database in background - don't wait for it
-    asyncio.create_task(db.store_titan(user_id_str, titan))
+    # Store titan in database in background
+    async def store_titan_bg():
+        try:
+            await db.store_titan(user_id_str, titan)
+        except Exception:
+            pass
+    
+    # Now create the task with a proper coroutine
+    asyncio.create_task(store_titan_bg())
 
     # Generate battle ID
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"  # Using shorter UUID for speed
@@ -485,19 +530,26 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
         context.bot_data[key].append(timeout_task)
         
-        # Track player action in background only if needed
+        # Track player action if needed, but don't wait for it
         try:
             from utils.monitor import track_player_action
-            
-            # Create a wrapped coroutine to handle the tracking
-            async def track_exploration():
+            # Check if it's actually a coroutine function first
+            if asyncio.iscoroutinefunction(track_player_action):
+                # Create a wrapped coroutine to handle the tracking
+                async def track_exploration():
+                    try:
+                        await track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+                    except Exception:
+                        pass
+                
+                # Now create the task with the properly wrapped coroutine
+                asyncio.create_task(track_exploration())
+            else:
+                # If it's not a coroutine, just call it directly
                 try:
-                    await track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+                    track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
                 except Exception:
                     pass
-                    
-            # Now create the task with the properly wrapped coroutine
-            asyncio.create_task(track_exploration())
         except Exception:
             pass
 
