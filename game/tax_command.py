@@ -9,6 +9,21 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+from datetime import datetime, timedelta
+import logging
+import asyncio
+
+logger = logging.getLogger(__name__)
+
+def get_time_until_midnight():
+    """Calculate time remaining until midnight"""
+    now = datetime.now()
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    time_left = midnight - now
+    hours = int(time_left.total_seconds() // 3600)
+    minutes = int((time_left.total_seconds() % 3600) // 60)
+    return hours, minutes
+
 @maintenance_protected
 @ban_protected
 async def tax_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -26,9 +41,13 @@ async def tax_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Check tax status
     tax_info = await bank_system.check_player_tax_status(player)
     
+    # Calculate time until midnight
+    hours, minutes = get_time_until_midnight()
+    
     # Create response message
     if tax_info["would_be_taxed"]:
         msg = "💰 **Tax Status**\n\n"
+        msg += f"Time until tax collection: {hours}h:{minutes}m\n\n"
         msg += "You would be taxed at midnight for the following currencies:\n\n"
         
         for currency, amount in tax_info["taxes"].items():
@@ -36,6 +55,7 @@ async def tax_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             msg += f"  *Threshold: {tax_info['thresholds'][currency]}*\n\n"
     else:
         msg = "💰 **Tax Status**\n\n"
+        msg += f"Time until tax collection: {hours}h:{minutes}m\n\n"
         msg += "You are below all tax thresholds and would not be taxed at midnight.\n\n"
         
         for currency in ["marks", "valor", "crystal"]:
@@ -52,9 +72,11 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
     user_id = str(update.effective_user.id)
     
     if not context.args or context.args[0].lower() not in ["confirm", "simulate"]:
+        hours, minutes = get_time_until_midnight()
         await update.message.reply_text(
             "⚠️ This will force tax collection for all eligible players.\n"
-            "Use `/forcetax confirm` to execute or `/forcetax simulate` to see what would happen without taking action."
+            "Use `/forcetax confirm` to execute or `/forcetax simulate` to see what would happen without taking action.\n\n"
+            f"Time until natural tax collection: {hours}h:{minutes}m"
         )
         return
     
@@ -81,8 +103,10 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
                     for currency, amount in tax_info["taxes"].items():
                         total_tax[currency] += amount
             
+            hours, minutes = get_time_until_midnight()
             await update.message.reply_text(
                 f"💰 **Tax Simulation Results**\n\n"
+                f"Time until natural tax collection: {hours}h:{minutes}m\n\n"
                 f"• Players that would be taxed: {players_to_tax}\n"
                 f"• Total taxes that would be collected:\n"
                 f"  - Marks: {total_tax['marks']}\n"
