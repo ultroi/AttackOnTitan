@@ -331,7 +331,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "text": reply_text,
         "reply_markup": reply_markup,
         "parse_mode": ParseMode.HTML,
-        "disable_web_page_preview": True 
+        "disable_web_page_preview": False
     }
 
     # Send the message with proper error handling and logging
