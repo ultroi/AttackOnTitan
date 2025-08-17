@@ -783,7 +783,8 @@ class Database:
     async def get_group(self, group_id: int) -> Optional[Dict]:
         """Get group information by ID"""
         try:
-            if not self.groups:
+            if self.groups is None:
+                logger.warning("Groups collection is None in get_group")
                 return None
             group = await self.groups.find_one({"group_id": group_id})
             return group
@@ -794,7 +795,8 @@ class Database:
     async def update_group(self, group_id: int, update_data: Dict) -> bool:
         """Update group information"""
         try:
-            if not self.groups:
+            if self.groups is None:
+                logger.warning("Groups collection is None in update_group")
                 return False
             update_data["updated_at"] = datetime.now(timezone.utc)
             result = await self.groups.update_one(
@@ -810,7 +812,8 @@ class Database:
     async def get_all_groups(self, filter_data: Dict = None) -> List[Dict]:
         """Get all groups, optionally filtered"""
         try:
-            if not self.groups:
+            if self.groups is None:
+                logger.warning("Groups collection is None in get_all_groups")
                 return []
             cursor = self.groups.find(filter_data or {})
             groups = []
@@ -824,7 +827,8 @@ class Database:
     async def delete_group(self, group_id: int) -> bool:
         """Delete a group by ID"""
         try:
-            if not self.groups:
+            if self.groups is None:
+                logger.warning("Groups collection is None in delete_group")
                 return False
             result = await self.groups.delete_one({"group_id": group_id})
             return result.deleted_count > 0

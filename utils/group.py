@@ -133,6 +133,11 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning("Groups collection not initialized, reinitializing database")
             await db.init_db()  # Make sure to initialize the database again
             
+        # Double-check groups collection after initialization
+        if db.groups is None:
+            logger.error("Groups collection still None after reinitialization, cannot update group")
+            return
+            
         # Use the database function to update the group
         if await db.update_group(group_id, group_data):
             logger.info(f"Group {action} in DB: {group_id} - {group_title}")

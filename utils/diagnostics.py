@@ -39,6 +39,14 @@ async def diagnostic_db_command(update: Update, context: ContextTypes.DEFAULT_TY
             "groups": db.groups is not None
         }
         
+        # Create a separate dict for database connection details
+        db_details = {}
+        try:
+            db_details["db_name"] = db.db.name if db.db else "None"
+            db_details["available_collections"] = await db.db.list_collection_names() if db.db else []
+        except Exception as e:
+            db_details["error"] = str(e)
+        
         # Check recent group updates (last 24 hours)
         yesterday = datetime.now(timezone.utc) - timedelta(days=1)
         recent_groups = []
@@ -57,6 +65,7 @@ async def diagnostic_db_command(update: Update, context: ContextTypes.DEFAULT_TY
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "connection_status": conn_status,
             "collections_initialized": collections_status,
+            "database_details": db_details,
             "recent_group_updates": len(recent_groups),
             "recent_groups": recent_groups
         }
