@@ -146,7 +146,8 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
 async def reset_explore_timer(user_id, db):
     """Reset the explore_start_time for a user (for inactivity/hCaptcha logic)."""
     await db.update_player(user_id, {"explore_start_time": None})
-    pass
+    logger.info(f"Reset explore timer for user {user_id}")
+    return True
 
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -235,33 +236,50 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = time.time()
     player_verified = getattr(player, "hcaptcha_verified", False)
     last_explore = getattr(player, "last_explore_time", None)
-    
+    explore_start_time = getattr(player, "explore_start_time", None)
+
     # Always reset the prompted flag if the player is verified in database
     if player_verified:
         context.user_data["hcaptcha_prompted"] = False
         logger.info(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
-    
+
     # Check if verification is still being requested after checking database
     if context.user_data.get("hcaptcha_prompted", False) and not player_verified:
         await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
         return
-    
-    # Use the new non-blocking update pattern for last_explore_time
-    # Since we're using the new fire-and-forget pattern, we don't need to await this
-    db.update_player(user_id_str, {"last_explore_time": now})
 
-    # Check inactivity and handle verification
-    if last_explore and (now - last_explore) > 1500:
+    # Non-blocking: Set or update explore start time for the 25-minute inactivity check
+    if not explore_start_time:
+        # First explore or after a reset - set the start time (non-blocking)
+        asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
+    else:
+        # Check if 25 minutes (1500 seconds) have passed since last explore session started
+        if (now - explore_start_time) > 1500:  # 25 minutes = 1500 seconds
+            # Reset the explore timer after showing hCaptcha (non-blocking)
+            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": None}))
+            # Only require verification if not recently verified
+            last_verified_time = getattr(player, "last_verified", 0)
+            if not last_verified_time or (now - last_verified_time) > 1800: 
+                # Handle verification and return without spawning titan
+                if await _handle_verification(update, context, user_id, now, db):
+                    return  # Only return if verification was actually prompted
+        else:
+            # User explored within 25 minutes - just update last explore time (non-blocking)
+            # This resets the 25-minute timer by updating explore_start_time
+            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
+
+    # Check inactivity and handle verification (for long term inactivity)
+    if last_explore and (now - last_explore) > 1800:  # 30 minutes inactivity check
         # Only require verification if not recently verified
         last_verified_time = getattr(player, "last_verified", 0)
         if not last_verified_time or (now - last_verified_time) > 1800: 
             # Handle verification and return without spawning titan
             if await _handle_verification(update, context, user_id, now, db):
                 return  # Only return if verification was actually prompted
-        
+
     # Reset verification flag but maintain recent verification record
     if player_verified:
-        # Keep last_verified, but reset hcaptcha_verified flag for next session
+        # Keep last_verified, but reset hcaptcha_verified flag for next session (non-blocking)
         asyncio.create_task(db.update_player(user_id_str, {
             "hcaptcha_verified": False,  # Reset for next session
             "hcaptcha_start_time": None  # Clear start time
@@ -506,13 +524,14 @@ async def _handle_verification(update, context, user_id, now, db):
                 parse_mode=ParseMode.HTML,
             )
             
-            # Update player record with verification start time
+            # Update player record with verification start time and reset explore timer
             await db.update_player(user_id_str, {
                 "hcaptcha_start_time": timestamp,
-                "hcaptcha_verified": False  # Explicitly set to false
+                "hcaptcha_verified": False,  # Explicitly set to false
+                "explore_start_time": None   # Reset explore timer when verification is required
             })
             
-            logger.info(f"Sent verification request to player {user_id}")
+            logger.info(f"Sent verification request to player {user_id} and reset explore timer")
         except Exception as e:
             logger.error(f"Failed to send verification message: {e}")
             # If we fail to send the message, don't leave the user stuck in verification limbo
@@ -605,13 +624,15 @@ async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_T
             context.user_data["hcaptcha_prompted"] = False
             
         # Reset verification in database
+        current_time = time.time()
         await db.update_player(user_id, {
             "hcaptcha_verified": False,
             "hcaptcha_start_time": None,
-            "explore_start_time": None
+            "explore_start_time": current_time,  # Set current time to reset the 25-minute timer
+            "last_explore_time": current_time    # Update last explore time too
         })
         
-        logger.info(f"Reset verification state for user {user_id}")
+        logger.info(f"Reset verification state for user {user_id} and set explore timer")
         return True
     except Exception as e:
         logger.error(f"Failed to reset verification state: {e}")
