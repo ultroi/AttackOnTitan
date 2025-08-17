@@ -1,4 +1,4 @@
-from AttackOnTitan.utils.mod_utils import mod_only
+from utils.mod_utils import mod_only
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -9,7 +9,6 @@ from game.captcha import spawn_captcha
 from utils.ban_utils import ban_protected
 from datetime import datetime, timezone
 from utils.maintenance import maintenance_protected
-from utils.mod_utils import mod_only
 from typing import Dict
 import time
 import random
