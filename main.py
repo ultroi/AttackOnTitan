@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler
 from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
@@ -46,6 +46,7 @@ from game.profile_system import (
 )
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from utils.fastapi_dashboard import include_dashboard_route
+from utils.group import group_update_handler
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command
 from game.explore import explore, close_keyboard, reset_verify
@@ -684,6 +685,9 @@ def register_handlers(app_instance):
 
     # Shop and purchases
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+
+    # Group membership handler
+    app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=["my_chat_member", "chat_member"]))
 
     # Generic button handler (should be last)
     app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))

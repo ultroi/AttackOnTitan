@@ -254,7 +254,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
     else:
         # Check if 25 minutes (1500 seconds) have passed since last explore session started
-        if (now - explore_start_time) > 1500:  # 25 minutes = 1500 seconds
+        if (now - explore_start_time) > 1500: 
             # Reset the explore timer after showing hCaptcha (non-blocking)
             asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": None}))
             # Only require verification if not recently verified

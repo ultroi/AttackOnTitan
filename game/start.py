@@ -1,3 +1,4 @@
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -535,6 +536,16 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         caption=welcome_text,
                         parse_mode=ParseMode.HTML
                     )
+                # After sending the welcome message, send a new message inviting to join the main group chat
+                try:
+                    await context.bot.send_message(
+                        chat_id=query.message.chat.id,
+                        text="<b>Your journey has just begun!\n\nJoin our main group chat for helpful tips, latest updates, and a vibrant community experience!\n\n👉 <a href='https://t.me/AOTMainChat'>AOT Main Chat</a></b>",
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=False
+                    )
+                except Exception as group_msg_err:
+                    logger.error(f"Failed to send main group chat invite: {group_msg_err}")
             except Exception as edit_err:
                 logger.error(f"Error editing welcome message: {edit_err}")
             # Send log to channel for new user

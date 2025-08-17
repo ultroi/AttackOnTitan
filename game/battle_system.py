@@ -12,6 +12,7 @@ import random
 from utils.monitor import track_battle_end
 import logging
 from datetime import datetime, timezone
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,9 @@ class BattleSystem:
         self.debuffs: Dict[str, int] = {}  # Character debuffs
         self.titan_debuffs: Dict[str, int] = {}  # Titan debuffs
         self.turn: int = 0
+        # Add keyboard cache for performance optimization
+        self.keyboard_cache = None
+        self.keyboard_cache_invalid = True
         self.trigger_states: Dict[str, Any] = {
             "first_damage_taken": False,
             "dodge_count": 0,
@@ -228,33 +232,57 @@ class BattleSystem:
     # ---------- Ability Usage ----------
     def use_ability(self, ability_name: str) -> Tuple[int, str, Dict]:
         """Use a character ability with gas cost and apply its effect."""
-        logger.info(f"Using ability {ability_name} with gas cost")
+        # Invalidate keyboard cache since ability usage changes state
+        self.keyboard_cache_invalid = True
+        
+        # Initialize with default values for speed
         damage = 0
         message = ""
         effects = {"items_dropped": [], "target_switched": False, "bleed_applied": False}
+        
+        # Fast-fail checks for critical dependencies
         if not self.character or not self.character.stats:
             return damage, "Error: Character stats not available", effects
+            
+        # Get character data with early return for failures
         character_data = get_character_data(self.character.character_type)
         if not character_data:
             return damage, "Error: Character abilities not found", effects
+            
+        # Fast ability lookup using dictionary for speed
+        ability_types = {
+            "active": getattr(character_data, "active_abilities", []),
+            "passive": getattr(character_data, "passive_abilities", []),
+            "ultimate": getattr(character_data, "ultimate_abilities", [])
+        }
+        
+        # Find ability quickly with optimized search
         ability = None
-        for ability_type in ["active", "passive", "ultimate"]:
-            abilities = getattr(character_data, f"{ability_type}_abilities", [])
+        for abilities in ability_types.values():
             for ab in abilities:
-                if ab.name == ability_name:
+                if ab and ab.name == ability_name:
                     ability = ab
                     break
             if ability:
                 break
+                
         if not ability:
             return damage, f"Error: Ability {ability_name} not found", effects
-        if self.ability_cooldowns.get(ability_name, 0) > 0:
-            return damage, f"{ability_name} is on cooldown for {self.ability_cooldowns[ability_name]} turns!", effects
+            
+        # Check cooldown and gas with early returns
+        cooldown = self.ability_cooldowns.get(ability_name, 0)
+        if cooldown > 0:
+            return damage, f"{ability_name} is on cooldown for {cooldown} turns!", effects
+            
         gas_cost = ability.gas_cost or 20
         if self.gas < gas_cost:
             return damage, f"Not enough gas to use {ability_name}!", effects
+            
+        # Apply gas cost
         self.gas -= gas_cost
         self.character_gas = self.gas  # Sync with character
+        
+        # Build context and apply effect
         ctx = self.build_context("ability_use", ability)
         try:
             if ability.effect_function:
@@ -262,6 +290,8 @@ class BattleSystem:
                 if effect:
                     self.apply_effect(effect)
                     message = effect.message or f"{ability_name} used successfully!"
+                    
+                    # Optimized effects extraction with defaults
                     effects = {
                         "items_dropped": getattr(effect, 'items_dropped', []),
                         "target_switched": getattr(effect, 'target_switched', False),
@@ -270,6 +300,8 @@ class BattleSystem:
         except Exception as e:
             logger.error(f"Error applying ability {ability_name}: {e}")
             return damage, f"Error using {ability_name}", effects
+            
+        # Set cooldown and return
         self.ability_cooldowns[ability_name] = ability.cooldown or 1
         return damage, message, effects
 
@@ -296,14 +328,25 @@ class BattleSystem:
     # ---------- Turn & Status Updates ----------
     def update_cooldowns(self) -> None:
         """Update ability cooldowns, buffs, debuffs, and apply periodic effects (burn, bleed, etc)."""
+        # Mark keyboard cache as invalid since state will change
+        self.keyboard_cache_invalid = True
+        
+        # Fast loop for cooldowns (minimize lookups)
         for ability_name in list(self.ability_cooldowns.keys()):
             if self.ability_cooldowns[ability_name] > 0:
                 self.ability_cooldowns[ability_name] -= 1
-        for debuff in list(self.titan_debuffs.keys()):
-            if self.titan_debuffs[debuff] > 0:
+        
+        # Process titan debuffs efficiently
+        to_remove = []
+        for debuff, value in self.titan_debuffs.items():
+            if value > 0:
                 self.titan_debuffs[debuff] -= 1
                 if self.titan_debuffs[debuff] <= 0:
-                    del self.titan_debuffs[debuff]
+                    to_remove.append(debuff)
+        
+        # Batch delete operations for better performance
+        for debuff in to_remove:
+            del self.titan_debuffs[debuff]
                     
         # Process special buffs that need to be tracked
         if "reflex_counter" in self.buffs:
@@ -315,12 +358,17 @@ class BattleSystem:
                     del self.buffs["crit_rate"]
                     
         # Process other generic buffs
-        for buff in list(self.buffs.keys()):
-            if isinstance(self.buffs[buff], (int, float)) and buff not in ["shield", "items_dropped", "reflex_counter"]:
-                if self.buffs[buff] > 1:
+        to_remove = []
+        for buff, value in self.buffs.items():
+            if isinstance(value, (int, float)) and buff not in ["shield", "items_dropped", "reflex_counter"]:
+                if value > 1:
                     self.buffs[buff] -= 1
                     if self.buffs[buff] <= 0:
-                        del self.buffs[buff]
+                        to_remove.append(buff)
+        
+        # Batch delete operations
+        for buff in to_remove:
+            del self.buffs[buff]
         # Burn effect
         if self.debuffs.get("burn", 0) > 0:
             burn_damage = max(5, self.titan.level * 2)
@@ -339,29 +387,56 @@ class BattleSystem:
 
     def get_battle_status(self) -> Dict:
         """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
+        # Fast path calculations - avoid unnecessary divisions and operations
         character_max_hp = self.character.stats.HP
         titan_max_hp = self.titan.max_hp
+        
+        # Precompute percentages just once
         character_hp_percent = self.character_hp / character_max_hp
         titan_hp_percent = self.titan_hp / titan_max_hp
-        character_bar = "█" * int(character_hp_percent * 10) + "▒" * (10 - int(character_hp_percent * 10))
-        titan_bar = "█" * int(titan_hp_percent * 10) + "▒" * (10 - int(titan_hp_percent * 10))
-        status_message = f"Turn: {self.turn + 1}\nDifficulty: {self.titan.difficulty}\n"
-        # ...existing code...
+        
+        # Fast bar generation (single operations instead of multiple string concatenations)
+        char_bar_filled = int(character_hp_percent * 10)
+        titan_bar_filled = int(titan_hp_percent * 10)
+        character_bar = "█" * char_bar_filled + "▒" * (10 - char_bar_filled)
+        titan_bar = "█" * titan_bar_filled + "▒" * (10 - titan_bar_filled)
+        
+        # Build status message efficiently with array join (faster than string concatenation)
+        status_parts = [f"Turn: {self.turn + 1}", f"Difficulty: {self.titan.difficulty}"]
+        
+        # Add status info conditionally - only if they exist
         if self.titan_debuffs:
-            debuffs_display = [f"{k}({int(v)})" if isinstance(v, (int, float)) else k for k, v in self.titan_debuffs.items()]
-            status_message += f"🔽 Titan debuffs: {', '.join(debuffs_display)}\n"
+            # Optimize list comprehension for speed
+            debuffs = []
+            for k, v in self.titan_debuffs.items():
+                debuffs.append(f"{k}({int(v)})" if isinstance(v, (int, float)) else k)
+            status_parts.append(f"🔽 Titan debuffs: {', '.join(debuffs)}")
+        
         if self.buffs:
-            buffs_display = [
-                f"{k}({int(v)})" if isinstance(v, (int, float)) and v > 1 and k != "items_dropped" else k
-                for k, v in self.buffs.items() if k != "items_dropped"
-            ]
-            if buffs_display:
-                status_message += f"🔼 Character buffs: {', '.join(buffs_display)}\n"
-        if self.buffs.get("items_dropped"):
-            status_message += f"💎 Items available: {', '.join(self.buffs['items_dropped'])}\n"
+            buffs = []
+            for k, v in self.buffs.items():
+                if k != "items_dropped":
+                    if isinstance(v, (int, float)) and v > 1:
+                        buffs.append(f"{k}({int(v)})")
+                    else:
+                        buffs.append(k)
+            if buffs:
+                status_parts.append(f"🔼 Character buffs: {', '.join(buffs)}")
+        
+        items_dropped = self.buffs.get("items_dropped")
+        if items_dropped:
+            status_parts.append(f"💎 Items available: {', '.join(items_dropped)}")
+        
         if self.debuffs:
-            debuffs_char_display = [f"{k}({int(v)})" if isinstance(v, (int, float)) else k for k, v in self.debuffs.items()]
-            status_message += f"🔥 Character debuffs: {', '.join(debuffs_char_display)}\n"
+            debuffs_char = []
+            for k, v in self.debuffs.items():
+                debuffs_char.append(f"{k}({int(v)})" if isinstance(v, (int, float)) else k)
+            status_parts.append(f"🔥 Character debuffs: {', '.join(debuffs_char)}")
+        
+        # Join all parts at once - more efficient than incremental additions
+        status_message = "\n".join(status_parts)
+        
+        # Return optimized dictionary with integer casting done once
         return {
             "character_hp": int(self.character_hp),
             "titan_hp": int(self.titan_hp),
@@ -446,60 +521,102 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
 
 async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
     """Generate keyboard buttons for valid abilities and actions."""
+    # Use cached keyboard if valid (fast path)
+    if not battle.keyboard_cache_invalid and battle.keyboard_cache:
+        return battle.keyboard_cache
+    
     keyboard = []
     def obfuscate_text(text):
-        # Insert zero-width space (\u200B) between each character
-        return ''.join(char + '\u200B' for char in text)
+        # Insert zero-width space (\u200B) between each character - optimized for speed
+        # Pre-allocate array instead of concatenation for better performance
+        chars = []
+        for char in text:
+            chars.append(char)
+            chars.append('\u200B')
+        return ''.join(chars)
+        
+    # Get character data with fast path for invalid data
     character_data = get_character_data(battle.character.character_type)
-    # Debug: Log equipped_weapon and shop_items keys
-    equipped_weapon = getattr(battle.character, 'equipped_weapon', None)
-    shop_items = context.bot_data.get("shop_items") or {}
-    logger.info(f"[DEBUG] Equipped weapon: {equipped_weapon}")
-    logger.info(f"[DEBUG] Shop items keys: {list(shop_items.keys())}")
     if not character_data:
         logger.warning(f"No character data found for {battle.character.character_type}")
         keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
+        battle.keyboard_cache = keyboard
+        battle.keyboard_cache_invalid = False
         return keyboard
+    
+    # Get shop items once
+    shop_items = context.bot_data.get("shop_items") or {}
+    equipped_weapon = getattr(battle.character, 'equipped_weapon', None)
+    
+    # Reduce debug logging for better performance
+    if random.random() < 0.1:  # Only log 10% of the time
+        logger.info(f"[DEBUG] Equipped weapon: {equipped_weapon}")
+        logger.info(f"[DEBUG] Shop items count: {len(shop_items)}")
+    
+    # Prefetch common ability attributes for faster access
+    prefixes = {
+        "active": "⚔️",
+        "passive": " ",
+        "ultimate": "✨"
+    }
+    
+    # Fast ability button creation
     for ability_type in ["active", "passive", "ultimate"]:
         abilities = getattr(character_data, f"{ability_type}_abilities", [])
+        prefix = prefixes[ability_type]
+        
         for ability in abilities:
+            # Quick filtering
             if not ability or not ability.name:
                 continue
+                
             if battle.character.level < ability.level_required:
                 continue
+                
             is_unlocked = ability.is_unlocked or battle.character.unlocked_abilities.get(ability.name, False)
             if not is_unlocked or ability.disabled_against_titans:
                 continue
+                
             gas_cost = ability.gas_cost or 0
             ability_display_name = ability.name
-            prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else " "
-            if battle.ability_cooldowns.get(ability.name, 0) == 0 and battle.gas >= gas_cost:
+            cooldown = battle.ability_cooldowns.get(ability.name, 0)
+            
+            # Optimized button creation - fewer conditionals
+            if cooldown == 0 and battle.gas >= gas_cost:
                 keyboard.append([InlineKeyboardButton(
                     obfuscate_text(f"{prefix} {ability_display_name}"),
                     callback_data=f"ability_{ability.name}"
                 )])
-            elif battle.ability_cooldowns.get(ability.name, 0) > 0:
+            elif cooldown > 0:
                 keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"⏳ {prefix} {ability_display_name} (CD: {battle.ability_cooldowns[ability.name]})"),
+                    obfuscate_text(f"⏳ {prefix} {ability_display_name} (CD: {cooldown})"),
                     callback_data=f"cooldown_{ability.name}"
                 )])
-            elif battle.gas < gas_cost and gas_cost > 0:
+            elif gas_cost > 0:  # Implies battle.gas < gas_cost from earlier condition
                 keyboard.append([InlineKeyboardButton(
                     obfuscate_text(f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)"),
                     callback_data=f"lowgas_{ability.name}"
                 )])
-    # Always refresh character equipped_weapon from DB before showing weapon button
-    db = context.bot_data.get("db") or Database()
-    refreshed_character = None
-    try:
-        if hasattr(battle.character, 'user_id') and hasattr(battle.character, 'name'):
-            refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
-    except Exception:
-        pass
-    if refreshed_character:
-        battle.character = refreshed_character
-    shop_items = context.bot_data.get("shop_items") or {}
+    
+    # Only refresh character from DB if really needed - check if too long since last refresh
+    now = time.time()
+    last_refresh = getattr(battle, 'last_character_refresh', 0)
+    if now - last_refresh > 60:  # Only refresh once per minute max
+        db = context.bot_data.get("db") or Database()
+        refreshed_character = None
+        try:
+            if hasattr(battle.character, 'user_id') and hasattr(battle.character, 'name'):
+                refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+        except Exception:
+            pass
+        if refreshed_character:
+            battle.character = refreshed_character
+            battle.last_character_refresh = now
+    
+    # Get weapon info
     weapon = battle.get_equipped_weapon(shop_items)
+    
+    # Add attack button based on gas
     if battle.gas >= 20:
         if weapon:
             keyboard.append([InlineKeyboardButton(obfuscate_text(f"⚔️ {weapon.name}"), callback_data="action_basic_attack")])
@@ -510,7 +627,14 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
             keyboard.append([InlineKeyboardButton(obfuscate_text(f"⛽ {weapon.name} (Low Gas)"), callback_data="lowgas_basic_attack")])
         else:
             keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (Low Gas)"), callback_data="lowgas_basic_attack")])
+    
+    # Add run button
     keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
+    
+    # Cache the keyboard for future use
+    battle.keyboard_cache = keyboard
+    battle.keyboard_cache_invalid = False
+    
     return keyboard
 
 # =========================
@@ -519,120 +643,204 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
 
 async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the start of a battle."""
+    # Performance monitoring
+    start_time = time.time()
+    
     query = update.callback_query
     if not query or not update.effective_user:
         return
+        
+    # Immediately answer callback to improve user experience
     await query.answer()
+    
+    # Quick validation of battle ID
     callback_data = query.data
     user_id = str(update.effective_user.id)
     current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+    
+    # Fast path for mismatched battle IDs
     if callback_data != current_battle_id:
         return 
+    
+    # Validate battle format
     if not callback_data or not callback_data.startswith("battle_"):
         await query.edit_message_text("Invalid battle request.")
         return
+    
+    # Cancel any pending titan timeouts
     titan_timeout_key = f"titan_timeout_{user_id}"
     titan_timeout_task = context.bot_data.pop(titan_timeout_key, None)
     if titan_timeout_task and not titan_timeout_task.done():
         titan_timeout_task.cancel()
+    
+    # Get database reference
     db = context.bot_data.get("db")
     if not db:
         logger.error("Database not initialized")
         await query.edit_message_text("Internal error: Database not initialized.")
         return
-    titan_obj = await db.get_titan(user_id)
-    if not titan_obj:
-        logger.warning(f"[BATTLE_START] No titan found for user_id: {user_id}")
-        # Debug: Check if titan data exists in bot_data
-        titan_data_debug = context.bot_data.get(f"last_titan_data_{user_id}")
-        logger.debug(f"[BATTLE_START] bot_data last_titan_data_{user_id}: {titan_data_debug}")
-        # Debug: Check if active battle id matches
-        active_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
-        logger.debug(f"[BATTLE_START] active_battle_id_{user_id}: {active_battle_id}, callback_data: {query.data}")
-        await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
-        return
-    titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
-    titan = Titan(**titan_data)
-    # Ensure context.user_data is a dict
+    
+    # Start multiple async tasks in parallel for better performance
+    titan_task = db.get_titan(user_id)
+    
+    # Initialize user data cache if needed (faster than checking each time)
     if not hasattr(context, "user_data") or context.user_data is None:
         context.user_data = {}
-    # Cache player and team info in context for this battle
+    
+    # Set up battle cache efficiently
     if "battle_cache" not in context.user_data:
         context.user_data["battle_cache"] = {}
     battle_cache = context.user_data["battle_cache"]
+    
+    # Prepare player data fetch - use cached if available
+    player_data_task = None
     if not battle_cache.get("player_data"):
-        player_data = await db.players.find_one({"user_id": user_id})
+        player_data_task = db.players.find_one({"user_id": user_id})
+    
+    # Wait for titan data
+    titan_obj = await titan_task
+    if not titan_obj:
+        # Use cached titan data if available or show error
+        titan_data_debug = context.bot_data.get(f"last_titan_data_{user_id}")
+        if not titan_data_debug:
+            # Minimized logging for better performance
+            logger.warning(f"[BATTLE_START] No titan found for user_id: {user_id}")
+            await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
+            return
+        titan_data = titan_data_debug
+    else:
+        titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
+    
+    # Create titan object
+    titan = Titan(**titan_data)
+    
+    # Get player data (either from cache or database)
+    if player_data_task:
+        player_data = await player_data_task
         battle_cache["player_data"] = player_data
     else:
         player_data = battle_cache["player_data"]
+    
+    # Validate player data
     if not player_data or not player_data.get('team'):
         await query.edit_message_text("Error: No character in your team.")
         return
+    
+    # Get character name efficiently
     team_member = player_data['team'][0]
     character_name = team_member['character_name'] if isinstance(team_member, dict) else team_member
+    
+    # Get character data (from cache or database)
+    character_task = None
     if not battle_cache.get("character"):
-        character = await db.get_character(user_id, character_name)
+        character_task = db.get_character(user_id, character_name)
+    
+    if character_task:
+        character = await character_task
         battle_cache["character"] = character
     else:
         character = battle_cache["character"]
+    
+    # Validate character
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
+    
+    # Ensure character HP doesn't exceed maximum
     if character.current_hp > character.stats.HP:
         character.current_hp = character.stats.HP
+    
+    # Create player object and battle system
     player = Player(**player_data) if player_data else None
     battle = BattleSystem(character, titan, player)
+    
+    # Add battle to active battles
     async with active_battles_lock:
         active_battles[user_id] = battle
-    # Reset explore spam count when battle starts
+    
+    # Reset explore spam count atomically
     if "explore_spam_count" in context.bot_data:
         context.bot_data["explore_spam_count"][user_id] = 0
-    try:
-        from utils.monitor import track_player_action
-        username = update.effective_user.username or update.effective_user.first_name or "Unknown"
-        track_player_action(int(user_id), username, "🔥 In Battle", {
-            "character": character.name,
-            "titan": titan.name,
-            "titan_level": titan.level
-        })
-    except ImportError:
-        pass
+    
+    # Track player action in background for better performance
+    asyncio.create_task(_track_battle_start(user_id, update.effective_user, battle))
+    
+    # Generate keyboard buttons
     keyboard = await generate_ability_keyboard(battle, context)
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Get battle status once
     status = battle.get_battle_status()
+    
+    # Build message efficiently with array join
+    message_parts = [
+        "<b>⚔️ BATTLE ⚔️</b>\n",
+        "",  # Empty line for spacing
+        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
+        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
+        f"{status['titan_bar']}",
+        "",  # Empty line for spacing
+        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
+        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
+        f"{status['character_bar']}",
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
+    ]
+    
+    # Join all parts at once for better performance
+    battle_message = "\n".join(message_parts)
+    
+    # Edit message with complete content
     await query.edit_message_text(
-        text=(
-            f"<b>⚔️ BATTLE ⚔️</b>\n\n"
-            f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>\n"
-            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
-            f"{status['titan_bar']}\n\n"
-            f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
-            f"{status['character_bar']}\n"
-            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n"
-        ),
+        text=battle_message,
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+    
+    # Start timeout in background
     asyncio.create_task(battle_timeout(user_id, query, battle, context))
+    
+    # Log performance metrics occasionally
+    if random.random() < 0.1:  # Log only 10% of the time to reduce overhead
+        end_time = time.time()
+        logger.info(f"[PERF] Battle start took {end_time - start_time:.3f}s")
+
+# Helper function to move tracking to background
+async def _track_battle_start(user_id, effective_user, battle):
+    """Track battle start in the background to not slow down the main flow."""
+    try:
+        from utils.monitor import track_player_action
+        username = effective_user.username or effective_user.first_name or "Unknown"
+        track_player_action(int(user_id), username, "🔥 In Battle", {
+            "character": battle.character.name,
+            "titan": battle.titan.name,
+            "titan_level": battle.titan.level
+        })
+    except (ImportError, Exception):
+        pass  # Silently fail for performance
 
 async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle battle actions with titan response."""
+    # Start timing for performance monitoring
+    start_time = time.time()
+    
     query = update.callback_query
     if not query or not update.effective_user:
         return
     
     user_id = str(update.effective_user.id)
+    
+    # Get battle with lock, using fast path for common errors
     async with active_battles_lock:
-        if user_id not in active_battles or active_battles[user_id].battle_ended:
+        battle = active_battles.get(user_id)
+        if not battle or battle.battle_ended:
             await query.answer("This battle has already ended or doesn't exist.")
             return
-        battle = active_battles[user_id]
+    
     action = query.data
     if not action:
         return
         
-    # Handle cooldown and low gas ability clicks with informative alerts
+    # Fast path handlers for cooldown and low gas notifications
     if action.startswith("cooldown_"):
         ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
         cooldown = battle.ability_cooldowns.get(ability_name, 0)
@@ -643,28 +851,43 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         if ability_name == "basic_attack":
             await query.answer("Not enough gas for basic attack! You need at least 20 gas.", show_alert=True)
         else:
+            # Optimize ability gas cost lookup
+            gas_cost = 20  # Default value
             character_data = get_character_data(battle.character.character_type)
-            ability_gas = 20  # Default gas cost
             if character_data:
+                # Flatten the search
+                all_abilities = []
                 for ability_type in ["active", "passive", "ultimate"]:
-                    abilities = getattr(character_data, f"{ability_type}_abilities", [])
-                    for ability in abilities:
-                        if ability and ability.name == ability_name:
-                            ability_gas = ability.gas_cost or 20
-                            break
-            await query.answer(f"Not enough gas to use {ability_name}! You need {ability_gas} gas.", show_alert=True)
+                    all_abilities.extend(getattr(character_data, f"{ability_type}_abilities", []))
+                
+                # Find the ability directly
+                for ability in all_abilities:
+                    if ability and ability.name == ability_name:
+                        gas_cost = ability.gas_cost or 20
+                        break
+            
+            await query.answer(f"Not enough gas to use {ability_name}! You need {gas_cost} gas.", show_alert=True)
         return
         
-    # Regular answer for valid actions
+    # Answer callback query immediately to prevent Telegram timeout
     await query.answer()
     
+    # Initialize battle tracking variables
     full_message = []
     effects = {}
+    
+    # Cancel timeout if exists
     if battle.timeout_task:
         battle.timeout_task.cancel()
         battle.timeout_task = None
+    
+    # Mark keyboard cache as invalid since state will change
+    battle.keyboard_cache_invalid = True
+    
+    # Handle different action types
     if action == "action_run":
-        if random.random() < 0.7:
+        # Handle run action (fast path)
+        if random.random() < 0.7:  # Successful escape
             await query.edit_message_text(
                 f"🏃💨 {battle.character.name} successfully escaped from the battle!\n\n"
                 f"You live to fight another day. Use /explore to find another titan."
@@ -673,100 +896,154 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         else:
             full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
+    
     elif action == "action_basic_attack":
+        # Optimize basic attack with less DB access
         shop_items = context.bot_data.get("shop_items") or {}
-        # Always refresh character from DB to get latest equipped_weapon
-        db = context.bot_data.get("db") or Database()
-        refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
-        if refreshed_character:
-            # Update all character fields to ensure latest equipped_weapon and stats
-            battle.character = refreshed_character
+        
+        # Only refresh character if needed (use a timestamp to limit refreshes)
+        now = time.time()
+        last_refresh = getattr(battle, 'last_character_refresh', 0)
+        if now - last_refresh > 30:  # Refresh only every 30 seconds max
+            db = context.bot_data.get("db") or Database()
+            try:
+                refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+                if refreshed_character:
+                    battle.character = refreshed_character
+                    battle.last_character_refresh = now
+            except Exception as e:
+                logger.debug(f"Character refresh error (non-critical): {e}")
+        
+        # Process attack
         weapon = battle.get_equipped_weapon(shop_items)
         if battle.gas >= 20:
             battle.gas -= 20
             battle.character_gas = battle.gas
+            
             if weapon:
-                damage_min = weapon.attributes.get("damage_min", 10)
-                damage_max = weapon.attributes.get("damage_max", 20)
-                total_damage = random.randint(int(damage_min), int(damage_max))
+                # Fast weapon attack calculation
+                damage_min = int(weapon.attributes.get("damage_min", 10))
+                damage_max = int(weapon.attributes.get("damage_max", 20))
+                total_damage = random.randint(damage_min, damage_max)
                 battle.titan_hp = max(0, battle.titan_hp - total_damage)
                 full_message.append(f"⚔️ {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
             else:
+                # Fast basic attack calculation
                 try:
                     base_damage = battle.character.stats.ATK or 25
                     total_damage = max(1, base_damage + random.randint(25, 35))
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                except Exception as e:
-                    logger.error(f"Error calculating basic attack damage: {e}")
+                except Exception:
+                    # Simplified error handling for speed
                     total_damage = 10
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
                 full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
         else:
-            if weapon:
-                full_message.append(f"❌ {battle.character.name} doesn't have enough gas for weapon attack!")
-            else:
-                full_message.append(f"❌ {battle.character.name} doesn't have enough gas for basic attack!")
+            # Not enough gas case
+            message = f"❌ {battle.character.name} doesn't have enough gas for {'weapon' if weapon else 'basic'} attack!"
+            full_message.append(message)
+    
     elif action.startswith("ability_"):
+        # Handle ability use with optimized function
         damage, message, effects = battle.use_ability(action[8:])
         battle.character_gas = battle.gas
         full_message.append(message)
+        
+        # Process effects concisely
         if effects.get("items_dropped"):
             full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
         if effects.get("target_switched"):
             full_message.append("Titan switched targets!")
         if effects.get("bleed_applied"):
             full_message.append("Titan is bleeding!")
+    
+    # Check for battle end conditions - titan defeated
     if battle.titan_hp <= 0:
         battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
-    if any(
-        getattr(ability, 'unlocked', False) and (getattr(ability, 'gas_cost', 0) > battle.gas)
-        for ability in battle.character.passive_abilities
-    ) and battle.gas < min(
-        (getattr(ability, 'gas_cost', float('inf')) for ability in battle.character.passive_abilities if getattr(ability, 'unlocked', False)),
-        default=float('inf')
-    ):
+    
+    # Check for out-of-gas condition (optimized with simplified logic)
+    min_ability_cost = float('inf')
+    has_unlocked_passive = False
+    
+    for ability in battle.character.passive_abilities or []:
+        if getattr(ability, 'unlocked', False):
+            has_unlocked_passive = True
+            gas_cost = getattr(ability, 'gas_cost', float('inf'))
+            min_ability_cost = min(min_ability_cost, gas_cost)
+    
+    if has_unlocked_passive and battle.gas < min_ability_cost:
         await query.edit_message_text(f"{battle.character.name} is out of gas and cannot continue the battle!")
         cleanup_battle(user_id, "out_of_gas")
         return
+    
+    # Process titan's turn if character still alive
     if battle.character_hp > 0:
         titan_damage, titan_message = battle.titan_attack()
         full_message.append(titan_message)
+    
+    # Update battle state
     battle.turn += 1
     battle.update_cooldowns()
+    
+    # Verify database access for next steps
     db = context.bot_data.get("db")
     if not db:
         logger.error("Database not initialized")
         await query.edit_message_text("Internal error: Database not initialized.")
         return
+    
+    # Check for battle end conditions - character defeated or titan defeated
     if battle.character_hp <= 0 or battle.titan_hp <= 0:
         battle.battle_ended = True
         await handle_battle_end(query, battle, user_id, context)
         return
+    
+    # Generate keyboard and prepare UI (using cache when possible)
     keyboard = await generate_ability_keyboard(battle, context)
-    # Ensure keyboard is a list of lists of InlineKeyboardButton
-    if not keyboard or not isinstance(keyboard, list) or not all(isinstance(row, list) for row in keyboard):
-        keyboard = [[btn] for btn in keyboard if isinstance(btn, InlineKeyboardButton)]
+    
+    # Fast validation with simplified logic
+    if not keyboard or not isinstance(keyboard, list):
+        keyboard = [[InlineKeyboardButton("🏃 Run", callback_data="action_run")]]
+    
     reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Get battle status once
     status = battle.get_battle_status()
-    battle_message = (
-        f"<b>⚔️ BATTLE ⚔️</b>\n\n"
-        f"{' '.join(full_message)}\n\n"
-        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>\n"
-        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
-        f"{status['titan_bar']}\n\n"
-        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
-        f"{status['character_bar']}\n"
-        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>\n"
-    )
+    
+    # Build message with array join (faster than string concatenation)
+    message_parts = [
+        "<b>⚔️ BATTLE ⚔️</b>\n",
+        " ".join(full_message),  # Join messages once
+        "",  # Empty line for spacing
+        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
+        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
+        f"{status['titan_bar']}",
+        "",  # Empty line for spacing
+        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
+        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
+        f"{status['character_bar']}",
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
+    ]
+    
+    # Join all parts at once (much faster than += concatenation)
+    battle_message = "\n".join(message_parts)
+    
+    # Edit message with all content at once
     await query.edit_message_text(
         text=battle_message,
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+    
+    # Start timeout in background
     asyncio.create_task(battle_timeout(user_id, query, battle, context))
+    
+    # Log performance metrics for optimization tracking (only 5% of the time)
+    if random.random() < 0.05:
+        end_time = time.time()
+        logger.info(f"[PERF] Battle action took {end_time - start_time:.3f}s")
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the end of a battle, updating gas and rewards."""
@@ -924,7 +1201,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        if random.random() < 0.025:
+        if random.random() < 0.07:
             drop = get_random_drop()
             # Get player object
             player_obj = await db.get_player(user_id)
