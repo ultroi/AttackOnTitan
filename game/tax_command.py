@@ -114,8 +114,8 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
                 f"  - Crystal: {total_tax['crystal']}\n"
             )
         else:
-            # Perform actual tax collection
-            tax_reports = await bank_system.check_and_apply_midnight_tax()
+            # Perform actual tax collection using force_tax_execution for admin command
+            tax_reports = await bank_system.force_tax_execution()
             
             # Create summary
             total_players = len(tax_reports)

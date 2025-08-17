@@ -233,6 +233,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Block if verification is in progress - fast check
     if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
+        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
         return
 
     # Record time and check inactivity in background

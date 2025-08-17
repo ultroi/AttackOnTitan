@@ -202,65 +202,76 @@ class BankSystem:
         return 0.0
 
     async def check_and_apply_midnight_tax(self) -> List[dict]:
+        """Apply midnight tax to all eligible players."""
+        import logging
+        logger = logging.getLogger("bank_system")
+        
         tax_reports = []
         all_players = await self.db.get_all_players()
         central_bank = await self.db.get_bank_account("central_bank")
         
-        # Get current date at exactly midnight for tracking
-        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        # Get current datetime for comparison
+        now = datetime.now()
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
+        logger.info(f"Starting midnight tax check at {now}")
+        logger.info(f"Today's date for comparison: {today}")
+        
+        # Initialize central bank if it doesn't exist
         if not central_bank:
-            # Create central bank account if it doesn't exist
+            logger.info("Creating central bank account")
             central_bank = BankAccount(
                 user_id="central_bank",
                 opened=True,
-                opened_at=datetime.now(),
+                opened_at=now,
                 marks_balance=0,
                 valor_balance=0,
                 crystal_balance=0,
-                last_tax_check=today
+                last_tax_check=None  # Set to None initially
             )
-            # Save the central bank account
             await self.db.save_bank_account(central_bank)
 
         # Check if tax has already been applied today
-        if central_bank.last_tax_check and central_bank.last_tax_check.date() == today.date():
-            print(f"Tax already applied today at {central_bank.last_tax_check}")
-            return []  # Tax already applied today, skip
+        if central_bank.last_tax_check:
+            last_check_date = central_bank.last_tax_check.date() if hasattr(central_bank.last_tax_check, 'date') else central_bank.last_tax_check
+            current_date = today.date()
             
-        # Update central bank's last tax check time
-        central_bank.last_tax_check = today
+            logger.info(f"Last tax check: {last_check_date}, Current date: {current_date}")
+            
+            if str(last_check_date) == str(current_date):
+                logger.info("Tax already applied today, skipping")
+                return []
+        else:
+            logger.info("No previous tax check found, proceeding with tax collection")
         
-        # Track total tax collected for logging
+        # Track total tax collected
         total_tax_collected = {"marks": 0, "valor": 0, "crystal": 0}
         players_taxed = 0
         
-        import logging
-        logger = logging.getLogger("bank_system")
-        logger.info(f"Starting midnight tax collection for {len(all_players)} players")
+        logger.info(f"Processing {len(all_players)} players for tax collection")
 
+        # Process each player
         for player in all_players:
-            tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
-            tax_applied = False
-            
-            # Skip players without a user_id
+            # Skip players without user_id
             if not player.user_id:
                 continue
 
-            # Check each currency
+            tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
+            tax_applied = False
+            
+            # Check each currency for tax eligibility
             for currency in ["marks", "valor", "crystal"]:
                 player_balance = getattr(player, currency, 0)
-                # Add logging to debug tax calculation
-                logger.info(f"Checking tax for player {player.user_id}, {currency}: {player_balance} (threshold: {TAX_THRESHOLDS[currency]})")
+                
+                logger.debug(f"Player {player.user_id} - {currency}: {player_balance} (threshold: {TAX_THRESHOLDS[currency]})")
                 
                 if player_balance > TAX_THRESHOLDS[currency]:
                     # Calculate tax
                     tax_amount = int(player_balance * TAX_RATE)
                     
-                    # Debug log
-                    logger.info(f"Tax calculated for {player.user_id}: {tax_amount} {currency}")
+                    logger.info(f"Taxing player {player.user_id}: {tax_amount} {currency}")
                     
-                    # Deduct tax from player's INVENTORY (not bank account)
+                    # Deduct tax from player's inventory
                     new_balance = player_balance - tax_amount
                     setattr(player, currency, new_balance)
                     
@@ -269,6 +280,7 @@ class BankSystem:
                     current_bank_balance = getattr(central_bank, bank_balance_field, 0)
                     setattr(central_bank, bank_balance_field, current_bank_balance + tax_amount)
                     
+                    # Record tax information
                     tax_report["taxes"][currency] = tax_amount
                     total_tax_collected[currency] += tax_amount
                     
@@ -278,55 +290,80 @@ class BankSystem:
                     )
                     tax_applied = True
 
+            # Save player data and record tax if applied
             if tax_applied:
                 players_taxed += 1
                 
-                # Record tax transaction in player's history
-                if not hasattr(player, 'tax_history'):
+                # Initialize tax history if it doesn't exist
+                if not hasattr(player, 'tax_history') or player.tax_history is None:
                     player.tax_history = []
                 
+                # Add tax record to player's history
                 tax_record = {
                     "date": today.isoformat(),
                     "taxes": tax_report["taxes"]
                 }
                 
-                # Keep last 10 entries
+                # Keep only last 10 records
                 if isinstance(player.tax_history, list):
                     player.tax_history = player.tax_history[-9:] + [tax_record]
                 else:
                     player.tax_history = [tax_record]
-                    
-                # Save player to database with updated balances and history
+                
+                # Save player with updated balances and history
                 try:
                     await self.db.save_player(player)
-                    logger.info(f"Saved player {player.user_id} after tax collection")
+                    logger.info(f"Successfully saved player {player.user_id} after tax collection")
                 except Exception as e:
                     logger.error(f"Error saving player {player.user_id}: {e}")
                 
                 tax_reports.append(tax_report)
 
-        # Add tax collection record to central bank
-        if not hasattr(central_bank, 'tax_history'):
+        # Update central bank with tax collection info
+        central_bank.last_tax_check = today
+        
+        # Initialize central bank tax history if needed
+        if not hasattr(central_bank, 'tax_history') or central_bank.tax_history is None:
             central_bank.tax_history = []
         
-        # Make sure tax_history is a list    
-        if not isinstance(central_bank.tax_history, list):
-            central_bank.tax_history = []
-            
+        # Add tax collection record
         tax_record = {
             "date": today.isoformat(),
             "total_collected": total_tax_collected,
             "players_taxed": players_taxed
         }
         
-        central_bank.tax_history = central_bank.tax_history[-9:] + [tax_record]
+        # Keep only last 10 records
+        if isinstance(central_bank.tax_history, list):
+            central_bank.tax_history = central_bank.tax_history[-9:] + [tax_record]
+        else:
+            central_bank.tax_history = [tax_record]
         
         # Save central bank changes
         try:
             await self.db.save_bank_account(central_bank)
-            logger.info(f"Saved central bank after tax collection. Total collected: {total_tax_collected}")
+            logger.info(f"Central bank updated successfully. Total collected: {total_tax_collected}")
         except Exception as e:
             logger.error(f"Error saving central bank: {e}")
         
-        logger.info(f"Tax applied to {players_taxed} players. Total collected: {total_tax_collected}")
+        logger.info(f"Tax collection completed. Taxed {players_taxed} players. Total: {total_tax_collected}")
         return tax_reports
+
+    async def force_tax_execution(self) -> List[dict]:
+        """Force tax execution for testing purposes."""
+        import logging
+        logger = logging.getLogger("bank_system")
+        
+        logger.info("Forcing tax execution (bypassing date check)")
+        
+        # Get central bank and reset last_tax_check
+        central_bank = await self.db.get_bank_account("central_bank")
+        if central_bank:
+            # Set to yesterday to force execution
+            yesterday = datetime.now() - timedelta(days=1)
+            central_bank.last_tax_check = yesterday
+            await self.db.save_bank_account(central_bank)
+            logger.info(f"Reset central bank last_tax_check to {yesterday}")
+        
+        # Now run the tax collection
+        return await self.check_and_apply_midnight_tax()
