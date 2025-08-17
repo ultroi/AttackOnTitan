@@ -38,6 +38,7 @@ class Database:
         self.shop_purchases_collection = None  # For shop_system compatibility
         self.bank_accounts = None
         self.bans = None
+        self.groups = None  # For storing groups information
 
     async def init_db(self):
         try:
@@ -49,6 +50,7 @@ class Database:
             self.players_collection = self.players 
             self.titans = self.db.titans
             self.equipment = self.db.equipment
+            self.groups = self.db.groups 
             self.shop_purchases = self.db.shop_purchases
             self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
             self.bank_accounts = self.db.bank_accounts
@@ -762,13 +764,66 @@ class Database:
         try:
             server_info = await self.db.command("serverStatus")
             return {
-                "connections_current": server_info.get("connections", {}).get("current", 0),
-                "connections_available": server_info.get("connections", {}).get("available", 0),
-                "uptime": server_info.get("uptime", 0)
+                "connections": server_info.get("connections", {}),
+                "uptime": server_info.get("uptime", 0),
+                "opcounters": server_info.get("opcounters", {}),
+                "mem": server_info.get("mem", {})
             }
         except Exception as e:
             logger.error(f"Failed to get connection stats: {e}")
             return None
+
+    async def get_group(self, group_id: int) -> Optional[Dict]:
+        """Get group information by ID"""
+        try:
+            if not self.groups:
+                return None
+            group = await self.groups.find_one({"group_id": group_id})
+            return group
+        except Exception as e:
+            logger.error(f"Failed to get group {group_id}: {e}")
+            return None
+
+    async def update_group(self, group_id: int, update_data: Dict) -> bool:
+        """Update group information"""
+        try:
+            if not self.groups:
+                return False
+            update_data["updated_at"] = datetime.now(timezone.utc)
+            result = await self.groups.update_one(
+                {"group_id": group_id},
+                {"$set": update_data},
+                upsert=True
+            )
+            return result.modified_count > 0 or result.upserted_id is not None
+        except Exception as e:
+            logger.error(f"Failed to update group {group_id}: {e}")
+            return False
+
+    async def get_all_groups(self, filter_data: Dict = None) -> List[Dict]:
+        """Get all groups, optionally filtered"""
+        try:
+            if not self.groups:
+                return []
+            cursor = self.groups.find(filter_data or {})
+            groups = []
+            async for doc in cursor:
+                groups.append(doc)
+            return groups
+        except Exception as e:
+            logger.error(f"Failed to get groups: {e}")
+            return []
+
+    async def delete_group(self, group_id: int) -> bool:
+        """Delete a group by ID"""
+        try:
+            if not self.groups:
+                return False
+            result = await self.groups.delete_one({"group_id": group_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logger.error(f"Failed to delete group {group_id}: {e}")
+            return False
 
     async def record_purchase(self, user_id: str, item_key: str):
         """Record a shop purchase for tracking stock/cooldown."""

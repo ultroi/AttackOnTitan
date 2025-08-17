@@ -1,6 +1,15 @@
-from telegram import ChatMemberUpdated, Chat, ChatMember, ChatInviteLink
-from telegram.constants import ChatType
+from telegram import ChatMemberUpdated, Chat, ChatMember, ChatInviteLink, Update
+from telegram.constants import ChatType, ParseMode
 from telegram.error import TelegramError
+from telegram.ext import ContextTypes
+from html import escape
+import logging
+from datetime import datetime, timezone
+from database.db import Database
+
+# Constants
+LOG_CHANNEL_ID = -1002873117075
+logger = logging.getLogger(__name__)
 
 # --- Group Add/Remove Handler ---
 async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,6 +26,10 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     # Only care if bot is added/removed/promoted/demoted
     bot_id = (await context.bot.get_me()).id
+    bot_member = event.new_chat_member if hasattr(event, 'new_chat_member') else None
+    if bot_member and bot_member.user.id != bot_id:
+        return  # Not about our bot
+    
     was_member = old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     is_member = new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
     # If bot is added or removed
@@ -71,6 +84,40 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"<b>Group Link:</b> {group_link or 'N/A'}\n"
         f"<b>Status:</b> {old_status} → {new_status}"
     )
+    # Store or update group in database
+    try:
+        db = context.bot_data.get("db") or Database()
+        
+        # Prepare group data
+        group_data = {
+            "group_id": group_id,
+            "title": group_title,
+            "type": group_type,
+            "link": group_link,
+            "username": chat.username,
+            "member_count": member_count if isinstance(member_count, int) else 0,
+            "admin_count": admin_count if isinstance(admin_count, int) else 0,
+            "is_bot_member": is_member,
+            "bot_status": new_status,
+            "updated_at": datetime.now(timezone.utc),
+            "added_by": user.id if user else None,
+            "added_by_name": user.full_name if user else None,
+        }
+        
+        # If bot is added, set added_at
+        if action == "added":
+            group_data["added_at"] = datetime.now(timezone.utc)
+        # If bot is removed, set removed_at
+        elif action == "removed":
+            group_data["removed_at"] = datetime.now(timezone.utc)
+            
+        # Use the database function to update the group
+        if await db.update_group(group_id, group_data):
+            logger.info(f"Group {action} in DB: {group_id} - {group_title}")
+    except Exception as db_err:
+        logger.error(f"Failed to update group in database: {db_err}")
+    
+    # Send message to log channel
     try:
         await context.bot.send_message(
             chat_id=log_channel_id,
@@ -80,7 +127,4 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         logger.error(f"Failed to send group update log: {e}")
-
-# --- Register handler (add to your dispatcher setup code) ---
-# from telegram.ext import ChatMemberHandler
 
