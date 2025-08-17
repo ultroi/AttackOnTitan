@@ -240,8 +240,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player_verified = getattr(player, "hcaptcha_verified", False)
     last_explore = getattr(player, "last_explore_time", None)
     
-    # Always update last_explore_time in background - non-blocking
-    update_task = asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now}))
+    # Use the new non-blocking update pattern for last_explore_time
+    # Since we're using the new fire-and-forget pattern, we don't need to await this
+    db.update_player(user_id_str, {"last_explore_time": now})
 
     # Check inactivity and handle verification
     if last_explore and (now - last_explore) > 1500 and not player_verified:
@@ -312,9 +313,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if player_character.gas < 100:
         await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
         return
-        
-    # Make sure update task is completed
-    await update_task
         
     # Direct titan generation - super fast with no database calls
     try:

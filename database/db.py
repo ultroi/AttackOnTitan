@@ -222,9 +222,42 @@ class Database:
                     for member in update_data['team']
                 ]
             
+            # Check if this is a time-tracking update that can be fully asynchronous
+            is_time_tracking_update = len(update_data) == 1 and (
+                'last_explore_time' in update_data
+            )
+            
+            # For time tracking updates, use fire-and-forget pattern
+            if is_time_tracking_update:
+                update_data["updated_at"] = datetime.now(timezone.utc)
+                
+                # Update cache immediately if it exists for instant access
+                if CACHE_ENABLED:
+                    cache_key = f"player_{user_id}"
+                    if cache_key in PLAYER_CACHE:
+                        player = PLAYER_CACHE[cache_key]["player"]
+                        for key, value in update_data.items():
+                            setattr(player, key, value)
+                        PLAYER_CACHE[cache_key] = {
+                            "player": player,
+                            "timestamp": time.time()
+                        }
+                
+                # Launch fire-and-forget task for database update
+                # This will run in the background without blocking execution
+                asyncio.create_task(self._background_update_player(user_id, update_data))
+                
+                elapsed = (time.perf_counter() - start) * 1000
+                logger.info(f"update_player (non-blocking time update) initiated: {elapsed:.2f} ms")
+                
+                # Return immediately with cached player or fetch a new one
+                if CACHE_ENABLED and cache_key in PLAYER_CACHE:
+                    return PLAYER_CACHE[cache_key]["player"]
+                else:
+                    return await self.get_player(str(user_id))
+            
             # Check if this is a small update that doesn't need a full database refresh
             is_minor_update = len(update_data) == 1 and (
-                'last_explore_time' in update_data or 
                 'explore_start_time' in update_data or
                 'hcaptcha_start_time' in update_data
             )
@@ -277,6 +310,22 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to update player: {e}")
             raise
+            
+    async def _background_update_player(self, user_id: int, update_data: Dict):
+        """
+        Internal method to update player data in the background without blocking.
+        Used for non-critical updates like timestamp tracking.
+        """
+        try:
+            await self.players.update_one(
+                {"user_id": str(user_id)},
+                {"$set": update_data}
+            )
+            logger.debug(f"Background player update completed for user {user_id}")
+        except Exception as e:
+            # Just log the error but don't propagate it since this is fire-and-forget
+            logger.error(f"Background player update failed: {e}")
+            # No raise here since this is a background task
 
     async def save_player(self, player: Player) -> Optional[Player]:
         """Save (update) the player document in the database."""
