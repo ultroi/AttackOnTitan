@@ -461,7 +461,7 @@ async def set_webhook(request: Request):
             url=webhook_url,
             secret_token=SECRET_TOKEN,
             drop_pending_updates=True,
-            allowed_updates=["message", "callback_query"]
+            allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"]
         )
         webhook_info = await app_instance.bot.get_webhook_info()
         logger.info(f"Webhook info: {webhook_info}")
@@ -747,7 +747,7 @@ async def main():
                     url=webhook_url,
                     secret_token=SECRET_TOKEN,
                     drop_pending_updates=True,
-                    allowed_updates=["message", "callback_query"]
+                    allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"]
                 )
                 webhook_info = await app_instance.bot.get_webhook_info()
                 logger.info(f"Webhook info: {webhook_info}")

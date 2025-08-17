@@ -14,17 +14,51 @@ logger = logging.getLogger(__name__)
 # --- Group Add/Remove Handler ---
 async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_channel_id = LOG_CHANNEL_ID
-    event = update.my_chat_member or update.chat_member
-    if not event:
+    
+    # Handle both chat_member updates and regular message updates with member changes
+    if update.my_chat_member or update.chat_member:
+        event = update.my_chat_member or update.chat_member
+        logger.info(f"Group update event received (chat_member): {event}")
+        
+        chat = event.chat
+        user = event.from_user
+        old_status = event.old_chat_member.status if hasattr(event, 'old_chat_member') else None
+        new_status = event.new_chat_member.status if hasattr(event, 'new_chat_member') else None
+    elif update.message and (update.message.new_chat_members or update.message.left_chat_member):
+        # Handle through regular message updates
+        logger.info(f"Group update event received (message): {update.message}")
+        
+        chat = update.message.chat
+        user = update.message.from_user
+        
+        # Check if bot was added
+        if update.message.new_chat_members:
+            bot_id = (await context.bot.get_me()).id
+            for member in update.message.new_chat_members:
+                if member.id == bot_id:
+                    old_status = None
+                    new_status = ChatMember.MEMBER
+                    break
+            else:
+                # No bot in new members
+                logger.info(f"Bot not in new chat members, skipping")
+                return
+                
+        # Check if bot was removed
+        elif update.message.left_chat_member:
+            bot_id = (await context.bot.get_me()).id
+            if update.message.left_chat_member.id == bot_id:
+                old_status = ChatMember.MEMBER
+                new_status = None
+            else:
+                # Not about our bot
+                logger.info(f"Left chat member is not our bot, skipping")
+                return
+        else:
+            return
+    else:
         logger.info("No event data in group update handler, skipping")
         return
-        
-    logger.info(f"Group update event received: {event}")
-    
-    chat = event.chat
-    user = event.from_user
-    old_status = event.old_chat_member.status if hasattr(event, 'old_chat_member') else None
-    new_status = event.new_chat_member.status if hasattr(event, 'new_chat_member') else None
     
     # Detailed logging
     logger.info(f"Group update: chat_id={chat.id}, type={chat.type}, old_status={old_status}, new_status={new_status}")
@@ -33,25 +67,32 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
         logger.info(f"Skipping update for non-group chat type: {chat.type}")
         return
-        
-    # Only care if bot is added/removed/promoted/demoted
-    bot_id = (await context.bot.get_me()).id
-    bot_member = event.new_chat_member if hasattr(event, 'new_chat_member') else None
-    if bot_member and bot_member.user.id != bot_id:
-        logger.info(f"Skipping update not related to our bot. Bot ID: {bot_id}, Update for: {bot_member.user.id}")
-        return  # Not about our bot
     
-    was_member = old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
-    is_member = new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
-    # If bot is added or removed
-    if not was_member and is_member:
+    # Check if the update is from a message with new_chat_members or left_chat_member
+    if update.message and update.message.new_chat_members:
+        # Bot is being added to the group
         action = "added"
-    elif was_member and not is_member:
+        was_member = False
+        is_member = True
+    elif update.message and update.message.left_chat_member:
+        # Bot is being removed from the group
         action = "removed"
-    elif was_member and is_member and old_status != new_status:
-        action = f"status changed: {old_status} → {new_status}"
+        was_member = True
+        is_member = False
     else:
-        return
+        # Traditional chat_member update handling
+        was_member = old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
+        is_member = new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
+        
+        # If bot is added or removed
+        if not was_member and is_member:
+            action = "added"
+        elif was_member and not is_member:
+            action = "removed"
+        elif was_member and is_member and old_status != new_status:
+            action = f"status changed: {old_status} → {new_status}"
+        else:
+            return
     # Get group info
     group_title = chat.title or "(no title)"
     group_id = chat.id
