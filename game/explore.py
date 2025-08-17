@@ -483,8 +483,8 @@ async def _handle_verification(update, context, user_id, now, db):
             # Send verification message with button
             await update.message.reply_text(
                 "🔒 <b>Verification Required</b>\n\n"
-                "Complete hCaptcha to continue exploring.\n"
-                "After completing verification, use /explore again to continue.\n\n"
+                + "Complete hCaptcha to continue exploring.\n"
+                + "After completing verification, use /explore again to continue.\n\n",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
                 ]),
