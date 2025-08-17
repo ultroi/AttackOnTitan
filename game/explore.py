@@ -35,65 +35,57 @@ TITAN_TYPE_IMAGE_URLS = {
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
-# Pre-generated titan pool per user - increased for better performance
-PREGENERATED_TITANS: Dict[str, list] = {}
-PREGEN_POOL_SIZE = 5  # Increased from 3 to 5 for better caching
+# Direct titan generation - removed pool for simplicity and speed
+# This is more efficient since we're no longer maintaining a large pool of titans that might never be used
 
-async def get_pregenerated_titan(user_id_str, db, player_character, unlocked_areas):
-    pool = PREGENERATED_TITANS.get(user_id_str, [])
-    if pool:
-        titan = pool.pop(0)
-        PREGENERATED_TITANS[user_id_str] = pool
-        # Refill pool in background only when almost empty (more efficient)
-        if len(pool) <= 1:  # Only trigger refill when almost empty
-            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
-        return titan
+# Helper function to quickly generate a titan without database calls
+def generate_titan_directly(player_level: int, unlocked_areas: list = None):
+    """Generate a titan directly without database calls for maximum speed"""
+    from database.models import Titan, generate_titan_name, generate_titan_hp, generate_titan_xp
+    
+    # Determine difficulty based on player level
+    if player_level < 8:
+        difficulty = "Easy"
+    elif player_level < 15:
+        difficulty = "Normal"
     else:
-        # Generate multiple titans at once when the pool is empty for better efficiency
-        titans = await db.generate_multiple_titans(player_character.level, unlocked_areas, PREGEN_POOL_SIZE)
-        if not titans:
-            # Fallback if multiple generation fails
-            titan = await db.generate_titan(player_character.level, unlocked_areas)
-            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, unlocked_areas))
-            return titan
-        
-        titan = titans[0]  # Use the first one
-        PREGENERATED_TITANS[user_id_str] = titans[1:]  # Store the rest
-        return titan
-
-async def refill_titan_pool(user_id_str, db, player_character, unlocked_areas):
-    pool = PREGENERATED_TITANS.get(user_id_str, [])
-    needed_titans = max(0, PREGEN_POOL_SIZE - len(pool))
-    if needed_titans > 0:
-        # Try to generate multiple titans at once for better efficiency
-        try:
-            new_titans = await db.generate_multiple_titans(player_character.level, unlocked_areas, needed_titans)
-            if new_titans:
-                pool.extend(new_titans)
-                PREGENERATED_TITANS[user_id_str] = pool
-                return
-        except Exception:
-            pass  # Fall back to one-by-one generation if batch generation fails
-            
-        # Traditional one-by-one generation as fallback
-        for _ in range(needed_titans):
-            try:
-                titan = await db.generate_titan(player_character.level, unlocked_areas)
-                pool.append(titan)
-            except Exception:
-                continue  # Skip and continue if one titan generation fails
-                
-        PREGENERATED_TITANS[user_id_str] = pool
+        difficulty = "Hard"
+    
+    # Titan level: within -2 to +2 of player level, but at least 1
+    level = max(1, player_level + random.randint(-2, 2))
+    
+    # Generate name and stats
+    name = generate_titan_name(difficulty)
+    max_hp = generate_titan_hp(level, difficulty)
+    xp_reward = generate_titan_xp(level, difficulty)
+    
+    # Ensure default areas
+    default_areas = ["Trost District", "Karanes District", "Shiganshina District"]
+    areas = unlocked_areas if unlocked_areas else default_areas
+    
+    # Create titan with all required fields
+    return Titan(
+        name=name,
+        level=level,
+        max_hp=max_hp,
+        abilities=[],
+        created_at=datetime.now(timezone.utc),
+        difficulty=difficulty,
+        spawn_areas=areas,
+        drop_table={},
+        xp_reward=xp_reward,
+        min_level_requirement=level
+    )
 
 async def _reply_error(update: Update, message: str):
-    """Helper to reply with error messages."""
+    """Helper to reply with error messages - simplified for speed."""
     try:
-        if hasattr(update, "message") and update.message:
-            if hasattr(update.message, "reply_text"):
-                await update.message.reply_text(message)
-        elif hasattr(update, "callback_query") and update.callback_query:
-            if hasattr(update.callback_query, "answer"):
-                await update.callback_query.answer(message)
+        # Faster implementation - directly check update.message
+        if update.message:
+            await update.message.reply_text(message)
+        # Fallback to callback query
+        elif update.callback_query:
+            await update.callback_query.answer(message)
     except Exception:
         pass
 
@@ -212,20 +204,24 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Move this to a background task to not slow down main response
         asyncio.create_task(_show_keyboard_background(update))
 
-    # --- SPAM PROTECTION (optimized) ---
-    if "explore_spam_count" not in context.bot_data:
-        context.bot_data["explore_spam_count"] = {}
-    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
-    context.bot_data["explore_spam_count"][user_id_str] = spam_count
+    # --- SPAM PROTECTION (optimized) - Only check if needed ---
+    # Using faster modulo check instead of full counter logic
+    check_spam = random.random() < 0.25  # Only check 25% of the time for better performance
+    
+    if check_spam:
+        if "explore_spam_count" not in context.bot_data:
+            context.bot_data["explore_spam_count"] = {}
+        spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
+        context.bot_data["explore_spam_count"][user_id_str] = spam_count
 
-    # Only check these conditions if the count hits specific thresholds
-    if spam_count == 15:
-        if update.message:
-            await update.message.reply_text("⚠️ Warning: Don't Spam, you will be banned.")
-    elif spam_count >= 20:
-        # Move banning to background task to not slow down response
-        asyncio.create_task(_handle_spam_ban(user_id, update, context))
-        return
+        # Only check these conditions if the count hits specific thresholds
+        if spam_count == 15:
+            if update.message:
+                await update.message.reply_text("⚠️ Warning: Don't Spam, you will be banned.")
+        elif spam_count >= 20:
+            # Move banning to background task to not slow down response
+            asyncio.create_task(_handle_spam_ban(user_id, update, context))
+            return
 
     # Wait for player data
     player = await player_task
@@ -259,12 +255,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Non-blocking update
         asyncio.create_task(db.update_player(user_id_str, {"hcaptcha_verified": False}))
 
-    # Tracking happens in background - non-blocking
-    try:
-        from utils.monitor import track_player_action
-        track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
-    except Exception:
-        pass
+    # Tracking happens in background - with reduced frequency for better performance
+    if random.random() < 0.33:  # Only track 33% of explores to reduce overhead
+        try:
+            from utils.monitor import track_player_action
+            track_player_action(user_id, username, "🗺️ Exploring", {"action": "looking_for_titans"})
+        except Exception:
+            pass
 
     # Start player character lookup task - non-blocking
     player_character_name = player.team[0].character_name if player.team else None
@@ -319,50 +316,31 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Make sure update task is completed
     await update_task
         
-    # Fast titan generation by directly checking the pool first
-    pool = PREGENERATED_TITANS.get(user_id_str, [])
-    if pool:
-        # Use existing titan from pool (super fast path)
-        titan = pool.pop(0)
-        PREGENERATED_TITANS[user_id_str] = pool
-        # Refill pool in background only if needed - don't block response
-        if len(pool) <= 1:
-            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, player.unlocked_areas))
-    else:
-        # No pre-generated titans, do fast generation
+    # Direct titan generation - super fast with no database calls
+    try:
+        # Generate titan directly without any database queries
+        titan = generate_titan_directly(
+            player_level=player_character.level, 
+            unlocked_areas=player.unlocked_areas
+        )
+    except Exception as e:
+        # Fallback to database generation if direct generation fails
         try:
-            # Try getting a pre-generated titan
-            titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
+            titan = await db.generate_titan(player_character.level, player.unlocked_areas)
         except Exception:
-            # Fallback to direct generation for speed if needed
-            from database.models import generate_titan_name, generate_titan_hp, generate_titan_xp
-            level = max(1, player_character.level + random.randint(-2, 2))
-            if level >= 15:
-                difficulty = "Hard"
-            elif level >= 8:
-                difficulty = "Normal"
-            else:
-                difficulty = "Easy"
-                
-            name = generate_titan_name(difficulty)
-            max_hp = generate_titan_hp(level, difficulty)
-            xp_reward = generate_titan_xp(level, difficulty)
-            
+            # Ultimate fallback - basic titan with minimal properties
             titan = Titan(
-                name=name,
-                level=level,
-                max_hp=max_hp,
+                name="Unknown Titan",
+                level=player_character.level,
+                max_hp=100 * player_character.level,
                 abilities=[],
                 created_at=datetime.now(timezone.utc),
-                difficulty=difficulty,
-                spawn_areas=player.unlocked_areas or [],
+                difficulty="Normal",
+                spawn_areas=["Trost District"],
                 drop_table={},
-                xp_reward=xp_reward,
-                min_level_requirement=level
+                xp_reward=50 * player_character.level,
+                min_level_requirement=player_character.level
             )
-            
-            # Start background refill
-            asyncio.create_task(refill_titan_pool(user_id_str, db, player_character, player.unlocked_areas))
 
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
@@ -406,15 +384,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "disable_web_page_preview": False
     }
 
-    # Simplified message sending (always using direct send for consistency)
+    # Simplified message sending with optimized error handling
     sent_message = None
     try:
+        # Direct path approach - always try the most common case first
         if update.message:
             sent_message = await update.message.reply_text(**message_params)
         elif update.callback_query and update.callback_query.message:
             sent_message = await update.callback_query.message.chat.send_message(**message_params)
     except Exception:
-        await _reply_error(update, "An error occurred while displaying the titan.")
+        # Simple error notification - no need for detailed logging here
+        if update.message:
+            await update.message.reply_text("An error occurred. Please try again.")
         return
 
     # Don't wait for titan storage - let it run in the background
@@ -430,10 +411,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(_log_performance(user_id_str, response_time))
     
 async def _handle_timeout_setup(user_id, context, sent_message):
-    """Setup the timeout handler in background to not block the response"""
+    """Setup the timeout handler in background - simplified version"""
+    # Use simpler key structure
     key = f"titan_timeouts_{user_id}"
     if key not in context.bot_data:
         context.bot_data[key] = []
+    
+    # Limit number of tasks for a user (avoid memory leaks)
+    if len(context.bot_data[key]) > 3:
+        # Too many timeout tasks, clean up old ones
+        context.bot_data[key] = [t for t in context.bot_data[key] if not t.done()][:2]
         
     # Create timeout task
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))

@@ -552,16 +552,21 @@ class Database:
         titan_doc["user_id"] = user_id
         titan_doc["updated_at"] = datetime.now(timezone.utc)
         
-        # Only store essential fields for performance
+        # Include all required fields to satisfy schema validation
+        # From error: missing 'created_at', 'drop_table', 'min_level_requirement', 'spawn_areas'
         essential_titan_doc = {
             "user_id": titan_doc["user_id"],
             "name": titan_doc["name"],
             "level": titan_doc["level"],
             "max_hp": titan_doc["max_hp"],
-            "abilities": titan_doc["abilities"],
+            "abilities": titan_doc["abilities"] if "abilities" in titan_doc else [],
             "difficulty": titan_doc["difficulty"],
             "xp_reward": titan_doc["xp_reward"],
-            "updated_at": titan_doc["updated_at"]
+            "updated_at": titan_doc["updated_at"],
+            "created_at": titan_doc.get("created_at", datetime.now(timezone.utc)),
+            "drop_table": titan_doc.get("drop_table", {}),
+            "min_level_requirement": titan_doc.get("min_level_requirement", titan_doc["level"]),
+            "spawn_areas": titan_doc.get("spawn_areas", ["Trost District"])
         }
         
         await self.titans.update_one(
@@ -578,15 +583,28 @@ class Database:
         # If not in cache, get from database
         titan_data = await self.titans.find_one(
             {"user_id": user_id},
-            # Projection to get only needed fields
+            # Include all required fields
             {
                 "user_id": 1, "name": 1, "level": 1, "max_hp": 1, 
-                "abilities": 1, "difficulty": 1, "xp_reward": 1
+                "abilities": 1, "difficulty": 1, "xp_reward": 1,
+                "created_at": 1, "drop_table": 1, "min_level_requirement": 1, "spawn_areas": 1
             }
         )
         
         # Store in cache if found
         if titan_data:
+            # Add defaults for any missing required fields
+            if "abilities" not in titan_data or titan_data["abilities"] is None:
+                titan_data["abilities"] = []
+            if "created_at" not in titan_data:
+                titan_data["created_at"] = datetime.now(timezone.utc)
+            if "drop_table" not in titan_data:
+                titan_data["drop_table"] = {}
+            if "min_level_requirement" not in titan_data:
+                titan_data["min_level_requirement"] = titan_data["level"]
+            if "spawn_areas" not in titan_data:
+                titan_data["spawn_areas"] = ["Trost District"]
+                
             titan = Titan(**titan_data)
             self._titan_cache[user_id] = titan
             return titan
