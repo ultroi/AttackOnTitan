@@ -1,7 +1,9 @@
 import os
 import random
 import datetime
-from typing import Optional, List, Dict
+import time
+import asyncio
+from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 from database.models import Character, Player, Titan, Equipment, CharacterStats, generate_titan_name, generate_titan_hp, generate_titan_xp
 from database.schemas import Ability  # Use Ability instead of AbilityInfo
@@ -11,6 +13,12 @@ import logging
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone
+
+# Player cache for improved performance
+PLAYER_CACHE = {}
+PLAYER_CACHE_TTL = 30  # seconds
+PLAYER_CACHE_LOCK = asyncio.Lock()
+CACHE_ENABLED = True
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -138,10 +146,27 @@ class Database:
         try:
             import time
             start = time.perf_counter()
+
+            # Check cache first if enabled
+            if CACHE_ENABLED:
+                cache_key = f"player_{user_id}"
+                current_time = time.time()
+                
+                # Get from cache if available and not expired
+                if cache_key in PLAYER_CACHE:
+                    cached_data = PLAYER_CACHE[cache_key]
+                    if current_time - cached_data["timestamp"] < PLAYER_CACHE_TTL:
+                        elapsed = (time.perf_counter() - start) * 1000
+                        logger.info(f"get_player cache hit, time: {elapsed:.2f} ms")
+                        return cached_data["player"]
+            
+            # Not in cache or expired, query database
             if self.players is None:
                 await self.init_db() 
             if self.players is None:
                 raise ConnectionError("Database connection failed")
+                
+            # Use projection to only get needed fields for faster query
             player_data = await self.players.find_one({"user_id": user_id}, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
                 "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
@@ -150,10 +175,12 @@ class Database:
                 "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
                 "inventory": 1
             })
+            
             elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"get_player query time: {elapsed:.2f} ms")
+            logger.info(f"get_player db query time: {elapsed:.2f} ms")
             
             # Create a Player object
+            player = None
             if player_data:
                 # Convert team members to proper TeamMember objects if present
                 if "team" in player_data and player_data["team"]:
@@ -162,8 +189,17 @@ class Database:
                         TeamMember(**member) if isinstance(member, dict) else member
                         for member in player_data["team"]
                     ]
-                return Player(**player_data)
-            return None
+                player = Player(**player_data)
+                
+                # Cache the player if enabled
+                if CACHE_ENABLED:
+                    cache_key = f"player_{user_id}"
+                    PLAYER_CACHE[cache_key] = {
+                        "player": player,
+                        "timestamp": time.time()
+                    }
+                    
+            return player
         except (PyMongoError, ConnectionError) as e:
             logger.error(f"Failed to get player: {e}")
             raise
@@ -172,6 +208,7 @@ class Database:
         try:
             import time
             start = time.perf_counter()
+            
             # Ensure XP and total_xp are never negative
             if 'xp' in update_data:
                 update_data['xp'] = max(0, update_data['xp'])
@@ -184,15 +221,59 @@ class Database:
                     (member.dict() if hasattr(member, 'dict') else member)
                     for member in update_data['team']
                 ]
-            update_data["updated_at"] = datetime.now(timezone.utc)
-            result = await self.players.find_one_and_update(
-                {"user_id": str(user_id)},
-                {"$set": update_data},
-                return_document=True
+            
+            # Check if this is a small update that doesn't need a full database refresh
+            is_minor_update = len(update_data) == 1 and (
+                'last_explore_time' in update_data or 
+                'explore_start_time' in update_data or
+                'hcaptcha_start_time' in update_data
             )
-            elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"update_player query time: {elapsed:.2f} ms")
-            return Player(**result) if result else None
+            
+            # For minor updates, don't need to return the document
+            if is_minor_update:
+                update_data["updated_at"] = datetime.now(timezone.utc)
+                await self.players.update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": update_data}
+                )
+                
+                # Update cache if it exists
+                if CACHE_ENABLED:
+                    cache_key = f"player_{user_id}"
+                    if cache_key in PLAYER_CACHE:
+                        player = PLAYER_CACHE[cache_key]["player"]
+                        for key, value in update_data.items():
+                            setattr(player, key, value)
+                        PLAYER_CACHE[cache_key] = {
+                            "player": player,
+                            "timestamp": time.time()
+                        }
+                
+                elapsed = (time.perf_counter() - start) * 1000
+                logger.info(f"update_player (minor) query time: {elapsed:.2f} ms")
+                return await self.get_player(str(user_id))
+            else:
+                # For major updates, need to get the updated document
+                update_data["updated_at"] = datetime.now(timezone.utc)
+                result = await self.players.find_one_and_update(
+                    {"user_id": str(user_id)},
+                    {"$set": update_data},
+                    return_document=True
+                )
+                
+                # Update cache
+                if CACHE_ENABLED and result:
+                    player = Player(**result)
+                    cache_key = f"player_{user_id}"
+                    PLAYER_CACHE[cache_key] = {
+                        "player": player,
+                        "timestamp": time.time()
+                    }
+                    
+                elapsed = (time.perf_counter() - start) * 1000
+                logger.info(f"update_player (major) query time: {elapsed:.2f} ms")
+                return Player(**result) if result else None
+                
         except Exception as e:
             logger.error(f"Failed to update player: {e}")
             raise
@@ -459,19 +540,58 @@ class Database:
             
         return titans
 
+    # Titan cache for better performance
+    _titan_cache = {}
+    
     async def store_titan(self, user_id: str, titan: Titan):
+        # Store in cache first for immediate access
+        self._titan_cache[user_id] = titan
+        
+        # Then save to database in background via asyncio task
         titan_doc = titan.dict()
         titan_doc["user_id"] = user_id
         titan_doc["updated_at"] = datetime.now(timezone.utc)
+        
+        # Only store essential fields for performance
+        essential_titan_doc = {
+            "user_id": titan_doc["user_id"],
+            "name": titan_doc["name"],
+            "level": titan_doc["level"],
+            "max_hp": titan_doc["max_hp"],
+            "abilities": titan_doc["abilities"],
+            "difficulty": titan_doc["difficulty"],
+            "xp_reward": titan_doc["xp_reward"],
+            "updated_at": titan_doc["updated_at"]
+        }
+        
         await self.titans.update_one(
             {"user_id": user_id},
-            {"$set": titan_doc},
+            {"$set": essential_titan_doc},
             upsert=True
         )
 
     async def get_titan(self, user_id: str) -> Optional[Titan]:
-        titan_data = await self.titans.find_one({"user_id": user_id})
-        return Titan(**titan_data) if titan_data else None
+        # Check cache first
+        if user_id in self._titan_cache:
+            return self._titan_cache[user_id]
+            
+        # If not in cache, get from database
+        titan_data = await self.titans.find_one(
+            {"user_id": user_id},
+            # Projection to get only needed fields
+            {
+                "user_id": 1, "name": 1, "level": 1, "max_hp": 1, 
+                "abilities": 1, "difficulty": 1, "xp_reward": 1
+            }
+        )
+        
+        # Store in cache if found
+        if titan_data:
+            titan = Titan(**titan_data)
+            self._titan_cache[user_id] = titan
+            return titan
+            
+        return None
 
     async def delete_titan(self, user_id: str):
         await self.titans.delete_one({"user_id": user_id})
