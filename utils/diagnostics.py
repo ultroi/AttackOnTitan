@@ -24,7 +24,7 @@ async def diagnostic_db_command(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Get DB instance from context if available
         db = context.bot_data.get("db")
-        if not db:
+        if db is None:
             await update.message.reply_text("⚠️ No database in context.bot_data - creating new instance")
             db = Database()
             await db.init_db()
@@ -114,7 +114,7 @@ async def check_group_record(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         # Get DB instance from context if available
         db = context.bot_data.get("db")
-        if not db:
+        if db is None:
             await update.message.reply_text("⚠️ No database in context.bot_data - creating new instance")
             db = Database()
             await db.init_db()

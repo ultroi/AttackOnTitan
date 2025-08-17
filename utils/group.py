@@ -139,13 +139,13 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Store or update group in database
     try:
         db = context.bot_data.get("db")
-        if not db:
+        if db is None:
             # If no database in context, create and initialize one
             from database.db_instance import get_persistent_database
             db = Database()
             await db.init_db()  # Make sure to initialize the database
             logger.info("Created and initialized new database instance for group update")
-        
+
         # Prepare group data
         group_data = {
             "group_id": group_id,
@@ -161,24 +161,24 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             "added_by": user.id if user else None,
             "added_by_name": user.full_name if user else None,
         }
-        
+
         # If bot is added, set added_at
         if action == "added":
             group_data["added_at"] = datetime.now(timezone.utc)
         # If bot is removed, set removed_at
         elif action == "removed":
             group_data["removed_at"] = datetime.now(timezone.utc)
-            
+
         # Check if groups collection exists
         if not hasattr(db, 'groups') or db.groups is None:
             logger.warning("Groups collection not initialized, reinitializing database")
             await db.init_db()  # Make sure to initialize the database again
-            
+
         # Double-check groups collection after initialization
         if db.groups is None:
             logger.error("Groups collection still None after reinitialization, cannot update group")
             return
-            
+
         # Use the database function to update the group
         if await db.update_group(group_id, group_data):
             logger.info(f"Group {action} in DB: {group_id} - {group_title}")
