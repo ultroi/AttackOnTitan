@@ -852,6 +852,13 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"[equip_weapon] Callback data: {query.data}")
     await query.answer()
     user_id = str(query.from_user.id)
+    
+    # Check if user is in PVP battle
+    from game.pvp_system import active_pvp_battles
+    if user_id in active_pvp_battles:
+        await query.answer("⚔️ You cannot equip weapons during PVP battles!", show_alert=True)
+        return
+    
     data = query.data.replace("equip_weapon_", "")
     # Split on double underscore to separate char_name and weapon_key
     if "__" in data:
@@ -894,6 +901,13 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
     print(f"DEBUG fill_gas: user_id={user_id}, char_name={char_name}")
+    
+    # Check if user is in PVP battle
+    from game.pvp_system import active_pvp_battles
+    if user_id in active_pvp_battles:
+        await query.answer("⚔️ You cannot fill gas during PVP battles!", show_alert=True)
+        return
+        
     db = context.bot_data.get("db") or Database()
     try:
         player = await db.get_player(user_id)

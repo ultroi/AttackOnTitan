@@ -322,6 +322,11 @@ class ShopSystem:
     async def purchase_item(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, item_name: str, quantity: int = 1) -> Dict[str, Any]:
         """Purchase an item from the shop."""
         try:
+            # Check if player is in PVP battle
+            from game.pvp_system import active_pvp_battles
+            if user_id in active_pvp_battles:
+                return {"success": False, "message": "⚔️ You cannot buy items during PVP battles!"}
+                
             if quantity <= 0:
                 raise ValueError("Quantity must be positive")
             db = await self._get_db(context)
@@ -383,6 +388,11 @@ class ShopSystem:
     async def buy_currency(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, currency_type: str, amount: int) -> str:
         """Handle currency purchases and exchanges."""
         try:
+            # Check if player is in PVP battle
+            from game.pvp_system import active_pvp_battles
+            if user_id in active_pvp_battles:
+                return "⚔️ You cannot buy currency during PVP battles!"
+                
             if amount <= 0:
                 raise ValueError("Amount must be positive")
             db = await self._get_db(context)

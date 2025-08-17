@@ -1,3 +1,4 @@
+from AttackOnTitan.utils.mod_utils import mod_only
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -8,6 +9,7 @@ from game.captcha import spawn_captcha
 from utils.ban_utils import ban_protected
 from datetime import datetime, timezone
 from utils.maintenance import maintenance_protected
+from utils.mod_utils import mod_only
 from typing import Dict
 import time
 import random
@@ -627,29 +629,46 @@ async def start_cleanup_task():
     """Start the cleanup task."""
     asyncio.create_task(cleanup_stale_explore_records())
 
-@ban_protected
+
+@mod_only
 async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Command to reset verification state for a user who might be stuck.
-    Usage: /resetverify
+    Command to reset verification state for a user.
+    Usage: /resetverify [user_id] or reply to a user's message
+    Only moderators can use this command.
     """
     if not update.effective_user:
         return
-        
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
     
-    success = await reset_verification_state(user_id, context)
+    # Determine target user (either from reply or from args)
+    target_user_id = None
+    
+    # Check if replying to a message
+    if update.message.reply_to_message and update.message.reply_to_message.from_user:
+        target_user_id = update.message.reply_to_message.from_user.id
+        target_user_name = update.message.reply_to_message.from_user.first_name
+    # Check if user ID was provided as argument
+    elif context.args and context.args[0].isdigit():
+        target_user_id = int(context.args[0])
+        target_user_name = f"User {target_user_id}"
+    else:
+        await update.message.reply_text(
+            "❌ Please either reply to a user's message or provide a user ID."
+        )
+        return
+    
+    # Reset verification for the target user
+    success = await reset_verification_state(target_user_id, context)
     
     if success:
         await update.message.reply_text(
-            f"✅ Hi {user_name}, your verification state has been reset.\n"
-            f"You can now use /explore again normally."
+            f"✅ Verification state has been reset for {target_user_name}.\n"
+            f"They can now use /explore again normally."
         )
     else:
         await update.message.reply_text(
-            f"❌ Sorry {user_name}, I couldn't reset your verification state.\n"
-            f"Please try again later or contact support."
+            f"❌ Failed to reset verification state for {target_user_name}.\n"
+            f"Please try again later or check if the user ID is valid."
         )
 
 

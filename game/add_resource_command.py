@@ -82,17 +82,26 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             if message:
                 await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
             return
-        if target_level <= character.level:
+        if target_level == character.level:
             if message:
-                await message.reply_text(f"Character is already level {character.level} or higher.")
+                await message.reply_text(f"Character is already level {character.level}.")
             return
-        level_ups = []
-        while character.level < target_level:
-            result = character.level_up()
-            level_ups.append(result)
-        await db.update_character(character)
-        if message:
-            await message.reply_text(f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
+        
+        # Handle level increase
+        if target_level > character.level:
+            level_ups = []
+            while character.level < target_level:
+                result = character.level_up()
+                level_ups.append(result)
+            await db.update_character(character)
+            if message:
+                await message.reply_text(f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
+        # Handle level decrease
+        else:
+            character.level = max(1, target_level)  # Ensure level doesn't go below 1
+            await db.update_character(character)
+            if message:
+                await message.reply_text(f"Character '{char_name}' level set to {character.level}.")
         return
 
     # --- Default: player resource/level add ---
@@ -117,10 +126,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     try:
         amount = int(amount)
-        if amount <= 0:
-            if message:
-                await message.reply_text("Amount must be positive.")
-            return
+        # Allow negative amounts for resource deduction
     except ValueError:
         if message:
             await message.reply_text("Amount must be a number.")
@@ -156,20 +162,33 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         update_data["valor"] = getattr(player, "valor", 0) + amount
     elif resource == "level":
         target_level = amount
-        if target_level <= player.level:
+        if target_level == player.level:
             if message:
-                await message.reply_text(f"User is already level {player.level} or higher.")
+                await message.reply_text(f"User is already level {player.level}.")
             return
-        level_ups = []
-        while player.level < target_level:
-            level_up_data = player.level_up()
-            level_ups.append(level_up_data)
-        await db.update_player(target_user_id_int, player.dict())
-        if message:
-            await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
-        return
+        
+        # Handle level increase
+        if target_level > player.level:
+            level_ups = []
+            while player.level < target_level:
+                level_up_data = player.level_up()
+                level_ups.append(level_up_data)
+            await db.update_player(target_user_id_int, player.dict())
+            if message:
+                await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
+            return
+        # Handle level decrease
+        else:
+            # Simple approach - just set the level directly
+            player.level = max(1, target_level)  # Ensure level doesn't go below 1
+            await db.update_player(target_user_id_int, {"level": player.level})
+            if message:
+                await message.reply_text(f"User {target_user_id_int} level set to {player.level}.")
+            return
     await db.update_player(target_user_id_int, update_data)
     if message:
-        await message.reply_text(f"Added {amount} {resource} to user {target_user_id_int}.")
+        action_verb = "Added" if amount >= 0 else "Deducted"
+        display_amount = abs(amount)  # Use absolute value for display
+        await message.reply_text(f"{action_verb} {display_amount} {resource} {'to' if amount >= 0 else 'from'} user {target_user_id_int}.")
 
 
