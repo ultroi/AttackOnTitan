@@ -121,8 +121,9 @@ class BankSystem:
                 acc.crystal_balance * CURRENCY_VALUES['crystal']
             )
 
-        # Sort accounts by total wealth
-        sorted_accounts = sorted(all_accounts, key=lambda acc: acc.total_wealth, reverse=True)
+        # Sort accounts by total wealth and filter out system accounts
+        player_accounts = [acc for acc in all_accounts if acc.user_id != "central_bank"]
+        sorted_accounts = sorted(player_accounts, key=lambda acc: acc.total_wealth, reverse=True)
 
         top_3 = [{'user_id': acc.user_id, 'total': acc.total_wealth} for acc in sorted_accounts[:3]]
 

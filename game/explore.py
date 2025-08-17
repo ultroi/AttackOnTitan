@@ -247,7 +247,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check inactivity and handle verification asynchronously
     if last_explore and (now - last_explore) > 1500 and not player_verified:
-        asyncio.create_task(_handle_verification(update, context, user_id, now, db))
+        # Handle verification and return without spawning titan
+        await _handle_verification(update, context, user_id, now, db)
+        return
         
     # Reset verification flag if verified
     if player_verified:
@@ -298,6 +300,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         captcha_triggered = await spawn_captcha(update, context)
         if captcha_triggered:
             return
+            
+    # Double-check that hCaptcha verification is not required before spawning titan
+    if context.user_data.get("hcaptcha_prompted", False) and not player_verified:
+        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
+        return
 
     # Get titan and store it in DB concurrently for better performance
     titan = await get_pregenerated_titan(user_id_str, db, player_character, player.unlocked_areas)
@@ -411,7 +418,8 @@ async def _handle_verification(update, context, user_id, now, db):
         try:
             await update.message.reply_text(
                 "🔒 <b>Verification Required</b>\n\n"
-                "Complete hCaptcha to continue exploring\n",
+                "Complete hCaptcha to continue exploring\n"
+                "After completing verification, use /explore again to continue.",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
                 ]),
@@ -420,6 +428,7 @@ async def _handle_verification(update, context, user_id, now, db):
             await db.update_player(str(user_id), {"hcaptcha_start_time": timestamp})
         except Exception:
             pass
+    return True
 
 async def _handle_decision_point_cleanup(user_id_str, context):
     try:
