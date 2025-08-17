@@ -507,7 +507,8 @@ def include_dashboard_route(app):
                     "$set": {
                         "hcaptcha_verified": True,
                         "last_verified": now,
-                        "explore_start_time": now  # Reset exploration time
+                        "explore_start_time": now,  # Reset exploration time
+                        "hcaptcha_start_time": None  # Clear the start time to prevent timeout checks
                     }
                 }
             )

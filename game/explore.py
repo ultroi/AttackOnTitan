@@ -251,15 +251,21 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.update_player(user_id_str, {"last_explore_time": now})
 
     # Check inactivity and handle verification
-    if last_explore and (now - last_explore) > 1500 and not player_verified:
-        # Handle verification and return without spawning titan
-        await _handle_verification(update, context, user_id, now, db)
-        return
+    if last_explore and (now - last_explore) > 1500:
+        # Only require verification if not recently verified
+        last_verified_time = getattr(player, "last_verified", 0)
+        if not last_verified_time or (now - last_verified_time) > 1800: 
+            # Handle verification and return without spawning titan
+            if await _handle_verification(update, context, user_id, now, db):
+                return  # Only return if verification was actually prompted
         
-    # Reset verification flag after successful verification
+    # Reset verification flag but maintain recent verification record
     if player_verified:
-        # Non-blocking update
-        asyncio.create_task(db.update_player(user_id_str, {"hcaptcha_verified": False}))
+        # Keep last_verified, but reset hcaptcha_verified flag for next session
+        asyncio.create_task(db.update_player(user_id_str, {
+            "hcaptcha_verified": False,  # Reset for next session
+            "hcaptcha_start_time": None  # Clear start time
+        }))
 
     # Tracking happens in background - with reduced frequency for better performance
     if random.random() < 0.33:  # Only track 33% of explores to reduce overhead
@@ -463,10 +469,20 @@ async def _handle_verification(update, context, user_id, now, db):
     player = await db.get_player(user_id_str)
     
     # If player is verified in database, clear all verification flags and continue
-    if player and getattr(player, "hcaptcha_verified", False):
+    if player and getattr(player, "hcaptcha_verified", True):
         # User is already verified in database, reset all verification flags
         context.user_data["hcaptcha_prompted"] = False
         logger.info(f"Player {user_id} is verified in database, cleared hcaptcha_prompted flag")
+        return False
+    
+    # Check for verification success message from web
+    last_verified_time = getattr(player, "last_verified", 0)
+    if last_verified_time and now - last_verified_time < 600:  # Within 10 minutes
+        # User was recently verified via web
+        context.user_data["hcaptcha_prompted"] = False
+        # Ensure database state is synchronized
+        await db.update_player(user_id_str, {"hcaptcha_verified": True})
+        logger.info(f"Player {user_id} was recently verified via web, cleared verification flags")
         return False
     
     # If this is the first time prompting for verification
