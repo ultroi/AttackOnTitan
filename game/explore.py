@@ -230,15 +230,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("You need to create a profile first with /start")
         return
     
-    # Block if verification is in progress - fast check
-    if context.user_data.get("hcaptcha_prompted", False) and not getattr(player, "hcaptcha_verified", False):
-        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-        return
-
     # Record time and check inactivity 
     now = time.time()
     player_verified = getattr(player, "hcaptcha_verified", False)
     last_explore = getattr(player, "last_explore_time", None)
+    
+    # Always reset the prompted flag if the player is verified in database
+    if player_verified:
+        context.user_data["hcaptcha_prompted"] = False
+        logger.info(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
+    
+    # Check if verification is still being requested after checking database
+    if context.user_data.get("hcaptcha_prompted", False) and not player_verified:
+        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
+        return
     
     # Use the new non-blocking update pattern for last_explore_time
     # Since we're using the new fire-and-forget pattern, we don't need to await this
@@ -250,9 +255,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_verification(update, context, user_id, now, db)
         return
         
-    # Reset verification flag if verified
+    # Reset verification flag after successful verification
     if player_verified:
-        context.user_data["hcaptcha_prompted"] = False
         # Non-blocking update
         asyncio.create_task(db.update_player(user_id_str, {"hcaptcha_verified": False}))
 
@@ -449,23 +453,54 @@ async def _show_keyboard_background(update: Update):
             pass
 
 async def _handle_verification(update, context, user_id, now, db):
+    """
+    Handle hCaptcha verification with improved checks and proper flag management.
+    """
+    # Double-check database first to see if player is verified
+    # This ensures we have the most up-to-date information
+    user_id_str = str(user_id)
+    player = await db.get_player(user_id_str)
+    
+    # If player is verified in database, clear all verification flags and continue
+    if player and getattr(player, "hcaptcha_verified", False):
+        # User is already verified in database, reset all verification flags
+        context.user_data["hcaptcha_prompted"] = False
+        logger.info(f"Player {user_id} is verified in database, cleared hcaptcha_prompted flag")
+        return False
+    
+    # If this is the first time prompting for verification
     if not context.user_data.get("hcaptcha_prompted", False):
+        # Set the prompted flag to prevent repeated prompts
         context.user_data["hcaptcha_prompted"] = True
         timestamp = int(now)
+        
+        # Generate verification URL with user ID and timestamp
         verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+        
         try:
+            # Send verification message with button
             await update.message.reply_text(
                 "🔒 <b>Verification Required</b>\n\n"
-                "Complete hCaptcha to continue exploring\n"
-                "After completing verification, use /explore again to continue.",
+                "Complete hCaptcha to continue exploring.\n"
+                "After completing verification, use /explore again to continue.\n\n"
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
                 ]),
                 parse_mode=ParseMode.HTML,
             )
-            await db.update_player(str(user_id), {"hcaptcha_start_time": timestamp})
-        except Exception:
-            pass
+            
+            # Update player record with verification start time
+            await db.update_player(user_id_str, {
+                "hcaptcha_start_time": timestamp,
+                "hcaptcha_verified": False  # Explicitly set to false
+            })
+            
+            logger.info(f"Sent verification request to player {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to send verification message: {e}")
+            # If we fail to send the message, don't leave the user stuck in verification limbo
+            context.user_data["hcaptcha_prompted"] = False
+    
     return True
 
 async def _handle_decision_point_cleanup(user_id_str, context):
@@ -537,6 +572,34 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
             pass
             await asyncio.sleep(3600)
 
+async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Reset verification state for a user who might be stuck in verification limbo.
+    This function clears all verification flags in context and database.
+    """
+    user_id_str = str(user_id)
+    db = context.bot_data.get("db")
+    if not db:
+        return False
+        
+    try:
+        # Clear verification flags in context
+        if context.user_data:
+            context.user_data["hcaptcha_prompted"] = False
+            
+        # Reset verification in database
+        await db.update_player(user_id, {
+            "hcaptcha_verified": False,
+            "hcaptcha_start_time": None,
+            "explore_start_time": None
+        })
+        
+        logger.info(f"Reset verification state for user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to reset verification state: {e}")
+        return False
+
 async def force_cleanup_user(user_id: int, db: Database):
     """Force cleanup of all user-related data."""
     try:
@@ -563,5 +626,30 @@ async def force_cleanup_user(user_id: int, db: Database):
 async def start_cleanup_task():
     """Start the cleanup task."""
     asyncio.create_task(cleanup_stale_explore_records())
+
+@ban_protected
+async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Command to reset verification state for a user who might be stuck.
+    Usage: /resetverify
+    """
+    if not update.effective_user:
+        return
+        
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    
+    success = await reset_verification_state(user_id, context)
+    
+    if success:
+        await update.message.reply_text(
+            f"✅ Hi {user_name}, your verification state has been reset.\n"
+            f"You can now use /explore again normally."
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Sorry {user_name}, I couldn't reset your verification state.\n"
+            f"Please try again later or contact support."
+        )
 
 
