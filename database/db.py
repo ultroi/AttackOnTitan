@@ -443,9 +443,16 @@ class Database:
             )
             character.unlock_abilities()
             character_dict = character.dict()
-            if 'passive_abilities' in character_dict:
-                for ability in character_dict['passive_abilities']:
-                    ability['unlocked'] = ability.get('is_unlocked', False)
+            
+            # Ensure all abilities have the 'unlocked' field
+            for ability_type in ['active_abilities', 'passive_abilities', 'ultimate_abilities']:
+                if ability_type in character_dict:
+                    for ability in character_dict[ability_type]:
+                        if 'unlocked' not in ability:
+                            ability['unlocked'] = ability.get('is_unlocked', False)
+                        if 'is_unlocked' not in ability:
+                            ability['is_unlocked'] = ability.get('unlocked', False)
+            
             await self.characters.insert_one(character_dict)
             await self.add_character_to_player(user_id, name)
             return character

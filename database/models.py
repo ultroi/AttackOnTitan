@@ -251,7 +251,8 @@ class Character(BaseModel):
                         type=ability_type,
                         description=ability.description,
                         level_required=level_required,
-                        unlocked=True
+                        is_unlocked=True,
+                        unlocked=True  # Add both fields for compatibility with schema validation
                     )
                     if ability_type == "passive" and ability_info not in self.passive_abilities:
                         self.passive_abilities.append(ability_info)
@@ -268,11 +269,17 @@ class Character(BaseModel):
         self.updated_at = datetime.now(timezone.utc)
 
     def dict(self, *args, **kwargs):
-        # Ensure all abilities in passive_abilities have 'unlocked' or 'is_unlocked' field
+        # Ensure all abilities in all ability lists have both 'unlocked' and 'is_unlocked' fields
         data = super().dict(*args, **kwargs)
-        for ability in data.get('passive_abilities', []):
-            if 'unlocked' not in ability and 'is_unlocked' not in ability:
-                ability['unlocked'] = False
+        for ability_type in ['active_abilities', 'passive_abilities', 'ultimate_abilities']:
+            for ability in data.get(ability_type, []):
+                if 'unlocked' not in ability and 'is_unlocked' not in ability:
+                    ability['unlocked'] = False
+                    ability['is_unlocked'] = False
+                elif 'unlocked' not in ability and 'is_unlocked' in ability:
+                    ability['unlocked'] = ability['is_unlocked']
+                elif 'is_unlocked' not in ability and 'unlocked' in ability:
+                    ability['is_unlocked'] = ability['unlocked']
         return data
 
 
