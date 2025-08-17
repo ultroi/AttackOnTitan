@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler, MessageHandler, filters
 from telegram.error import BadRequest
 from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
@@ -693,6 +693,7 @@ def register_handlers(app_instance):
 
     # Group membership handler
     app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=["my_chat_member", "chat_member"]))
+    app_instance.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, group_update_handler))
 
     # Generic button handler (should be last)
     app_instance.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
