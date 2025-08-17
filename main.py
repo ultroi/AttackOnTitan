@@ -24,6 +24,7 @@ from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
 from utils.mod_utils import promote_mod, demote_mod
 from utils.maintenance import maintenance_protected, maintenance
+from utils.diagnostics import diagnostic_db_command, check_group_record
 
 # Import database models
 from database.models import Character, Player
@@ -633,6 +634,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CommandHandler("mm", maintenance))
     app_instance.add_handler(CommandHandler("add", add_resource_command))
+    
+    # Diagnostic commands
+    app_instance.add_handler(CommandHandler("dbdiag", diagnostic_db_command))
+    app_instance.add_handler(CommandHandler("checkgroup", check_group_record))
     
     # Tax system commands
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))

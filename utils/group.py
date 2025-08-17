@@ -16,18 +16,29 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     log_channel_id = LOG_CHANNEL_ID
     event = update.my_chat_member or update.chat_member
     if not event:
+        logger.info("No event data in group update handler, skipping")
         return
+        
+    logger.info(f"Group update event received: {event}")
+    
     chat = event.chat
     user = event.from_user
     old_status = event.old_chat_member.status if hasattr(event, 'old_chat_member') else None
     new_status = event.new_chat_member.status if hasattr(event, 'new_chat_member') else None
+    
+    # Detailed logging
+    logger.info(f"Group update: chat_id={chat.id}, type={chat.type}, old_status={old_status}, new_status={new_status}")
+    
     # Only care about groups/supergroups
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        logger.info(f"Skipping update for non-group chat type: {chat.type}")
         return
+        
     # Only care if bot is added/removed/promoted/demoted
     bot_id = (await context.bot.get_me()).id
     bot_member = event.new_chat_member if hasattr(event, 'new_chat_member') else None
     if bot_member and bot_member.user.id != bot_id:
+        logger.info(f"Skipping update not related to our bot. Bot ID: {bot_id}, Update for: {bot_member.user.id}")
         return  # Not about our bot
     
     was_member = old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER]
@@ -86,7 +97,13 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     # Store or update group in database
     try:
-        db = context.bot_data.get("db") or Database()
+        db = context.bot_data.get("db")
+        if not db:
+            # If no database in context, create and initialize one
+            from database.db_instance import get_persistent_database
+            db = Database()
+            await db.init_db()  # Make sure to initialize the database
+            logger.info("Created and initialized new database instance for group update")
         
         # Prepare group data
         group_data = {
@@ -111,9 +128,16 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif action == "removed":
             group_data["removed_at"] = datetime.now(timezone.utc)
             
+        # Check if groups collection exists
+        if not hasattr(db, 'groups') or db.groups is None:
+            logger.warning("Groups collection not initialized, reinitializing database")
+            await db.init_db()  # Make sure to initialize the database again
+            
         # Use the database function to update the group
         if await db.update_group(group_id, group_data):
             logger.info(f"Group {action} in DB: {group_id} - {group_title}")
+        else:
+            logger.warning(f"Failed to update group in database, possibly due to connection issue: {group_id} - {group_title}")
     except Exception as db_err:
         logger.error(f"Failed to update group in database: {db_err}")
     
