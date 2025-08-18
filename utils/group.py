@@ -126,7 +126,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     user_link = f"<a href='tg://user?id={user.id}'>{escape(user.full_name)}</a>" if user else "?"
     # Compose message
     msg = (
-        f"<b>Bot {action} in group</b>\n"
+        f"<b>Bot {action} in group</b>\n\n"
         f"<b>Group:</b> {escape(group_title)}\n"
         f"<b>ID:</b> <code>{group_id}</code>\n"
         f"<b>Type:</b> {group_type}\n"
