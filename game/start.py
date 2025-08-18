@@ -455,9 +455,9 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if is_new_player:
                     try:
                         # Make sure db is initialized and players collection exists
-                        if not db.players:
+                        if db.players is None:
                             await db.init_db()
-                        if db.players:
+                        if db.players is not None:
                             await db.players.delete_one({"user_id": str(user_id)})
                         else:
                             logger.error(f"Failed to delete player: db.players is None")
@@ -480,12 +480,12 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if referred_by:
                     try:
                         # Make sure DB is initialized
-                        if not db.players:
+                        if db.players is None:
                             logger.info("DB not initialized, initializing now...")
                             await db.init_db()
                             
                         # Now check if DB initialization was successful
-                        if not db.players:
+                        if db.players is None:
                             logger.error("DB initialization failed, can't process referral")
                             ref_player = None
                         else:
@@ -498,7 +498,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 starter_rewards[k] = starter_rewards.get(k, 0) + v
                             
                             # Update referrer if db was initialized
-                            if db.players:
+                            if db.players is not None:
                                 await db.players.update_one(
                                     {"referral_code": referred_by}, 
                                     {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}}
@@ -534,11 +534,11 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         # Delete character doesn't exist in Database class - fix this
                         try:
                             # Ensure DB is initialized
-                            if not db.characters:
+                            if db.characters is None:
                                 logger.info("DB characters collection not initialized, initializing DB...")
                                 await db.init_db()
                                 
-                            if db.characters:
+                            if db.characters is not None:
                                 await db.characters.delete_one({"user_id": str(user_id), "name": selected_character})
                                 logger.info(f"Deleted character {selected_character} for user {user_id}")
                             else:
