@@ -490,7 +490,11 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             ref_player = None
                         else:
                             logger.info(f"Looking up referrer with code: {referred_by}")
-                            ref_player = await db.players.find_one({"referral_code": referred_by})
+                            # Try to find player by either referral code or user_id
+                            ref_player = await db.players.find_one({"$or": [
+                                {"referral_code": referred_by},
+                                {"user_id": referred_by}
+                            ]})
                             logger.info(f"Referral lookup result: {ref_player is not None}")
                         
                         if ref_player and str(ref_player.get('user_id')) != user_id:
@@ -499,10 +503,14 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             
                             # Update referrer if db was initialized
                             if db.players is not None:
-                                await db.players.update_one(
-                                    {"referral_code": referred_by}, 
+                                update_result = await db.players.update_one(
+                                    {"$or": [
+                                        {"referral_code": referred_by},
+                                        {"user_id": referred_by}
+                                    ]}, 
                                     {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}}
                                 )
+                                logger.info(f"Referral update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
                             # Notify referrer
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None
