@@ -101,10 +101,10 @@ def start_scheduler(bot=None):
     
     # Add job to run every day at midnight (00:00)
     scheduler.add_job(
-        lambda: asyncio.create_task(run_midnight_tax()), 
-        'cron', 
-        hour=0, 
-        minute=0, 
+        lambda: asyncio.run(run_midnight_tax()),
+        'cron',
+        hour=0,
+        minute=0,
         second=0,
         id='midnight_tax_job',
         replace_existing=True,

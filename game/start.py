@@ -69,15 +69,27 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     referral_code = None
     if hasattr(update, 'message') and update.message and update.message.text:
         parts = update.message.text.strip().split()
-        if len(parts) > 1 and parts[1].startswith('referral_'):
-            referral_code = parts[1][len('referral_'):]
+        if len(parts) > 1:
+            # Check both formats: "referral_CODE" and just "CODE"
+            if parts[1].startswith('referral_'):
+                referral_code = parts[1][len('referral_'):]
+            else:
+                referral_code = parts[1]  # Accept direct code format too
+            logger.info(f"Detected referral code: {referral_code} for user {user_id}")
 
     # Step 2: FULL MEMORY CLEANUP (except referral and hcaptcha_pending)
     if hasattr(context, 'user_data') and context.user_data is not None:
         hcaptcha_pending = context.user_data.get('hcaptcha_pending')
+        # Save any existing referral code before clearing
+        existing_referral = context.user_data.get('referred_by')
+        # Use newly detected referral or keep existing one
+        final_referral = referral_code or existing_referral
+        
         context.user_data.clear()  # Clear all first
-        if referral_code:
-            context.user_data['referred_by'] = referral_code  # Restore referral
+        
+        if final_referral:
+            context.user_data['referred_by'] = final_referral  # Restore referral
+            logger.info(f"Saved referral code {final_referral} to context for user {user_id}")
         if hcaptcha_pending:
             context.user_data['hcaptcha_pending'] = hcaptcha_pending
 
@@ -111,12 +123,26 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         "<i>Are you ready to join the fight?</i>"
     )
     
-    await update.message.reply_photo(
-        photo="https://i.ibb.co/tpg301ZQ/image.jpg",
-        caption=welcome_text,
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.HTML
-    )
+    # Log the referral context before sending welcome message
+    if hasattr(context, 'user_data') and context.user_data is not None:
+        referral_code = context.user_data.get('referred_by')
+        logger.info(f"Before sending welcome: User {user_id} has referral code: {referral_code}")
+    
+    try:
+        await update.message.reply_photo(
+            photo="https://i.ibb.co/tpg301Z/image.jpg",  # Fixed URL
+            caption=welcome_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error sending welcome photo: {e}")
+        # Fallback to text message if photo fails
+        await update.message.reply_text(
+            text=welcome_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
 
 async def show_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Do NOT send a new photo here; only edit the existing message (text or caption)
@@ -345,25 +371,34 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return      ...
         try:
             player = await db.get_player(user_id)
-            referred_by = context.user_data.get('referred_by')
+            referred_by = None
+            if hasattr(context, 'user_data') and context.user_data is not None:
+                referred_by = context.user_data.get('referred_by')
+                logger.info(f"Creating character: User {user_id} has referral code in context: {referred_by}")
+            
             ref_player = None
             is_new_player = False
+            
             # --- Validate referral code ---
             if referred_by and referred_by == user_id:
                 logger.warning(f"User {user_id} tried to refer themselves.")
                 referred_by = None
+            
             if not player:
                 is_new_player = True
                 try:
                     if referred_by:
-                        player = await db.create_player(user_id, username, name, referred_by=referred_by)
+                        logger.info(f"Creating player with referral: user={user_id}, referrer={referred_by}")
+                        # Convert user_id to int for DB compatibility
+                        player = await db.create_player(int(user_id), username, name, referred_by=referred_by)
                     else:
-                        player = await db.create_player(user_id, username, name)
+                        logger.info(f"Creating player without referral: user={user_id}")
+                        player = await db.create_player(int(user_id), username, name)
                 except Exception as create_err:
                     logger.error(f"Failed to create player: {create_err}")
                     await _safe_edit_message(query, "An error occurred while creating your player. Please try again.")
                     return
-            existing_char = await db.get_character(user_id, selected_character)
+            existing_char = await db.get_character(int(user_id), selected_character)
             if existing_char:
                 # Character already exists, just show the welcome message again (idempotent)
                 # Use actual player/character values instead of undefined starter_rewards
@@ -412,14 +447,20 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if 'duplicate' in str(char_err).lower() or 'already exists' in str(char_err).lower():
                     logger.warning(f"Duplicate character creation attempt for user {user_id}, character {selected_character}")
                     # Fetch the character again and proceed as idempotent
-                    existing_char = await db.get_character(user_id, selected_character)
+                    existing_char = await db.get_character(int(user_id), selected_character)
                     # ...existing idempotent welcome message logic...
                     return
                 logger.error(f"Character creation failed for user {user_id}: {char_err}")
                 # Cleanup: If player was just created, delete it to avoid partial data
                 if is_new_player:
                     try:
-                        await db.delete_player(user_id)
+                        # Make sure db is initialized and players collection exists
+                        if not db.players:
+                            await db.init_db()
+                        if db.players:
+                            await db.players.delete_one({"user_id": str(user_id)})
+                        else:
+                            logger.error(f"Failed to delete player: db.players is None")
                     except Exception as del_err:
                         logger.error(f"Failed to cleanup player after character creation error: {del_err}")
                 if query.message and getattr(query.message, "photo", None):
@@ -438,12 +479,30 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 }
                 if referred_by:
                     try:
-                        ref_player = await db.players.find_one({"referral_code": referred_by})
+                        # Make sure DB is initialized
+                        if not db.players:
+                            logger.info("DB not initialized, initializing now...")
+                            await db.init_db()
+                            
+                        # Now check if DB initialization was successful
+                        if not db.players:
+                            logger.error("DB initialization failed, can't process referral")
+                            ref_player = None
+                        else:
+                            logger.info(f"Looking up referrer with code: {referred_by}")
+                            ref_player = await db.players.find_one({"referral_code": referred_by})
+                            logger.info(f"Referral lookup result: {ref_player is not None}")
+                        
                         if ref_player and str(ref_player.get('user_id')) != user_id:
                             for k, v in REFERRAL_REWARDS.items():
                                 starter_rewards[k] = starter_rewards.get(k, 0) + v
-                            # Update referrer
-                            await db.players.update_one({"referral_code": referred_by}, {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}})
+                            
+                            # Update referrer if db was initialized
+                            if db.players:
+                                await db.players.update_one(
+                                    {"referral_code": referred_by}, 
+                                    {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}}
+                                )
                             # Notify referrer
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None
@@ -466,13 +525,26 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     # Merge int rewards and extra data for player update
                     player_update = {**starter_rewards, **extra_data}
-                    await db.update_player(user_id, player_update)
+                    await db.update_player(int(user_id), player_update)
                 except Exception as update_err:
                     logger.error(f"Failed to update player with starter rewards: {update_err}")
                     # Rollback: delete player and character if possible
                     try:
                         await db.delete_player(user_id)
-                        await db.delete_character(user_id, selected_character)
+                        # Delete character doesn't exist in Database class - fix this
+                        try:
+                            # Ensure DB is initialized
+                            if not db.characters:
+                                logger.info("DB characters collection not initialized, initializing DB...")
+                                await db.init_db()
+                                
+                            if db.characters:
+                                await db.characters.delete_one({"user_id": str(user_id), "name": selected_character})
+                                logger.info(f"Deleted character {selected_character} for user {user_id}")
+                            else:
+                                logger.error("Failed to initialize DB characters collection")
+                        except Exception as del_char_err:
+                            logger.error(f"Failed to delete character: {del_char_err}")
                     except Exception as rollback_err:
                         logger.error(f"Rollback failed: {rollback_err}")
                     await _safe_edit_message(query, "An error occurred while assigning your starter rewards. Please try again.")
