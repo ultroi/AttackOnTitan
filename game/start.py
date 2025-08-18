@@ -130,7 +130,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     
     try:
         await update.message.reply_photo(
-            photo="https://i.ibb.co/tpg301Z/image.jpg",  # Fixed URL
+            photo="https://i.ibb.co/tpg301ZQ/image.jpg",  # Restored original URL
             caption=welcome_text,
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
