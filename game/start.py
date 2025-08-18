@@ -509,6 +509,9 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             
                             # Update referrer if db was initialized
                             if db.players is not None:
+                                # Get the referrer's user_id
+                                ref_user_id = str(ref_player.get('user_id'))
+                                
                                 update_result = await db.players.update_one(
                                     {"$or": [
                                         {"referral_code": referred_by},
@@ -518,10 +521,18 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 )
                                 logger.info(f"Referral update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
                                 
+                                # Clear cache for the referrer to ensure fresh data
+                                from database.db import PLAYER_CACHE, CACHE_ENABLED
+                                if CACHE_ENABLED:
+                                    cache_key = f"player_{ref_user_id}"
+                                    if cache_key in PLAYER_CACHE:
+                                        logger.info(f"Clearing cache for referrer {ref_user_id}")
+                                        del PLAYER_CACHE[cache_key]
+                                
                                 # Double-check referrer after update to verify count was increased
-                                updated_referrer = await db.players.find_one({"user_id": ref_player.get('user_id')})
+                                updated_referrer = await db.players.find_one({"user_id": ref_user_id})
                                 if updated_referrer:
-                                    logger.info(f"Referrer {ref_player.get('user_id')} new referral_count: {updated_referrer.get('referral_count', 0)}")
+                                    logger.info(f"Referrer {ref_user_id} new referral_count: {updated_referrer.get('referral_count', 0)}")
                             # Notify referrer
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None
@@ -545,6 +556,14 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Merge int rewards and extra data for player update
                     player_update = {**starter_rewards, **extra_data}
                     await db.update_player(int(user_id), player_update)
+                    
+                    # Clear cache for the referred user to ensure fresh data
+                    from database.db import PLAYER_CACHE, CACHE_ENABLED
+                    if CACHE_ENABLED:
+                        cache_key = f"player_{user_id}"
+                        if cache_key in PLAYER_CACHE:
+                            logger.info(f"Clearing cache for referred user {user_id}")
+                            del PLAYER_CACHE[cache_key]
                 except Exception as update_err:
                     logger.error(f"Failed to update player with starter rewards: {update_err}")
                     # Rollback: delete player and character if possible

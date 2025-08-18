@@ -555,16 +555,49 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
-    player = await db.get_player(user_id)
+    # First, initialize DB if needed
+    if db.players is None:
+        await db.init_db()
+    
+    # Directly fetch from MongoDB to bypass any caching
+    if db.players is not None:
+        # Always fetch directly from the database to ensure we have the latest data
+        player_doc = await db.players.find_one({"user_id": user_id})
+        if player_doc:
+            from database.models import Player
+            player = Player(**player_doc)
+            # Log the raw referral data from the document
+            logger.info(f"Raw referral data from DB: referral_count={player_doc.get('referral_count', 0)}, "
+                        f"referral_code={player_doc.get('referral_code')}, "
+                        f"referred_by={player_doc.get('referred_by')}")
+        else:
+            # If not found, use standard get_player (should not normally happen)
+            player = await db.get_player(user_id)
+            logger.warning(f"Player {user_id} not found directly in DB, using cached version")
+    else:
+        # Fallback if database isn't initialized
+        player = await db.get_player(user_id)
+        logger.warning(f"DB not initialized, using cached player for {user_id}")
+    
+    # Clear cache for this player to ensure subsequent calls get fresh data
+    from database.db import PLAYER_CACHE, CACHE_ENABLED
+    if CACHE_ENABLED:
+        cache_key = f"player_{user_id}"
+        if cache_key in PLAYER_CACHE:
+            logger.info(f"Clearing cache for player {user_id} in referral_info")
+            del PLAYER_CACHE[cache_key]
+    
     if not player:
         await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
         return
+    
     bot_username = "Attackon_TitanBot"
     referral_code = player.referral_code or user_id
     referral_link = f"https://t.me/{bot_username}?start=referral_{referral_code}"
     referred_by = player.referred_by or "None"
     # Access referral_count directly since it's defined in the Player model
-    referral_count = player.referral_count
+    referral_count = player.referral_count if hasattr(player, 'referral_count') else 0
+    
     # Log referral information to help with debugging
     logger.info(f"Referral info for {user_id}: code={referral_code}, count={referral_count}, referred_by={referred_by}")
     

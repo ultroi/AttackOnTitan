@@ -175,7 +175,7 @@ class Database:
                 "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
                 "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
                 "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
-                "inventory": 1
+                "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1
             })
             
             elapsed = (time.perf_counter() - start) * 1000
