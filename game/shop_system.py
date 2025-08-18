@@ -31,13 +31,13 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-                name="Dual Blades / Ultrahard Steel Blades", type="echo", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=5000, currency="marks", description="Blades made of ultrahard steel."
+                name="Dual Blades / Ultrahard Steel Blades", type="echo", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=10000, currency="valor", description="Blades made of ultrahard steel."
             ),
             "combat_boots": Equipment(
                 name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 80.0, "damage_max": 120.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
             ),
             "anti_titan_armor": Equipment(
-                name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=3000, currency="marks", description="Bolt-action rifles."
+                name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=6000, currency="valor", description="Bolt-action rifles."
             ),
             "time_contract": Equipment(
                 name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={
@@ -45,7 +45,7 @@ class ShopSystem:
                     "cooldown_reduction": 1,
                     "battles_remaining": 5,
                     "flash_initiative": 3
-                }, price=20000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
+                }, price=40000, currency="valor", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
             ),
             "bounty_permit": Equipment(
                 name="Bounty Permit", type="utility", rarity="uncommon", attributes={
@@ -54,7 +54,7 @@ class ShopSystem:
                     "elite_double_loot_chance": 0.15,
                     "bounty_missions_unlocked": True,
                     "buff_duration_minutes": 30
-                }, price=25000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
+                }, price=50000, currency="valor", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
             ),
             "training_dummy": Equipment(
                 name="Training Dummy", type="utility", rarity="common", attributes={
@@ -63,7 +63,7 @@ class ShopSystem:
                     "xp_gain_multiplier": 1.10,
                     "buff_duration_minutes": 15,
                     "crit_rate_bonus_regiment": 5
-                }, price=7000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
+                }, price=14000, currency="valor", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
             ),
             "battle_journal": Equipment(
                 name="Battle Journal", type="utility", rarity="common", attributes={
@@ -72,7 +72,7 @@ class ShopSystem:
                     "accuracy_bonus": 5,
                     "defense_bonus": 5,
                     "buff_trigger_uses": 3
-                }, price=12000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
+                }, price=24000, currency="valor", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
             ),
             "titan_biology_manual": Equipment(
                 name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={
@@ -80,16 +80,16 @@ class ShopSystem:
                     "titan_damage_multiplier": 1.10,
                     "intelligence_bonus": 20,
                     "buff_duration_minutes": 30
-                }, price=15000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
+                }, price=30000, currency="valor", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
-                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"damage_min": 150.0, "damage_max": 175.0}, price=30000, currency="marks", description="Machine guns mounted on airships."
+                name="Airship-Mounted Machine Guns", type="weapon", rarity="legendary", attributes={"damage_min": 150.0, "damage_max": 175.0}, price=60000, currency="valor", description="Machine guns mounted on airships."
             ),
             "odm_gear": Equipment(
                 name="Vertical Maneuvering Equipment (ODM Gear)", type="weapon", rarity="rare", attributes={"speed": 50}, price=25000, currency="marks", description="Equipment for vertical maneuvering."
             ),
             "thunder_spears": Equipment(
-                name="Thunder Spears", type="weapon", rarity="epic", attributes={"damage_min": 100.0, "damage_max": 125.0}, price=45000, currency="marks", description="Spears that unleash thunderous attacks."
+                name="Thunder Spears", type="weapon", rarity="epic", attributes={"damage_min": 100.0, "damage_max": 125.0}, price=20000, currency="valor", description="Spears that unleash thunderous attacks."
             ),
             "anti_personnel_odm": Equipment(
                 name="Anti-Personnel ODM Gear", type="weapon", rarity="epic", attributes={"damage_min": 50.0, "damage_max": 60.0, "speed": 45.0}, price=40000, currency="marks", description="ODM gear effective against humans."
@@ -98,19 +98,19 @@ class ShopSystem:
                 name="Double-Barreled Pistols", type="military", rarity="uncommon", attributes={"damage_min": 25.0, "damage_max": 35.0, "speed": 30.0}, price=10000, currency="marks", description="Pistols with double barrels. Dual-fire advantage."
             ),
             "rifles": Equipment(
-                name="Rifles (Bolt-Action)", type="military", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=12000, currency="marks", description="Bolt-action rifles."
+                name="Rifles (Bolt-Action)", type="military", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=6000, currency="valor", description="Bolt-action rifles."
             ),
             "sniper_rifles": Equipment(
                 name="Sniper Rifles", type="military", rarity="rare", attributes={"damage_min": 45.0, "damage_max": 60.0, "accuracy": 50.0}, price=25000, currency="marks", description="Rifles designed for long-range precision."
             ),
             "machine_guns": Equipment(
-                name="Machine Guns / Mounted Guns", type="military", rarity="epic", attributes={"damage_min": 60.0, "damage_max": 75.0, "area_damage": 30.0}, price=40000, currency="marks", description="Guns that fire bullets in rapid succession. Area damage adds splash; higher DPS over time."
+                name="Machine Guns / Mounted Guns", type="military", rarity="epic", attributes={"damage_min": 60.0, "damage_max": 75.0, "area_damage": 30.0}, price=80000, currency="valor", description="Guns that fire bullets in rapid succession. Area damage adds splash; higher DPS over time."
             ),
             "anti_titan_cannons": Equipment(
                 name="Anti-Titan Cannons (Wall-Mounted)", type="military", rarity="epic", attributes={"damage_min": 75.0, "damage_max": 90.0}, price=50000, currency="marks", description="Cannons mounted on walls to fight titans."
             ),
             "mobile_artillery": Equipment(
-                name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 190.0, "damage_max": 275.0}, price=70000, currency="marks", description="Weapons constructed by the Warhammer Titan."
+                name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 190.0, "damage_max": 275.0}, price=140000, currency="valor", description="Weapons constructed by the Warhammer Titan."
             ),
             "titan_restraints": Equipment(
                 name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 200.0, "damage_max": 275.0}, price=35000, currency="marks", description="Serum that transforms the user into a titan."
