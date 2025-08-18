@@ -62,6 +62,7 @@ async def run_midnight_tax():
                         tax_message += f"• {currency.capitalize()}: `{threshold}`\n"
                     
                     tax_message += "\n*Tax is collected daily at midnight to fund server operations.*"
+                    tax_message += "\n*Note: Only players level 15 and above pay taxes.*"
                     
                     # Add small delay to avoid rate limits
                     await asyncio.sleep(0.2)

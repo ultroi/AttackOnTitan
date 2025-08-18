@@ -158,8 +158,21 @@ class BankSystem:
             'would_be_taxed': False, 
             'taxes': {},
             'thresholds': TAX_THRESHOLDS,
-            'tax_rate': f"{TAX_RATE * 100:.1f}%"
+            'tax_rate': f"{TAX_RATE * 100:.1f}%",
+            'level_requirement_met': player.level >= 15,
+            'level_requirement': 15
         }
+        
+        # If player is below level 15, they are exempt from taxes
+        if player.level < 15:
+            tax_info['exempt_reason'] = f"You are exempt from taxes until reaching level {tax_info['level_requirement']}."
+            tax_info['would_be_taxed'] = False
+            
+            for currency in ["marks", "valor", "crystal"]:
+                player_balance = getattr(player, currency)
+                tax_info[f'{currency}_balance'] = player_balance
+            
+            return tax_info
         
         for currency in ["marks", "valor", "crystal"]:
             player_balance = getattr(player, currency)
@@ -260,6 +273,11 @@ class BankSystem:
             tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
             tax_applied = False
             
+            # Check if player meets minimum level requirement for taxation (level 15+)
+            if player.level < 15:
+                logger.debug(f"Player {player.user_id} (level {player.level}) is below level 15, skipping taxation")
+                continue
+                
             # Check each currency for tax eligibility
             for currency in ["marks", "valor", "crystal"]:
                 player_balance = getattr(player, currency, 0)

@@ -45,17 +45,25 @@ async def tax_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     hours, minutes = get_time_until_midnight()
     
     # Create response message
-    if tax_info["would_be_taxed"]:
-        msg = "💰 **Tax Status**\n\n"
-        msg += f"Time until tax collection: {hours}h:{minutes}m\n\n"
+    msg = "💰 **Tax Status**\n\n"
+    msg += f"Time until tax collection: {hours}h:{minutes}m\n\n"
+    
+    # Check if player meets level requirement
+    if not tax_info.get('level_requirement_met', True):
+        msg += f"�️ **You are exempt from taxation!**\n"
+        msg += f"Tax exemption for players below level {tax_info['level_requirement']}.\n\n"
+        msg += "Your current balances:\n"
+        for currency in ["marks", "valor", "crystal"]:
+            balance = tax_info[f'{currency}_balance']
+            threshold = tax_info['thresholds'][currency]
+            msg += f"• {currency.capitalize()}: {balance} / {threshold}\n"
+    elif tax_info["would_be_taxed"]:
         msg += "You would be taxed at midnight for the following currencies:\n\n"
         
         for currency, amount in tax_info["taxes"].items():
             msg += f"• {currency.capitalize()}: {amount} ({tax_info['tax_rate']} of {tax_info[f'{currency}_balance']})\n"
             msg += f"  *Threshold: {tax_info['thresholds'][currency]}*\n\n"
     else:
-        msg = "💰 **Tax Status**\n\n"
-        msg += f"Time until tax collection: {hours}h:{minutes}m\n\n"
         msg += "You are below all tax thresholds and would not be taxed at midnight.\n\n"
         
         for currency in ["marks", "valor", "crystal"]:
@@ -93,12 +101,15 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
         if is_simulation:
             # Just count how many players would be taxed
             players_to_tax = 0
+            players_exempt_by_level = 0
             total_tax = {"marks": 0, "valor": 0, "crystal": 0}
             
             all_players = await db.get_all_players()
             for player in all_players:
                 tax_info = await bank_system.check_player_tax_status(player)
-                if tax_info["would_be_taxed"]:
+                if player.level < 15:
+                    players_exempt_by_level += 1
+                elif tax_info["would_be_taxed"]:
                     players_to_tax += 1
                     for currency, amount in tax_info["taxes"].items():
                         total_tax[currency] += amount
@@ -108,6 +119,7 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
                 f"💰 **Tax Simulation Results**\n\n"
                 f"Time until natural tax collection: {hours}h:{minutes}m\n\n"
                 f"• Players that would be taxed: {players_to_tax}\n"
+                f"• Players exempt due to being below level 15: {players_exempt_by_level}\n"
                 f"• Total taxes that would be collected:\n"
                 f"  - Marks: {total_tax['marks']}\n"
                 f"  - Valor: {total_tax['valor']}\n"
