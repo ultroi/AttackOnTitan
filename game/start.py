@@ -498,8 +498,14 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             logger.info(f"Referral lookup result: {ref_player is not None}")
                         
                         if ref_player and str(ref_player.get('user_id')) != user_id:
+                            # Calculate and log referee rewards
+                            referee_rewards = {}
                             for k, v in REFERRAL_REWARDS.items():
+                                referee_rewards[k] = v
                                 starter_rewards[k] = starter_rewards.get(k, 0) + v
+                            
+                            logger.info(f"Referee {user_id} gets rewards: {referee_rewards}")
+                            logger.info(f"Referrer {referred_by} (ID: {ref_player.get('user_id')}) to receive: {REFERRER_REWARDS}")
                             
                             # Update referrer if db was initialized
                             if db.players is not None:
@@ -511,6 +517,11 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}}
                                 )
                                 logger.info(f"Referral update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
+                                
+                                # Double-check referrer after update to verify count was increased
+                                updated_referrer = await db.players.find_one({"user_id": ref_player.get('user_id')})
+                                if updated_referrer:
+                                    logger.info(f"Referrer {ref_player.get('user_id')} new referral_count: {updated_referrer.get('referral_count', 0)}")
                             # Notify referrer
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None

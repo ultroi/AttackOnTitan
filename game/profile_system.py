@@ -563,7 +563,11 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     referral_code = player.referral_code or user_id
     referral_link = f"https://t.me/{bot_username}?start=referral_{referral_code}"
     referred_by = player.referred_by or "None"
-    referral_count = player.referral_count if hasattr(player, 'referral_count') else 0
+    # Access referral_count directly since it's defined in the Player model
+    referral_count = player.referral_count
+    # Log referral information to help with debugging
+    logger.info(f"Referral info for {user_id}: code={referral_code}, count={referral_count}, referred_by={referred_by}")
+    
     text = (
         "<b>[©] Referral System</b>\n\n"
         "<b>[©] Your Referral Link:</b>\n"
