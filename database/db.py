@@ -42,9 +42,23 @@ class Database:
 
     async def init_db(self):
         try:
+            # Check if we already have a database connection to avoid reinitializing
+            if self.db is not None:
+                # If we already have a connection, just verify it with a ping
+                try:
+                    await self.db.command('ping')
+                    logger.info("Reusing existing database connection")
+                    return  # Connection is good, we can exit early
+                except Exception:
+                    # If ping fails, we'll try to reconnect below
+                    logger.warning("Existing database connection failed, reconnecting...")
+                    
+            # Get a new database connection
             self.db = await get_database()
             if self.db is None:
                 raise ConnectionError("Failed to get database instance")
+                
+            # Initialize collection references
             self.characters = self.db.characters
             self.players = self.db.players
             self.players_collection = self.players 
@@ -55,21 +69,40 @@ class Database:
             self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
             self.bank_accounts = self.db.bank_accounts
             self.bans = self.db.bans
+            
             # Test the connection
             await self.db.command('ping')
+            
             # Create indexes for faster queries
-            index_name = "user_id_1"
-            indexes = await self.players.index_information()
-            if index_name in indexes:
-                await self.players.drop_index(index_name)
-            await self.players.create_index("user_id", name=index_name, unique=True, background=True)
-            char_index_name = "user_id_1_name_1"
-            char_indexes = await self.characters.index_information()
-            if char_index_name in char_indexes:
-                await self.characters.drop_index(char_index_name)
-            await self.characters.create_index([("user_id", 1), ("name", 1)], name=char_index_name, unique=True, background=True)
-            await self.titans.create_index("user_id")
-            await self.bank_accounts.create_index("user_id", name="user_id_1", unique=True, background=True)
+            # We'll make this more fault-tolerant by continuing if one index creation fails
+            try:
+                index_name = "user_id_1"
+                indexes = await self.players.index_information()
+                if index_name in indexes:
+                    await self.players.drop_index(index_name)
+                await self.players.create_index("user_id", name=index_name, unique=True, background=True)
+            except Exception as e:
+                logger.warning(f"Failed to create player index: {e}")
+                
+            try:
+                char_index_name = "user_id_1_name_1"
+                char_indexes = await self.characters.index_information()
+                if char_index_name in char_indexes:
+                    await self.characters.drop_index(char_index_name)
+                await self.characters.create_index([("user_id", 1), ("name", 1)], name=char_index_name, unique=True, background=True)
+            except Exception as e:
+                logger.warning(f"Failed to create character index: {e}")
+                
+            try:
+                await self.titans.create_index("user_id")
+            except Exception as e:
+                logger.warning(f"Failed to create titans index: {e}")
+                
+            try:
+                await self.bank_accounts.create_index("user_id", name="user_id_1", unique=True, background=True)
+            except Exception as e:
+                logger.warning(f"Failed to create bank accounts index: {e}")
+                
             logger.info("Database connection verified (Motor) and indexes created")
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")

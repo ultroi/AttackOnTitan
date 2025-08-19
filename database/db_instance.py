@@ -20,12 +20,16 @@ async def initialize_database() -> AsyncIOMotorDatabase:
     async with _init_lock:
         if not _initialized:
             try:
-                # Initialize the connection with explicit options
+                # Get the current event loop
+                loop = asyncio.get_running_loop()
+                
+                # Initialize the connection with explicit options and current event loop
                 client = motor.motor_asyncio.AsyncIOMotorClient(
                     MONGO_URI,
                     maxPoolSize=15, 
                     connectTimeoutMS=5000, 
-                    serverSelectionTimeoutMS=5000
+                    serverSelectionTimeoutMS=5000,
+                    io_loop=loop  # Explicitly pass the current event loop
                 )
                 _db_instance = client[DB_NAME]
                 

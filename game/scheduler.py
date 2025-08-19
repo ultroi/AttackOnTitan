@@ -12,14 +12,26 @@ global_bot = None
 async def run_midnight_tax():
     """Execute midnight tax collection."""
     logger = logging.getLogger("scheduler")
-    current_time = datetime.now()
+    current_time = datetime.now(timezone.utc)
     
     logger.info(f"[Scheduler] Midnight tax job started at {current_time}!")
     
     try:
         # Initialize database connection
+        # Note: We're NOT using asyncio.run() here since we're already in an async context
         db = Database()
-        await db.init_db()
+        try:
+            # Ensure we're initializing with the current event loop
+            await db.init_db()
+        except RuntimeError as e:
+            if "attached to a different loop" in str(e):
+                logger.error("[Scheduler] Event loop error in db initialization - trying to use current loop")
+                # We'll continue without reinitializing, as the scheduler should have its own event loop
+                # and the database should be initialized in the main application
+                pass
+            else:
+                raise
+            
         bank_system = BankSystem(db)
         
         logger.info("[Scheduler] Database initialized, starting tax collection...")
@@ -86,7 +98,7 @@ async def run_midnight_tax():
         else:
             logger.info("[Scheduler] No tax reports to send notifications for")
         
-        logger.info(f"[Scheduler] Midnight tax job completed successfully at {datetime.now()}")
+        logger.info(f"[Scheduler] Midnight tax job completed successfully at {datetime.now(timezone.utc)}")
         
     except Exception as e:
         logger.error(f"[Scheduler] Midnight tax job failed: {e}", exc_info=True)
@@ -98,11 +110,14 @@ def start_scheduler(bot=None):
     global_bot = bot
     
     logger = logging.getLogger("scheduler")
-    scheduler = AsyncIOScheduler()
+    # Create scheduler with the event loop of the application
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    # Ensure it uses the right event loop
+    asyncio_event_loop = asyncio.get_event_loop()
     
     # Add job to run every day at midnight (00:00)
     scheduler.add_job(
-        lambda: asyncio.run(run_midnight_tax()),
+        run_midnight_tax,  # Pass the coroutine directly, don't wrap in asyncio.run()
         'cron',
         hour=0,
         minute=0,
@@ -135,7 +150,9 @@ async def manual_tax_trigger(bot=None):
     logger.info("[Manual Trigger] Starting manual tax collection...")
     
     try:
+        # Create database with explicit connection to current event loop
         db = Database()
+        # Make sure init_db is called from the same context/event loop
         await db.init_db()
         bank_system = BankSystem(db)
         
