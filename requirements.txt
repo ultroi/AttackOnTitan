@@ -15,4 +15,5 @@ Pillow==10.3.0
 jinja2
 python-multipart
 apscheduler==3.10.4
+pytz
 

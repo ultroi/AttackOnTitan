@@ -4,17 +4,19 @@ from database.db import Database
 import asyncio
 import logging
 from datetime import datetime, timezone
+import pytz  # Import pytz for timezone support
 
 # Global bot instance for notifications
 global_bot = None
 
-# Scheduler setup for daily midnight tax
+# Scheduler setup for daily midnight tax (Configured for IST - Indian Standard Time)
 async def run_midnight_tax():
-    """Execute midnight tax collection."""
+    """Execute midnight tax collection at midnight IST (00:00)."""
     logger = logging.getLogger("scheduler")
-    current_time = datetime.now(timezone.utc)
+    ist_timezone = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist_timezone)
     
-    logger.info(f"[Scheduler] Midnight tax job started at {current_time}!")
+    logger.info(f"[Scheduler] Midnight tax job started at {current_time} (IST)!")
     
     try:
         # Initialize database connection
@@ -81,7 +83,7 @@ async def run_midnight_tax():
         else:
             logger.info("[Scheduler] No tax reports to send notifications for")
         
-        logger.info(f"[Scheduler] Midnight tax job completed successfully at {datetime.now(timezone.utc)}")
+        logger.info(f"[Scheduler] Midnight tax job completed successfully at {datetime.now(ist_timezone)} (IST)")
         
     except Exception as e:
         logger.error(f"[Scheduler] Midnight tax job failed: {e}", exc_info=True)
@@ -94,11 +96,11 @@ def start_scheduler(bot=None):
     
     logger = logging.getLogger("scheduler")
     # Create scheduler with the event loop of the application
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")  # Changed from UTC to IST timezone
     # Ensure it uses the right event loop
     asyncio_event_loop = asyncio.get_event_loop()
     
-    # Add job to run every day at midnight (00:00)
+    # Add job to run every day at midnight (00:00) in IST timezone
     scheduler.add_job(
         run_midnight_tax,  # Pass the coroutine directly, don't wrap in asyncio.run()
         'cron',
