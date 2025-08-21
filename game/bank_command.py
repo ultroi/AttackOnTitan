@@ -99,8 +99,7 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"\n"
             f"{tax_status}\n"
             f"🏅 <b>Top 3 Richest Players</b>:\n"
-            f"{top_players_str}"
-            f"{tax_history}"
+            f"{top_players_str}\n\n"
         )
         await update.message.reply_photo(
             photo="https://i.ibb.co/FqBX9JMp/image.jpg",

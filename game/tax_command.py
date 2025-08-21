@@ -150,9 +150,9 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
             notification_sent = 0
             for report in tax_reports:
                 try:
-                    tax_message = "💰 **Daily Tax Report**\n\n"
+                    tax_message = "💰 **Tax Deducted:**\n"
                     for currency, amount in report["taxes"].items():
-                        tax_message += f"Tax deducted ({currency}): {amount}\n"
+                        tax_message += f"• {currency.capitalize()}: {amount}\n"
                     
                     await context.bot.send_message(
                         chat_id=report["user_id"],

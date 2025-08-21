@@ -55,26 +55,9 @@ async def run_midnight_tax():
                         continue
                         
                     # Create tax notification message
-                    tax_message = "💰 **Daily Tax Report**\n\n"
-                    tax_message += "The following taxes have been deducted from your inventory:\n\n"
-                    
-                    total_tax = 0
+                    tax_message = "💰 **Tax Deducted:**\n"
                     for currency, amount in tax_report["taxes"].items():
-                        tax_message += f"• {currency.capitalize()}: `{amount}` ({TAX_RATE * 100:.1f}% tax)\n"
-                        # Calculate total tax value for summary
-                        if currency == 'marks':
-                            total_tax += amount
-                        elif currency == 'valor':
-                            total_tax += amount * 5000  # valor worth
-                        elif currency == 'crystal':
-                            total_tax += amount * 100000  # crystal worth
-                    
-                    tax_message += "\nTaxes are collected on amounts exceeding these thresholds:\n"
-                    for currency, threshold in TAX_THRESHOLDS.items():
-                        tax_message += f"• {currency.capitalize()}: `{threshold}`\n"
-                    
-                    tax_message += "\n*Tax is collected daily at midnight to fund server operations.*"
-                    tax_message += "\n*Note: Only players level 15 and above pay taxes.*"
+                        tax_message += f"• {currency.capitalize()}: {amount}\n"
                     
                     # Add small delay to avoid rate limits
                     await asyncio.sleep(0.2)
