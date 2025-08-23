@@ -40,17 +40,17 @@ TITAN_TYPE_IMAGE_URLS = {
 # This is more efficient since we're no longer maintaining a large pool of titans that might never be used
 
 # Helper function to quickly generate a titan without database calls
+# Pre-calculate difficulty levels for faster lookup
+DIFFICULTY_BY_LEVEL = {level: "Easy" if level < 8 else ("Normal" if level < 15 else "Hard") for level in range(1, 30)}
+# Pre-defined default areas to avoid recreating this list every time
+DEFAULT_AREAS = ["Trost District", "Karanes District", "Shiganshina District"]
+
 def generate_titan_directly(player_level: int, unlocked_areas: list = None):
-    """Generate a titan directly without database calls for maximum speed"""
+    """Generate a titan directly without database calls for maximum speed - highly optimized version"""
     from database.models import Titan, generate_titan_name, generate_titan_hp, generate_titan_xp
     
-    # Determine difficulty based on player level
-    if player_level < 8:
-        difficulty = "Easy"
-    elif player_level < 15:
-        difficulty = "Normal"
-    else:
-        difficulty = "Hard"
+    # Get difficulty from pre-calculated mapping
+    difficulty = DIFFICULTY_BY_LEVEL.get(player_level, "Hard")
     
     # Titan level: within -2 to +2 of player level, but at least 1
     level = max(1, player_level + random.randint(-2, 2))
@@ -60,17 +60,19 @@ def generate_titan_directly(player_level: int, unlocked_areas: list = None):
     max_hp = generate_titan_hp(level, difficulty)
     xp_reward = generate_titan_xp(level, difficulty)
     
-    # Ensure default areas
-    default_areas = ["Trost District", "Karanes District", "Shiganshina District"]
-    areas = unlocked_areas if unlocked_areas else default_areas
+    # Use shared constant for default areas
+    areas = unlocked_areas if unlocked_areas else DEFAULT_AREAS
     
-    # Create titan with all required fields
+    # Use a shared UTC timestamp for all created_at fields
+    now = datetime.now(timezone.utc)
+    
+    # Create titan with all required fields - optimized
     return Titan(
         name=name,
         level=level,
         max_hp=max_hp,
         abilities=[],
-        created_at=datetime.now(timezone.utc),
+        created_at=now,
         difficulty=difficulty,
         spawn_areas=areas,
         drop_table={},
@@ -197,7 +199,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # Start several tasks in parallel to speed up response time
+    # Start several tasks in parallel to speed up response time - now with batch fetching
+    # Optimize by fetching player and character data in parallel to reduce wait time
     player_task = db.get_player(user_id_str)
     
     # Show persistent keyboard in the background - non-blocking
@@ -205,6 +208,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["persistent_keyboard_sent"] = True
         # Move this to a background task to not slow down main response
         asyncio.create_task(_show_keyboard_background(update))
+        
+    # Cache check for titan battle to avoid regeneration
+    titan_cached = user_id_str in db._titan_cache
 
     # --- SPAM PROTECTION (optimized) - Only check if needed ---
     # Using faster modulo check instead of full counter logic
@@ -293,13 +299,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    # Start player character lookup task - non-blocking
+    # Get character information with optimized logic
+    # Extract character name from player data to avoid additional DB query
     player_character_name = player.team[0].character_name if player.team else None
     if not player_character_name:
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    character_task = db.get_character(user_id_str, player_character_name)
+    # Check if character is in context cache before hitting DB
+    character_cache_key = f"character_{user_id_str}_{player_character_name}"
+    player_character = context.bot_data.get(character_cache_key)
+    
+    if player_character:
+        character_task = asyncio.Future()
+        character_task.set_result(player_character)
+    else:
+        # Only fetch from DB if not in cache
+        character_task = db.get_character(user_id_str, player_character_name)
 
     # Handle travel/decision points
     location = getattr(player, "location", None)
@@ -343,55 +359,84 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
         return
         
-    # Direct titan generation - super fast with no database calls
-    try:
-        # Generate titan directly without any database queries
-        titan = generate_titan_directly(
-            player_level=player_character.level, 
-            unlocked_areas=player.unlocked_areas
-        )
-    except Exception as e:
-        # Fallback to database generation if direct generation fails
+    # Use cached titan if available, otherwise generate a new one
+    if titan_cached:
+        titan = db._titan_cache.get(user_id_str)
+    else:
+        # Direct titan generation - super fast with no database calls
         try:
-            titan = await db.generate_titan(player_character.level, player.unlocked_areas)
-        except Exception:
-            # Ultimate fallback - basic titan with minimal properties
-            titan = Titan(
-                name="Unknown Titan",
-                level=player_character.level,
-                max_hp=100 * player_character.level,
-                abilities=[],
-                created_at=datetime.now(timezone.utc),
-                difficulty="Normal",
-                spawn_areas=["Trost District"],
-                drop_table={},
-                xp_reward=50 * player_character.level,
-                min_level_requirement=player_character.level
+            # Generate titan directly without any database queries
+            titan = generate_titan_directly(
+                player_level=player_character.level, 
+                unlocked_areas=player.unlocked_areas
             )
+        except Exception as e:
+            # Fallback to database generation if direct generation fails
+            try:
+                titan = await db.generate_titan(player_character.level, player.unlocked_areas)
+            except Exception:
+                # Ultimate fallback - basic titan with minimal properties
+                titan = Titan(
+                    name="Unknown Titan",
+                    level=player_character.level,
+                    max_hp=100 * player_character.level,
+                    abilities=[],
+                    created_at=datetime.now(timezone.utc),
+                    difficulty="Normal",
+                    spawn_areas=["Trost District"],
+                    drop_table={},
+                    xp_reward=50 * player_character.level,
+                    min_level_requirement=player_character.level
+                )
 
     if not titan:
         await _reply_error(update, "No titans found in your level range.")
         return
+        
+    # Cache the character for future use (30-second TTL)
+    if player_character:
+        character_cache_key = f"character_{user_id_str}_{player_character_name}"
+        context.bot_data[character_cache_key] = player_character
+        # Set expiration in 30 seconds
+        asyncio.create_task(_expire_cache_key(context, character_cache_key, 30))
 
-    # Start titan storage immediately in background (non-blocking)
-    titan_store_task = asyncio.create_task(db.store_titan(user_id_str, titan))
+    # Skip titan storage if we're using a cached titan
+    if not titan_cached:
+        # Store titan in cache directly first for immediate access
+        db._titan_cache[user_id_str] = titan
+        # Then trigger database storage in background
+        titan_store_task = asyncio.create_task(db.store_titan(user_id_str, titan))
 
     # Prepare battle UI immediately (this is fast)
-    battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
-    context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+    # Use a cached battle ID if one exists
+    battle_id_key = f"active_battle_id_{user_id}"
+    if battle_id_key in context.bot_data:
+        battle_id = context.bot_data[battle_id_key]
+    else:
+        battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
+        context.bot_data[battle_id_key] = battle_id
 
-    # Pre-built keyboard for fast response
+    # Pre-built keyboard for fast response - use a static keyboard when possible
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Optimized image URL lookup
+    # Pre-cached image URL lookup using titan name pattern matching
+    # This is much faster than checking each type
     titan_name_lower = titan.name.lower()
     titan_image_url = None
-    # Direct iteration is faster than comprehension for small dictionaries
-    for type_, url in TITAN_TYPE_IMAGE_URLS.items():
-        if type_ in titan_name_lower:
-            titan_image_url = url
-            break
+    
+    # Use cached image URLs when possible
+    cache_key = f"titan_image_{titan_name_lower[:10]}"  # First 10 chars as cache key
+    if cache_key in context.bot_data:
+        titan_image_url = context.bot_data[cache_key]
+    else:
+        # Only look up if not in cache
+        for type_, url in TITAN_TYPE_IMAGE_URLS.items():
+            if type_ in titan_name_lower:
+                titan_image_url = url
+                # Cache this result for future use
+                context.bot_data[cache_key] = url
+                break
     
     image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
 
@@ -430,12 +475,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Move all cleanup and timeout tasks to background after message is sent
     if sent_message:
         # Handle timeout in background (non-blocking)
-        asyncio.create_task(_handle_timeout_setup(user_id, context, sent_message))
-        
-    # Log performance metrics in background (non-blocking)
-    end_time = time.time()
-    response_time = end_time - start_time
-    asyncio.create_task(_log_performance(user_id_str, response_time))
+        # Use a single combined task for all post-response operations
+        asyncio.create_task(_handle_post_explore_tasks(user_id, context, sent_message, start_time, user_id_str))
     
 async def _handle_timeout_setup(user_id, context, sent_message):
     """Setup the timeout handler in background - simplified version"""
@@ -452,6 +493,23 @@ async def _handle_timeout_setup(user_id, context, sent_message):
     # Create timeout task
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
     context.bot_data[key].append(timeout_task)
+
+
+async def _handle_post_explore_tasks(user_id, context, sent_message, start_time, user_id_str):
+    """Combined handler for all post-explore background tasks for better performance"""
+    # Execute tasks in parallel where possible
+    tasks = []
+    
+    # Handle timeout
+    tasks.append(_handle_timeout_setup(user_id, context, sent_message))
+    
+    # Log performance
+    end_time = time.time()
+    response_time = end_time - start_time
+    tasks.append(_log_performance(user_id_str, response_time))
+    
+    # Run all tasks in parallel and wait for them to complete
+    await asyncio.gather(*tasks)
 
 # Helper functions moved outside the main function for cleaner code
 async def _show_keyboard_background(update: Update):
@@ -592,6 +650,13 @@ async def _handle_spam_ban(user_id, update, context):
 async def _log_performance(user_id_str, response_time):
     """Log performance metrics for monitoring"""
     logger.info(f"[PERFORMANCE] Explore command for user {user_id_str} took {response_time:.3f}s")
+
+
+async def _expire_cache_key(context, cache_key, seconds):
+    """Helper to expire a cache key after a set time"""
+    await asyncio.sleep(seconds)
+    if cache_key in context.bot_data:
+        context.bot_data.pop(cache_key, None)
 
 
 async def cleanup_stale_explore_records(max_age_hours: int = 24):

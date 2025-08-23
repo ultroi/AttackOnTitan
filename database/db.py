@@ -14,11 +14,14 @@ from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone
 
-# Player cache for improved performance
+# Enhanced player cache for improved performance
 PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 30  # seconds
+PLAYER_CACHE_TTL = 60  # Increased to 60 seconds for better hit rate
+CHARACTER_CACHE = {}  # Add character cache
+CHARACTER_CACHE_TTL = 120  # 2 minutes for character data which changes less frequently
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
+CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -495,6 +498,20 @@ class Database:
 
     async def get_character(self, user_id: int, character_name: str) -> Optional[Character]:
         try:
+            # Check cache first for better performance
+            cache_key = f"character_{user_id}_{character_name}"
+            current_time = time.time()
+            
+            if CACHE_ENABLED and cache_key in CHARACTER_CACHE:
+                cached_data = CHARACTER_CACHE[cache_key]
+                if current_time - cached_data["timestamp"] < CHARACTER_CACHE_TTL:
+                    # Cache hit
+                    CACHE_STATS["hits"] += 1
+                    return cached_data["character"]
+                    
+            # Cache miss or expired
+            CACHE_STATS["misses"] += 1
+            
             # Use projection for faster reads
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
@@ -506,8 +523,17 @@ class Database:
                 "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
                 "unlocked_abilities": 1
             })
+            
             if character_data:
-                return Character(**character_data)
+                character = Character(**character_data)
+                
+                # Store in cache for future use
+                if CACHE_ENABLED:
+                    CHARACTER_CACHE[cache_key] = {
+                        "character": character,
+                        "timestamp": time.time()
+                    }
+                return character
             return None
         except Exception as e:
             logger.error(f"Failed to get character: {e}")
@@ -635,36 +661,47 @@ class Database:
     _titan_cache = {}
     
     async def store_titan(self, user_id: str, titan: Titan):
+        """Optimized titan storage with caching and background persistence"""
         # Store in cache first for immediate access
         self._titan_cache[user_id] = titan
         
-        # Then save to database in background via asyncio task
-        titan_doc = titan.dict()
-        titan_doc["user_id"] = user_id
-        titan_doc["updated_at"] = datetime.now(timezone.utc)
+        # For better performance, use a background task for database persistence
+        # This allows the main explore command to return immediately
+        asyncio.create_task(self._background_store_titan(user_id, titan))
         
-        # Include all required fields to satisfy schema validation
-        # From error: missing 'created_at', 'drop_table', 'min_level_requirement', 'spawn_areas'
-        essential_titan_doc = {
-            "user_id": titan_doc["user_id"],
-            "name": titan_doc["name"],
-            "level": titan_doc["level"],
-            "max_hp": titan_doc["max_hp"],
-            "abilities": titan_doc["abilities"] if "abilities" in titan_doc else [],
-            "difficulty": titan_doc["difficulty"],
-            "xp_reward": titan_doc["xp_reward"],
-            "updated_at": titan_doc["updated_at"],
-            "created_at": titan_doc.get("created_at", datetime.now(timezone.utc)),
-            "drop_table": titan_doc.get("drop_table", {}),
-            "min_level_requirement": titan_doc.get("min_level_requirement", titan_doc["level"]),
-            "spawn_areas": titan_doc.get("spawn_areas", ["Trost District"])
-        }
-        
-        await self.titans.update_one(
-            {"user_id": user_id},
-            {"$set": essential_titan_doc},
-            upsert=True
-        )
+    async def _background_store_titan(self, user_id: str, titan: Titan):
+        """Background task to store titan data without blocking the main thread"""
+        try:
+            # Then save to database in background via asyncio task
+            titan_doc = titan.dict() if hasattr(titan, 'dict') else titan.__dict__
+            titan_doc["user_id"] = user_id
+            titan_doc["updated_at"] = datetime.now(timezone.utc)
+            
+            # Include all required fields to satisfy schema validation
+            essential_titan_doc = {
+                "user_id": titan_doc["user_id"],
+                "name": titan_doc["name"],
+                "level": titan_doc["level"],
+                "max_hp": titan_doc["max_hp"],
+                "abilities": titan_doc["abilities"] if "abilities" in titan_doc else [],
+                "difficulty": titan_doc["difficulty"],
+                "xp_reward": titan_doc["xp_reward"],
+                "updated_at": titan_doc["updated_at"],
+                "created_at": titan_doc.get("created_at", datetime.now(timezone.utc)),
+                "drop_table": titan_doc.get("drop_table", {}),
+                "min_level_requirement": titan_doc.get("min_level_requirement", titan_doc["level"]),
+                "spawn_areas": titan_doc.get("spawn_areas", ["Trost District"])
+            }
+            
+            await self.titans.update_one(
+                {"user_id": user_id},
+                {"$set": essential_titan_doc},
+                upsert=True
+            )
+        except Exception as e:
+            # Just log errors but don't fail since this is a background task
+            logger.error(f"Background titan storage failed: {e}")
+            # Error in titan storage shouldn't affect the user experience
 
     async def get_titan(self, user_id: str) -> Optional[Titan]:
         # Check cache first
