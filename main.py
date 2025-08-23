@@ -581,6 +581,11 @@ async def monitor_dashboard(request: Request):
             live_players = resource_monitor.get_live_player_stats()
             player_count = len(live_players.get('players', []))
             logger.info(f"Got live player stats: {player_count} players")
+            
+            # Get memory and CPU usage
+            memory_usage = resource_monitor.get_memory_usage()
+            system_load = resource_monitor.get_system_load()
+            
         except Exception as e:
             logger.error(f"Error getting live player stats: {e}")
             # Provide fallback data structure
@@ -591,6 +596,15 @@ async def monitor_dashboard(request: Request):
                 "ended": 0,
                 "players": []
             }
+            memory_usage = {
+                "rss_mb": 0,
+                "vms_mb": 0,
+                "percent": 0
+            }
+            system_load = {
+                "cpu_percent": 0,
+                "load_average": [0, 0, 0]
+            }
             
         # Build and return response
         return {
@@ -600,7 +614,9 @@ async def monitor_dashboard(request: Request):
             "active_sessions_count": active_session_count,
             "active_sessions": formatted_sessions,
             "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "version": "1.0.1"  # Add version for debugging
+            "memory_usage": memory_usage,  # Add memory usage
+            "system_load": system_load,    # Add CPU usage
+            "version": "1.0.2"  # Update version for tracking changes
         }
     except Exception as e:
         logger.error(f"Error in /monitor endpoint: {str(e)}")
