@@ -36,10 +36,6 @@ TITAN_TYPE_IMAGE_URLS = {
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
-# Direct titan generation - removed pool for simplicity and speed
-# This is more efficient since we're no longer maintaining a large pool of titans that might never be used
-
-# Helper function to quickly generate a titan without database calls
 # Pre-calculate difficulty levels for faster lookup
 DIFFICULTY_BY_LEVEL = {level: "Easy" if level < 8 else ("Normal" if level < 15 else "Hard") for level in range(1, 30)}
 # Pre-defined default areas to avoid recreating this list every time
@@ -306,16 +302,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    # Check if character is in context cache before hitting DB
-    character_cache_key = f"character_{user_id_str}_{player_character_name}"
-    player_character = context.bot_data.get(character_cache_key)
+    # For character data, we'll always get fresh data from the database
+    # This ensures we always have the latest HP values
+    character_task = db.get_character(user_id_str, player_character_name)
     
-    if player_character:
-        character_task = asyncio.Future()
-        character_task.set_result(player_character)
-    else:
-        # Only fetch from DB if not in cache
-        character_task = db.get_character(user_id_str, player_character_name)
+    # Track that we're fetching character data for debugging
+    logger.debug(f"Fetching fresh character data for {player_character_name} from database")
 
     # Handle travel/decision points
     location = getattr(player, "location", None)
@@ -393,12 +385,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "No titans found in your level range.")
         return
         
-    # Cache the character for future use (30-second TTL)
-    if player_character:
-        character_cache_key = f"character_{user_id_str}_{player_character_name}"
-        context.bot_data[character_cache_key] = player_character
-        # Set expiration in 30 seconds
-        asyncio.create_task(_expire_cache_key(context, character_cache_key, 30))
+    # Don't cache character data in context.bot_data anymore
+    # to ensure we always get fresh HP values from the database
+    # We'll rely on the DB-level caching with proper invalidation
 
     # Skip titan storage if we're using a cached titan
     if not titan_cached:

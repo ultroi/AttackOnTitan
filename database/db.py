@@ -16,9 +16,9 @@ from datetime import datetime, timezone
 
 # Enhanced player cache for improved performance
 PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 60  # Increased to 60 seconds for better hit rate
+PLAYER_CACHE_TTL = 60  # 60 seconds for player data
 CHARACTER_CACHE = {}  # Add character cache
-CHARACTER_CACHE_TTL = 120  # 2 minutes for character data which changes less frequently
+CHARACTER_CACHE_TTL = 10  # Reduced to 10 seconds for character data to avoid stale HP values
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
 CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
@@ -364,6 +364,19 @@ class Database:
             # Just log the error but don't propagate it since this is fire-and-forget
             logger.error(f"Background player update failed: {e}")
             # No raise here since this is a background task
+            
+    def invalidate_character_cache(self, user_id: str, character_name: str):
+        """
+        Invalidate the character cache for a specific character.
+        Call this when HP changes or other important stats are modified.
+        """
+        if CACHE_ENABLED:
+            cache_key = f"character_{user_id}_{character_name}"
+            if cache_key in CHARACTER_CACHE:
+                CHARACTER_CACHE.pop(cache_key, None)
+                logger.debug(f"Invalidated character cache for {character_name}")
+                return True
+        return False
 
     async def save_player(self, player: Player) -> Optional[Player]:
         """Save (update) the player document in the database."""
@@ -546,6 +559,8 @@ class Database:
             if 'passive_abilities' in character_dict:
                 for ability in character_dict['passive_abilities']:
                     ability['unlocked'] = ability.get('is_unlocked', False)
+                    
+            # Update the character in the database
             await self.characters.find_one_and_update(
                 {
                     "user_id": character.user_id,
@@ -554,6 +569,19 @@ class Database:
                 {"$set": character_dict},  # Use the dumped dict
                 return_document=True
             )
+            
+            # Important: Update or invalidate cache when character is updated
+            # This fixes the issue with HP not being updated properly
+            if CACHE_ENABLED:
+                cache_key = f"character_{character.user_id}_{character.name}"
+                if cache_key in CHARACTER_CACHE:
+                    # Option 1: Update the cached character with the new values
+                    CHARACTER_CACHE[cache_key] = {
+                        "character": character,
+                        "timestamp": time.time()
+                    }
+                    logger.debug(f"Updated character cache for {character.name}, HP: {character.current_hp}")
+                    
             return character
         except Exception as e:
             logger.error(f"Failed to update character: {e}")
