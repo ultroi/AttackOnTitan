@@ -1185,9 +1185,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             await db.players.update_one({"user_id": user_id}, update_fields)
         try:
             track_battle_end(int(user_id), battle.character.name, "victory")
-            # Track successful exploration for stats
+            # Track successful exploration for stats (use player first name)
             from game.stats_command import track_explore_stats
-            asyncio.create_task(track_explore_stats(user_id, battle.character.name, True))
+            player_first_name = player_data.get("first_name") or player_data.get("username") or str(user_id)
+            asyncio.create_task(track_explore_stats(user_id, player_first_name, True))
         except ImportError:
             pass
     else:
@@ -1207,9 +1208,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         await query.edit_message_text(f"{battle.character.name} was defeated by {battle.titan.name}!")
         try:
             track_battle_end(int(user_id), battle.character.name, "defeat")
-            # Track successful exploration for stats
+            # Track successful exploration for stats (use player first name)
             from game.stats_command import track_explore_stats
-            asyncio.create_task(track_explore_stats(user_id, battle.character.name, True))
+            player_first_name = player_data.get("first_name") or player_data.get("username") or str(user_id)
+            asyncio.create_task(track_explore_stats(user_id, player_first_name, True))
         except ImportError:
             pass
 
