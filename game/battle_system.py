@@ -30,11 +30,21 @@ active_battles_lock = asyncio.Lock()
 
 class BattleSystem:
     def get_equipped_weapon(self, shop_items):
-        if self.character.equipped_weapon and self.character.equipped_weapon in shop_items:
-            item = shop_items[self.character.equipped_weapon]
-            # Allow using gear and military items as weapons
-            if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"]:
-                return item
+        # Debug logging for equipped weapons
+        logger.info(f"[get_equipped_weapon] Character equipped_weapon: {getattr(self.character, 'equipped_weapon', None)}")
+        if self.character.equipped_weapon:
+            logger.info(f"[get_equipped_weapon] Is in shop_items: {self.character.equipped_weapon in shop_items}")
+            if self.character.equipped_weapon in shop_items:
+                item = shop_items[self.character.equipped_weapon]
+                logger.info(f"[get_equipped_weapon] Item type: {getattr(item, 'type', 'unknown')}")
+                # Allow using gear and military items as weapons
+                if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"]:
+                    logger.info(f"[get_equipped_weapon] Valid item type: {item.type}, returning item")
+                    return item
+                else:
+                    logger.info(f"[get_equipped_weapon] Invalid item type: {getattr(item, 'type', 'unknown')}")
+            else:
+                logger.info(f"[get_equipped_weapon] Item not found in shop_items")
         return None
     """
     Manages a battle between a character and a titan, handling gas, HP, abilities, buffs, debuffs, and turn logic.
@@ -530,8 +540,6 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     
     keyboard = []
     def obfuscate_text(text):
-        # Insert zero-width space (\u200B) between each character - optimized for speed
-        # Pre-allocate array instead of concatenation for better performance
         chars = []
         for char in text:
             chars.append(char)
@@ -618,16 +626,27 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     
     # Get weapon info
     weapon = battle.get_equipped_weapon(shop_items)
+    logger.info(f"[build_battle_keyboard] Got weapon: {weapon}, name: {getattr(weapon, 'name', None)}, type: {getattr(weapon, 'type', None)}")
     
     # Add attack button based on gas
     if battle.gas >= 20:
         if weapon:
-            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⚔️ {weapon.name}"), callback_data="action_basic_attack")])
+            # Get the appropriate emoji based on item type
+            item_type = getattr(weapon, 'type', 'weapon')
+            item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
+            button_text = f"{item_emoji} {weapon.name}"
+            logger.info(f"[build_battle_keyboard] Adding button with text: {button_text}, type: {item_type}")
+            keyboard.append([InlineKeyboardButton(obfuscate_text(button_text), callback_data="action_basic_attack")])
         else:
+            logger.info("[build_battle_keyboard] Adding basic attack button")
             keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack"), callback_data="action_basic_attack")])
     else:
         if weapon:
-            keyboard.append([InlineKeyboardButton(obfuscate_text(f"⛽ {weapon.name} (Low Gas)"), callback_data="lowgas_basic_attack")])
+            # Get the appropriate emoji based on item type
+            item_type = getattr(weapon, 'type', 'weapon')
+            item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
+            button_text = f"⛽ {item_emoji} {weapon.name} (Low Gas)"
+            keyboard.append([InlineKeyboardButton(obfuscate_text(button_text), callback_data="lowgas_basic_attack")])
         else:
             keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (Low Gas)"), callback_data="lowgas_basic_attack")])
     
@@ -929,7 +948,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 damage_max = int(weapon.attributes.get("damage_max", 20))
                 total_damage = random.randint(damage_min, damage_max)
                 battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                full_message.append(f"⚔️ {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
+                item_type = getattr(weapon, 'type', 'weapon')
+                # Add item type emoji based on the type
+                item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
+                full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
             else:
                 # Fast basic attack calculation
                 try:

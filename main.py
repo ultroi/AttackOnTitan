@@ -239,7 +239,10 @@ async def initialize_application():
             await global_db.init_db()  # This will set up collections using motor_db internally
             await migrate_schema(global_db)
         application.bot_data["db"] = global_db
-        application.bot_data["shop_system"] = ShopSystem()
+        shop_system = ShopSystem()
+        application.bot_data["shop_system"] = shop_system
+        # Initialize shop_items including both regular and hidden items
+        application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
         register_handlers(application)
 
         
