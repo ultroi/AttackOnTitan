@@ -118,6 +118,10 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not sender or not receiver:
         await update.message.reply_text("Both users must have profiles.")
         return
+    # Level check: Only allow giving if sender is at least level 10
+    if getattr(sender, 'level', 1) < 10:
+        await update.message.reply_text("You must be at least level 10 to give resources to others.")
+        return
     if getattr(sender, item, 0) < amount:
         await update.message.reply_text(f"You don't have enough {item}.")
         return

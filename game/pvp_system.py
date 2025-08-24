@@ -1689,10 +1689,13 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
-        # Add the "«" symbol to indicate whose turn it is
+        # Add the "«" symbol to indicate whose turn it is (only one at a time)
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
-        
+        if battle.current_turn == battle.challenger.name:
+            defender_turn_indicator = ""
+        else:
+            challenger_turn_indicator = ""
         await safe_api_call(
             query.message.reply_text,
             text=(
@@ -1796,7 +1799,7 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
         return
         
     battle = active_pvp_battles[user_id]
@@ -1930,7 +1933,7 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
         return
         
     battle = active_pvp_battles[user_id]
@@ -2137,7 +2140,7 @@ async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     # Check if user is in a PVP battle
     if user_id not in active_pvp_battles:
-        await safe_api_call(query.edit_message_text, "You are not in an active PVP battle.")
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
         return
         
     battle = active_pvp_battles[user_id]
