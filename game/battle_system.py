@@ -1119,9 +1119,9 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             f"🪙 <b>Marks: +{rewards['marks']}</b>",
         ]
         if rewards['crystal'] > 0:
-            reward_msg.append(f"✨ Titan Crystals: {rewards['crystal']} ✨")
+            reward_msg.append(f"💠 <b>Titan Crystals: +{rewards['crystal']}</b>")
         if rewards['valor'] > 0:
-            reward_msg.append(f"🔥 Valor Points: {rewards['valor']} 🔥")
+            reward_msg.append(f"⚔️ <b>Valor : +{rewards['valor']}</b>")
         await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
 
         # Always send level up messages instantly
