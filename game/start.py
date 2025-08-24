@@ -533,6 +533,22 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 updated_referrer = await db.players.find_one({"user_id": ref_user_id})
                                 if updated_referrer:
                                     logger.info(f"Referrer {ref_user_id} new referral_count: {updated_referrer.get('referral_count', 0)}")
+                                    milestones = updated_referrer.get('referral_milestones', {}) or {}
+                                    milestone_updates = {}
+                                    milestone_msgs = []
+                                    if updated_referrer.get('referral_count', 0) >= 10 and not milestones.get('10_referrals'):
+                                        milestone_updates['referral_milestones.10_referrals'] = True
+                                        milestone_updates['crystal'] = updated_referrer.get('crystal', 0) + 2
+                                        milestone_msgs.append('🎉 <b>Milestone:</b> You received <b>2 Titan Crystals</b> for reaching 10 referrals!')
+                                    if updated_referrer.get('referral_count', 0) >= 50 and not milestones.get('50_referrals'):
+                                        milestone_updates['referral_milestones.50_referrals'] = True
+                                        milestone_updates['crystal'] = milestone_updates.get('crystal', updated_referrer.get('crystal', 0)) + 20
+                                        milestone_msgs.append('🎉 <b>Milestone:</b> You received <b>20 Titan Crystals</b> for reaching 50 referrals!')
+                                    if milestone_updates:
+                                        await db.players.update_one({"user_id": ref_user_id}, {"$set": milestone_updates})
+                                        bot = context.bot if hasattr(context, 'bot') else None
+                                        if bot and milestone_msgs:
+                                            await bot.send_message(chat_id=ref_user_id, text='\n'.join(milestone_msgs), parse_mode=ParseMode.HTML)
                             # Notify referrer
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None
