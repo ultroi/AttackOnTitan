@@ -168,9 +168,11 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /explore command to find titans."""
+
+
     # Start timing the operation for performance monitoring
     start_time = time.time()
-    
+
     if not update.effective_user:
         await _reply_error(update, "Cannot identify user. Please try again.")
         return
@@ -179,10 +181,90 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
 
+
     # Only use in private chats
     if not update.effective_chat or update.effective_chat.type != "private":
         await _reply_error(update, "This command can only be used in private chats.")
         return
+
+    now_ms = time.time()
+    last_explore = user_last_explore.get(user_id_str, 0)
+    if now_ms - last_explore < 1.0:
+        # Ignore repeated /explore within 1 second
+        return
+    user_last_explore[user_id_str] = now_ms
+
+    # --- SPAM TRACKING: Warn at 10, ban at 15 explores without battle ---
+    if "explore_spam_count" not in context.bot_data:
+        context.bot_data["explore_spam_count"] = {}
+    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
+    context.bot_data["explore_spam_count"][user_id_str] = spam_count
+
+    # Check if user is in battle (reuse logic below, but fast check here)
+    is_in_battle = False
+    try:
+        from game.battle_system import active_battles
+        is_in_battle = user_id_str in active_battles
+    except ImportError:
+        pass
+    if is_in_battle:
+        # Reset spam count if user enters battle
+        context.bot_data["explore_spam_count"][user_id_str] = 0
+    else:
+        if spam_count == 10:
+            if update.message:
+                await update.message.reply_text("⚠️ Warning: Don't spam, you will be banned.")
+        elif spam_count >= 15:
+            # Ban user for spamming (permanent)
+            asyncio.create_task(_handle_spam_ban(user_id, update, context))
+            return
+    
+
+    # --- FAST SPAM CONTROL: Only one /explore per user per second ---
+    now_ms = time.time()
+    last_explore = user_last_explore.get(user_id_str, 0)
+    if now_ms - last_explore < 1.0:
+        # Ignore repeated /explore within 1 second
+        return
+    user_last_explore[user_id_str] = now_ms
+
+    # --- SPAM TRACKING: Warn at 10, ban at 15 explores without battle ---
+    if "explore_spam_count" not in context.bot_data:
+        context.bot_data["explore_spam_count"] = {}
+    spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
+    context.bot_data["explore_spam_count"][user_id_str] = spam_count
+
+    # Check if user is in battle (reuse logic below, but fast check here)
+    is_in_battle = False
+    try:
+        from game.battle_system import active_battles
+        is_in_battle = user_id_str in active_battles
+    except ImportError:
+        pass
+    if is_in_battle:
+        # Reset spam count if user enters battle
+        context.bot_data["explore_spam_count"][user_id_str] = 0
+    else:
+        if spam_count == 10:
+            if update.message:
+                await update.message.reply_text("⚠️ Warning: Don't spam /explore, you will be banned.")
+        elif spam_count >= 15:
+            # Ban user for spamming (permanent)
+            asyncio.create_task(_handle_spam_ban(user_id, update, context))
+            return
+
+    # Only use in private chats
+    if not update.effective_chat or update.effective_chat.type != "private":
+        await _reply_error(update, "This command can only be used in private chats.")
+        return
+
+    # --- FAST SPAM CONTROL: Only one /explore per user per second ---
+    now_ms = time.time()
+    last_explore = user_last_explore.get(user_id_str, 0)
+    if now_ms - last_explore < 1.0:
+        # Ignore repeated /explore within 1 second
+        return
+    user_last_explore[user_id_str] = now_ms
 
     # Check for active battle early - this is a fast check to abort quickly
     is_in_battle = False
