@@ -156,7 +156,10 @@ class PvPBattleSystem:
     def get_equipped_weapon(self, character: Character, shop_items: Dict):
         """Get character's equipped weapon from shop items"""
         if character.equipped_weapon and character.equipped_weapon in shop_items:
-            return shop_items[character.equipped_weapon]
+            item = shop_items[character.equipped_weapon]
+            # Allow using gear and military items as weapons
+            if item.type in ["weapon", "gear", "military"]:
+                return item
         return None
         
     def switch_turn(self) -> None:

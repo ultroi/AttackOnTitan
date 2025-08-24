@@ -31,7 +31,10 @@ active_battles_lock = asyncio.Lock()
 class BattleSystem:
     def get_equipped_weapon(self, shop_items):
         if self.character.equipped_weapon and self.character.equipped_weapon in shop_items:
-            return shop_items[self.character.equipped_weapon]
+            item = shop_items[self.character.equipped_weapon]
+            # Allow using gear and military items as weapons
+            if item.type in ["weapon", "gear", "military"]:
+                return item
         return None
     """
     Manages a battle between a character and a titan, handling gas, HP, abilities, buffs, debuffs, and turn logic.

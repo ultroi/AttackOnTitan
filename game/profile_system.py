@@ -365,12 +365,14 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inv = getattr(player, 'inventory', {}) or {}
     weapons = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "weapon"]
     gear = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "gear"]
+    military = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "military"]
     utilities = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "utility"]
     echo_shards = inv.get("echo_shard", 0)
     inv_text = (
         "🧳 <b>Your Inventory:</b>\n"
         f"- Weapons: <b>{len(weapons)}</b>\n"
         f"- Gear: <b>{len(gear)}</b>\n"
+        f"- Military: <b>{len(military)}</b>\n"
         f"- Utilities: <b>{len(utilities)}</b>\n"
         f"- Echo Shards: <b>{echo_shards}</b>\n\n"
         "<i>View details:</i>"
@@ -378,9 +380,10 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("View Weapons", callback_data="view_weapons"),
          InlineKeyboardButton("View Gear", callback_data="view_gear")],
-        [InlineKeyboardButton("View Utilities", callback_data="view_utilities"),
-        InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards")],
-        [InlineKeyboardButton("Back", callback_data="show_profile")]
+        [InlineKeyboardButton("View Military", callback_data="view_military"),
+         InlineKeyboardButton("View Utilities", callback_data="view_utilities")],
+        [InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards"),
+         InlineKeyboardButton("Back", callback_data="show_profile")]
     ]
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     try:
@@ -509,6 +512,45 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if item and getattr(item, 'type', None) == "utility":
             utilities.append((k, v))
     text = "<b>Utilities:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in utilities) if utilities else "No utilities.")
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        await handle_unauthorized(update)
+        return
+    await query.answer()
+    user_id = str(getattr(query.from_user, 'id', ''))
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_military', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_military'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = getattr(player, 'inventory', {}) or {}
+    military = []
+    for k, v in inv.items():
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        if item and getattr(item, 'type', None) == "military":
+            military.append((k, v))
+    text = "<b>Military:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in military) if military else "No military items.")
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
@@ -881,13 +923,13 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     weapons = []
     for k, v in inv.items():
         item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
-        if item and getattr(item, 'type', None) == "weapon":
+        if item and getattr(item, 'type', None) in ["weapon", "gear", "military"]:
             weapons.append((k, item, v))
     logger.info(f"[view_weapons_char] weapons found: {len(weapons)}")
     text = ""
     if status_message:
         text += f"<b>{status_message}</b>\n\n"
-    text += f"<b>🗡️ Weapons for {character.name}:</b>\n\n"
+    text += f"<b>🗡️ Equippable Items for {character.name}:</b>\n\n"
     keyboard = []
     
     # Check if Basic Attack is equipped
@@ -961,7 +1003,7 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if user is in PVP battle
     from game.pvp_system import active_pvp_battles
     if user_id in active_pvp_battles:
-        await query.answer("⚔️ You cannot equip weapons during PVP battles!", show_alert=True)
+        await query.answer("⚔️ You cannot equip items during PVP battles!", show_alert=True)
         return
     
     data = query.data.replace("equip_weapon_", "")
