@@ -80,8 +80,12 @@ def start_stats_scheduler():
     stats_scheduler.start()
     logger.info("[Stats] Stats scheduler started successfully")
 
-async def update_explorer_stats(user_id: str, name: str):
+async def update_explorer_stats(user_id: str, name: str, battle_completed: bool = False):
     """Update explorer stats for a player"""
+    # Only update stats if a battle was completed
+    if not battle_completed:
+        return
+        
     # Update weekly stats
     if user_id not in stats_data["weekly_explorers"]:
         stats_data["weekly_explorers"][user_id] = {"name": name, "count": 1}
@@ -174,10 +178,10 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Create message
         message = (
-            f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
-            f"👥 <b>Total Groups:</b> <code>{total_groups}</code>\n\n"
-            f"🔄 <b>WEEKLY TOP EXPLORERS</b>:\n{weekly_explorers_text}\n\n"
-            f"🔄 <b>DAILY TOP EXPLORERS</b> :\n{daily_explorers_text}\n\n"
+            f"<b>Total Users:</b> <code>{total_users}</code>\n"
+            f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
+            f" <b>WEEKLY TOP EXPLORERS</b>:\n{weekly_explorers_text}\n\n"
+            f" <b>DAILY TOP EXPLORERS</b> :\n{daily_explorers_text}\n\n"
         ) 
         
         await update.message.reply_text(message, parse_mode="HTML")
@@ -187,9 +191,9 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("An error occurred while processing the command.")
 
 # Hook into the explore command to track statistics
-async def track_explore_stats(user_id: str, name: str):
+async def track_explore_stats(user_id: str, name: str, battle_completed: bool = False):
     """Track explore statistics for a user"""
     try:
-        await update_explorer_stats(user_id, name)
+        await update_explorer_stats(user_id, name, battle_completed)
     except Exception as e:
         logger.error(f"Error tracking explore stats: {e}")

@@ -328,8 +328,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Track that we're fetching character data for debugging
     logger.debug(f"Fetching fresh character data for {player_character_name} from database")
     
-    # Track exploration for stats
-    asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name))
+    # Track exploration for stats (will only count if battle is completed)
+    asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name, False))
 
     # Handle travel/decision points
     location = getattr(player, "location", None)
