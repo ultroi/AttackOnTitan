@@ -583,23 +583,28 @@ HP_RANGES = {
 }
 
 def generate_titan_name(difficulty: str) -> str:
-    rand = random.random()
+    # Create a timestamp seed to ensure randomness - microseconds add unpredictability
+    current_time_micros = datetime.now(timezone.utc).microsecond
+    # Use a new random instance with time-based seed for better uniqueness
+    name_random = random.Random(current_time_micros)
+    
+    rand = name_random.random()
     variants = TITAN_NAME_VARIANTS[difficulty]
     descriptors = TITAN_DESCRIPTORS[difficulty]
     if rand < 0.60:
-        return f"{random.choice(variants)} Titan"
+        return f"{name_random.choice(variants)} Titan"
     elif rand < 0.85:
-        return f"{random.choice(descriptors)} {random.choice(variants)} Titan"
+        return f"{name_random.choice(descriptors)} {name_random.choice(variants)} Titan"
     else:
         # Precompute combined descriptors only once per call
         if difficulty != "Easy":
             all_descriptors = descriptors + TITAN_DESCRIPTORS["Easy"][:3]
         else:
             all_descriptors = descriptors
-        descriptor = random.choice(all_descriptors)
-        titan_type = random.choice(variants)
-        if random.random() < 0.3:
-            second_descriptor = random.choice(descriptors)
+        descriptor = name_random.choice(all_descriptors)
+        titan_type = name_random.choice(variants)
+        if name_random.random() < 0.3:
+            second_descriptor = name_random.choice(descriptors)
             if second_descriptor != descriptor:
                 return f"{descriptor} {second_descriptor} {titan_type} Titan"
         return f"{descriptor} {titan_type} Titan"

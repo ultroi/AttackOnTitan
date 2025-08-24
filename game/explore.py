@@ -48,8 +48,12 @@ def generate_titan_directly(player_level: int, unlocked_areas: list = None):
     # Get difficulty from pre-calculated mapping
     difficulty = DIFFICULTY_BY_LEVEL.get(player_level, "Hard")
     
+    # Use current microseconds as a seed for better randomness
+    seed = datetime.now(timezone.utc).microsecond
+    titan_random = random.Random(seed)
+    
     # Titan level: within -2 to +2 of player level, but at least 1
-    level = max(1, player_level + random.randint(-2, 2))
+    level = max(1, player_level + titan_random.randint(-2, 2))
     
     # Generate name and stats
     name = generate_titan_name(difficulty)
@@ -205,8 +209,22 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Move this to a background task to not slow down main response
         asyncio.create_task(_show_keyboard_background(update))
         
-    # Cache check for titan battle to avoid regeneration
-    titan_cached = user_id_str in db._titan_cache
+    # If we're not in a battle, always generate a new titan
+    # Only use cached titan if user was in middle of a battle encounter
+    is_in_battle = False
+    try:
+        from game.battle_system import active_battles
+        is_in_battle = user_id_str in active_battles
+    except ImportError:
+        pass
+        
+    # Only use cached titan if in active battle, otherwise always generate new
+    titan_cached = user_id_str in db._titan_cache and is_in_battle
+    
+    # Clear cached titan if not in battle to ensure different titans each explore
+    if not is_in_battle:
+        # Use the dedicated method to invalidate titan cache
+        db.invalidate_titan_cache(user_id_str)
 
     # --- SPAM PROTECTION (optimized) - Only check if needed ---
     # Using faster modulo check instead of full counter logic
@@ -365,7 +383,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             # Fallback to database generation if direct generation fails
             try:
-                titan = await db.generate_titan(player_character.level, player.unlocked_areas)
+                titan = await db.generate_titan(player_character.level, player.unlocked_areas, user_id_str)
             except Exception:
                 # Ultimate fallback - basic titan with minimal properties
                 titan = Titan(

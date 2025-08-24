@@ -377,6 +377,13 @@ class Database:
                 logger.debug(f"Invalidated character cache for {character_name}")
                 return True
         return False
+        
+    def invalidate_titan_cache(self, user_id: str):
+        if user_id in self._titan_cache:
+            del self._titan_cache[user_id]
+            logger.debug(f"Invalidated titan cache for user {user_id}")
+            return True
+        return False
 
     async def save_player(self, player: Player) -> Optional[Player]:
         """Save (update) the player document in the database."""
@@ -613,7 +620,7 @@ class Database:
             raise
 
 
-    async def generate_titan(self, player_level: int, unlocked_areas: List[str]) -> Optional[Titan]:
+    async def generate_titan(self, player_level: int, unlocked_areas: List[str], user_id: str = None) -> Optional[Titan]:
         # Determine difficulty based on player level
         if player_level < 8:
             difficulty = "Easy"
@@ -642,6 +649,21 @@ class Database:
             xp_reward=generate_titan_xp(level, difficulty),
             min_level_requirement=level
         )
+        
+        # If we're generating a titan for a specific user, make sure it's different from any cached titan
+        if user_id and user_id in self._titan_cache:
+            cached_titan = self._titan_cache[user_id]
+            # If the name is the same, generate a new one to ensure variety
+            if cached_titan.name == titan.name:
+                # Force a different name by regenerating
+                name = generate_titan_name(difficulty)
+                # Try up to 3 times to get a different name
+                attempts = 0
+                while name == cached_titan.name and attempts < 3:
+                    name = generate_titan_name(difficulty)
+                    attempts += 1
+                titan.name = name
+                
         return titan
         
     async def generate_multiple_titans(self, player_level: int, unlocked_areas: List[str], count: int = 3) -> List[Titan]:
@@ -769,6 +791,8 @@ class Database:
 
     async def delete_titan(self, user_id: str):
         await self.titans.delete_one({"user_id": user_id})
+        # Also remove from cache if it exists
+        self.invalidate_titan_cache(user_id)
 
     async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: Optional[List[str]] = None) -> Titan:
         level = random.randint(min_level, max_level)
