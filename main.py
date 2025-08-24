@@ -59,6 +59,7 @@ from game.travel_system import travel_command, handle_travel_direction, handle_c
 from game.captcha import button
 from game.pvp_system import pvp_command, pvp_callback_handler
 from game.tax_command import tax_status_command, force_tax_check_command
+from game.stats_command import stats_command, start_stats_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -658,6 +659,9 @@ def register_handlers(app_instance):
     # Tax system commands
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
+    
+    # Stats command
+    app_instance.add_handler(CommandHandler("stats", stats_command))
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", handle_bank_command))
@@ -755,6 +759,9 @@ async def main():
 
         # Start the midnight tax scheduler with bot instance
         start_scheduler(app_instance.bot)
+        
+        # Start the stats scheduler for daily/weekly resets
+        start_stats_scheduler()
 
         # Set webhook for Telegram
         if ENV != "development" and app_instance:

@@ -15,6 +15,7 @@ import random
 import logging
 import asyncio
 from uuid import uuid4
+from game.stats_command import track_explore_stats
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +327,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Track that we're fetching character data for debugging
     logger.debug(f"Fetching fresh character data for {player_character_name} from database")
+    
+    # Track exploration for stats
+    asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name))
 
     # Handle travel/decision points
     location = getattr(player, "location", None)
