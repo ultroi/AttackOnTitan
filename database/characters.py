@@ -1130,7 +1130,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 100,
                 "cooldown": 4,
                 "level_required": 50,
-                "base_damage": 45,
+                "base_damage": 54,  # 45 * 1.2, as per new damage
                 "effect_function": arc_net_trap_effect
             },
             {
@@ -1140,7 +1140,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 120,
                 "cooldown": 3,
                 "level_required": 75,
-                "base_damage": 0,
+                "base_damage": 18,  # 17-20, set to avg 18
                 "effect_function": stimulant_injection_effect
             }
         ],
@@ -1152,7 +1152,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 400,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 0,
+                "base_damage": 15,  # as per new damage
                 "effect_function": bunker_descent_effect
             }
         ]
@@ -1191,7 +1191,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 150,
                 "cooldown": 3,
                 "level_required": 50,
-                "base_damage": 0,
+                "base_damage": 10,  # as per new damage
                 "effect_function": field_patch_effect
             },
             {
@@ -1201,7 +1201,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 75,
                 "cooldown": 2,
                 "level_required": 100,
-                "base_damage": 20,
+                "base_damage": 16,  # as per new damage
                 "effect_function": supply_dump_effect
             }
         ],
@@ -1244,6 +1244,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 20,
                 "cooldown": 5,
                 "is_unlocked": True,
+                "base_damage": 21,  
                 "effect_function": golden_hour_reflex_effect
             },
             {
@@ -1253,7 +1254,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 150,
                 "cooldown": 2,
                 "level_required": 50,
-                "base_damage": 60,
+                "base_damage": 60,  
                 "effect_function": nape_cutter_dash_effect
             },
             {
@@ -1263,7 +1264,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 80,
                 "cooldown": 3,
                 "level_required": 100,
-                "base_damage": 0,
+                "base_damage": 0,  
                 "effect_function": emergency_pulse_beacon_effect
             }
         ],
@@ -1275,7 +1276,7 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "gas_cost": 450,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 120,
+                "base_damage": 120, 
                 "effect_function": flicker_instinct_effect
             }
         ]
