@@ -1058,19 +1058,49 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     # Edit message with all content at once - safely
     try:
         from game.safe_edit import safe_edit_message_text
-        await safe_edit_message_text(
+        success = await safe_edit_message_text(
             query.message,
             battle_message,
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
+        if not success:
+            # Message couldn't be edited (possibly due to expired query)
+            # Let's try sending a new message if the query edit failed
+            logger.info(f"Message edit failed for battle, attempting to send new message")
+            try:
+                chat_id = query.message.chat_id
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=battle_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as send_error:
+                logger.error(f"Failed to send new battle message: {send_error}")
     except ImportError:
         # Fallback to direct edit
-        await query.edit_message_text(
-            text=battle_message,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await query.edit_message_text(
+                text=battle_message,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            if "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
+                # Try to send a new message if edit fails due to old query
+                try:
+                    chat_id = query.message.chat_id
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=battle_message,
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as send_error:
+                    logger.error(f"Failed to send new battle message: {send_error}")
+            else:
+                raise
     
     # Start timeout in background
     asyncio.create_task(battle_timeout(user_id, query, battle, context))

@@ -18,7 +18,7 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
         parse_mode: Optional parse mode (HTML, Markdown, etc)
         
     Returns:
-        True if the message was edited, False if it was identical
+        True if the message was edited, False if it was identical or couldn't be edited
     """
     try:
         # Check if content is identical (basic check)
@@ -43,9 +43,14 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
         return True
         
     except BadRequest as e:
-        if "message is not modified" in str(e).lower():
+        error_str = str(e).lower()
+        if "message is not modified" in error_str:
             # Just log at debug level
             logger.debug(f"Message not modified: {e}")
+            return False
+        elif "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
+            # Handle expired callback query error
+            logger.debug(f"Query expired or invalid: {e}")
             return False
         else:
             # Log other errors at warning level
@@ -67,7 +72,7 @@ async def safe_edit_message_caption(message: Message, caption: str, reply_markup
         parse_mode: Optional parse mode (HTML, Markdown, etc)
         
     Returns:
-        True if the message was edited, False if it was identical
+        True if the message was edited, False if it was identical or couldn't be edited
     """
     try:
         # Check if content is identical (basic check)
@@ -92,9 +97,14 @@ async def safe_edit_message_caption(message: Message, caption: str, reply_markup
         return True
         
     except BadRequest as e:
-        if "message is not modified" in str(e).lower():
+        error_str = str(e).lower()
+        if "message is not modified" in error_str:
             # Just log at debug level
             logger.debug(f"Caption not modified: {e}")
+            return False
+        elif "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
+            # Handle expired callback query error
+            logger.debug(f"Query expired or invalid: {e}")
             return False
         else:
             # Log other errors at warning level

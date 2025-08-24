@@ -42,32 +42,59 @@ async def update_battle_status(query: Update.callback_query, battle: BattleSyste
                         )])
         keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
         reply_markup = InlineKeyboardMarkup(keyboard)
+        battle_message = (
+            f"{message}\n\n"
+            f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
+            f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
+            f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
+            f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+            f"Gas: {status['gas']}/{battle.character.gas}\n\n"
+            f"{status['status_message']}\n"
+            f"Choose your action:"
+        )
+        
         try:
             from game.safe_edit import safe_edit_message_text
-            await safe_edit_message_text(
+            success = await safe_edit_message_text(
                 query.message,
-                f"{message}\n\n"
-                f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
-                f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
-                f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
-                f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
-                f"Gas: {status['gas']}/{battle.character.gas}\n\n"
-                f"{status['status_message']}\n"
-                f"Choose your action:",
+                battle_message,
                 reply_markup=reply_markup
             )
+            
+            # If edit failed, try sending a new message
+            if not success:
+                logger.info(f"Battle status update failed, attempting to send new message")
+                try:
+                    chat_id = query.message.chat_id
+                    await query.bot.send_message(
+                        chat_id=chat_id,
+                        text=battle_message,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML"
+                    )
+                except Exception as send_error:
+                    logger.error(f"Failed to send new battle status message: {send_error}")
         except ImportError:
-            await query.edit_message_text(
-                f"{message}\n\n"
-                f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
-                f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
-                f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
-                f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
-                f"Gas: {status['gas']}/{battle.character.gas}\n\n"
-                f"{status['status_message']}\n"
-                f"Choose your action:",
-                reply_markup=reply_markup
-            )
+            try:
+                await query.edit_message_text(
+                    text=battle_message,
+                    reply_markup=reply_markup
+                )
+            except BadRequest as e:
+                if "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
+                    # Try to send a new message if edit fails due to old query
+                    try:
+                        chat_id = query.message.chat_id
+                        await query.bot.send_message(
+                            chat_id=chat_id,
+                            text=battle_message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
+                    except Exception as send_error:
+                        logger.error(f"Failed to send new battle status message: {send_error}")
+                else:
+                    raise
     except BadRequest as e:
         logger.error(f"Error updating battle status: {e}")
         await query.answer("Error updating battle status.")
@@ -176,13 +203,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("Unknown action.")
     except (BadRequest, PyMongoError) as e:
-        logger.error(f"Error in button_callback for user {user_id}: {e}")
-        if query.message.text:
-            await query.edit_message_text(f"Error processing action: {str(e)}")
-        elif query.message.caption:
-            await query.edit_message_caption(f"Error processing action: {str(e)}")
+        error_str = str(e).lower()
+        if "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
+            # Handle expired callback query by sending a new message
+            logger.info(f"Expired callback query for user {user_id}: {e}")
+            try:
+                chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="This action has expired. Please try the command again.",
+                    parse_mode="HTML"
+                )
+                await query.answer("Action expired, please try again.")
+            except Exception as send_error:
+                logger.error(f"Failed to send message about expired query: {send_error}")
         else:
-            await query.answer(f"Error processing action: {str(e)}")
+            # Handle other errors
+            logger.error(f"Error in button_callback for user {user_id}: {e}")
+            try:
+                if query.message.text:
+                    await query.edit_message_text(f"Error processing action: {str(e)}")
+                elif query.message.caption:
+                    await query.edit_message_caption(f"Error processing action: {str(e)}")
+                else:
+                    await query.answer(f"Error processing action: {str(e)}")
+            except Exception as nested_error:
+                logger.error(f"Failed to notify user about error: {nested_error}")
 
 async def handle_select_character(query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE, char_name: str):
     if context.user_data is None:
