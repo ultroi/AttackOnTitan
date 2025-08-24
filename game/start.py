@@ -650,7 +650,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_message(
                         chat_id=query.message.chat.id,
-                        text="<b>Your journey has just begun!\n\nJoin our main group chat for helpful tips, latest updates, and a vibrant community experience!\n\n👉 <a href='https://t.me/AOTMainChat'>AOT Main Chat</a></b>",
+                        text="<b>Your journey has just begun!\n\nJoin our main group chat for helpful tips, latest updates, and a vibrant community experience!\n\n👉 <a href='https://t.me/AotMainChat'>AOT Main Chat</a></b>",
                         parse_mode=ParseMode.HTML,
                         disable_web_page_preview=False
                     )
