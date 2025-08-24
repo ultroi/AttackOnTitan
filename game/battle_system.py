@@ -1030,12 +1030,22 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     # Join all parts at once (much faster than += concatenation)
     battle_message = "\n".join(message_parts)
     
-    # Edit message with all content at once
-    await query.edit_message_text(
-        text=battle_message,
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.HTML
-    )
+    # Edit message with all content at once - safely
+    try:
+        from game.safe_edit import safe_edit_message_text
+        await safe_edit_message_text(
+            query.message,
+            battle_message,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+    except ImportError:
+        # Fallback to direct edit
+        await query.edit_message_text(
+            text=battle_message,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
     
     # Start timeout in background
     asyncio.create_task(battle_timeout(user_id, query, battle, context))

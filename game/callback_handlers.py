@@ -42,17 +42,32 @@ async def update_battle_status(query: Update.callback_query, battle: BattleSyste
                         )])
         keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            f"{message}\n\n"
-            f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
-            f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
-            f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
-            f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
-            f"Gas: {status['gas']}/{battle.character.gas}\n\n"
-            f"{status['status_message']}\n"
-            f"Choose your action:",
-            reply_markup=reply_markup
-        )
+        try:
+            from game.safe_edit import safe_edit_message_text
+            await safe_edit_message_text(
+                query.message,
+                f"{message}\n\n"
+                f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
+                f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
+                f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
+                f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+                f"Gas: {status['gas']}/{battle.character.gas}\n\n"
+                f"{status['status_message']}\n"
+                f"Choose your action:",
+                reply_markup=reply_markup
+            )
+        except ImportError:
+            await query.edit_message_text(
+                f"{message}\n\n"
+                f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
+                f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
+                f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
+                f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
+                f"Gas: {status['gas']}/{battle.character.gas}\n\n"
+                f"{status['status_message']}\n"
+                f"Choose your action:",
+                reply_markup=reply_markup
+            )
     except BadRequest as e:
         logger.error(f"Error updating battle status: {e}")
         await query.answer("Error updating battle status.")
@@ -81,17 +96,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if result is not None:
                 message, reply_markup = result
                 if query.message.text:
-                    await query.edit_message_text(
-                        text=message,
-                        reply_markup=reply_markup,
-                        parse_mode="HTML"
-                    )
+                    try:
+                        from game.safe_edit import safe_edit_message_text
+                        await safe_edit_message_text(
+                            query.message,
+                            message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
+                    except ImportError:
+                        await query.edit_message_text(
+                            text=message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
                 elif query.message.caption:
-                    await query.edit_message_caption(
-                        caption=message,
-                        reply_markup=reply_markup,
-                        parse_mode="HTML"
-                    )
+                    try:
+                        from game.safe_edit import safe_edit_message_caption
+                        await safe_edit_message_caption(
+                            query.message,
+                            message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
+                    except ImportError:
+                        await query.edit_message_caption(
+                            caption=message,
+                            reply_markup=reply_markup,
+                            parse_mode="HTML"
+                        )
                 else:
                     await query.answer("Shop action completed.")
             return
@@ -198,7 +231,14 @@ async def handle_travel_decision(update: Update, context: ContextTypes.DEFAULT_T
     # Update both travel and location so the user moves forward
     await db.update_player(user_id, {"travel": travel_state, "location": to})
     msg = f"You continue your journey <b>{real_key}</b> ({location} → {to}) [0/{required} explores]"
-    if query.message and getattr(query.message, "photo", None):
-        await query.edit_message_caption(msg, parse_mode="HTML")
-    else:
-        await query.edit_message_text(msg, parse_mode="HTML")
+    try:
+        from game.safe_edit import safe_edit_message_caption, safe_edit_message_text
+        if query.message and getattr(query.message, "photo", None):
+            await safe_edit_message_caption(query.message, msg, parse_mode="HTML")
+        else:
+            await safe_edit_message_text(query.message, msg, parse_mode="HTML")
+    except ImportError:
+        if query.message and getattr(query.message, "photo", None):
+            await query.edit_message_caption(msg, parse_mode="HTML")
+        else:
+            await query.edit_message_text(msg, parse_mode="HTML")

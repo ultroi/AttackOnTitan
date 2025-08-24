@@ -121,7 +121,9 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
                 # Only edit message if no battle has started
                 if sent_message and current_battle_id == context.bot_data.get(battle_id_key):
                     try:
-                        await sent_message.edit_text(
+                        from game.safe_edit import safe_edit_message_text
+                        await safe_edit_message_text(
+                            sent_message,
                             "⏰ Titan encounter expired!\n\nYou took too long to respond. Use /explore to find another titan.",
                             parse_mode=ParseMode.HTML
                         )
@@ -784,3 +786,75 @@ async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+# Import centralized safe edit functions
+try:
+    from game.safe_edit import safe_edit_message_text, safe_edit_message_caption
+except ImportError:
+    # Fallback implementations if import fails
+    async def safe_edit_message_text(message, text, reply_markup=None, parse_mode=None):
+        """Helper function to safely edit messages, handling common errors"""
+        try:
+            # Check if content is identical (basic check)
+            if hasattr(message, "text") and message.text == text:
+                # Check if markup is also identical
+                existing_markup = getattr(message, "reply_markup", None)
+                if (existing_markup is None and reply_markup is None) or \
+                   (existing_markup is not None and reply_markup is not None and 
+                    existing_markup.to_dict() == reply_markup.to_dict()):
+                    # Both text and markup are identical - don't attempt edit
+                    logging.debug(f"Skipping edit: message content and markup unchanged")
+                    return False
+                    
+            # Create kwargs dynamically
+            kwargs = {"text": text}
+            if reply_markup is not None:
+                kwargs["reply_markup"] = reply_markup
+            if parse_mode is not None:
+                kwargs["parse_mode"] = parse_mode
+                
+            await message.edit_text(**kwargs)
+            return True
+            
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                # Just log at debug level
+                logging.debug(f"Message not modified: {e}")
+                return False
+            else:
+                # Log other errors at warning level
+                logging.warning(f"Error editing message: {e}")
+                return False
+                
+    async def safe_edit_message_caption(message, caption, reply_markup=None, parse_mode=None):
+        """Helper function to safely edit message captions, handling common errors"""
+        try:
+            # Check if content is identical (basic check)
+            if hasattr(message, "caption") and message.caption == caption:
+                # Check if markup is also identical
+                existing_markup = getattr(message, "reply_markup", None)
+                if (existing_markup is None and reply_markup is None) or \
+                   (existing_markup is not None and reply_markup is not None and 
+                    existing_markup.to_dict() == reply_markup.to_dict()):
+                    # Both caption and markup are identical - don't attempt edit
+                    logging.debug(f"Skipping edit: caption and markup unchanged")
+                    return False
+                    
+            # Create kwargs dynamically
+            kwargs = {"caption": caption}
+            if reply_markup is not None:
+                kwargs["reply_markup"] = reply_markup
+            if parse_mode is not None:
+                kwargs["parse_mode"] = parse_mode
+                
+            await message.edit_caption(**kwargs)
+            return True
+            
+        except Exception as e:
+            if "message is not modified" in str(e).lower():
+                # Just log at debug level
+                logging.debug(f"Caption not modified: {e}")
+                return False
+            else:
+                # Log other errors at warning level
+                logging.warning(f"Error editing caption: {e}")
+                return False
