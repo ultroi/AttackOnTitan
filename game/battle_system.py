@@ -1132,14 +1132,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 for stat in stat_names:
                     old = level_up.get(f"old_{stat.lower()}")
                     new = level_up.get(f"new_{stat.lower()}")
-                    if old is not None and new is not None and old != new:
-                        stat_lines.append(f"{stat}: {old} ➜ {new}")
+                    if old is not None and new is not None and new > old:
+                        stat_lines.append(f"<b>{stat}:</b> {old} ➜ {new} (<b>+{new-old}</b>)")
                 msg = [
                     f"🎊 <b>{battle.character.name} leveled Up !!</b>",
-                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}",
+                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
                 ]
                 if stat_lines:
-                    msg.append("<b>Stats:</b>")
+                    msg.append("<b>Stat increases:</b>")
                     msg.extend(stat_lines)
                 else:
                     msg.append("<i>No stat increases.</i>")
