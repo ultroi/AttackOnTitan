@@ -42,7 +42,7 @@ from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info,
+    show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, referral_info,
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities
 )
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
@@ -691,6 +691,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
     app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
     app_instance.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
+    app_instance.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
     app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
     app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
 
@@ -733,8 +734,8 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if update.message:
                 await update.message.reply_text("Shop system not initialized. Please try again later.")
             return
-        # Always set shop_items in context.bot_data for consistency
-        context.bot_data["shop_items"] = shop_system.shop_items
+        # Always set shop_items and hidden_items in context.bot_data for consistency
+        context.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
         text, reply_markup = await shop_system.show_shop(context, user_id)
         if update.message:
             await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")

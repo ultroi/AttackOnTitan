@@ -33,7 +33,7 @@ class BattleSystem:
         if self.character.equipped_weapon and self.character.equipped_weapon in shop_items:
             item = shop_items[self.character.equipped_weapon]
             # Allow using gear and military items as weapons
-            if item.type in ["weapon", "gear", "military"]:
+            if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"]:
                 return item
         return None
     """
