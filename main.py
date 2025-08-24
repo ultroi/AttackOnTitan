@@ -43,7 +43,7 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_utilities, view_echo_shards, referral_info,
-    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback
+    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities
 )
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from utils.fastapi_dashboard import include_dashboard_route
@@ -694,6 +694,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
     app_instance.add_handler(CallbackQueryHandler(view_weapons_char, pattern=r"^view_weapons_"))
     app_instance.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
+    app_instance.add_handler(CallbackQueryHandler(view_abilities, pattern=r"^view_abilities_"))
 
     app_instance.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))

@@ -644,31 +644,39 @@ def _create_char_profile_text(character, char_data) -> str:
         f"<b>XP:</b> {character.xp} / {character.xp_to_next_level}\n\n"
         f"<b>Stats:</b>\n" + "\n".join(f"{stat}: {value}" for stat, value in character.stats.dict().items()) + "\n\n"
         f"<b>Gas:</b> {character.gas}\n"
-        f"<b>Unlocked Abilities:</b>\n"
+        f"<b>Unlocked Abilities:</b> {sum(1 for ability_type in ['active', 'passive', 'ultimate'] for ability in getattr(char_data, f'{ability_type}_abilities') if character.unlocked_abilities.get(ability.name, False))}"
     )
     
-    for ability_type in ["active", "passive", "ultimate"]:
-        abilities = getattr(char_data, f"{ability_type}_abilities")
-        for ability in abilities:
-            if character.unlocked_abilities.get(ability.name, False):
-                profile_text += (
-                    f"• {escape(ability.name)} ({ability_type})\n"
-                    f"  <i>{escape(ability.description)}</i>\n"
-                    f"  Gas Cost: {ability.gas_cost}\n"
-                )
-                if ability.cooldown:
-                    profile_text += f"  Cooldown: {ability.cooldown} turns\n"
-                profile_text += "\n"
-                
     return profile_text
 
 
+
+def _create_abilities_text(character, char_data) -> str:
+    """Generates the character abilities text."""
+    abilities_text = f"<b>{escape(character.name)}'s Abilities</b>\n\n"
+    
+    for ability_type in ["active", "passive", "ultimate"]:
+        type_title = ability_type.capitalize()
+        abilities = getattr(char_data, f"{ability_type}_abilities")
+        unlocked_abilities = [ability for ability in abilities if character.unlocked_abilities.get(ability.name, False)]
+        
+        if unlocked_abilities:
+            abilities_text += f"<b>📌 {type_title} Abilities:</b>\n"
+            for ability in unlocked_abilities:
+                abilities_text += f"<b>⚔️ {escape(ability.name)}</b>\n"
+                abilities_text += f"<i>{escape(ability.description)}</i>\n"
+                abilities_text += f"⚡ Gas Cost: {ability.gas_cost}\n"
+                if ability.cooldown:
+                    abilities_text += f"⏱️ Cooldown: {ability.cooldown} turns\n"
+                abilities_text += "\n"
+    
+    return abilities_text
 
 # --- UPDATED char_detail FUNCTION ---
 
 @maintenance_protected
 @ban_protected
-async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None):
+async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, char_name=None):
     db = context.bot_data.get("db") or Database()
     user_id = update.effective_user.id
     player = await db.get_player(str(user_id))
@@ -746,9 +754,10 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, char_n
         return
     profile_text = _create_char_profile_text(character, char_data)
     keyboard = [
-        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}") ,
-         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")] ,
-         [InlineKeyboardButton("Exit", callback_data="exit_profile")]
+        [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
+         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")],
+        [InlineKeyboardButton("Abilities", callback_data=f"view_abilities_{character.name.replace(' ', '_')}")],
+        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
     ]
     image_url = CHARACTER_IMAGES.get(character.name)
     # If this is a callback query, edit the existing message
@@ -790,8 +799,67 @@ async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         char_name = query.data.replace("char_detail_", "").replace("_", " ")
     await char_detail(update, context, char_name=char_name)
 
+# Function to show character abilities
+async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
+    if not check_authorization(update, context):
+        await handle_unauthorized(update)
+        return
+    query = getattr(update, 'callback_query', None)
+    if not query:
+        await handle_unauthorized(update)
+        return
+    await query.answer()
+    char_name = query.data.replace("view_abilities_", "").replace("_", " ")
+    user_id = str(query.from_user.id)
+    
+    # Anti-spam check
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_abilities_click', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_abilities_click'] = now
+    
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+        
+    character = await db.get_character(user_id, char_name)
+    if not character:
+        await query.edit_message_text(f"❌ Character {char_name} not found.")
+        return
+        
+    char_data = get_character_data(character.name)
+    if not char_data:
+        await query.edit_message_text("❌ Character data not found.")
+        return
+        
+    abilities_text = _create_abilities_text(character, char_data)
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")]]
+    
+    # Update the message
+    try:
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption(
+                caption=abilities_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await query.edit_message_text(
+                text=abilities_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        logger.error(f"Error updating abilities view: {e}")
+        await query.answer("Error displaying abilities", show_alert=True)
+
 # --- Weapons View and Equip Handlers ---
-async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, char_name: str = None, status_message: str = None):
+async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, *, char_name=None, status_message=None):
     query = update.callback_query
     logger.info(f"[view_weapons_char] Callback data: {getattr(query, 'data', None)}")
     await query.answer()
@@ -802,7 +870,7 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     logger.info(f"[view_weapons_char] user_id: {user_id}, char_name: {char_name}")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
-    character = await db.get_character(str(user_id), char_name)
+    character = await db.get_character(int(user_id), char_name)
     logger.info(f"[view_weapons_char] player: {player is not None}, character: {character is not None}")
     if not player or not character:
         logger.warning(f"[view_weapons_char] Player or character not found for user_id={user_id}, char_name={char_name}")
@@ -908,7 +976,7 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
         weapon_key = parts[-1]
     logger.info(f"[equip_weapon] user_id: {user_id}, char_name: {char_name}, weapon_key: {weapon_key}")
     db = context.bot_data.get("db") or Database()
-    character = await db.get_character(str(user_id), char_name)
+    character = await db.get_character(int(user_id), char_name)
     logger.info(f"[equip_weapon] character found: {character is not None}")
     if not character:
         logger.warning(f"[equip_weapon] Character not found for user_id={user_id}, char_name={char_name}")
@@ -948,7 +1016,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data.get("db") or Database()
     try:
         player = await db.get_player(user_id)
-        character = await db.get_character(str(user_id), char_name)
+        character = await db.get_character(int(user_id), char_name)
         if not player or not character:
             await query.answer("❌ Character or Player not found.", show_alert=True)
             return
@@ -965,7 +1033,7 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         player.gas -= gas_needed
         character.gas = character.max_gas
         print(f"DEBUG fill_gas: AFTER player.gas={player.gas}, character.gas={character.gas}")
-        update_player_result = await db.update_player(str(user_id), {"gas": player.gas})
+        update_player_result = await db.update_player(int(user_id), {"gas": player.gas})
         update_character_result = await db.update_character(character)
 
         char_data = get_character_data(character.name)
