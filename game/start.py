@@ -95,13 +95,16 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
 
     # Step 3: Force cleanup battles/timeouts
     if user_id:
-        # Clean active battles
+        # Clean active battles with lock for safety
         try:
-            from game.battle_system import active_battles
-            if user_id in active_battles:
-                battle = active_battles.pop(user_id)
-                if hasattr(battle, 'dispose'):
+            from game.battle_system import active_battles, active_battles_lock
+            async with active_battles_lock:
+                battle = active_battles.pop(user_id, None)
+            if battle and hasattr(battle, 'dispose'):
+                try:
                     battle.dispose()
+                except Exception as dispose_err:
+                    logger.error(f"Battle dispose error: {dispose_err}")
         except Exception as e:
             logger.error(f"Battle cleanup error: {e}")
 

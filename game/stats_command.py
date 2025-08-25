@@ -1,3 +1,4 @@
+
 import logging
 import asyncio
 import pytz
@@ -6,17 +7,48 @@ from telegram import Update, Bot
 from telegram.ext import ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils.ban_utils import ban_protected
-
 from utils.maintenance import maintenance_protected
 from database.db import Database
 from utils.mod_utils import mod_only
 
+# MongoDB stats persistence helpers
+STATS_DOC_ID = "explore_stats"
+
+async def load_stats_data_from_db(db):
+    doc = await db.stats.find_one({"_id": STATS_DOC_ID})
+    if doc:
+        return {
+            "weekly_explorers": doc.get("weekly_explorers", {}),
+            "daily_explorers": doc.get("daily_explorers", {}),
+            "last_weekly_reset": doc.get("last_weekly_reset"),
+            "last_daily_reset": doc.get("last_daily_reset"),
+        }
+    return {
+        "weekly_explorers": {},
+        "daily_explorers": {},
+        "last_weekly_reset": None,
+        "last_daily_reset": None,
+    }
+
+async def save_stats_data_to_db(db, stats_data):
+    await db.stats.update_one(
+        {"_id": STATS_DOC_ID},
+        {"$set": {
+            "weekly_explorers": stats_data["weekly_explorers"],
+            "daily_explorers": stats_data["daily_explorers"],
+            "last_weekly_reset": stats_data["last_weekly_reset"],
+            "last_daily_reset": stats_data["last_daily_reset"],
+        }},
+        upsert=True
+    )
+
 logger = logging.getLogger(__name__)
 
-# Stats storage
+
+# Stats storage (in-memory, will sync with DB)
 stats_data = {
-    "weekly_explorers": {},  # Format: {user_id: {"name": name, "count": count}}
-    "daily_explorers": {},   # Format: {user_id: {"name": name, "count": count}}
+    "weekly_explorers": {},
+    "daily_explorers": {},
     "last_weekly_reset": None,
     "last_daily_reset": None
 }
@@ -27,36 +59,50 @@ stats_scheduler = None
 # IST timezone for resets
 ist_timezone = pytz.timezone('Asia/Kolkata')
 
+
 async def reset_weekly_stats():
-    """Reset weekly explorer stats at midnight on Sunday (IST)"""
+    """Reset weekly explorer stats at midnight on Sunday (IST) and save to DB"""
     stats_data["weekly_explorers"] = {}
     stats_data["last_weekly_reset"] = datetime.now(ist_timezone)
+    db = stats_data.get("_db")
+    if db:
+        await save_stats_data_to_db(db, stats_data)
     logger.info(f"[Stats] Weekly explorer stats reset at {stats_data['last_weekly_reset']} IST")
 
+
 async def reset_daily_stats():
-    """Reset daily explorer stats at midnight (IST)"""
+    """Reset daily explorer stats at midnight (IST) and save to DB"""
     stats_data["daily_explorers"] = {}
     stats_data["last_daily_reset"] = datetime.now(ist_timezone)
+    db = stats_data.get("_db")
+    if db:
+        await save_stats_data_to_db(db, stats_data)
     logger.info(f"[Stats] Daily explorer stats reset at {stats_data['last_daily_reset']} IST")
 
-def start_stats_scheduler():
-    """Start the scheduler for stats reset"""
+
+async def start_stats_scheduler(db):
+    """Start the scheduler for stats reset and load stats from DB"""
     global stats_scheduler
     if stats_scheduler is not None:
         stats_scheduler.shutdown()
-    
+
+    # Load stats from DB
+    loaded = await load_stats_data_from_db(db)
+    stats_data.update(loaded)
+    stats_data["_db"] = db
+
     # Initialize last reset times if not set
     current_time = datetime.now(ist_timezone)
     if not stats_data["last_weekly_reset"]:
         stats_data["last_weekly_reset"] = current_time
     if not stats_data["last_daily_reset"]:
         stats_data["last_daily_reset"] = current_time
-    
+
     stats_scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
-    
+
     # Add job to reset weekly stats every Sunday at midnight IST
     stats_scheduler.add_job(
-        reset_weekly_stats,
+        lambda: asyncio.create_task(reset_weekly_stats()),
         'cron',
         day_of_week='sun',
         hour=0,
@@ -64,45 +110,48 @@ def start_stats_scheduler():
         second=0,
         id='reset_weekly_stats',
         replace_existing=True,
-        misfire_grace_time=300  # Allow up to 5 minutes delay
+        misfire_grace_time=300
     )
-    
+
     # Add job to reset daily stats every midnight IST
     stats_scheduler.add_job(
-        reset_daily_stats,
+        lambda: asyncio.create_task(reset_daily_stats()),
         'cron',
         hour=0,
         minute=0,
         second=0,
         id='reset_daily_stats',
         replace_existing=True,
-        misfire_grace_time=300  # Allow up to 5 minutes delay
+        misfire_grace_time=300
     )
-    
+
     stats_scheduler.start()
-    logger.info("[Stats] Stats scheduler started successfully")
+    logger.info("[Stats] Stats scheduler started successfully and stats loaded from DB")
+
 
 async def update_explorer_stats(user_id: str, name: str, battle_completed: bool = False):
-    """Update explorer stats for a player"""
-    # Only update stats if a battle was completed
+    """Update explorer stats for a player and persist to DB (non-blocking)"""
     if not battle_completed:
         return
-        
+
     # Update weekly stats
     if user_id not in stats_data["weekly_explorers"]:
         stats_data["weekly_explorers"][user_id] = {"name": name, "count": 1}
     else:
         stats_data["weekly_explorers"][user_id]["count"] += 1
-        # Always update name in case it changed
         stats_data["weekly_explorers"][user_id]["name"] = name
-    
+
     # Update daily stats
     if user_id not in stats_data["daily_explorers"]:
         stats_data["daily_explorers"][user_id] = {"name": name, "count": 1}
     else:
         stats_data["daily_explorers"][user_id]["count"] += 1
-        # Always update name in case it changed
         stats_data["daily_explorers"][user_id]["name"] = name
+
+    db = stats_data.get("_db")
+    if db:
+        # Fire-and-forget DB update for speed
+        asyncio.create_task(save_stats_data_to_db(db, stats_data))
 
 def get_top_explorers(explorer_data: dict, limit: int = 3):
     """Get top explorers from the provided explorer data"""
@@ -123,8 +172,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user:
         return
         
-    # Check for manual reset (for admin/debugging purposes)
-    if update.effective_user.id == 1794054461:  # Replace with actual admin ID if needed
+    if update.effective_user.id: 
         if context.args and context.args[0] == "reset":
             if len(context.args) > 1 and context.args[1] == "weekly":
                 await reset_weekly_stats()

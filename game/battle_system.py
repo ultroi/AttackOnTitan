@@ -1046,9 +1046,14 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     # Edit message with all content at once - safely
     try:
         from game.safe_edit import safe_edit_message_text
+        # Add a small randomization to the message to prevent "message not modified" errors
+        # Adding a zero-width space at random positions ensures the message is always different
+        random_pos = random.randint(0, len(battle_message)-1)
+        modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+        
         success = await safe_edit_message_text(
             query.message,
-            battle_message,
+            modified_message,
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -1069,13 +1074,21 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     except ImportError:
         # Fallback to direct edit
         try:
+            # Add a small randomization to the message
+            random_pos = random.randint(0, len(battle_message)-1)
+            modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+            
             await query.edit_message_text(
-                text=battle_message,
+                text=modified_message,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
         except Exception as e:
-            if "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
+            if "message is not modified" in str(e).lower():
+                # This should rarely happen now with our randomization
+                logger.debug(f"Message not modified despite randomization")
+                # No need for additional action, the UI is already showing the correct state
+            elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
                 # Try to send a new message if edit fails due to old query
                 try:
                     chat_id = query.message.chat_id
@@ -1154,12 +1167,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             "$inc": {
                 "crystal": rewards["crystal"],
                 "valor": rewards["valor"],
-                "xp": player_xp,
                 "marks": rewards["marks"],
-                "total_xp": player_xp,
                 "explore_count": 1
             },
             "$set": {
+                "xp": player_obj.xp,
+                "total_xp": player_obj.total_xp,
                 "level": player_obj.level,
                 "updated_at": datetime.now(timezone.utc)
             }
@@ -1183,10 +1196,19 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 stat_names = ["ATK", "DEF", "ACC", "INT", "SPD"]
                 stat_lines = []
                 for stat in stat_names:
-                    old = level_up.get(f"old_{stat.lower()}")
-                    new = level_up.get(f"new_{stat.lower()}")
-                    if old is not None and new is not None and new > old:
-                        stat_lines.append(f"<b>{stat}:</b> {old} ➜ {new} (<b>+{new-old}</b>)")
+                    # Try multiple key formats to handle case sensitivity
+                    old = level_up.get(f"old_{stat.lower()}") or level_up.get(f"old_{stat}") or level_up.get(f"old{stat}")
+                    new = level_up.get(f"new_{stat.lower()}") or level_up.get(f"new_{stat}") or level_up.get(f"new{stat}")
+                    
+                    # Convert to integers if they're strings or ensure both are integers
+                    try:
+                        old_val = int(old) if old is not None else None
+                        new_val = int(new) if new is not None else None
+                        if old_val is not None and new_val is not None and new_val > old_val:
+                            stat_lines.append(f"<b>{stat}:</b> {old_val} ➜ {new_val} (<b>+{new_val-old_val}</b>)")
+                    except (ValueError, TypeError):
+                        # Skip this stat if conversion fails
+                        pass
                 msg = [
                     f"🎊 <b>{battle.character.name} leveled Up !!</b>",
                     f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
@@ -1233,8 +1255,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 update_fields["$inc"]["valor"] = total_valor
             if total_crystals:
                 update_fields["$inc"]["crystal"] = total_crystals
-            # Ensure XP is set to 0 after level up
-            update_fields["$set"]["xp"] = 0
+            # Ensure player XP value is updated with the current value from the player object
+            update_fields["$set"]["xp"] = player_obj.xp  # Already set to 0 in player_level_info if needed
             await db.players.update_one({"user_id": user_id}, update_fields)
         try:
             track_battle_end(int(user_id), battle.character.name, "victory")

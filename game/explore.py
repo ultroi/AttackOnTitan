@@ -96,14 +96,26 @@ async def _reply_error(update: Update, message: str):
 async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
     """Handle titan encounter timeout with proper cleanup."""
     try:
+        # Store the timestamp when the timeout task started
+        start_time = time.time()
+        
+        # Wait for the timeout period
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         
         # Get the latest battle_id for this user
         battle_id_key = f"active_battle_id_{user_id}"
         current_battle_id = context.bot_data.get(battle_id_key)
         
-        # Use helper function to check if there's an active battle
+        # Check if user's last explore was AFTER this timeout task started
         user_id_str = str(user_id)
+        last_explore_time = user_last_explore.get(user_id_str, 0)
+        if last_explore_time > start_time:
+            # User has already started a new explore after this timeout task began
+            # So we shouldn't expire this titan - they might be actively using it
+            logger.info(f"User {user_id} has recent activity, not expiring titan")
+            return
+        
+        # Use helper function to check if there's an active battle
         if _is_in_battle(user_id_str):
             return
         
@@ -125,8 +137,11 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
                         )
                     except Exception:
                         pass
-    except Exception:
+    except asyncio.CancelledError:
+        # Task was cancelled, this is expected behavior
         pass
+    except Exception as e:
+        logger.error(f"Error in titan_encounter_timeout: {e}")
     finally:
         # Clean up the task reference
         key = f"titan_timeouts_{user_id}"
@@ -247,11 +262,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Show persistent keyboard in the background - non-blocking
     if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
         context.user_data["persistent_keyboard_sent"] = True
-        # Move this to a background task to not slow down main response
         asyncio.create_task(_show_keyboard_background(update))
         
-    # If we're not in a battle, always generate a new titan
-    # Only use cached titan if user was in middle of a battle encounter
     is_in_battle = _is_in_battle(user_id_str)
         
     # Only use cached titan if in active battle, otherwise always generate new
@@ -266,7 +278,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = await player_task
     if not player:
         if update.message:
-            await update.message.reply_text("You need to create a profile first with /start")
+            await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text("You haven't created a player account yet! Use /start to begin.")
         return
     
     # Record time and check inactivity 
@@ -509,18 +523,36 @@ async def _handle_timeout_setup(user_id, context, sent_message):
     if key not in context.bot_data:
         context.bot_data[key] = []
     
-    # More aggressively limit number of tasks for a user (avoid memory leaks)
-    if len(context.bot_data[key]) > 2:
-        # Too many timeout tasks, keep only the most recent one
-        old_tasks = context.bot_data[key][:-1]
-        for task in old_tasks:
+    # Cancel ALL previous timeouts for this user to prevent unwanted expiration
+    # when they're actively interacting with the bot
+    if context.bot_data[key]:
+        for task in context.bot_data[key]:
             if not task.done():
-                task.cancel()
-        context.bot_data[key] = [t for t in context.bot_data[key] if not t.done()][:1]
+                try:
+                    task.cancel()
+                    logger.debug(f"Cancelled previous timeout task for user {user_id}")
+                except Exception:
+                    pass
         
-    # Create timeout task
+        # Clear the list of tasks
+        context.bot_data[key] = []
+    
+    # Create a new timeout task
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
     context.bot_data[key].append(timeout_task)
+    
+    # Store creation time in bot_data instead of as a task attribute
+    task_id = id(timeout_task)
+    if "task_creation_times" not in context.bot_data:
+        context.bot_data["task_creation_times"] = {}
+    context.bot_data["task_creation_times"][task_id] = time.time()
+    
+    # Log creation of timeout task (debug level)
+    logger.debug(f"Created new timeout task for user {user_id}")
+    
+    # Limit to max 2 tasks
+    if len(context.bot_data[key]) > 2:
+        context.bot_data[key] = context.bot_data[key][-2:]
 
 
 async def _handle_post_explore_tasks(user_id, context, sent_message, start_time, user_id_str):

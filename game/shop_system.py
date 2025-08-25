@@ -31,7 +31,7 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="echo_shards", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="echo_shard", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "combat_boots": Equipment(
             name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 80.0, "damage_max": 120.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
@@ -92,16 +92,16 @@ class ShopSystem:
             name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 65, "damage_max": 95}, price=80000, currency="marks", description="Grenades for anti-titan combat. High critical chance."
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 180, "damage_max": 220}, price=180000, currency="marks", description="Serum that transforms the user into a titan."
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 140, "damage_max": 200}, price=180000, currency="marks", description="Serum that transforms the user into a titan."
             ),
             "colossal_power": Equipment(
-            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 275, "damage_max": 310}, price=490000, currency="marks", description="Grants the power of the Colossal Titan."
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 260, "damage_max": 300}, price=490000, currency="marks", description="Grants the power of the Colossal Titan."
             ),
             "control_rod": Equipment(
             name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 300, "damage_max": 375}, price=600000, currency="marks", description="Rod to control the Founding Titan."
             ),
             "warhammer_weapons": Equipment(
-            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 275, "damage_max": 330}, price=500000, currency="marks", description="Weapons constructed by the Warhammer Titan."
+            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 270, "damage_max": 315}, price=500000, currency="marks", description="Weapons constructed by the Warhammer Titan."
             ),
             "warhammer_titan_weapons": Equipment(
             name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 210, "damage_max": 255}, price=400000, currency="marks", description="Weapons constructed by the Warhammer Titan."
@@ -276,7 +276,11 @@ class ShopSystem:
         elif category == "utilities":
             return {k: v for k, v in self.shop_items.items() if v.type == "utility"}
         elif category == "barracks":
-            return {k: v for k, v in self.shop_items.items() if v.type in ["weapon", "gear"] and v.rarity in ["common", "uncommon"]}
+            # Include both common/uncommon weapons/gear and any items with barracks type
+            barracks_items = {k: v for k, v in self.shop_items.items() if v.type == "barracks"}
+            basic_items = {k: v for k, v in self.shop_items.items() if v.type in ["weapon", "gear"] and v.rarity in ["common", "uncommon"]}
+            barracks_items.update(basic_items)
+            return barracks_items
         elif category == "hollow":
             regular_items = {k: v for k, v in self.shop_items.items() if v.rarity in ["rare", "epic", "legendary"]}
             regular_items.update(self.hidden_items)

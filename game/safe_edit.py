@@ -1,6 +1,3 @@
-"""
-Safe message editing utility functions to prevent "message is not modified" errors.
-"""
 import logging
 from telegram import Message
 from telegram.error import BadRequest
@@ -8,29 +5,20 @@ from telegram.error import BadRequest
 logger = logging.getLogger(__name__)
 
 async def safe_edit_message_text(message: Message, text: str, reply_markup=None, parse_mode=None):
-    """
-    Safely edit message text, handling the "message is not modified" error gracefully.
     
-    Args:
-        message: The Telegram message to edit
-        text: The new text content
-        reply_markup: Optional reply markup (InlineKeyboardMarkup)
-        parse_mode: Optional parse mode (HTML, Markdown, etc)
-        
-    Returns:
-        True if the message was edited, False if it was identical or couldn't be edited
-    """
     try:
-        # Check if content is identical (basic check)
-        if message.text == text:
-            # Check if markup is also identical
-            existing_markup = message.reply_markup
-            if (existing_markup is None and reply_markup is None) or \
-               (existing_markup is not None and reply_markup is not None and 
-                existing_markup.to_dict() == reply_markup.to_dict()):
-                # Both text and markup are identical - don't attempt edit
-                logger.debug(f"Skipping edit: message content and markup unchanged")
-                return False
+        # Check if message is None or missing required attributes
+        if not message or not hasattr(message, 'text'):
+            logger.warning("Cannot edit: message is None or missing text attribute")
+            return False
+            
+        # Add invisible character to ensure message is always different
+        # Uses zero-width space character to make the message different without visible changes
+        if '\u200B' not in text:
+            # Add at a random position to ensure uniqueness
+            import random
+            pos = random.randint(0, max(0, len(text)-1))
+            text = text[:pos] + '\u200B' + text[pos:]
                 
         # Create kwargs dynamically
         kwargs = {"text": text}
@@ -45,46 +33,39 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
     except BadRequest as e:
         error_str = str(e).lower()
         if "message is not modified" in error_str:
-            # Just log at debug level
-            logger.debug(f"Message not modified: {e}")
+            # This shouldn't happen with our zero-width space trick, but just in case
+            logger.debug(f"Message not modified despite randomization: {e}")
             return False
         elif "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
             # Handle expired callback query error
             logger.debug(f"Query expired or invalid: {e}")
             return False
+        elif "message to edit not found" in error_str:
+            logger.debug(f"Message to edit not found: {e}")
+            return False
         else:
             # Log other errors at warning level
             logger.warning(f"Error editing message: {e}")
-            raise
+            return False  # Return False instead of raising to prevent crashes
             
     except Exception as e:
         logger.warning(f"Unexpected error editing message: {e}")
-        raise
+        return False  # Return False instead of raising to prevent crashes
 
 async def safe_edit_message_caption(message: Message, caption: str, reply_markup=None, parse_mode=None):
-    """
-    Safely edit message caption, handling the "message is not modified" error gracefully.
-    
-    Args:
-        message: The Telegram message to edit
-        caption: The new caption content
-        reply_markup: Optional reply markup (InlineKeyboardMarkup)
-        parse_mode: Optional parse mode (HTML, Markdown, etc)
-        
-    Returns:
-        True if the message was edited, False if it was identical or couldn't be edited
-    """
     try:
-        # Check if content is identical (basic check)
-        if message.caption == caption:
-            # Check if markup is also identical
-            existing_markup = message.reply_markup
-            if (existing_markup is None and reply_markup is None) or \
-               (existing_markup is not None and reply_markup is not None and 
-                existing_markup.to_dict() == reply_markup.to_dict()):
-                # Both caption and markup are identical - don't attempt edit
-                logger.debug(f"Skipping edit: caption and markup unchanged")
-                return False
+        # Check if message is None or missing required attributes
+        if not message or not hasattr(message, 'caption'):
+            logger.warning("Cannot edit caption: message is None or missing caption attribute")
+            return False
+        
+        # Add invisible character to ensure caption is always different
+        # Uses zero-width space character to make the caption different without visible changes
+        if caption and '\u200B' not in caption:
+            # Add at a random position to ensure uniqueness
+            import random
+            pos = random.randint(0, max(0, len(caption)-1))
+            caption = caption[:pos] + '\u200B' + caption[pos:]
                 
         # Create kwargs dynamically
         kwargs = {"caption": caption}
@@ -99,18 +80,21 @@ async def safe_edit_message_caption(message: Message, caption: str, reply_markup
     except BadRequest as e:
         error_str = str(e).lower()
         if "message is not modified" in error_str:
-            # Just log at debug level
-            logger.debug(f"Caption not modified: {e}")
+            # This shouldn't happen with our zero-width space trick, but just in case
+            logger.debug(f"Caption not modified despite randomization: {e}")
             return False
         elif "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
             # Handle expired callback query error
             logger.debug(f"Query expired or invalid: {e}")
             return False
+        elif "message to edit not found" in error_str:
+            logger.debug(f"Message to edit not found: {e}")
+            return False
         else:
             # Log other errors at warning level
             logger.warning(f"Error editing caption: {e}")
-            raise
+            return False  # Return False instead of raising to prevent crashes
             
     except Exception as e:
         logger.warning(f"Unexpected error editing caption: {e}")
-        raise
+        return False  # Return False instead of raising to prevent crashes
