@@ -765,7 +765,7 @@ async def main():
         start_scheduler(app_instance.bot)
         
         # Start the stats scheduler for daily/weekly resets
-        start_stats_scheduler()
+        await start_stats_scheduler(global_db)
 
         # Set webhook for Telegram
         if ENV != "development" and app_instance:
