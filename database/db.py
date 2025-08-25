@@ -42,6 +42,7 @@ class Database:
         self.bank_accounts = None
         self.bans = None
         self.groups = None  # For storing groups information
+        self.stats = None  # For storing game statistics
 
     async def init_db(self):
         try:
@@ -72,6 +73,7 @@ class Database:
             self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
             self.bank_accounts = self.db.bank_accounts
             self.bans = self.db.bans
+            self.stats = self.db.stats  # Add stats collection for tracking game statistics
             
             # Test the connection
             await self.db.command('ping')
