@@ -2,12 +2,13 @@ import random
 from datetime import datetime, timedelta, timezone
 import logging
 from typing import Dict, List, Optional, Any
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
 from database.models import Equipment, Player
 from pymongo.errors import PyMongoError
+from config import TRANSACTION_LOG_CHANNEL
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,41 @@ class ShopSystem:
         self.hidden_items = {}  # Items that appear under special conditions
         self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         self.last_refresh_times = {}  # Track last refresh times per user
+        
+    async def _send_transaction_log(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, 
+                               operation_type: str, amount: int, currency_type: str,
+                               transaction_details: str = ""):
+        """Send transaction log to the transaction log channel."""
+        try:
+            # Get user information
+            user_info = await context.bot.get_chat_member(int(user_id), int(user_id))
+            user = user_info.user
+            
+            # Format user mention with HTML
+            user_mention = f'<a href="tg://user?id={user_id}">{user.first_name}</a>'
+            
+            # Format message with proper HTML formatting
+            message = (
+                f"<b>💵 TRANSACTION LOG</b>\n\n"
+                f"<b> User:</b> {user_mention} [<code>{user_id}</code>]\n"
+                f"<b> Operation:</b> <code>{operation_type}</code>\n"
+                f"<b> Amount:</b> <code>{amount:,}</code> {currency_type}\n"
+                f"<b> Time:</b> <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}</code>\n"
+            )
+            
+            # Add transaction details if available
+            if transaction_details:
+                message += f"<b>📝 Details:</b> {transaction_details}\n"
+                
+            # Send message to log channel
+            await context.bot.send_message(
+                chat_id=TRANSACTION_LOG_CHANNEL,
+                text=message,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error sending transaction log: {e}")
+            # Silent fail - don't interrupt user operation if logging fails
 
     async def _get_db(self, context: ContextTypes.DEFAULT_TYPE) -> Database:
         """Get database instance from context."""
@@ -342,7 +378,7 @@ class ShopSystem:
                 player.level_up()
                 level_ups += 1
 
-            await db.update_player(player.user_id, {
+            await db.update_player(int(player.user_id), {
                 "marks": player.marks,
                 "valor": player.valor,
                 "crystal": player.crystal,
@@ -354,6 +390,10 @@ class ShopSystem:
             })
             for _ in range(quantity):
                 await db.record_purchase(user_id, item_name)
+
+            # Log transaction
+            details = f"Purchased {quantity}x {item.name} for {total_cost:,} {item.currency}"
+            await self._send_transaction_log(context, user_id, "ITEM_PURCHASE", quantity, item.name, details)
 
             message = f"Successfully purchased {quantity}x {item.name}"
             if shop_exp > 0:
@@ -384,35 +424,60 @@ class ShopSystem:
                 cost = amount * 4  # Updated rate: 4 marks for 1 gas
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} gas."
-                await db.update_player(user_id, {"marks": player.marks - cost, "gas": player.gas + amount})
+                await db.update_player(int(user_id), {"marks": player.marks - cost, "gas": player.gas + amount})
+                
+                # Log transaction
+                details = f"Purchased {amount:,} gas for {cost:,} marks"
+                await self._send_transaction_log(context, user_id, "PURCHASE", amount, "gas", details)
+                
                 return f"✅ Successfully purchased {amount:,} gas for {cost:,} marks."
 
             elif currency_type == "crystal":
                 valor_cost = amount * 50  # Rate: 50 valor for 1 crystal
                 if player.valor < valor_cost:
                     return f"❌ Insufficient valor! You need {valor_cost:,} valor for {amount:,} crystals."
-                await db.update_player(user_id, {"valor": player.valor - valor_cost, "crystal": player.crystal + amount})
+                await db.update_player(int(user_id), {"valor": player.valor - valor_cost, "crystal": player.crystal + amount})
+                
+                # Log transaction
+                details = f"Purchased {amount:,} crystals for {valor_cost:,} valor"
+                await self._send_transaction_log(context, user_id, "PURCHASE", amount, "crystal", details)
+                
                 return f"✅ Successfully purchased {amount:,} crystals for {valor_cost:,} valor."
 
             elif currency_type == "valor":
                 cost = amount * 500  # Rate: 500 marks for 1 valor
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} valor points."
-                await db.update_player(user_id, {"marks": player.marks - cost, "valor": player.valor + amount})
+                await db.update_player(int(user_id), {"marks": player.marks - cost, "valor": player.valor + amount})
+                
+                # Log transaction
+                details = f"Purchased {amount:,} valor for {cost:,} marks"
+                await self._send_transaction_log(context, user_id, "PURCHASE", amount, "valor", details)
+                
                 return f"✅ Successfully purchased {amount:,} valor points for {cost:,} marks."
                 
             elif currency_type == "valor_from_crystal":
                 valor_gained = amount * 45  # Rate: 1 crystal for 45 valor (5 taxed)
                 if player.crystal < amount:
                     return f"❌ Insufficient crystals! You need {amount:,} crystals."
-                await db.update_player(user_id, {"crystal": player.crystal - amount, "valor": player.valor + valor_gained})
+                await db.update_player(int(user_id), {"crystal": player.crystal - amount, "valor": player.valor + valor_gained})
+                
+                # Log transaction
+                details = f"Converted {amount:,} crystals to {valor_gained:,} valor (5 valor tax per crystal)"
+                await self._send_transaction_log(context, user_id, "CONVERT", amount, "crystal → valor", details)
+                
                 return f"✅ Successfully exchanged {amount:,} crystals for {valor_gained:,} valor (5 valor tax per crystal)."
                 
             elif currency_type == "marks_from_valor":
                 marks_gained = amount * 500  # Rate: 1 valor for 500 marks
                 if player.valor < amount:
                     return f"❌ Insufficient valor! You need {amount:,} valor."
-                await db.update_player(user_id, {"valor": player.valor - amount, "marks": player.marks + marks_gained})
+                await db.update_player(int(user_id), {"valor": player.valor - amount, "marks": player.marks + marks_gained})
+                
+                # Log transaction
+                details = f"Converted {amount:,} valor to {marks_gained:,} marks"
+                await self._send_transaction_log(context, user_id, "CONVERT", amount, "valor → marks", details)
+                
                 return f"✅ Successfully exchanged {amount:,} valor for {marks_gained:,} marks."
 
             elif currency_type == "marks":
@@ -440,7 +505,7 @@ class ShopSystem:
             if player.valor < refresh_cost:
                 return f"❌ Insufficient valor! Shop refresh costs {refresh_cost} valor."
 
-            await db.update_player(user_id, {"valor": player.valor - refresh_cost})
+            await db.update_player(int(user_id), {"valor": player.valor - refresh_cost})
             await db.store_shop_refresh(user_id, (await db.get_shop_refresh_count(user_id)) + 1)
             
             # Update last refresh time for this user
