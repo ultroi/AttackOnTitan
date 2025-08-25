@@ -533,10 +533,23 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     
     keyboard = []
     def obfuscate_text(text):
+        if not text:
+            return text
+            
         chars = []
-        for char in text:
-            chars.append(char)
+        # Start with the first character without a zero-width space
+        chars.append(text[0])
+        
+        # Add zero-width spaces between characters, but not at the beginning
+        for char in text[1:-1]:
             chars.append('\u200B')
+            chars.append(char)
+            
+        # Add the last character without a zero-width space
+        if len(text) > 1:
+            chars.append('\u200B')
+            chars.append(text[-1])
+            
         return ''.join(chars)
         
     # Get character data with fast path for invalid data

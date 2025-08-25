@@ -190,7 +190,19 @@ async def _check_verification_required(player, user_id_str: str, context) -> boo
     if context.user_data.get("hcaptcha_prompted", False):
         # Then verify against database state
         player_verified = getattr(player, "hcaptcha_verified", False)
-        return not player_verified
+        
+        # Also check if user was recently verified (within last 10 minutes)
+        last_verified = getattr(player, "last_verified", 0)
+        now = time.time()
+        recently_verified = last_verified and (now - last_verified) < 600
+        
+        # User is not required to verify if either they're verified in DB or recently verified
+        if player_verified or recently_verified:
+            # Clear the prompted flag since they're verified
+            context.user_data["hcaptcha_prompted"] = False
+            logger.info(f"Player {user_id_str} verification check passed (verified: {player_verified}, recently: {recently_verified})")
+            return False
+        return True
     return False
 
 # Decorator to protect explore command from bans and maintenance mode
@@ -291,13 +303,24 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Always reset the prompted flag if the player is verified in database
     if player_verified:
-        context.user_data["hcaptcha_prompted"] = False
+        if context.user_data.get("hcaptcha_prompted", False):
+            context.user_data["hcaptcha_prompted"] = False
+            # Show a success message if this is the first time seeing them after verification
+            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
         logger.debug(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
 
     # Check if verification is still being requested after checking database
     if await _check_verification_required(player, user_id_str, context):
-        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-        return
+        # If the player has a last_verified time that's recent, consider them verified
+        last_verified = getattr(player, "last_verified", 0)
+        if last_verified and (now - last_verified) < 600:  # 10 minutes
+            context.user_data["hcaptcha_prompted"] = False
+            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
+            # Update player verification status (non-blocking)
+            asyncio.create_task(db.update_player(user_id_str, {"hcaptcha_verified": True}))
+        else:
+            await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
+            return
 
     # Non-blocking: Set or update explore start time for the 25-minute inactivity check
     if not explore_start_time:
@@ -618,42 +641,63 @@ async def _handle_verification(update, context, user_id, now, db):
         context.user_data["hcaptcha_prompted"] = False
         # Ensure database state is synchronized
         await db.update_player(user_id_str, {"hcaptcha_verified": True})
+        await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
         logger.info(f"Player {user_id} was recently verified via web, cleared verification flags")
         return False
     
-    # If this is the first time prompting for verification
-    if not context.user_data.get("hcaptcha_prompted", False):
-        # Set the prompted flag to prevent repeated prompts
-        context.user_data["hcaptcha_prompted"] = True
-        timestamp = int(now)
-        
-        # Generate verification URL with user ID and timestamp
-        verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
-        
-        try:
-            # Send verification message with button
-            await update.message.reply_text(
-                "🔒 <b>Verification Required</b>\n\n"
-                + "Complete hCaptcha to continue exploring.\n"
-                + "After completing verification, use /explore again to continue.\n\n",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
-                ]),
-                parse_mode=ParseMode.HTML,
-            )
-            
-            # Update player record with verification start time and reset explore timer
-            await db.update_player(user_id_str, {
-                "hcaptcha_start_time": timestamp,
-                "hcaptcha_verified": False,  # Explicitly set to false
-                "explore_start_time": None   # Reset explore timer when verification is required
-            })
-            
-            logger.info(f"Sent verification request to player {user_id} and reset explore timer")
-        except Exception as e:
-            logger.error(f"Failed to send verification message: {e}")
-            # If we fail to send the message, don't leave the user stuck in verification limbo
+    # Check if verification is already in progress
+    if context.user_data.get("hcaptcha_prompted", False):
+        # Check if database has been updated since the last check
+        if player and getattr(player, "last_verified", 0) > context.user_data.get("last_verification_check", 0):
+            # Database was updated, user was verified
             context.user_data["hcaptcha_prompted"] = False
+            context.user_data["last_verification_check"] = now
+            await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
+            logger.info(f"Player {user_id} verification detected, cleared verification flags")
+            return False
+        else:
+            # Update the last check timestamp
+            context.user_data["last_verification_check"] = now
+            await update.message.reply_text(
+                "🔄 Please complete the hCaptcha verification to continue exploring.\n"
+                "If you've already completed verification, please wait a moment and try again.",
+                parse_mode=ParseMode.HTML
+            )
+            return True
+    
+    # If this is the first time prompting for verification
+    # Set the prompted flag to prevent repeated prompts
+    context.user_data["hcaptcha_prompted"] = True
+    context.user_data["last_verification_check"] = now
+    timestamp = int(now)
+    
+    # Generate verification URL with user ID and timestamp
+    verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+    
+    try:
+        # Send verification message with button
+        await update.message.reply_text(
+            "🔒 <b>Verification Required</b>\n\n"
+            + "Complete hCaptcha to continue exploring.\n"
+            + "After completing verification, use /explore again to continue.\n\n",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
+            ]),
+            parse_mode=ParseMode.HTML,
+        )
+        
+        # Update player record with verification start time and reset explore timer
+        await db.update_player(user_id_str, {
+            "hcaptcha_start_time": timestamp,
+            "hcaptcha_verified": False,  # Explicitly set to false
+            "explore_start_time": None   # Reset explore timer when verification is required
+        })
+        
+        logger.info(f"Sent verification request to player {user_id} and reset explore timer")
+    except Exception as e:
+        logger.error(f"Failed to send verification message: {e}")
+        # If we fail to send the message, don't leave the user stuck in verification limbo
+        context.user_data["hcaptcha_prompted"] = False
     
     return True
 

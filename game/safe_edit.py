@@ -21,7 +21,17 @@ def clean_html_entities(text):
     if not text:
         return text
         
-    # First, balance HTML tags to prevent "unexpected end tag" errors
+    # First check for standalone closing tags (which cause "unexpected end tag" errors)
+    # Find any closing tags that appear without a corresponding opening tag before them
+    standalone_pattern = re.compile(r'(?:^|[^<])</([a-z]+)[^>]*>', re.IGNORECASE)
+    for match in standalone_pattern.finditer(text):
+        # If found, we need to remove these problematic standalone closing tags
+        tag = match.group(1).lower()
+        start_pos = match.start() + (0 if match.group(0).startswith('<') else 1)
+        end_pos = match.end()
+        # Remove the standalone closing tag
+        text = text[:start_pos] + text[end_pos:]
+    
     # Count opening and closing tags for each type
     supported_tags = ['code', 'b', 'i', 'u', 's', 'strike', 'em', 'strong', 'pre', 'a']
     tag_counts = {tag: {'open': 0, 'close': 0} for tag in supported_tags}
@@ -42,23 +52,29 @@ def clean_html_entities(text):
         if tag in tag_counts:
             tag_counts[tag]['close'] += 1
     
-    # Fix malformed closing tags by replacing any weird versions of </tag> with proper ones
-    # This regex finds any invisible character that might appear between < and /, between / and the tag name,
-    # or within the tag name itself in closing tags
-    text = re.sub(r'<([​\u200B\u200C\u200D\u2060\uFEFF]*)/?([​\u200B\u200C\u200D\u2060\uFEFF]*)(code|b|i|u|s|strike|em|strong|pre|a)([​\u200B\u200C\u200D\u2060\uFEFF]*)>', r'</\3>', text)
+    # Remove all invisible characters from tag names to prevent parsing errors
+    invisible_chars = r'[\u200B\u200C\u200D\u2060\uFEFF]'
+    
+    # First, fix opening tags with invisible characters
+    text = re.sub(f'<({invisible_chars}*)([a-z]+)({invisible_chars}*)((?:[^>]|{invisible_chars})*?)>', r'<\2\4>', text, flags=re.IGNORECASE)
+    
+    # Then, fix closing tags with invisible characters
+    text = re.sub(f'</({invisible_chars}*)([a-z]+)({invisible_chars}*)((?:[^>]|{invisible_chars})*?)>', r'</\2>', text, flags=re.IGNORECASE)
+    
+    # Remove any zero-width spaces that appear at the beginning of text (offset 0)
+    # This fixes the specific "unexpected end tag at byte offset 0" error
+    text = re.sub(f'^{invisible_chars}+', '', text)
+    
+    # Fix any leading closing tags at the start of the text (common cause of offset 0 errors)
+    if text.startswith('</'):
+        # Find the first closing tag at the start
+        first_close_match = re.match(r'^</([a-z]+)[^>]*>', text, re.IGNORECASE)
+        if first_close_match:
+            # Remove the problematic closing tag at the start
+            text = text[first_close_match.end():]
     
     # Fix tags with no content (which can cause issues)
     text = re.sub(r'<(code|b|i|u|s|strike|em|strong|pre)></\1>', '', text)
-    
-    # Fix improperly nested tags
-    text = re.sub(r'(<[^>]+>)(<[^>]+>)(</[^>]+>)(</[^>]+>)', r'\1\2\3\4', text)
-    
-    # Fix any remaining problematic characters that might be in the text
-    # Zero-width spaces within tags but not between < and / can be removed
-    text = re.sub(r'<([a-z]+)([​\u200B\u200C\u200D\u2060\uFEFF]*)(>)', r'<\1\3', text)
-
-    # More aggressive cleanup for closing tags with zero-width spaces
-    text = re.sub(r'<\s*/?\s*([​\u200B\u200C\u200D\u2060\uFEFF]*)(b|i|u|s|code|pre|em|strong|strike|a)([​\u200B\u200C\u200D\u2060\uFEFF]*)\s*>', r'</\2>', text)
     
     # Balance tags - add missing closing tags or remove extra ones
     for tag, counts in tag_counts.items():
@@ -73,6 +89,13 @@ def clean_html_entities(text):
                 match = close_tag_pattern.search(text)
                 if match:
                     text = text[:match.start()] + text[match.end():]
+    
+    # Lastly, check if there are any HTML entities left at the very beginning
+    # This is a final check to prevent "unexpected end tag at byte offset 0" errors
+    if text.startswith('</') or text.startswith('\u200B</'):
+        # If there's still an entity at the start after all our cleanup, just remove all HTML formatting
+        # It's better to have unformatted text than broken HTML that causes errors
+        text = re.sub(r'<[^>]+>', '', text)
     
     return text
 
@@ -145,9 +168,19 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
                 if "</" in text and not "<" in text[:text.find("</")] or text.count("<") != text.count(">"):
                     logger.debug(f"Potentially malformed HTML detected before cleaning: {text[:100]}...")
                 
+                # Check specifically for unexpected end tags at offset 0 (beginning of text)
+                if text.startswith('</') or text.startswith('\u200B</'):
+                    logger.debug("Found closing tag at beginning of text - this will cause 'unexpected end tag at byte offset 0' error")
+                
                 # Clean HTML tags if parse_mode is HTML
                 original_text = text
                 text = clean_html_entities(text)
+                
+                # Double check that we fixed the issue with tags at the beginning
+                if text.startswith('</') or text.startswith('\u200B</'):
+                    # If we still have a problem, remove all HTML as last resort
+                    logger.debug("Still found closing tag at beginning after cleaning - removing all HTML tags")
+                    text = re.sub(r'<[^>]+>', '', text)
                 
                 # If the text has significantly changed, log it for debugging
                 if len(text) != len(original_text) and abs(len(text) - len(original_text)) > 10:
@@ -205,6 +238,12 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
                 if text.count("<") != text.count(">"):
                     tag_issues.append(f"Unbalanced tags: {text.count('<')} opening vs {text.count('>')} closing brackets")
                 
+                # Check for specific issues related to the errors in the logs
+                if "unexpected end tag at byte offset 0" in error_str:
+                    tag_issues.append("Found unexpected end tag at the beginning of text")
+                    # If we find the specific error, log the first 30 characters to debug
+                    logger.debug(f"Text beginning: '{text[:30]}'")
+                
                 # Check for unclosed or unopened tags
                 html_tags = ["b", "i", "u", "s", "code", "pre", "em", "strong", "strike", "a"]
                 for tag in html_tags:
@@ -218,16 +257,20 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
                 if tag_issues:
                     logger.debug(f"HTML issues detected: {tag_issues}")
                 
-                # If there are HTML issues, try to fall back to plain text (strip all HTML)
-                if tag_issues and "<" in text and ">" in text:
-                    try:
-                        # Try again with no parse_mode as fallback
-                        plain_text = re.sub(r'<[^>]+>', '', text)  # Simple HTML tag removal
-                        logger.debug(f"Attempting fallback with plain text (stripped HTML)")
-                        await message.edit_text(text=plain_text, reply_markup=reply_markup)
-                        return True
-                    except Exception as plain_err:
-                        logger.debug(f"Fallback plain text also failed: {plain_err}")
+                # Always try the plain text fallback for entity parsing errors
+                try:
+                    # Remove all HTML tags as fallback
+                    plain_text = re.sub(r'<[^>]+>', '', text)  # Simple HTML tag removal
+                    
+                    # If the error mentions byte offset 0, also remove any zero-width spaces at the start
+                    if "unexpected end tag at byte offset 0" in error_str:
+                        plain_text = re.sub(r'^[\u200B\u200C\u200D\u2060\uFEFF]+', '', plain_text)
+                    
+                    logger.debug(f"Attempting fallback with plain text (stripped HTML)")
+                    await message.edit_text(text=plain_text, reply_markup=reply_markup)
+                    return True
+                except Exception as plain_err:
+                    logger.debug(f"Fallback plain text also failed: {plain_err}")
             
             return True  # Return True to prevent fallback
         else:

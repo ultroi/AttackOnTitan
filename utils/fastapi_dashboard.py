@@ -501,6 +501,7 @@ def include_dashboard_route(app):
                 )
                 return RedirectResponse("/hcaptcha_timeout", status_code=303)
 
+            # Important: Update database with verification status FIRST
             await db["players"].update_one(
                 {"user_id": str(user_id)},
                 {
@@ -512,6 +513,11 @@ def include_dashboard_route(app):
                     }
                 }
             )
+            
+            # Wait a moment to ensure database update is processed
+            await asyncio.sleep(0.5)
+            
+            # Now send notification to user
             await notify_user_success(user_id, player)
         except Exception as e:
             logger.error(f"Failed to update verification status: {e}")
@@ -605,15 +611,32 @@ async def notify_user_success(user_id: str, player: Optional[dict]):
     user_name = player.get("name", "Explorer") if player else "Explorer"
     message = (
         f"✅ <b>Verification Successful!</b>\n\n"
-        f"Hello {user_name}, you can now continue exploring!"
+        f"Hello {user_name}, you can now continue exploring! "
+        f"Use /explore to continue your journey."
     )
 
-    async with httpx.AsyncClient() as client:
-        await client.post(
-            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-            json={
-                "chat_id": user_id,
-                "text": message,
-                "parse_mode": "HTML"
-            }
-        )
+    # Try multiple times to ensure the message is delivered
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={
+                        "chat_id": user_id,
+                        "text": message,
+                        "parse_mode": "HTML"
+                    },
+                    timeout=10.0  # Set a reasonable timeout
+                )
+            # If successful, break the retry loop
+            logger.info(f"Successfully sent verification success notification to user {user_id}")
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # If not the last attempt, wait and retry
+                await asyncio.sleep(1)
+            else:
+                # Log final failure
+                logger.error(f"Failed to send verification success notification after {max_retries} attempts: {e}")
+                pass

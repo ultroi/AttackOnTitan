@@ -155,10 +155,11 @@ class ShopSystem:
             f"⚡ Valor:    <code>{player.valor:,}</code>\n"
             f"🛢️ Gas:      <code>{player.gas:,}</code>\n\n"
             "<b>💱 Exchange Rates</b>\n"
-            "• 2 Marks    ➜ 1 Gas\n"
-            "• 25,000 Marks ➜ 1 Crystal\n"
+            "• 4 Marks    ➜ 1 Gas\n"
             "• 500 Marks   ➜ 1 Valor\n"
-            "• 1 Crystal   ➜ 50 Valor\n\n"
+            "• 1 Valor     ➜ 500 Marks\n"
+            "• 50 Valor    ➜ 1 Crystal\n"
+            "• 1 Crystal   ➜ 45 Valor (5 taxed)\n\n"
             "<b>📋 How to Purchase</b>\n"
             "<code>/buy item_name quantity</code>\n"
             "Example: <code>/buy gas 20</code> or <code>/buy crystal 100</code>\n\n"
@@ -379,32 +380,42 @@ class ShopSystem:
                 return "❌ Player not found! Create a profile with /start."
 
             if currency_type == "gas":
-                cost = amount * 2
+                cost = amount * 4  # Updated rate: 4 marks for 1 gas
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} gas."
                 await db.update_player(user_id, {"marks": player.marks - cost, "gas": player.gas + amount})
                 return f"✅ Successfully purchased {amount:,} gas for {cost:,} marks."
 
             elif currency_type == "crystal":
-                valor_cost = amount * 50
+                valor_cost = amount * 50  # Rate: 50 valor for 1 crystal
                 if player.valor < valor_cost:
                     return f"❌ Insufficient valor! You need {valor_cost:,} valor for {amount:,} crystals."
                 await db.update_player(user_id, {"valor": player.valor - valor_cost, "crystal": player.crystal + amount})
                 return f"✅ Successfully purchased {amount:,} crystals for {valor_cost:,} valor."
 
             elif currency_type == "valor":
-                cost = amount * 500
+                cost = amount * 500  # Rate: 500 marks for 1 valor
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} valor points."
                 await db.update_player(user_id, {"marks": player.marks - cost, "valor": player.valor + amount})
                 return f"✅ Successfully purchased {amount:,} valor points for {cost:,} marks."
-
-            elif currency_type == "marks":
-                marks_gained = amount * 25000
+                
+            elif currency_type == "valor_from_crystal":
+                valor_gained = amount * 45  # Rate: 1 crystal for 45 valor (5 taxed)
                 if player.crystal < amount:
                     return f"❌ Insufficient crystals! You need {amount:,} crystals."
-                await db.update_player(user_id, {"crystal": player.crystal - amount, "marks": player.marks + marks_gained})
-                return f"✅ Successfully exchanged {amount:,} crystals for {marks_gained:,} marks."
+                await db.update_player(user_id, {"crystal": player.crystal - amount, "valor": player.valor + valor_gained})
+                return f"✅ Successfully exchanged {amount:,} crystals for {valor_gained:,} valor (5 valor tax per crystal)."
+                
+            elif currency_type == "marks_from_valor":
+                marks_gained = amount * 500  # Rate: 1 valor for 500 marks
+                if player.valor < amount:
+                    return f"❌ Insufficient valor! You need {amount:,} valor."
+                await db.update_player(user_id, {"valor": player.valor - amount, "marks": player.marks + marks_gained})
+                return f"✅ Successfully exchanged {amount:,} valor for {marks_gained:,} marks."
+
+            elif currency_type == "marks":
+                return f"❌ Direct exchange of crystals to marks is not allowed. Please exchange crystals for valor first, then valor for marks."
 
             return "❌ Invalid currency type. Use: gas, crystals, valor, or marks."
         except (ValueError, PyMongoError) as e:
