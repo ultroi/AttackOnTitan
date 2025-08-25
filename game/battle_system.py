@@ -465,7 +465,7 @@ class BattleSystem:
         xp = max(1, random.randint(150, 200))
         
         # Marks: fixed per battle (current system, no difficulty bonus)
-        marks = max(1, random.randint(70, 120) + (titan.level * 2))
+        marks = max(1, random.randint(70, 150) + (titan.level * 2))
         
         # Valor: much lower chance (5%)
         valor = 0
