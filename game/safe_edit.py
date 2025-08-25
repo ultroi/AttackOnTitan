@@ -22,8 +22,9 @@ def clean_html_entities(text):
         return text
         
     # Fix malformed closing tags by replacing any weird versions of </tag> with proper ones
-    # This regex finds any invisible character that might appear between / and a letter in closing tags
-    text = re.sub(r'<([​\u200B\u200C\u200D\u2060\uFEFF]*)/(code|b|i|u|s|strike|em|strong|pre|a)>', r'</\2>', text)
+    # This regex finds any invisible character that might appear between < and /, between / and the tag name,
+    # or within the tag name itself in closing tags
+    text = re.sub(r'<([​\u200B\u200C\u200D\u2060\uFEFF]*)/?([​\u200B\u200C\u200D\u2060\uFEFF]*)(code|b|i|u|s|strike|em|strong|pre|a)([​\u200B\u200C\u200D\u2060\uFEFF]*)>', r'</\3>', text)
     
     # Fix tags with no content (which can cause issues)
     text = re.sub(r'<(code|b|i|u|s|strike|em|strong|pre)></\1>', '', text)
@@ -34,6 +35,9 @@ def clean_html_entities(text):
     # Fix any remaining problematic characters that might be in the text
     # Zero-width spaces within tags but not between < and / can be removed
     text = re.sub(r'<([a-z]+)([​\u200B\u200C\u200D\u2060\uFEFF]*)(>)', r'<\1\3', text)
+
+    # More aggressive cleanup for closing tags with zero-width spaces
+    text = re.sub(r'<\s*/?\s*([​\u200B\u200C\u200D\u2060\uFEFF]*)(b|i|u|s|code|pre|em|strong|strike|a)([​\u200B\u200C\u200D\u2060\uFEFF]*)\s*>', r'</\2>', text)
     
     return text
 
@@ -132,6 +136,13 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
         elif "message to edit not found" in error_str:
             logger.debug(f"Message to edit not found: {e}")
             return False
+        elif "can't parse entities" in error_str:
+            # Special case for entity parsing errors, which are often caused by invisible characters
+            logger.warning(f"Error editing message: {e}")
+            # Log the problematic text for debugging
+            if parse_mode == "HTML":
+                logger.debug(f"Problematic HTML: {text}")
+            return False
         else:
             # Log other errors at warning level
             logger.warning(f"Error editing message: {e}")
@@ -182,6 +193,13 @@ async def safe_edit_message_caption(message: Message, caption: str, reply_markup
             return False
         elif "message to edit not found" in error_str:
             logger.debug(f"Message to edit not found: {e}")
+            return False
+        elif "can't parse entities" in error_str:
+            # Special case for entity parsing errors, which are often caused by invisible characters
+            logger.warning(f"Error editing caption: {e}")
+            # Log the problematic text for debugging
+            if parse_mode == "HTML":
+                logger.debug(f"Problematic HTML caption: {caption}")
             return False
         else:
             # Log other errors at warning level
