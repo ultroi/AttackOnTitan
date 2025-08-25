@@ -119,8 +119,18 @@ class Character(BaseModel):
             "ultimate": {a.name: a for a in getattr(character_data, "ultimate_abilities", [])},
         }
 
-    def level_up(self) -> None:
+    def level_up(self) -> Dict[str, Any]:
+        """Level up character and return stat increases"""
+        stat_increases = {}
+        
         if self.level < 125:
+            # Track initial stats for comparison
+            old_stats = {}
+            if hasattr(self, 'stats'):
+                for stat in ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                    old_stats[stat] = getattr(self.stats, stat, 0)
+                
+            # Level up core logic
             self.level += 1
             self.xp -= self.xp_to_next_level
             if self.xp < 0:
@@ -138,22 +148,35 @@ class Character(BaseModel):
                             max_val = max_potential.get(stat, base)
                             # Linear scaling: stat increases each level to reach max_potential at level 125
                             stat_increase = (max_val - base) / (125 - 1)
-                            new_val = getattr(self.stats, stat, 0) + stat_increase
+                            old_val = getattr(self.stats, stat, 0)
+                            new_val = old_val + stat_increase
+                            
                             # Cap at max_potential
                             if stat == 'HP':
                                 setattr(self.stats, stat, int(round(min(new_val, max_val))))
                             else:
                                 setattr(self.stats, stat, int(round(min(new_val, max_val))))
+                                
                     # Update max HP and current HP
                     new_max_hp = character_data.get_max_hp(self.level)
                     hp_increase = new_max_hp - self.stats.HP
                     self.stats.HP = new_max_hp
                     self.current_hp = min(self.current_hp + hp_increase, new_max_hp)
+                    
+            # Calculate stat increases by comparing old and new values
+            if hasattr(self, 'stats'):
+                for stat in ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                    new_val = getattr(self.stats, stat, 0)
+                    old_val = old_stats.get(stat, 0)
+                    if new_val > old_val:
+                        stat_increases[stat] = new_val - old_val
                 
             self.max_gas += 250
             self.gas = self.max_gas 
             # Check for ability unlocks
             self._check_ability_unlocks()
+        
+        return stat_increases
 
     def _check_ability_unlocks(self) -> None:
         # Get character data to ensure we have all possible abilities
@@ -194,17 +217,25 @@ class Character(BaseModel):
         level_ups = []
         while self.xp >= self.xp_to_next_level:
             old_level = self.level
-            self.level_up()
+            
+            # Perform level up and get stat increases
+            stat_increases = self.level_up()
             new_level = self.level
             
             # Track what was unlocked at this level
             newly_unlocked = self._get_newly_unlocked_abilities(new_level)
+            hp_increase = self._get_hp_increase(old_level, new_level)
             
+            # If HP increase is not in stat_increases, add it
+            if 'HP' not in stat_increases and hp_increase > 0:
+                stat_increases['HP'] = hp_increase
+                
             level_ups.append({
                 "old_level": old_level,
                 "new_level": new_level,
                 "newly_unlocked_abilities": newly_unlocked,
-                "hp_increase": self._get_hp_increase(old_level, new_level)
+                "hp_increase": hp_increase,
+                "stat_increases": stat_increases
             })
         
         return {

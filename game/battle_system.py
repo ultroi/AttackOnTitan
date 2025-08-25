@@ -1324,7 +1324,59 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 # Debug logging to understand what's in the level_up dictionary
                 logger.info(f"Level up data: {level_up}")
                 
-                stat_names                msg = [
+                # Get the stat increases from the level up data
+                stat_lines = []
+                
+                # Get stat increases from the level_up data
+                stat_increases = level_up.get('stat_increases', {})
+                
+                # Add the stat increases to the display
+                if stat_increases:
+                    # Show stat increases in a specific order with emoji icons
+                    stat_order = ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']
+                    stat_emojis = {
+                        'HP': '❤️',
+                        'ATK': '⚔️',
+                        'DEF': '🛡️',
+                        'ACC': '🎯',
+                        'INT': '🧠',
+                        'SPD': '⚡'
+                    }
+                    
+                    for stat in stat_order:
+                        increase = stat_increases.get(stat, 0)
+                        if increase > 0:
+                            emoji = stat_emojis.get(stat, '')
+                            stat_lines.append(f"  {emoji} {stat}: +{increase}")
+                
+                # Fallback: If no stat_increases in level_up data, use hp_increase
+                if not stat_lines:
+                    hp_increase = level_up.get('hp_increase', 0)
+                    if hp_increase > 0:
+                        stat_lines.append(f"  ❤️ HP: +{hp_increase}")
+                    
+                    # Add fallback for other stats based on character_data
+                    character_data = get_character_data(battle.character.character_type)
+                    if character_data and character_data.max_potential:
+                        base_stats = character_data.base_stats.dict() if hasattr(character_data, 'base_stats') else {}
+                        max_potential = character_data.max_potential
+                        
+                        for stat in ['ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                            base = base_stats.get(stat, getattr(battle.character.stats, stat, 0))
+                            max_val = max_potential.get(stat, base)
+                            stat_increase = (max_val - base) / (125 - 1)
+                            
+                            emoji = {
+                                'ATK': '⚔️',
+                                'DEF': '🛡️',
+                                'ACC': '🎯',
+                                'INT': '🧠',
+                                'SPD': '⚡'
+                            }.get(stat, '')
+                            
+                            stat_lines.append(f"  {emoji} {stat}: +{int(round(stat_increase))}")
+                
+                msg = [
                     f"🎊 <b>{battle.character.name} leveled Up !!</b>",
                     f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
                 ]
