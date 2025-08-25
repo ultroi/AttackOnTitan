@@ -461,18 +461,22 @@ class BattleSystem:
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
         """Calculate rewards for defeating the titan (XP, marks, crystals, valor) - simplified, no difficulty system."""
-        # XP: 150-250 random, same for player and character
-        xp = random.randint(150, 250)
+        # XP: 150-250 random, same for player and character, but ensure it's always positive
+        xp = max(1, random.randint(150, 250))
+        
         # Marks: fixed per battle (current system, no difficulty bonus)
-        marks = random.randint(70, 120) + (titan.level * 2)
-        # Valor: much lower chance (10%)
+        marks = max(1, random.randint(70, 120) + (titan.level * 2))
+        
+        # Valor: much lower chance (5%)
         valor = 0
-        if player and random.random() < 0.10:
-            valor = random.randint(8, 15)
+        if player and random.random() < 0.05:
+            valor = max(1, random.randint(8, 15))
+            
         # Crystal: very rare (1% chance)
         crystal = 0
         if random.random() < 0.01:
             crystal = 1
+            
         return {
             "xp": xp,
             "marks": marks,
@@ -839,6 +843,58 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     user_id = str(update.effective_user.id)
     
+    # Anti-spam protection
+    action_time_key = f"battle_action_time_{user_id}"
+    last_action_time = context.bot_data.get(action_time_key, 0)
+    current_time = time.time()
+
+    # Rate limit to prevent spamming (300ms cooldown between actions)
+    if current_time - last_action_time < 0.3:
+        # Silent handling of spam - just ignore the action without any message
+        return
+    
+    # Initialize anti-spam counter system if needed
+    if "spam_counters" not in context.bot_data:
+        context.bot_data["spam_counters"] = {}
+        
+    # Initialize or get user's spam counter
+    if user_id not in context.bot_data["spam_counters"]:
+        context.bot_data["spam_counters"][user_id] = {"count": 0, "last_reset": current_time}
+    
+    # Reset counter if it's been more than 3 seconds since last reset
+    if current_time - context.bot_data["spam_counters"][user_id]["last_reset"] > 3:
+        context.bot_data["spam_counters"][user_id] = {"count": 0, "last_reset": current_time}
+    
+    # Increment spam counter
+    context.bot_data["spam_counters"][user_id]["count"] += 1
+    
+    # If user has triggered more than 5 actions in 3 seconds, add a longer cooldown
+    if context.bot_data["spam_counters"][user_id]["count"] > 5:
+        # Add a progressively longer cooldown based on how much they're spamming
+        excess_count = context.bot_data["spam_counters"][user_id]["count"] - 5
+        extra_delay = min(5, excess_count * 0.5)  # Max 5 second additional delay
+        
+        # Set the last action time to enforce this cooldown silently
+        context.bot_data[action_time_key] = current_time + extra_delay
+        return
+    
+    # Update last action time
+    context.bot_data[action_time_key] = current_time
+    
+    # Create per-user action lock to prevent concurrent actions from same user
+    action_lock_key = f"battle_action_lock_{user_id}"
+    action_lock = context.bot_data.get(action_lock_key)
+    
+    if action_lock is None:
+        # Create a new lock if none exists
+        action_lock = asyncio.Lock()
+        context.bot_data[action_lock_key] = action_lock
+    
+    # Try to acquire the lock, but don't wait if already locked (prevent spam)
+    if action_lock.locked():
+        # Silent handling of concurrent requests - just ignore without messages
+        return
+        
     # Get battle with lock, using fast path for common errors
     async with active_battles_lock:
         battle = active_battles.get(user_id)
@@ -849,6 +905,9 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     action = query.data
     if not action:
         return
+        
+    # Use a try/finally block to ensure lock is released
+    try:
         
     # Fast path handlers for cooldown and low gas notifications
     if action.startswith("cooldown_"):
@@ -1147,38 +1206,107 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player=battle.player,
             explore_count=explore_count
         )
-        character_xp = rewards["xp"]
-        player_xp = rewards["xp"]
-        char_level_info = battle.character.add_xp(character_xp)
+        # Ensure positive XP rewards
+        character_xp = max(1, rewards["xp"])
+        player_xp = max(1, rewards["xp"])
+        
+        # Add XP with proper validation
+        try:
+            char_level_info = battle.character.add_xp(character_xp)
+            # Double-check XP is not negative after adding
+            if battle.character.xp < 0:
+                logger.warning(f"Negative XP detected after add_xp: {battle.character.xp}, correcting to 0")
+                battle.character.xp = 0
+        except Exception as e:
+            logger.error(f"Error adding XP to character: {e}")
+            # Use default response structure if error occurs
+            char_level_info = {
+                "level_ups": [],
+                "total_level_ups": 0,
+                "current_level": battle.character.level,
+                "current_xp": max(0, battle.character.xp),
+                "xp_to_next": battle.character.xp_to_next_level
+            }
+        
+        # Create player object and add XP with validation
         player_obj = Player(**player_data)
-        player_level_info = player_obj.add_xp(player_xp)
+        try:
+            player_level_info = player_obj.add_xp(player_xp)
+            # Double-check XP is not negative after adding
+            if player_obj.xp < 0:
+                logger.warning(f"Negative player XP detected: {player_obj.xp}, correcting to 0")
+                player_obj.xp = 0
+        except Exception as e:
+            logger.error(f"Error adding XP to player: {e}")
+            # Use default response structure if error occurs
+            player_level_info = {
+                "level_ups": [],
+                "total_level_ups": 0,
+                "current_level": player_obj.level,
+                "current_xp": max(0, player_obj.xp),
+                "xp_to_next": player_obj.xp_to_next_level
+            }
+        
+        # Handle resource updates with proper validation
         gas_consumed = max(0, battle.initial_gas - battle.character.gas)
         battle.character.gas = max(0, battle.character_gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
-        battle.character.current_hp = battle.character_hp
+        battle.character.current_hp = max(0, battle.character_hp)
 
         # Invalidate character cache to ensure fresh HP values in next explore
         db.invalidate_character_cache(user_id, battle.character.name)
 
-        # Batch update: character and player
+        # Prepare batch updates with safety checks
         updates = []
-        updates.append(db.update_character(battle.character))
+        
+        # Validate character data before updating
+        if battle.character.xp < 0:
+            battle.character.xp = 0
+        if battle.character.current_hp < 0:
+            battle.character.current_hp = 0
+        if battle.character.gas < 0:
+            battle.character.gas = 0
+        
+        # Add character update to batch
+        try:
+            updates.append(db.update_character(battle.character))
+        except Exception as e:
+            logger.error(f"Error preparing character update: {e}")
+        
+        # Validate reward values
+        crystal_reward = max(0, rewards["crystal"])
+        valor_reward = max(0, rewards["valor"])
+        marks_reward = max(0, rewards["marks"])
+        
+        # Prepare player update with validation
         reward_updates = {
             "$inc": {
-                "crystal": rewards["crystal"],
-                "valor": rewards["valor"],
-                "marks": rewards["marks"],
+                "crystal": crystal_reward,
+                "valor": valor_reward,
+                "marks": marks_reward,
                 "explore_count": 1
             },
             "$set": {
-                "xp": player_obj.xp,
-                "total_xp": player_obj.total_xp,
-                "level": player_obj.level,
+                "xp": max(0, player_obj.xp),  # Ensure non-negative XP
+                "total_xp": max(0, player_obj.total_xp),  # Ensure non-negative total XP
+                "level": max(1, player_obj.level),  # Ensure level is at least 1
                 "updated_at": datetime.now(timezone.utc)
             }
         }
-        updates.append(db.players.update_one({"user_id": user_id}, reward_updates))
-        await asyncio.gather(*updates)
+        
+        # Add player update to batch
+        try:
+            updates.append(db.players.update_one({"user_id": user_id}, reward_updates))
+        except Exception as e:
+            logger.error(f"Error preparing player update: {e}")
+        
+        # Execute batch updates with error handling
+        try:
+            if updates:
+                await asyncio.gather(*updates)
+        except Exception as e:
+            logger.error(f"Error during battle reward database update: {e}")
+            # Continue with UI update even if DB update fails
         reward_msg = [
             f"<b>You have defeated {battle.titan.name}!</b>\n",
             f"⚡ <b>XP: +{rewards['xp']}</b>",
@@ -1339,47 +1467,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     except Exception:
         pass
 
-    # Clean up titan and travel state quickly
-    if f"last_titan_{user_id}" in context.bot_data:
-        del context.bot_data[f"last_titan_{user_id}"]
-    if f"last_titan_data_{user_id}" in context.bot_data:
-        del context.bot_data[f"last_titan_data_{user_id}"]
-    await db.delete_titan(user_id)
-    travel = player_data.get("travel", {})
-    location = player_data.get("location", None)
-    arrived = False
-    decision_point = False
-    if travel.get("in_progress"):
-        travel["progress"] += 1
-        if travel["progress"] >= travel["required"]:
-            new_location = travel["to"]
-            from game.travel_map import TRAVEL_MAP
-            if new_location.startswith("Decision_") and new_location in TRAVEL_MAP:
-                await db.players.update_one({"user_id": user_id}, {"$set": {"location": new_location, "travel": {}}})
-                decision_point = True
-                location = new_location
-            else:
-                await db.players.update_one({"user_id": user_id}, {"$set": {"location": new_location, "travel": {}}})
-                arrived = True
-        else:
-            await db.players.update_one({"user_id": user_id}, {"$set": {"travel": travel}})
-        if decision_point:
-            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-            directions = TRAVEL_MAP[location]
-            keyboard = [
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir}")] for dir in directions.keys()
-            ]
-            msg = f"<b>Decision Point Reached:</b> {location}\nChoose a direction to continue your journey:"
-            try:
-                await send(chat_id, msg, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-            except Exception:
-                await send(chat_id, msg)
-            return
-        elif arrived:
-            try:
-                await send(chat_id, f"You have arrived at <b>{location}</b>!", parse_mode="HTML")
-            except Exception:
-                pass
+    
     # # Clear active battle id so user can explore again
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]

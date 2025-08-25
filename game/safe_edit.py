@@ -2,8 +2,16 @@ import logging
 from telegram import Message
 from telegram.error import BadRequest
 import re
+import time
+import asyncio
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
+
+# Global throttling mechanism to prevent edit spam
+_last_edit_time: Dict[str, float] = {}
+_edit_counters: Dict[str, Dict[str, Any]] = {}
+_edit_locks: Dict[str, asyncio.Lock] = {}
 
 def clean_html_entities(text):
     """
@@ -30,34 +38,86 @@ def clean_html_entities(text):
     return text
 
 async def safe_edit_message_text(message: Message, text: str, reply_markup=None, parse_mode=None):
+    global _last_edit_time, _edit_counters, _edit_locks
     
     try:
         # Check if message is None or missing required attributes
         if not message or not hasattr(message, 'text'):
             logger.warning("Cannot edit: message is None or missing text attribute")
             return False
-            
-        # Clean HTML tags if parse_mode is HTML
-        if parse_mode == "HTML":
-            text = clean_html_entities(text)
         
-        # Add invisible character to ensure message is always different
-        # Uses zero-width space character to make the message different without visible changes
-        if '\u200B' not in text:
-            # Add at a random position to ensure uniqueness
-            import random
-            pos = random.randint(0, max(0, len(text)-1))
-            text = text[:pos] + '\u200B' + text[pos:]
-                
-        # Create kwargs dynamically
-        kwargs = {"text": text}
-        if reply_markup is not None:
-            kwargs["reply_markup"] = reply_markup
-        if parse_mode is not None:
-            kwargs["parse_mode"] = parse_mode
+        # Get message identifier
+        message_id = message.message_id
+        chat_id = message.chat_id
+        message_key = f"{chat_id}_{message_id}"
+        
+        # Apply anti-spam throttling
+        current_time = time.time()
+        
+        # Initialize message-specific lock if needed
+        if message_key not in _edit_locks:
+            _edit_locks[message_key] = asyncio.Lock()
             
-        await message.edit_text(**kwargs)
-        return True
+        # If another edit is already in progress, don't allow concurrent edits
+        if _edit_locks[message_key].locked():
+            logger.debug(f"Throttled edit for message {message_key}: another edit in progress")
+            return False
+            
+        # Acquire lock for this message
+        async with _edit_locks[message_key]:
+            # Initialize or get edit counter
+            if message_key not in _edit_counters:
+                _edit_counters[message_key] = {"count": 0, "last_reset": current_time}
+                
+            # Check if we need to reset counter (over 3 seconds since last reset)
+            if current_time - _edit_counters[message_key]["last_reset"] > 3:
+                _edit_counters[message_key] = {"count": 0, "last_reset": current_time}
+                
+            # Increment edit counter
+            _edit_counters[message_key]["count"] += 1
+            
+            # Rate limit if too many edits
+            last_edit = _last_edit_time.get(message_key, 0)
+            min_interval = 0.3  # Base throttling - minimum 300ms between edits
+            
+            # Apply progressive throttling for spam protection
+            if _edit_counters[message_key]["count"] > 3:
+                # Add progressively longer delays based on edit count
+                excessive_edits = _edit_counters[message_key]["count"] - 3
+                additional_delay = min(2.0, excessive_edits * 0.5)  # Max 2s additional delay
+                min_interval += additional_delay
+                
+            # If trying to edit too quickly, apply throttling
+            if current_time - last_edit < min_interval:
+                wait_time = min_interval - (current_time - last_edit)
+                logger.debug(f"Throttling edit for message {message_key}: waiting {wait_time:.2f}s")
+                await asyncio.sleep(wait_time)
+                
+            # Clean HTML tags if parse_mode is HTML
+            if parse_mode == "HTML":
+                text = clean_html_entities(text)
+            
+            # Add invisible character to ensure message is always different
+            # Uses zero-width space character to make the message different without visible changes
+            if '\u200B' not in text:
+                # Add at a random position to ensure uniqueness
+                import random
+                pos = random.randint(0, max(0, len(text)-1))
+                text = text[:pos] + '\u200B' + text[pos:]
+                    
+            # Create kwargs dynamically
+            kwargs = {"text": text}
+            if reply_markup is not None:
+                kwargs["reply_markup"] = reply_markup
+            if parse_mode is not None:
+                kwargs["parse_mode"] = parse_mode
+                
+            # Update last edit time
+            _last_edit_time[message_key] = time.time()
+                
+            # Perform edit
+            await message.edit_text(**kwargs)
+            return True
         
     except BadRequest as e:
         error_str = str(e).lower()

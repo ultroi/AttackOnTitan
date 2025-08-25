@@ -176,10 +176,20 @@ class Character(BaseModel):
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
+        # Ensure we never add negative XP that would result in negative total XP
+        if amount < 0 and abs(amount) > self.xp:
+            # Clamp negative XP to current XP value to prevent going below 0
+            amount = -self.xp
+        
         self.xp += amount
+        
+        # Double-check to ensure XP is never negative (belt and suspenders approach)
         if self.xp < 0:
             self.xp = 0
-        self.total_xp += amount
+            
+        # Only add to total_xp if amount is positive
+        if amount > 0:
+            self.total_xp += amount
         
         level_ups = []
         while self.xp >= self.xp_to_next_level:
@@ -425,8 +435,20 @@ class Player(BaseModel):
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
+        # Ensure we never add negative XP that would result in negative total XP
+        if amount < 0 and abs(amount) > self.xp:
+            # Clamp negative XP to current XP value to prevent going below 0
+            amount = -self.xp
+        
         self.xp += amount
-        self.total_xp += amount
+        
+        # Double-check to ensure XP is never negative
+        if self.xp < 0:
+            self.xp = 0
+            
+        # Only add to total_xp if amount is positive
+        if amount > 0:
+            self.total_xp += amount
     
         level_ups = []
         while self.xp >= self.xp_to_next_level:
