@@ -460,37 +460,25 @@ class BattleSystem:
         }
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
-        """Calculate rewards for defeating the titan (XP, marks, crystals, valor)."""
-        base_xp = generate_titan_xp(titan.level, titan.difficulty)
-        performance_multiplier = 1.0 + (0.2 if self.turn < 5 else 0) + (0.15 if self.character_hp / character.stats.HP > 0.8 else 0) + (0.3 if titan.difficulty == "Hard" else 0)
-        rewards = {
-            "xp": int(base_xp * performance_multiplier),
-            "marks": random.randint(70, 120) + (titan.level * 2),
-            "crystal": 0,
-            "valor": 0,
+        """Calculate rewards for defeating the titan (XP, marks, crystals, valor) - simplified, no difficulty system."""
+        # XP: 150-250 random, same for player and character
+        xp = random.randint(150, 250)
+        # Marks: fixed per battle (current system, no difficulty bonus)
+        marks = random.randint(70, 120) + (titan.level * 2)
+        # Valor: much lower chance (10%)
+        valor = 0
+        if player and random.random() < 0.10:
+            valor = random.randint(8, 15)
+        # Crystal: very rare (1% chance)
+        crystal = 0
+        if random.random() < 0.01:
+            crystal = 1
+        return {
+            "xp": xp,
+            "marks": marks,
+            "crystal": crystal,
+            "valor": valor,
         }
-        difficulty_bonuses = {
-            "Easy": {"mark_bonus": 10, "valor_chance": 0.35, "crystal_chance": 0.065},
-            "Normal": {"mark_bonus": 25, "valor_chance": 0.40, "crystal_chance": 0.10},
-            "Hard": {"mark_bonus": 50, "valor_chance": 0.60, "crystal_chance": 0.25}
-        }
-        bonus = difficulty_bonuses.get(titan.difficulty, difficulty_bonuses["Normal"])
-        rewards["marks"] += bonus["mark_bonus"]
-        if random.random() < bonus["valor_chance"] and player:
-            required_explore = max(5, 30 - (titan.level // 2))
-            if explore_count >= required_explore:
-                valor_amount = random.randint(8, 20) + (titan.level // 2)
-                if titan.difficulty == "Hard":
-                    valor_amount += 1
-                rewards["valor"] = int(valor_amount)
-        if random.random() < bonus["crystal_chance"]:
-            required_explore = max(1, 15 - (titan.level // 3))
-            if explore_count >= required_explore:
-                crystal_amount = random.randint(1, 3) + (titan.level // 5)
-                if titan.difficulty == "Hard":
-                    crystal_amount = int(crystal_amount * 1.5)
-                rewards["crystal"] = crystal_amount
-        return rewards
 
 # =========================
 # UTILITY FUNCTIONS
@@ -1282,7 +1270,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        if random.random() < 0.07:
+        if random.random() < 0.04:
             drop = get_random_drop()
             # Get player object
             player_obj = await db.get_player(user_id)

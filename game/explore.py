@@ -102,21 +102,17 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         battle_id_key = f"active_battle_id_{user_id}"
         current_battle_id = context.bot_data.get(battle_id_key)
         
-        # Check if there's an active battle
-        try:
-            from game.battle_system import active_battles
-            if str(user_id) in active_battles:
-                pass
-                return
-        except ImportError:
-            pass
+        # Use helper function to check if there's an active battle
+        user_id_str = str(user_id)
+        if _is_in_battle(user_id_str):
+            return
         
         # Clean up the titan if no battle is active
         db = context.bot_data.get("db")
         if db:
-            titan_in_db = await db.get_titan(str(user_id))
+            titan_in_db = await db.get_titan(user_id_str)
             if titan_in_db:
-                await db.delete_titan(str(user_id))
+                await db.delete_titan(user_id_str)
                 
                 # Only edit message if no battle has started
                 if sent_message and current_battle_id == context.bot_data.get(battle_id_key):
@@ -136,8 +132,8 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         key = f"titan_timeouts_{user_id}"
         if key in context.bot_data:
             tasks = context.bot_data[key]
-            # Remove completed tasks
-            context.bot_data[key] = [t for t in tasks if not t.done()]
+            # Remove completed tasks and limit to at most 1 active task
+            context.bot_data[key] = [t for t in tasks if not t.done()][:1]
 
 async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE):
     """Cancel and clean up all timeout tasks for a user."""
@@ -162,6 +158,25 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Closing keyboard...",
             reply_markup=ReplyKeyboardRemove()
         )
+
+# Helper function to check if a user is in battle - reduces code duplication
+def _is_in_battle(user_id_str: str) -> bool:
+    """Check if a user is in battle - centralized helper function"""
+    try:
+        from game.battle_system import active_battles
+        return user_id_str in active_battles
+    except ImportError:
+        return False
+
+# Helper function to check if verification is required
+async def _check_verification_required(player, user_id_str: str, context) -> bool:
+    """Check if verification is required for this user"""
+    # Check context flag first (fastest)
+    if context.user_data.get("hcaptcha_prompted", False):
+        # Then verify against database state
+        player_verified = getattr(player, "hcaptcha_verified", False)
+        return not player_verified
+    return False
 
 # Decorator to protect explore command from bans and maintenance mode
 @maintenance_protected
@@ -199,13 +214,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
     context.bot_data["explore_spam_count"][user_id_str] = spam_count
 
-    # Check if user is in battle (reuse logic below, but fast check here)
-    is_in_battle = False
-    try:
-        from game.battle_system import active_battles
-        is_in_battle = user_id_str in active_battles
-    except ImportError:
-        pass
+    # Check if user is in battle using the helper function
+    is_in_battle = _is_in_battle(user_id_str)
     if is_in_battle:
         # Reset spam count if user enters battle
         context.bot_data["explore_spam_count"][user_id_str] = 0
@@ -218,13 +228,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             asyncio.create_task(_handle_spam_ban(user_id, update, context))
             return
 
-    # Check for active battle early - this is a fast check to abort quickly
-    is_in_battle = False
-    try:
-        from game.battle_system import active_battles
-        is_in_battle = user_id_str in active_battles
-    except ImportError:
-        pass
+    # Second check for active battle (using the same helper function)
     
     if is_in_battle:
         await _reply_error(update, f"{update.effective_user.first_name or 'Player'} is currently battling!")
@@ -248,12 +252,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # If we're not in a battle, always generate a new titan
     # Only use cached titan if user was in middle of a battle encounter
-    is_in_battle = False
-    try:
-        from game.battle_system import active_battles
-        is_in_battle = user_id_str in active_battles
-    except ImportError:
-        pass
+    is_in_battle = _is_in_battle(user_id_str)
         
     # Only use cached titan if in active battle, otherwise always generate new
     titan_cached = user_id_str in db._titan_cache and is_in_battle
@@ -279,10 +278,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Always reset the prompted flag if the player is verified in database
     if player_verified:
         context.user_data["hcaptcha_prompted"] = False
-        logger.info(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
+        logger.debug(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
 
     # Check if verification is still being requested after checking database
-    if context.user_data.get("hcaptcha_prompted", False) and not player_verified:
+    if await _check_verification_required(player, user_id_str, context):
         await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
         return
 
@@ -342,9 +341,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # This ensures we always have the latest HP values
     character_task = db.get_character(user_id_str, player_character_name)
     
-    # Track that we're fetching character data for debugging
-    logger.debug(f"Fetching fresh character data for {player_character_name} from database")
-    
     # Track exploration for stats (will only count if battle is completed)
     asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name, False))
 
@@ -376,7 +372,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
     # Double-check that hCaptcha verification is not required before spawning titan
-    if context.user_data.get("hcaptcha_prompted", False) and not player_verified:
+    if await _check_verification_required(player, user_id_str, context):
         await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
         return
         
@@ -513,10 +509,14 @@ async def _handle_timeout_setup(user_id, context, sent_message):
     if key not in context.bot_data:
         context.bot_data[key] = []
     
-    # Limit number of tasks for a user (avoid memory leaks)
-    if len(context.bot_data[key]) > 3:
-        # Too many timeout tasks, clean up old ones
-        context.bot_data[key] = [t for t in context.bot_data[key] if not t.done()][:2]
+    # More aggressively limit number of tasks for a user (avoid memory leaks)
+    if len(context.bot_data[key]) > 2:
+        # Too many timeout tasks, keep only the most recent one
+        old_tasks = context.bot_data[key][:-1]
+        for task in old_tasks:
+            if not task.done():
+                task.cancel()
+        context.bot_data[key] = [t for t in context.bot_data[key] if not t.done()][:1]
         
     # Create timeout task
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
@@ -627,9 +627,13 @@ async def _handle_verification(update, context, user_id, now, db):
 
 async def _handle_decision_point_cleanup(user_id_str, context):
     try:
-        from game.battle_system import active_battles
-        if user_id_str in active_battles:
-            active_battles.pop(user_id_str, None)
+        # Use the helper function to check for battle
+        if _is_in_battle(user_id_str):
+            try:
+                from game.battle_system import active_battles
+                active_battles.pop(user_id_str, None)
+            except ImportError:
+                pass
             
         # Also clear active_battle_id in bot_data if present
         battle_id_key = f"active_battle_id_{user_id_str}"
@@ -676,8 +680,17 @@ async def _handle_spam_ban(user_id, update, context):
         pass
         
 async def _log_performance(user_id_str, response_time):
-    """Log performance metrics for monitoring"""
-    logger.info(f"[PERFORMANCE] Explore command for user {user_id_str} took {response_time:.3f}s")
+    """Log performance metrics for monitoring asynchronously"""
+    # Use a dedicated background task to avoid blocking the main flow
+    try:
+        # Only log if it's slower than expected (>0.5s)
+        if response_time > 0.5:
+            logger.info(f"[PERFORMANCE] Explore command for user {user_id_str} took {response_time:.3f}s")
+        # For very fast responses, log at debug level only
+        else:
+            logger.debug(f"[PERFORMANCE] Fast explore response for user {user_id_str}: {response_time:.3f}s")
+    except Exception:
+        pass  # Never fail on logging
 
 
 async def _expire_cache_key(context, cache_key, seconds):
@@ -734,23 +747,29 @@ async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_T
 async def force_cleanup_user(user_id: int, db: Database):
     """Force cleanup of all user-related data."""
     try:
-        from game.battle_system import cleanup_battle, active_battles
         user_id_str = str(user_id)
-        if user_id_str in active_battles:
+        # Check if user is in battle using helper function
+        if _is_in_battle(user_id_str):
             try:
+                from game.battle_system import cleanup_battle
                 cleanup_battle(user_id_str, "forced_cleanup")
+                # Remove from active battles directly
+                from game.battle_system import active_battles
+                active_battles.pop(user_id_str, None)
             except Exception:
                 pass
-            active_battles.pop(user_id_str, None)
+        
+        # Clean up other data
         user_last_explore.pop(user_id_str, None)
         await db.update_player(user_id, {"last_explore": None})
         await db.delete_titan(user_id_str)
+        
+        # Remove player activity tracking if available
         try:
             from utils.monitor import remove_player_activity
             remove_player_activity(user_id)
         except ModuleNotFoundError:
             pass
-        pass
     except Exception:
         pass
 

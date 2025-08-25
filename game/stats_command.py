@@ -6,8 +6,10 @@ from telegram import Update, Bot
 from telegram.ext import ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils.ban_utils import ban_protected
+
 from utils.maintenance import maintenance_protected
 from database.db import Database
+from utils.mod_utils import mod_only
 
 logger = logging.getLogger(__name__)
 
@@ -137,55 +139,83 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await reset_daily_stats()
                 await update.message.reply_text("All stats have been manually reset.")
                 return
-    
+
+    # /stats users: only mods can use
+    if context.args and context.args[0] == "users":
+        return await stats_users_command(update, context)
+# Mod-only command for /stats users
+@mod_only
+async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    db = context.bot_data.get("db")
+    if not db:
+        await update.message.reply_text("Error: Database not initialized.")
+        return
+    try:
+        users_cursor = db.players.find({}, {"name": 1, "user_id": 1, "username": 1})
+        users = await users_cursor.to_list(length=10000)
+        if not users:
+            await update.message.reply_text("No users found.")
+            return
+        user_lines = []
+        for user in users:
+            if user.get("name"):
+                user_lines.append(user["name"])
+            elif user.get("user_id"):
+                user_lines.append(str(user["user_id"]))
+        user_list_text = "\n".join(user_lines)
+        await update.message.reply_text(f"<b>All Users:</b>\n<code>{user_list_text}</code>", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error in /stats users: {e}", exc_info=True)
+        await update.message.reply_text("An error occurred while fetching users.")
+
     # Start typing indicator
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    
+
     # Get database from context
     db = context.bot_data.get("db")
     if not db:
         await update.message.reply_text("Error: Database not initialized.")
         return
-    
+
     try:
         # Get current time in IST
         current_time_ist = datetime.now(ist_timezone)
-        
+
         # Count total users
         total_users = await db.players.count_documents({})
-        
+
         # Count total groups
         total_groups = await db.groups.count_documents({})
-        
+
         # Get top weekly explorers
         top_weekly = get_top_explorers(stats_data["weekly_explorers"])
-        
+
         # Get top daily explorers
         top_daily = get_top_explorers(stats_data["daily_explorers"])
-        
+
         # Format weekly explorers
         weekly_explorers_text = "\n".join([
-            f"{i+1}. {name} - {count} explores" 
+            f"{i+1}. {name} - {count} explores"
             for i, (name, count) in enumerate(top_weekly)
         ]) if top_weekly else "No data yet"
-        
+
         # Format daily explorers
         daily_explorers_text = "\n".join([
-            f"{i+1}. {name} - {count} explores" 
+            f"{i+1}. {name} - {count} explores"
             for i, (name, count) in enumerate(top_daily)
         ]) if top_daily else "No data yet"
-        
-        
+
         # Create message
         message = (
             f"<b>Total Users:</b> <code>{total_users}</code>\n"
             f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
             f" <b>WEEKLY TOP EXPLORERS</b>:\n{weekly_explorers_text}\n\n"
             f" <b>DAILY TOP EXPLORERS</b> :\n{daily_explorers_text}\n\n"
-        ) 
-        
+        )
+
         await update.message.reply_text(message, parse_mode="HTML")
-        
+
     except Exception as e:
         logger.error(f"Error in stats_command: {e}", exc_info=True)
         await update.message.reply_text("An error occurred while processing the command.")
