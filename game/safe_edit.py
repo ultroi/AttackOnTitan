@@ -21,6 +21,27 @@ def clean_html_entities(text):
     if not text:
         return text
         
+    # First, balance HTML tags to prevent "unexpected end tag" errors
+    # Count opening and closing tags for each type
+    supported_tags = ['code', 'b', 'i', 'u', 's', 'strike', 'em', 'strong', 'pre', 'a']
+    tag_counts = {tag: {'open': 0, 'close': 0} for tag in supported_tags}
+    
+    # Clean opening tags pattern
+    open_pattern = re.compile(r'<([a-z]+)[^>]*>', re.IGNORECASE)
+    # Clean closing tags pattern
+    close_pattern = re.compile(r'</([a-z]+)[^>]*>', re.IGNORECASE)
+    
+    # Count tags
+    for match in open_pattern.finditer(text):
+        tag = match.group(1).lower()
+        if tag in tag_counts:
+            tag_counts[tag]['open'] += 1
+            
+    for match in close_pattern.finditer(text):
+        tag = match.group(1).lower()
+        if tag in tag_counts:
+            tag_counts[tag]['close'] += 1
+    
     # Fix malformed closing tags by replacing any weird versions of </tag> with proper ones
     # This regex finds any invisible character that might appear between < and /, between / and the tag name,
     # or within the tag name itself in closing tags
@@ -38,6 +59,20 @@ def clean_html_entities(text):
 
     # More aggressive cleanup for closing tags with zero-width spaces
     text = re.sub(r'<\s*/?\s*([​\u200B\u200C\u200D\u2060\uFEFF]*)(b|i|u|s|code|pre|em|strong|strike|a)([​\u200B\u200C\u200D\u2060\uFEFF]*)\s*>', r'</\2>', text)
+    
+    # Balance tags - add missing closing tags or remove extra ones
+    for tag, counts in tag_counts.items():
+        # If more opening than closing tags, add missing closing tags at the end
+        if counts['open'] > counts['close']:
+            text += f"</{tag}>" * (counts['open'] - counts['close'])
+        # If more closing than opening tags, remove the first extra closing tags
+        elif counts['close'] > counts['open']:
+            extra_closings = counts['close'] - counts['open']
+            for _ in range(extra_closings):
+                close_tag_pattern = re.compile(f'</\\s*{tag}\\s*>', re.IGNORECASE)
+                match = close_tag_pattern.search(text)
+                if match:
+                    text = text[:match.start()] + text[match.end():]
     
     return text
 
@@ -104,9 +139,19 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
                 logger.debug(f"Throttling edit for message {message_key}: waiting {wait_time:.2f}s")
                 await asyncio.sleep(wait_time)
                 
-            # Clean HTML tags if parse_mode is HTML
-            if parse_mode == "HTML":
+            # Pre-check and sanitize text before HTML cleaning
+            if text and parse_mode == "HTML":
+                # First try to detect and log obviously malformed HTML before cleaning
+                if "</" in text and not "<" in text[:text.find("</")] or text.count("<") != text.count(">"):
+                    logger.debug(f"Potentially malformed HTML detected before cleaning: {text[:100]}...")
+                
+                # Clean HTML tags if parse_mode is HTML
+                original_text = text
                 text = clean_html_entities(text)
+                
+                # If the text has significantly changed, log it for debugging
+                if len(text) != len(original_text) and abs(len(text) - len(original_text)) > 10:
+                    logger.debug(f"HTML cleaning changed text length significantly: {len(original_text)} -> {len(text)}")
             
             # Add multiple invisible characters to ensure message is always different
             # Uses zero-width space character to make the message different without visible changes
@@ -154,7 +199,36 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
             logger.warning(f"Error editing message: {e}")
             # Log the problematic text for debugging
             if parse_mode == "HTML":
-                logger.debug(f"Problematic HTML: {text}")
+                # Try to identify exactly what part of the HTML is problematic
+                # Check for common issues
+                tag_issues = []
+                if text.count("<") != text.count(">"):
+                    tag_issues.append(f"Unbalanced tags: {text.count('<')} opening vs {text.count('>')} closing brackets")
+                
+                # Check for unclosed or unopened tags
+                html_tags = ["b", "i", "u", "s", "code", "pre", "em", "strong", "strike", "a"]
+                for tag in html_tags:
+                    opening = text.count(f"<{tag}")  # Approximate count of opening tags
+                    closing = text.count(f"</{tag}")  # Approximate count of closing tags
+                    if opening != closing:
+                        tag_issues.append(f"Unbalanced {tag} tags: {opening} opening vs {closing} closing")
+                
+                # Try a fallback approach without HTML
+                logger.debug(f"Problematic HTML: {text[:200]}...")
+                if tag_issues:
+                    logger.debug(f"HTML issues detected: {tag_issues}")
+                
+                # If there are HTML issues, try to fall back to plain text (strip all HTML)
+                if tag_issues and "<" in text and ">" in text:
+                    try:
+                        # Try again with no parse_mode as fallback
+                        plain_text = re.sub(r'<[^>]+>', '', text)  # Simple HTML tag removal
+                        logger.debug(f"Attempting fallback with plain text (stripped HTML)")
+                        await message.edit_text(text=plain_text, reply_markup=reply_markup)
+                        return True
+                    except Exception as plain_err:
+                        logger.debug(f"Fallback plain text also failed: {plain_err}")
+            
             return True  # Return True to prevent fallback
         else:
             # Log other errors at warning level
