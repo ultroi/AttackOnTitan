@@ -1,8 +1,33 @@
 import logging
 from telegram import Message
 from telegram.error import BadRequest
+import re
 
 logger = logging.getLogger(__name__)
+
+def clean_html_entities(text):
+    """
+    Clean and fix common HTML tag issues in text content.
+    This fixes issues with zero-width spaces in closing tags and other common problems.
+    """
+    if not text:
+        return text
+        
+    # Fix malformed closing tags by replacing any weird versions of </tag> with proper ones
+    # This regex finds any invisible character that might appear between / and a letter in closing tags
+    text = re.sub(r'<([​\u200B\u200C\u200D\u2060\uFEFF]*)/(code|b|i|u|s|strike|em|strong|pre|a)>', r'</\2>', text)
+    
+    # Fix tags with no content (which can cause issues)
+    text = re.sub(r'<(code|b|i|u|s|strike|em|strong|pre)></\1>', '', text)
+    
+    # Fix improperly nested tags
+    text = re.sub(r'(<[^>]+>)(<[^>]+>)(</[^>]+>)(</[^>]+>)', r'\1\2\3\4', text)
+    
+    # Fix any remaining problematic characters that might be in the text
+    # Zero-width spaces within tags but not between < and / can be removed
+    text = re.sub(r'<([a-z]+)([​\u200B\u200C\u200D\u2060\uFEFF]*)(>)', r'<\1\3', text)
+    
+    return text
 
 async def safe_edit_message_text(message: Message, text: str, reply_markup=None, parse_mode=None):
     
@@ -12,6 +37,10 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
             logger.warning("Cannot edit: message is None or missing text attribute")
             return False
             
+        # Clean HTML tags if parse_mode is HTML
+        if parse_mode == "HTML":
+            text = clean_html_entities(text)
+        
         # Add invisible character to ensure message is always different
         # Uses zero-width space character to make the message different without visible changes
         if '\u200B' not in text:
@@ -58,6 +87,10 @@ async def safe_edit_message_caption(message: Message, caption: str, reply_markup
         if not message or not hasattr(message, 'caption'):
             logger.warning("Cannot edit caption: message is None or missing caption attribute")
             return False
+        
+        # Clean HTML tags if parse_mode is HTML
+        if parse_mode == "HTML" and caption:
+            caption = clean_html_entities(caption)
         
         # Add invisible character to ensure caption is always different
         # Uses zero-width space character to make the caption different without visible changes
