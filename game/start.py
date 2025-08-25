@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 # --- Constants for rewards and channel IDs ---
 STARTER_REWARDS = {
     "gas": 10000,
-    "crystal": 10,
-    "valor": 250,
-    "marks": 12500,
+    "crystal": 3,
+    "valor": 15,
+    "marks": 15000,
     "explore_count": 0
 }
-REFERRAL_REWARDS = {"marks": 25000, "valor": 25, "crystal": 2}
-REFERRER_REWARDS = {"valor": 40}
+REFERRAL_REWARDS = {"marks": 15000, "valor": 15, "crystal": 3}
+REFERRER_REWARDS = {"valor": 20}
 LOG_CHANNEL_ID = -1002873117075
 
 # Allowed values for validation

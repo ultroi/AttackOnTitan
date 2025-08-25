@@ -81,7 +81,7 @@ class ShopSystem:
                 "cooldown_reduction": 1,
                 "battles_remaining": 5,
                 "flash_initiative": 3
-            }, price=40000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
+            }, price=260000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
             ),
             "bounty_permit": Equipment(
             name="Bounty Permit", type="utility", rarity="uncommon", attributes={
@@ -90,7 +90,7 @@ class ShopSystem:
                 "elite_double_loot_chance": 0.15,
                 "bounty_missions_unlocked": True,
                 "buff_duration_minutes": 30
-            }, price=50000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
+            }, price=320000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
             ),
             "training_dummy": Equipment(
             name="Training Dummy", type="utility", rarity="common", attributes={
@@ -99,7 +99,7 @@ class ShopSystem:
                 "xp_gain_multiplier": 1.10,
                 "buff_duration_minutes": 15,
                 "crit_rate_bonus_regiment": 5
-            }, price=14000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
+            }, price=89000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
             ),
             "battle_journal": Equipment(
             name="Battle Journal", type="utility", rarity="common", attributes={
@@ -108,7 +108,7 @@ class ShopSystem:
                 "accuracy_bonus": 5,
                 "defense_bonus": 5,
                 "buff_trigger_uses": 3
-            }, price=24000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
+            }, price=140000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
             ),
             "titan_biology_manual": Equipment(
             name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={
@@ -116,19 +116,19 @@ class ShopSystem:
                 "titan_damage_multiplier": 1.10,
                 "intelligence_bonus": 20,
                 "buff_duration_minutes": 30
-            }, price=30000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
+            }, price=240000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 35, "damage_max": 50}, price=50000, currency="marks", description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 35, "damage_max": 50}, price=70000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "bladed_gloves": Equipment(
-            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"damage_min": 105, "damage_max": 145}, price=120000, currency="marks", description="Gloves with blades for close combat. High critical chance."
+            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"damage_min": 105, "damage_max": 145}, price=280000, currency="marks", description="Gloves with blades for close combat. High critical chance."
             ),
             "satchel_bombs": Equipment(
-            name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 65, "damage_max": 95}, price=80000, currency="marks", description="Grenades for anti-titan combat. High critical chance."
+            name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 65, "damage_max": 95}, price=120000, currency="marks", description="Grenades for anti-titan combat. High critical chance."
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 140, "damage_max": 200}, price=180000, currency="marks", description="Serum that transforms the user into a titan."
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 140, "damage_max": 200}, price=400000, currency="marks", description="Serum that transforms the user into a titan."
             ),
             "colossal_power": Equipment(
             name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 260, "damage_max": 300}, price=490000, currency="marks", description="Grants the power of the Colossal Titan."
@@ -191,15 +191,11 @@ class ShopSystem:
             f"⚡ Valor:    <code>{player.valor:,}</code>\n"
             f"🛢️ Gas:      <code>{player.gas:,}</code>\n\n"
             "<b>💱 Exchange Rates</b>\n"
-            "• 200,000 Marks ➜ 1 Valor\n"
-            "• 20 Valor      ➜ 1 Crystal\n"
-            "• 4 Marks       ➜ 1 Gas\n\n"
-            "<b>💱 Conversion Rates</b>\n"
-            "• 1 Valor   ➜ 200,000 Marks\n"
-            "• 1 Crystal ➜ 20 Valor (taxed: +2)\n\n"
-            "<b>📋 How to Purchase</b>\n"
-            "<code>/buy gas 10 </code>\n"
-            " <code> /convert valor 100</code>\n\n"
+            "• 10,000 Marks ➜ 1 Valor\n"
+            "• 200 Valor    ➜ 1 Crystal\n"
+            "• 4 Marks      ➜ 1 Gas\n\n"
+            "<b> How to Purchase</b>\n"
+            "<code>/buy gas 10 </code>\n\n"
             "<b>⏰ Shop Information</b>\n"
             f"• <b>Next Free Refresh:</b> {time_left}\n"
             f"• <b>Manual Refresh Cost:</b> {refresh_cost} Valor\n\n"
@@ -406,7 +402,7 @@ class ShopSystem:
             return {"success": False, "message": f"Error purchasing {item_name}: {str(e)}"}
 
     async def buy_currency(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, currency_type: str, amount: int) -> str:
-        """Handle currency purchases and exchanges."""
+        """Handle currency purchases."""
         try:
             # Check if player is in PVP battle
             from game.pvp_system import active_pvp_battles
@@ -421,7 +417,7 @@ class ShopSystem:
                 return "❌ Player not found! Create a profile with /start."
 
             if currency_type == "gas":
-                cost = amount * 4  # Updated rate: 4 marks for 1 gas
+                cost = amount * 4  # Rate: 4 marks for 1 gas
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} gas."
                 await db.update_player(int(user_id), {"marks": player.marks - cost, "gas": player.gas + amount})
@@ -433,7 +429,7 @@ class ShopSystem:
                 return f"✅ Successfully purchased {amount:,} gas for {cost:,} marks."
 
             elif currency_type == "crystal":
-                valor_cost = amount * 20  # Rate: 20 valor for 1 crystal
+                valor_cost = amount * 200  # Updated rate: 200 valor for 1 crystal
                 if player.valor < valor_cost:
                     return f"❌ Insufficient valor! You need {valor_cost:,} valor for {amount:,} crystals."
                 await db.update_player(int(user_id), {"valor": player.valor - valor_cost, "crystal": player.crystal + amount})
@@ -445,7 +441,7 @@ class ShopSystem:
                 return f"✅ Successfully purchased {amount:,} crystals for {valor_cost:,} valor."
 
             elif currency_type == "valor":
-                cost = amount * 200000  # Rate: 100,000 marks for 1 valor
+                cost = amount * 10000  # Updated rate: 10,000 marks for 1 valor
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} valor points."
                 await db.update_player(int(user_id), {"marks": player.marks - cost, "valor": player.valor + amount})
@@ -455,35 +451,8 @@ class ShopSystem:
                 await self._send_transaction_log(context, user_id, "PURCHASE", amount, "valor", details)
                 
                 return f"✅ Successfully purchased {amount:,} valor points for {cost:,} marks."
-                
-            elif currency_type == "valor_from_crystal":
-                valor_gained = amount * 20  # Rate: 1 crystal for 20 valor (taxed: +2)
-                if player.crystal < amount:
-                    return f"❌ Insufficient crystals! You need {amount:,} crystals."
-                await db.update_player(int(user_id), {"crystal": player.crystal - amount, "valor": player.valor + valor_gained})
-                
-                # Log transaction
-                details = f"Converted {amount:,} crystals to {valor_gained:,} valor (taxed: +2 valor per crystal)"
-                await self._send_transaction_log(context, user_id, "CONVERT", amount, "crystal → valor", details)
-                
-                return f"✅ Successfully exchanged {amount:,} crystals for {valor_gained:,} valor (taxed: +2 valor per crystal)."
-                
-            elif currency_type == "marks_from_valor":
-                marks_gained = amount * 200000  # Rate: 1 valor for 100,000 marks
-                if player.valor < amount:
-                    return f"❌ Insufficient valor! You need {amount:,} valor."
-                await db.update_player(int(user_id), {"valor": player.valor - amount, "marks": player.marks + marks_gained})
-                
-                # Log transaction
-                details = f"Converted {amount:,} valor to {marks_gained:,} marks"
-                await self._send_transaction_log(context, user_id, "CONVERT", amount, "valor → marks", details)
-                
-                return f"✅ Successfully exchanged {amount:,} valor for {marks_gained:,} marks."
 
-            elif currency_type == "marks":
-                return f"❌ Direct exchange of crystals to marks is not allowed. Please exchange crystals for valor first, then valor for marks."
-
-            return "❌ Invalid currency type. Use: gas, crystals, valor, or marks."
+            return "❌ Invalid currency type. Use: gas, crystal, or valor."
         except (ValueError, PyMongoError) as e:
             logger.error(f"Error in buy_currency for user {user_id}: {e}")
             return f"❌ Error purchasing currency: {str(e)}"

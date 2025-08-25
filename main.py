@@ -49,7 +49,7 @@ from game.bank_command import handle_bank_command, handle_deposit_command, handl
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
-from utils.extra import buy_command, give_command, convert_command
+from utils.extra import buy_command, give_command
 from game.explore import explore, close_keyboard, reset_verify, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
@@ -644,7 +644,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("shop", shop_command))
     app_instance.add_handler(CommandHandler("status", profile))
     app_instance.add_handler(CommandHandler("buy", buy_command))
-    app_instance.add_handler(CommandHandler("convert", convert_command))
+
     app_instance.add_handler(CommandHandler("referral", referral_info))
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
     app_instance.add_handler(CommandHandler("nuke", reset_handler))

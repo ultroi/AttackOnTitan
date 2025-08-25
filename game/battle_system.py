@@ -463,19 +463,19 @@ class BattleSystem:
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
         """Calculate rewards for defeating the titan (XP, marks, crystals, valor) - simplified, no difficulty system."""
         # XP: 150-200 random, same for player and character, but ensure it's always positive
-        xp = max(1, random.randint(150, 200))
+        xp = max(1, random.randint(100, 180))
         
         # Marks: fixed per battle (current system, no difficulty bonus)
-        marks = max(1, random.randint(70, 150) + (titan.level * 2))
+        marks = max(1, random.randint(70, 100) + (titan.level * 2))
         
-        # Valor: much lower chance (5%)
+        # Valor: much lower chance (2.5%)
         valor = 0
-        if player and random.random() < 0.05:
-            valor = max(1, random.randint(8, 15))
+        if player and random.random() < 0.025:
+            valor = max(1, random.randint(1, 4))
             
         # Crystal: very rare (1% chance)
         crystal = 0
-        if random.random() < 0.01:
+        if random.random() < 0.0001:  # 0.01% chance
             crystal = 1
             
         return {

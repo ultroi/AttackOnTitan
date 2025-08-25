@@ -24,11 +24,8 @@ async def buy_command(update: Update, context):
                             "Usage: /buy <currency_type> <amount>\n\n"
                             "Available exchange options:\n"
                             "• /buy gas <amount> - Buy gas with marks (4:1)\n"
-                            "• /buy valor <amount> - Buy valor with marks (200,000:1)\n"
-                            "• /buy crystal <amount> - Buy crystal with valor (20:1)\n\n"
-                            "For currency conversions use:\n"
-                            "• /convert valor <amount> - Convert crystal to valor (1:20, taxed: +2)\n"
-                            "• /convert marks <amount> - Convert valor to marks (1:200,000)"
+                            "• /buy valor <amount> - Buy valor with marks (10,000:1)\n"
+                            "• /buy crystal <amount> - Buy crystal with valor (200:1)"
                         )
                         await update.message.reply_text(help_text)
                         return
@@ -44,8 +41,7 @@ async def buy_command(update: Update, context):
                     valid_types = ["gas", "valor", "crystal"]
                     if currency_type not in valid_types:
                         await update.message.reply_text(
-                            f"Invalid currency type. Available options: {', '.join(valid_types)}\n"
-                            f"For currency conversions, use /convert valor or /convert marks"
+                            f"Invalid currency type. Available options: {', '.join(valid_types)}"
                         )
                         return
                         
@@ -167,51 +163,3 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
 
 
-@ban_protected
-@maintenance_protected
-async def convert_command(update: Update, context):
-    """Handle currency conversion using the /convert command"""
-    try:
-        if not update.effective_user or not update.message:
-            if update.message:
-                await update.message.reply_text("User or message information not available.")
-            return
-            
-        args = context.args
-        if not args or len(args) != 2:
-            help_text = (
-                "Usage: /convert <target_currency> <amount>\n\n"
-                "Available conversions:\n"
-                "• /convert valor <amount> - Convert crystal to valor (1:20, taxed: +2)\n"
-                "• /convert marks <amount> - Convert valor to marks (1:100,000)"
-            )
-            await update.message.reply_text(help_text)
-            return
-            
-        target_currency = args[0].lower()
-        try:
-            amount = int(args[1])
-        except ValueError:
-            await update.message.reply_text("Amount must be an integer.")
-            return
-            
-        # Check valid target currencies
-        if target_currency not in ["valor", "marks"]:
-            await update.message.reply_text("Invalid conversion. Use '/convert valor' or '/convert marks'.")
-            return
-            
-        shop_system = context.bot_data["shop_system"]
-        user_id = str(update.effective_user.id)
-        
-        # Map to appropriate currency types for the shop_system
-        if target_currency == "valor":
-            result = await shop_system.buy_currency(context, user_id, "valor_from_crystal", amount)
-        else:  # marks
-            result = await shop_system.buy_currency(context, user_id, "marks_from_valor", amount)
-            
-        await update.message.reply_text(result)
-        
-    except Exception as e:
-        logger.error(f"Error in convert_command: {e}")
-        if update.message:
-            await update.message.reply_text(f"Error processing convert command: {str(e)}")
