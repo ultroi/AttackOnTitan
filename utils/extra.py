@@ -24,11 +24,11 @@ async def buy_command(update: Update, context):
                             "Usage: /buy <currency_type> <amount>\n\n"
                             "Available exchange options:\n"
                             "• /buy gas <amount> - Buy gas with marks (4:1)\n"
-                            "• /buy valor <amount> - Buy valor with marks (500:1)\n"
-                            "• /buy crystal <amount> - Buy crystal with valor (50:1)\n\n"
+                            "• /buy valor <amount> - Buy valor with marks (200,000:1)\n"
+                            "• /buy crystal <amount> - Buy crystal with valor (20:1)\n\n"
                             "For currency conversions use:\n"
-                            "• /convert valor <amount> - Convert crystal to valor (1:45, 5 taxed)\n"
-                            "• /convert marks <amount> - Convert valor to marks (1:500)"
+                            "• /convert valor <amount> - Convert crystal to valor (1:20, taxed: +2)\n"
+                            "• /convert marks <amount> - Convert valor to marks (1:200,000)"
                         )
                         await update.message.reply_text(help_text)
                         return
@@ -182,8 +182,8 @@ async def convert_command(update: Update, context):
             help_text = (
                 "Usage: /convert <target_currency> <amount>\n\n"
                 "Available conversions:\n"
-                "• /convert valor <amount> - Convert crystal to valor (1:45, 5 taxed)\n"
-                "• /convert marks <amount> - Convert valor to marks (1:500)"
+                "• /convert valor <amount> - Convert crystal to valor (1:20, taxed: +2)\n"
+                "• /convert marks <amount> - Convert valor to marks (1:100,000)"
             )
             await update.message.reply_text(help_text)
             return
