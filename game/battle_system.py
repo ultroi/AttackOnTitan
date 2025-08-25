@@ -73,7 +73,7 @@ class BattleSystem:
         self.titan_debuffs: Dict[str, int] = {}  # Titan debuffs
         self.turn: int = 0
         # Add keyboard cache for performance optimization
-        self.keyboard_cache = None
+        self.keyboard_cache: Any = None
         self.keyboard_cache_invalid = True
         self.trigger_states: Dict[str, Any] = {
             "first_damage_taken": False,
@@ -89,6 +89,7 @@ class BattleSystem:
         self._is_disposed: bool = False
         self.battle_ended: bool = False
         self.initial_gas: int = character.gas  # Store initial gas at battle start
+        self.last_character_refresh: float = time.time()  # Add timestamp for character refresh tracking
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -843,13 +844,20 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     user_id = str(update.effective_user.id)
     
-    # Anti-spam protection
+    # Immediately answer the callback to prevent Telegram timeout
+    try:
+        # Answer the callback query immediately without any notification to prevent query timeouts
+        await query.answer()
+    except Exception:
+        pass  # Ignore errors in answering - might be already answered
+    
+    # Anti-spam protection - enhanced with more aggressive throttling
     action_time_key = f"battle_action_time_{user_id}"
     last_action_time = context.bot_data.get(action_time_key, 0)
     current_time = time.time()
 
-    # Rate limit to prevent spamming (300ms cooldown between actions)
-    if current_time - last_action_time < 0.3:
+    # Rate limit to prevent spamming (400ms cooldown between actions - slightly higher)
+    if current_time - last_action_time < 0.4:
         # Silent handling of spam - just ignore the action without any message
         return
     
@@ -868,11 +876,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     # Increment spam counter
     context.bot_data["spam_counters"][user_id]["count"] += 1
     
-    # If user has triggered more than 5 actions in 3 seconds, add a longer cooldown
-    if context.bot_data["spam_counters"][user_id]["count"] > 5:
+    # If user has triggered more than 4 actions in 3 seconds, add a longer cooldown (reduced from 5)
+    if context.bot_data["spam_counters"][user_id]["count"] > 4:
         # Add a progressively longer cooldown based on how much they're spamming
-        excess_count = context.bot_data["spam_counters"][user_id]["count"] - 5
-        extra_delay = min(5, excess_count * 0.5)  # Max 5 second additional delay
+        excess_count = context.bot_data["spam_counters"][user_id]["count"] - 4
+        extra_delay = min(6, excess_count * 0.7)  # Max 6 second additional delay, more aggressive
         
         # Set the last action time to enforce this cooldown silently
         context.bot_data[action_time_key] = current_time + extra_delay
@@ -937,8 +945,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 await query.answer(f"Not enough gas to use {ability_name}! You need {gas_cost} gas.", show_alert=True)
             return
         
-        # Answer callback query immediately to prevent Telegram timeout
-        await query.answer()
+        # We'll answer the callback inside handle_battle_action now
+        # Removed query.answer() from here to prevent duplicate answers
         
         # Initialize battle tracking variables
         full_message = []
@@ -1109,26 +1117,14 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             random_pos = random.randint(0, len(battle_message)-1)
             modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
             
-            success = await safe_edit_message_text(
+            # Always try to edit the message, never send a new one - this fixes the button spam issue
+            await safe_edit_message_text(
                 query.message,
                 modified_message,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
-            if not success:
-                # Message couldn't be edited (possibly due to expired query)
-                # Let's try sending a new message if the query edit failed
-                logger.info(f"Message edit failed for battle, attempting to send new message")
-                try:
-                    chat_id = query.message.chat_id
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=battle_message,
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
-                except Exception as send_error:
-                    logger.error(f"Failed to send new battle message: {send_error}")
+            # Don't send a new message even if edit fails - silently continue with the battle
         except ImportError:
             # Fallback to direct edit
             try:
@@ -1147,19 +1143,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     logger.debug(f"Message not modified despite randomization")
                     # No need for additional action, the UI is already showing the correct state
                 elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
-                    # Try to send a new message if edit fails due to old query
-                    try:
-                        chat_id = query.message.chat_id
-                        await context.bot.send_message(
-                            chat_id=chat_id,
-                            text=battle_message,
-                            reply_markup=reply_markup,
-                            parse_mode=ParseMode.HTML
-                        )
-                    except Exception as send_error:
-                        logger.error(f"Failed to send new battle message: {send_error}")
+                    # Don't send a new message, just log the issue - this prevents message duplication
+                    logger.debug(f"Query too old or invalid, but not creating new message to avoid spam")
                 else:
-                    raise        # Start timeout in background
+                    # Just log any other errors rather than raising - keeps the UI functional
+                    logger.error(f"Error editing message: {e}")        # Start timeout in background
         asyncio.create_task(battle_timeout(user_id, query, battle, context))
         
         # Log performance metrics for optimization tracking (only 5% of the time)

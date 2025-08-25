@@ -62,10 +62,11 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
         if message_key not in _edit_locks:
             _edit_locks[message_key] = asyncio.Lock()
             
-        # If another edit is already in progress, don't allow concurrent edits
+        # If another edit is already in progress, don't allow concurrent edits and return silently
+        # This is a critical fix to prevent creating multiple messages during button spam
         if _edit_locks[message_key].locked():
             logger.debug(f"Throttled edit for message {message_key}: another edit in progress")
-            return False
+            return True  # Return True to indicate "handled" (prevents fallback to sending new messages)
             
         # Acquire lock for this message
         async with _edit_locks[message_key]:
@@ -84,15 +85,21 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
             last_edit = _last_edit_time.get(message_key, 0)
             min_interval = 0.8
             
-            # Apply progressive throttling for spam protection
+            # Apply aggressive throttling for spam protection
             if _edit_counters[message_key]["count"] > 3:
                 # Add progressively longer delays based on edit count
                 excessive_edits = _edit_counters[message_key]["count"] - 3
-                additional_delay = min(2.0, excessive_edits * 0.5)  # Max 2s additional delay
+                additional_delay = min(3.0, excessive_edits * 0.7)  # Max 3s additional delay, more aggressive
                 min_interval += additional_delay
                 
             # If trying to edit too quickly, apply throttling
             if current_time - last_edit < min_interval:
+                # For extreme spam (more than 10 edits), just silently ignore
+                if _edit_counters[message_key]["count"] > 10:
+                    logger.debug(f"Ignoring edit for message {message_key}: too many edits in short time")
+                    return True  # Return True to prevent fallback to new messages
+                
+                # Normal throttling with wait
                 wait_time = min_interval - (current_time - last_edit)
                 logger.debug(f"Throttling edit for message {message_key}: waiting {wait_time:.2f}s")
                 await asyncio.sleep(wait_time)
@@ -101,11 +108,16 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
             if parse_mode == "HTML":
                 text = clean_html_entities(text)
             
-            # Add invisible character to ensure message is always different
+            # Add multiple invisible characters to ensure message is always different
             # Uses zero-width space character to make the message different without visible changes
+            import random
             if '\u200B' not in text:
-                # Add at a random position to ensure uniqueness
-                import random
+                # Add at multiple random positions to ensure uniqueness
+                for _ in range(2):  # Add 2 zero-width spaces
+                    pos = random.randint(0, max(0, len(text)-1))
+                    text = text[:pos] + '\u200B' + text[pos:]
+            else:
+                # Add one more zero-width space at a random position
                 pos = random.randint(0, max(0, len(text)-1))
                 text = text[:pos] + '\u200B' + text[pos:]
                     
@@ -127,30 +139,31 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
         error_str = str(e).lower()
         if "message is not modified" in error_str:
             # This shouldn't happen with our zero-width space trick, but just in case
+            # Return True to avoid fallback to new message creation - critical fix for button spam issue
             logger.debug(f"Message not modified despite randomization: {e}")
-            return False
+            return True
         elif "query is too old" in error_str or "query id is invalid" in error_str or "response timeout expired" in error_str:
-            # Handle expired callback query error
+            # Handle expired callback query error - still return True to prevent new message creation
             logger.debug(f"Query expired or invalid: {e}")
-            return False
+            return True
         elif "message to edit not found" in error_str:
             logger.debug(f"Message to edit not found: {e}")
-            return False
+            return True  # Return True to prevent fallback
         elif "can't parse entities" in error_str:
             # Special case for entity parsing errors, which are often caused by invisible characters
             logger.warning(f"Error editing message: {e}")
             # Log the problematic text for debugging
             if parse_mode == "HTML":
                 logger.debug(f"Problematic HTML: {text}")
-            return False
+            return True  # Return True to prevent fallback
         else:
             # Log other errors at warning level
             logger.warning(f"Error editing message: {e}")
-            return False  # Return False instead of raising to prevent crashes
+            return True  # Return True to prevent fallback to new message creation
             
     except Exception as e:
         logger.warning(f"Unexpected error editing message: {e}")
-        return False  # Return False instead of raising to prevent crashes
+        return True  # Return True to prevent fallback to new message creation
 
 async def safe_edit_message_caption(message: Message, caption: str, reply_markup=None, parse_mode=None):
     try:
