@@ -1134,8 +1134,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player=battle.player,
             explore_count=explore_count
         )
-        character_xp = rewards["xp"] // 2
-        player_xp = rewards["xp"] - character_xp
+        character_xp = rewards["xp"]
+        player_xp = rewards["xp"]
         char_level_info = battle.character.add_xp(character_xp)
         player_obj = Player(**player_data)
         player_level_info = player_obj.add_xp(player_xp)
@@ -1143,10 +1143,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.gas = max(0, battle.character_gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = battle.character_hp
-        
+
         # Invalidate character cache to ensure fresh HP values in next explore
         db.invalidate_character_cache(user_id, battle.character.name)
-        
+
         # Batch update: character and player
         updates = []
         updates.append(db.update_character(battle.character))

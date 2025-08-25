@@ -31,7 +31,7 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="echo", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=10000, currency="valor", description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="echo_shards", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "combat_boots": Equipment(
             name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 80.0, "damage_max": 120.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
@@ -45,7 +45,7 @@ class ShopSystem:
                 "cooldown_reduction": 1,
                 "battles_remaining": 5,
                 "flash_initiative": 3
-            }, price=40000, currency="valor", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
+            }, price=40000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
             ),
             "bounty_permit": Equipment(
             name="Bounty Permit", type="utility", rarity="uncommon", attributes={
@@ -54,7 +54,7 @@ class ShopSystem:
                 "elite_double_loot_chance": 0.15,
                 "bounty_missions_unlocked": True,
                 "buff_duration_minutes": 30
-            }, price=50000, currency="valor", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
+            }, price=50000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
             ),
             "training_dummy": Equipment(
             name="Training Dummy", type="utility", rarity="common", attributes={
@@ -63,7 +63,7 @@ class ShopSystem:
                 "xp_gain_multiplier": 1.10,
                 "buff_duration_minutes": 15,
                 "crit_rate_bonus_regiment": 5
-            }, price=14000, currency="valor", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
+            }, price=14000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
             ),
             "battle_journal": Equipment(
             name="Battle Journal", type="utility", rarity="common", attributes={
@@ -72,7 +72,7 @@ class ShopSystem:
                 "accuracy_bonus": 5,
                 "defense_bonus": 5,
                 "buff_trigger_uses": 3
-            }, price=24000, currency="valor", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
+            }, price=24000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
             ),
             "titan_biology_manual": Equipment(
             name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={
@@ -80,7 +80,7 @@ class ShopSystem:
                 "titan_damage_multiplier": 1.10,
                 "intelligence_bonus": 20,
                 "buff_duration_minutes": 30
-            }, price=30000, currency="valor", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
+            }, price=30000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
             name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 35, "damage_max": 50}, price=50000, currency="marks", description="Blades made of ultrahard steel."
@@ -108,13 +108,13 @@ class ShopSystem:
             ),
             # Military category weapons
             "airship_machine_guns": Equipment(
-            name="Airship-Mounted Machine Guns", type="military", rarity="legendary", attributes={"damage_min": 175, "damage_max": 235}, price=200000, currency="marks", description="Heavy machine guns mounted on airships for aerial combat."
+            name="Airship-Mounted Machine Guns", type="barracks", rarity="legendary", attributes={"damage_min": 175, "damage_max": 235}, price=200000, currency="marks", description="Heavy machine guns mounted on airships for aerial combat."
             ),
             "airship_machine_guns_v2": Equipment(
-            name="Airship-Mounted Machine Guns (v2)", type="military", rarity="legendary", attributes={"damage_min": 200, "damage_max": 250}, price=380000, currency="marks", description="Upgraded version of airship machine guns with improved firing rate and accuracy."
+            name="Airship-Mounted Machine Guns (v2)", type="barracks", rarity="legendary", attributes={"damage_min": 200, "damage_max": 250}, price=380000, currency="marks", description="Upgraded version of airship machine guns with improved firing rate and accuracy."
             ),
             "naval_ship_cannons": Equipment(
-            name="Naval Ship Cannons", type="military", rarity="legendary", attributes={"damage_min": 300, "damage_max": 375}, price=600000, currency="marks", description="Powerful cannons from naval vessels, repurposed for anti-Titan warfare."
+            name="Naval Ship Cannons", type="barracks", rarity="legendary", attributes={"damage_min": 300, "damage_max": 375}, price=600000, currency="marks", description="Powerful cannons from naval vessels, repurposed for anti-Titan warfare."
             ),
         }
         # self.hidden_items is intentionally left empty

@@ -159,10 +159,9 @@ async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         user_lines = []
         for user in users:
-            if user.get("name"):
-                user_lines.append(user["name"])
-            elif user.get("user_id"):
-                user_lines.append(str(user["user_id"]))
+            user_id = user.get("user_id", "N/A")
+            name = user.get("name", "Unknown")
+            user_lines.append(f"{name} - {user_id}")
         user_list_text = "\n".join(user_lines)
         await update.message.reply_text(f"<b>All Users:</b>\n<code>{user_list_text}</code>", parse_mode="HTML")
     except Exception as e:
