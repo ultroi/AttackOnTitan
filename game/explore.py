@@ -295,8 +295,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # Fetch only required fields for player (minimize payload)
-    player_task = db.get_player(user_id_str, fields=["level", "team", "location", "unlocked_areas", "hcaptcha_verified", "last_explore_time", "explore_start_time", "last_verified"])
+    # Get player data from database
+    player_task = db.get_player(user_id_str)
 
     is_in_battle = _is_in_battle(user_id_str)
 
@@ -398,8 +398,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    # For character data, fetch only required fields (minimize payload)
-    character_task = db.get_character(user_id_str, player_character_name, fields=["level", "gas", "character_name"])
+    # Get character data from database
+    character_task = db.get_character(user_id_str, player_character_name)
     
     # Track exploration for stats (will only count if battle is completed)
     asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name, False))
@@ -460,7 +460,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             titan.drop_table = {}
         except Exception:
             try:
-                titan = await db.generate_titan(player_character.level, player.unlocked_areas, user_id_str, fields=["name", "level", "max_hp", "created_at", "difficulty", "spawn_areas", "xp_reward", "min_level_requirement"])
+                titan = await db.generate_titan(player_character.level, player.unlocked_areas, user_id_str)
             except Exception:
                 titan = Titan(
                     name="Unknown Titan",
