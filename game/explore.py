@@ -267,23 +267,21 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # Start several tasks in parallel to speed up response time - now with batch fetching
-    # Optimize by fetching player and character data in parallel to reduce wait time
-    player_task = db.get_player(user_id_str)
-    
+    # Fetch only required fields for player (minimize payload)
+    player_task = db.get_player(user_id_str, fields=["level", "team", "location", "unlocked_areas", "hcaptcha_verified", "last_explore_time", "explore_start_time", "last_verified"])
+
     # Show persistent keyboard in the background - non-blocking
     if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
         context.user_data["persistent_keyboard_sent"] = True
         asyncio.create_task(_show_keyboard_background(update))
-        
+
     is_in_battle = _is_in_battle(user_id_str)
-        
+
     # Only use cached titan if in active battle, otherwise always generate new
     titan_cached = user_id_str in db._titan_cache and is_in_battle
-    
+
     # Clear cached titan if not in battle to ensure different titans each explore
     if not is_in_battle:
-        # Use the dedicated method to invalidate titan cache
         db.invalidate_titan_cache(user_id_str)
 
     # Wait for player data
@@ -377,9 +375,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    # For character data, we'll always get fresh data from the database
-    # This ensures we always have the latest HP values
-    character_task = db.get_character(user_id_str, player_character_name)
+    # For character data, fetch only required fields (minimize payload)
+    character_task = db.get_character(user_id_str, player_character_name, fields=["level", "gas", "character_name"])
     
     # Track exploration for stats (will only count if battle is completed)
     asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name, False))
@@ -426,23 +423,22 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
         return
         
-    # Use cached titan if available, otherwise generate a new one
+    # Use cached titan if available, otherwise generate a new one (minimize titan payload)
     if titan_cached:
         titan = db._titan_cache.get(user_id_str)
     else:
-        # Direct titan generation - super fast with no database calls
         try:
-            # Generate titan directly without any database queries
             titan = generate_titan_directly(
-                player_level=player_character.level, 
+                player_level=player_character.level,
                 unlocked_areas=player.unlocked_areas
             )
-        except Exception as e:
-            # Fallback to database generation if direct generation fails
+            # Remove unnecessary fields from titan object to minimize payload
+            titan.abilities = []
+            titan.drop_table = {}
+        except Exception:
             try:
-                titan = await db.generate_titan(player_character.level, player.unlocked_areas, user_id_str)
+                titan = await db.generate_titan(player_character.level, player.unlocked_areas, user_id_str, fields=["name", "level", "max_hp", "created_at", "difficulty", "spawn_areas", "xp_reward", "min_level_requirement"])
             except Exception:
-                # Ultimate fallback - basic titan with minimal properties
                 titan = Titan(
                     name="Unknown Titan",
                     level=player_character.level,
@@ -460,19 +456,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "No titans found in your level range.")
         return
         
-    # Don't cache character data in context.bot_data anymore
-    # to ensure we always get fresh HP values from the database
-    # We'll rely on the DB-level caching with proper invalidation
-
-    # Skip titan storage if we're using a cached titan
+    # Do not store large objects in context.bot_data or context.user_data
+    # Only cache titan minimally if needed
     if not titan_cached:
-        # Store titan in cache directly first for immediate access
         db._titan_cache[user_id_str] = titan
-        # Then trigger database storage in background
-        titan_store_task = asyncio.create_task(db.store_titan(user_id_str, titan))
+        # Store titan in DB in background (minimal fields)
+        asyncio.create_task(db.store_titan(user_id_str, titan))
 
-    # Prepare battle UI immediately (this is fast)
-    # Use a cached battle ID if one exists
+    # Prepare minimal battle UI
     battle_id_key = f"active_battle_id_{user_id}"
     if battle_id_key in context.bot_data:
         battle_id = context.bot_data[battle_id_key]
@@ -480,31 +471,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
         context.bot_data[battle_id_key] = battle_id
 
-    # Pre-built keyboard for fast response - use a static keyboard when possible
+    # Minimal inline keyboard
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Pre-cached image URL lookup using titan name pattern matching
-    # This is much faster than checking each type
+    # Minimal titan image lookup (no caching in context)
     titan_name_lower = titan.name.lower()
     titan_image_url = None
-    
-    # Use cached image URLs when possible
-    cache_key = f"titan_image_{titan_name_lower[:10]}"  # First 10 chars as cache key
-    if cache_key in context.bot_data:
-        titan_image_url = context.bot_data[cache_key]
-    else:
-        # Only look up if not in cache
-        for type_, url in TITAN_TYPE_IMAGE_URLS.items():
-            if type_ in titan_name_lower:
-                titan_image_url = url
-                # Cache this result for future use
-                context.bot_data[cache_key] = url
-                break
-    
+    for type_, url in TITAN_TYPE_IMAGE_URLS.items():
+        if type_ in titan_name_lower:
+            titan_image_url = url
+            break
     image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
 
-    # Pre-built message text (avoids string concatenation in the critical path)
+    # Minimal reply text
     reply_text = (
         f"<code>-------------------------</code>\n"
         f"📍 <b>{titan.name} Lvl ({titan.level})</b>\n"
@@ -512,7 +492,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<code>-------------------------</code>\n"
     )
 
-    # Pre-built message parameters
+    # Minimal message parameters
     message_params = {
         "text": reply_text,
         "reply_markup": reply_markup,
@@ -520,16 +500,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "disable_web_page_preview": False
     }
 
-    # Simplified message sending with optimized error handling
+    # Send message
     sent_message = None
     try:
-        # Direct path approach - always try the most common case first
         if update.message:
             sent_message = await update.message.reply_text(**message_params)
         elif update.callback_query and update.callback_query.message:
             sent_message = await update.callback_query.message.chat.send_message(**message_params)
     except Exception:
-        # Simple error notification - no need for detailed logging here
         if update.message:
             await update.message.reply_text("An error occurred. Please try again.")
         return
