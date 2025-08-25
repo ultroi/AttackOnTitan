@@ -908,247 +908,217 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         
     # Use a try/finally block to ensure lock is released
     try:
-        
-    # Fast path handlers for cooldown and low gas notifications
-    if action.startswith("cooldown_"):
-        ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
-        cooldown = battle.ability_cooldowns.get(ability_name, 0)
-        await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
-        return
-    elif action.startswith("lowgas_"):
-        ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
-        if ability_name == "basic_attack":
-            await query.answer("Not enough gas for basic attack! You need at least 20 gas.", show_alert=True)
-        else:
-            # Optimize ability gas cost lookup
-            gas_cost = 20  # Default value
-            character_data = get_character_data(battle.character.character_type)
-            if character_data:
-                # Flatten the search
-                all_abilities = []
-                for ability_type in ["active", "passive", "ultimate"]:
-                    all_abilities.extend(getattr(character_data, f"{ability_type}_abilities", []))
-                
-                # Find the ability directly
-                for ability in all_abilities:
-                    if ability and ability.name == ability_name:
-                        gas_cost = ability.gas_cost or 20
-                        break
-            
-            await query.answer(f"Not enough gas to use {ability_name}! You need {gas_cost} gas.", show_alert=True)
-        return
-        
-    # Answer callback query immediately to prevent Telegram timeout
-    await query.answer()
-    
-    # Initialize battle tracking variables
-    full_message = []
-    effects = {}
-    
-    # Cancel timeout if exists
-    if battle.timeout_task:
-        battle.timeout_task.cancel()
-        battle.timeout_task = None
-    
-    # Mark keyboard cache as invalid since state will change
-    battle.keyboard_cache_invalid = True
-    
-    # Handle different action types
-    if action == "action_run":
-        # Handle run action (fast path)
-        if random.random() < 0.7:  # Successful escape
-            await query.edit_message_text(
-                f"🏃💨 {battle.character.name} successfully escaped from the battle!\n\n"
-                f"You live to fight another day. Use /explore to find another titan."
-            )
-            cleanup_battle(user_id, "escaped")
+        # Fast path handlers for cooldown and low gas notifications
+        if action.startswith("cooldown_"):
+            ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
+            cooldown = battle.ability_cooldowns.get(ability_name, 0)
+            await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
             return
-        else:
-            full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
-    
-    elif action == "action_basic_attack":
-        # Optimize basic attack with less DB access
-        shop_items = context.bot_data.get("shop_items") or {}
-        
-        # Only refresh character if needed (use a timestamp to limit refreshes)
-        now = time.time()
-        last_refresh = getattr(battle, 'last_character_refresh', 0)
-        if now - last_refresh > 30:  # Refresh only every 30 seconds max
-            db = context.bot_data.get("db") or Database()
-            try:
-                refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
-                if refreshed_character:
-                    battle.character = refreshed_character
-                    battle.last_character_refresh = now
-            except Exception as e:
-                logger.debug(f"Character refresh error (non-critical): {e}")
-        
-        # Process attack
-        weapon = battle.get_equipped_weapon(shop_items)
-        if battle.gas >= 20:
-            battle.gas -= 20
-            battle.character_gas = battle.gas
-            
-            if weapon:
-                # Fast weapon attack calculation
-                damage_min = int(weapon.attributes.get("damage_min", 10))
-                damage_max = int(weapon.attributes.get("damage_max", 20))
-                total_damage = random.randint(damage_min, damage_max)
-                battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                item_type = getattr(weapon, 'type', 'weapon')
-                # Add item type emoji based on the type
-                item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-                full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
+        elif action.startswith("lowgas_"):
+            ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
+            if ability_name == "basic_attack":
+                await query.answer("Not enough gas for basic attack! You need at least 20 gas.", show_alert=True)
             else:
-                # Fast basic attack calculation
-                try:
-                    base_damage = battle.character.stats.ATK or 25
-                    total_damage = max(1, base_damage + random.randint(25, 35))
-                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                except Exception:
-                    # Simplified error handling for speed
-                    total_damage = 10
-                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
-        else:
-            # Not enough gas case
-            message = f"❌ {battle.character.name} doesn't have enough gas for {'weapon' if weapon else 'basic'} attack!"
-            full_message.append(message)
-    
-    elif action.startswith("ability_"):
-        # Handle ability use with optimized function
-        damage, message, effects = battle.use_ability(action[8:])
-        battle.character_gas = battle.gas
-        full_message.append(message)
+                # Optimize ability gas cost lookup
+                gas_cost = 20  # Default value
+                character_data = get_character_data(battle.character.character_type)
+                if character_data:
+                    # Flatten the search
+                    all_abilities = []
+                    for ability_type in ["active", "passive", "ultimate"]:
+                        all_abilities.extend(getattr(character_data, f"{ability_type}_abilities", []))
+                    
+                    # Find the ability directly
+                    for ability in all_abilities:
+                        if ability and ability.name == ability_name:
+                            gas_cost = ability.gas_cost or 20
+                            break
+                
+                await query.answer(f"Not enough gas to use {ability_name}! You need {gas_cost} gas.", show_alert=True)
+            return
         
-        # Process effects concisely
-        if effects.get("items_dropped"):
-            full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
-        if effects.get("target_switched"):
-            full_message.append("Titan switched targets!")
-        if effects.get("bleed_applied"):
-            full_message.append("Titan is bleeding!")
-    
-    # Check for battle end conditions - titan defeated
-    if battle.titan_hp <= 0:
-        battle.battle_ended = True
-        await handle_battle_end(query, battle, user_id, context)
-        return
-    
-    # Check for out-of-gas condition (optimized with simplified logic)
-    min_ability_cost = float('inf')
-    has_unlocked_passive = False
-    
-    for ability in battle.character.passive_abilities or []:
-        if getattr(ability, 'unlocked', False):
-            has_unlocked_passive = True
-            gas_cost = getattr(ability, 'gas_cost', float('inf'))
-            min_ability_cost = min(min_ability_cost, gas_cost)
-    
-    if has_unlocked_passive and battle.gas < min_ability_cost:
-        await query.edit_message_text(f"{battle.character.name} is out of gas and cannot continue the battle!")
-        cleanup_battle(user_id, "out_of_gas")
-        return
-    
-    # Process titan's turn if character still alive
-    if battle.character_hp > 0:
-        titan_damage, titan_message = battle.titan_attack()
-        full_message.append(titan_message)
-    
-    # Update battle state
-    battle.turn += 1
-    battle.update_cooldowns()
-    
-    # Verify database access for next steps
-    db = context.bot_data.get("db")
-    if not db:
-        logger.error("Database not initialized")
-        await query.edit_message_text("Internal error: Database not initialized.")
-        return
-    
-    # Check for battle end conditions - character defeated or titan defeated
-    if battle.character_hp <= 0 or battle.titan_hp <= 0:
-        battle.battle_ended = True
-        await handle_battle_end(query, battle, user_id, context)
-        return
-    
-    # Generate keyboard and prepare UI (using cache when possible)
-    keyboard = await generate_ability_keyboard(battle, context)
-    
-    # Fast validation with simplified logic
-    if not keyboard or not isinstance(keyboard, list):
-        keyboard = [[InlineKeyboardButton("🏃 Run", callback_data="action_run")]]
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    # Get battle status once
-    status = battle.get_battle_status()
-    
-    # Build message with array join (faster than string concatenation)
-    message_parts = [
-        "<b>⚔️ BATTLE ⚔️</b>\n",
-        " ".join(full_message),  # Join messages once
-        "",  # Empty line for spacing
-        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
-        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
-        f"{status['titan_bar']}",
-        "",  # Empty line for spacing
-        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
-        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
-        f"{status['character_bar']}",
-        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
-    ]
-    
-    # Join all parts at once (much faster than += concatenation)
-    battle_message = "\n".join(message_parts)
-    
-    # Edit message with all content at once - safely
-    try:
-        from game.safe_edit import safe_edit_message_text
-        # Add a small randomization to the message to prevent "message not modified" errors
-        # Adding a zero-width space at random positions ensures the message is always different
-        random_pos = random.randint(0, len(battle_message)-1)
-        modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+        # Answer callback query immediately to prevent Telegram timeout
+        await query.answer()
         
-        success = await safe_edit_message_text(
-            query.message,
-            modified_message,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
-        if not success:
-            # Message couldn't be edited (possibly due to expired query)
-            # Let's try sending a new message if the query edit failed
-            logger.info(f"Message edit failed for battle, attempting to send new message")
-            try:
-                chat_id = query.message.chat_id
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=battle_message,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
+        # Initialize battle tracking variables
+        full_message = []
+        effects = {}
+        
+        # Cancel timeout if exists
+        if battle.timeout_task:
+            battle.timeout_task.cancel()
+            battle.timeout_task = None
+        
+        # Mark keyboard cache as invalid since state will change
+        battle.keyboard_cache_invalid = True
+        
+        # Handle different action types
+        if action == "action_run":
+            # Handle run action (fast path)
+            if random.random() < 0.7:  # Successful escape
+                await query.edit_message_text(
+                    f"🏃💨 {battle.character.name} successfully escaped from the battle!\n\n"
+                    f"You live to fight another day. Use /explore to find another titan."
                 )
-            except Exception as send_error:
-                logger.error(f"Failed to send new battle message: {send_error}")
-    except ImportError:
-        # Fallback to direct edit
+                cleanup_battle(user_id, "escaped")
+                return
+            else:
+                full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
+        
+        elif action == "action_basic_attack":
+            # Optimize basic attack with less DB access
+            shop_items = context.bot_data.get("shop_items") or {}
+            
+            # Only refresh character if needed (use a timestamp to limit refreshes)
+            now = time.time()
+            last_refresh = getattr(battle, 'last_character_refresh', 0)
+            if now - last_refresh > 30:  # Refresh only every 30 seconds max
+                db = context.bot_data.get("db") or Database()
+                try:
+                    refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+                    if refreshed_character:
+                        battle.character = refreshed_character
+                        battle.last_character_refresh = now
+                except Exception as e:
+                    logger.debug(f"Character refresh error (non-critical): {e}")
+            
+            # Process attack
+            weapon = battle.get_equipped_weapon(shop_items)
+            if battle.gas >= 20:
+                battle.gas -= 20
+                battle.character_gas = battle.gas
+                
+                if weapon:
+                    # Fast weapon attack calculation
+                    damage_min = int(weapon.attributes.get("damage_min", 10))
+                    damage_max = int(weapon.attributes.get("damage_max", 20))
+                    total_damage = random.randint(damage_min, damage_max)
+                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
+                    item_type = getattr(weapon, 'type', 'weapon')
+                    # Add item type emoji based on the type
+                    item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
+                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
+                else:
+                    # Fast basic attack calculation
+                    try:
+                        base_damage = battle.character.stats.ATK or 25
+                        total_damage = max(1, base_damage + random.randint(25, 35))
+                        battle.titan_hp = max(0, battle.titan_hp - total_damage)
+                    except Exception:
+                        # Simplified error handling for speed
+                        total_damage = 10
+                        battle.titan_hp = max(0, battle.titan_hp - total_damage)
+                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
+            else:
+                # Not enough gas case
+                message = f"❌ {battle.character.name} doesn't have enough gas for {'weapon' if weapon else 'basic'} attack!"
+                full_message.append(message)
+        
+        elif action.startswith("ability_"):
+            # Handle ability use with optimized function
+            damage, message, effects = battle.use_ability(action[8:])
+            battle.character_gas = battle.gas
+            full_message.append(message)
+            
+            # Process effects concisely
+            if effects.get("items_dropped"):
+                full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
+            if effects.get("target_switched"):
+                full_message.append("Titan switched targets!")
+            if effects.get("bleed_applied"):
+                full_message.append("Titan is bleeding!")
+        
+        # Check for battle end conditions - titan defeated
+        if battle.titan_hp <= 0:
+            battle.battle_ended = True
+            await handle_battle_end(query, battle, user_id, context)
+            return
+        
+        # Check for out-of-gas condition (optimized with simplified logic)
+        min_ability_cost = float('inf')
+        has_unlocked_passive = False
+        
+        for ability in battle.character.passive_abilities or []:
+            if getattr(ability, 'unlocked', False):
+                has_unlocked_passive = True
+                gas_cost = getattr(ability, 'gas_cost', float('inf'))
+                min_ability_cost = min(min_ability_cost, gas_cost)
+        
+        if has_unlocked_passive and battle.gas < min_ability_cost:
+            await query.edit_message_text(f"{battle.character.name} is out of gas and cannot continue the battle!")
+            cleanup_battle(user_id, "out_of_gas")
+            return
+        
+        # Process titan's turn if character still alive
+        if battle.character_hp > 0:
+            titan_damage, titan_message = battle.titan_attack()
+            full_message.append(titan_message)
+        
+        # Update battle state
+        battle.turn += 1
+        battle.update_cooldowns()
+        
+        # Verify database access for next steps
+        db = context.bot_data.get("db")
+        if not db:
+            logger.error("Database not initialized")
+            await query.edit_message_text("Internal error: Database not initialized.")
+            return
+        
+        # Check for battle end conditions - character defeated or titan defeated
+        if battle.character_hp <= 0 or battle.titan_hp <= 0:
+            battle.battle_ended = True
+            await handle_battle_end(query, battle, user_id, context)
+            return
+        
+        # Generate keyboard and prepare UI (using cache when possible)
+        keyboard = await generate_ability_keyboard(battle, context)
+        
+        # Fast validation with simplified logic
+        if not keyboard or not isinstance(keyboard, list):
+            keyboard = [[InlineKeyboardButton("🏃 Run", callback_data="action_run")]]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Get battle status once
+        status = battle.get_battle_status()
+        
+        # Build message with array join (faster than string concatenation)
+        message_parts = [
+            "<b>⚔️ BATTLE ⚔️</b>\n",
+            " ".join(full_message),  # Join messages once
+            "",  # Empty line for spacing
+            f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
+            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
+            f"{status['titan_bar']}",
+            "",  # Empty line for spacing
+            f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
+            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
+            f"{status['character_bar']}",
+            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
+        ]
+        
+        # Join all parts at once (much faster than += concatenation)
+        battle_message = "\n".join(message_parts)
+    
+        # Edit message with all content at once - safely
         try:
-            # Add a small randomization to the message
+            from game.safe_edit import safe_edit_message_text
+            # Add a small randomization to the message to prevent "message not modified" errors
+            # Adding a zero-width space at random positions ensures the message is always different
             random_pos = random.randint(0, len(battle_message)-1)
             modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
             
-            await query.edit_message_text(
-                text=modified_message,
+            success = await safe_edit_message_text(
+                query.message,
+                modified_message,
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
-        except Exception as e:
-            if "message is not modified" in str(e).lower():
-                # This should rarely happen now with our randomization
-                logger.debug(f"Message not modified despite randomization")
-                # No need for additional action, the UI is already showing the correct state
-            elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
-                # Try to send a new message if edit fails due to old query
+            if not success:
+                # Message couldn't be edited (possibly due to expired query)
+                # Let's try sending a new message if the query edit failed
+                logger.info(f"Message edit failed for battle, attempting to send new message")
                 try:
                     chat_id = query.message.chat_id
                     await context.bot.send_message(
@@ -1159,16 +1129,46 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     )
                 except Exception as send_error:
                     logger.error(f"Failed to send new battle message: {send_error}")
-            else:
-                raise
-    
-    # Start timeout in background
-    asyncio.create_task(battle_timeout(user_id, query, battle, context))
-    
-    # Log performance metrics for optimization tracking (only 5% of the time)
-    if random.random() < 0.05:
-        end_time = time.time()
-        logger.info(f"[PERF] Battle action took {end_time - start_time:.3f}s")
+        except ImportError:
+            # Fallback to direct edit
+            try:
+                # Add a small randomization to the message
+                random_pos = random.randint(0, len(battle_message)-1)
+                modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+                
+                await query.edit_message_text(
+                    text=modified_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                if "message is not modified" in str(e).lower():
+                    # This should rarely happen now with our randomization
+                    logger.debug(f"Message not modified despite randomization")
+                    # No need for additional action, the UI is already showing the correct state
+                elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
+                    # Try to send a new message if edit fails due to old query
+                    try:
+                        chat_id = query.message.chat_id
+                        await context.bot.send_message(
+                            chat_id=chat_id,
+                            text=battle_message,
+                            reply_markup=reply_markup,
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception as send_error:
+                        logger.error(f"Failed to send new battle message: {send_error}")
+                else:
+                    raise        # Start timeout in background
+        asyncio.create_task(battle_timeout(user_id, query, battle, context))
+        
+        # Log performance metrics for optimization tracking (only 5% of the time)
+        if random.random() < 0.05:
+            end_time = time.time()
+            logger.info(f"[PERF] Battle action took {end_time - start_time:.3f}s")
+    finally:
+        # Release the action lock when done
+        pass
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the end of a battle, updating gas and rewards."""
