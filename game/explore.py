@@ -311,9 +311,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if verification is still being requested after checking database
     if await _check_verification_required(player, user_id_str, context):
-        # If the player has a last_verified time that's recent, consider them verified
-        last_verified = getattr(player, "last_verified", 0)
-        if last_verified and (now - last_verified) < 600:  # 10 minutes
+        # Force fresh fetch from DB in case user just verified
+        player_fresh = await db.get_player(user_id_str)
+        player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
+        last_verified_fresh = getattr(player_fresh, "last_verified", 0)
+        now_fresh = time.time()
+        if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
             context.user_data["hcaptcha_prompted"] = False
             await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
             # Update player verification status (non-blocking)
