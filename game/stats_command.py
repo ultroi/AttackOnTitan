@@ -192,31 +192,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args and context.args[0] == "users":
         await stats_users_command(update, context)
         return
-# Mod-only command for /stats users
-@mod_only
-async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    db = context.bot_data.get("db")
-    if not db:
-        await update.message.reply_text("Error: Database not initialized.")
-        return
-    try:
-        users_cursor = db.players.find({}, {"name": 1, "user_id": 1, "username": 1})
-        users = await users_cursor.to_list(length=10000)
-        if not users:
-            await update.message.reply_text("No users found.")
-            return
-        user_lines = []
-        for user in users:
-            user_id = user.get("user_id", "N/A")
-            name = user.get("name", "Unknown")
-            user_lines.append(f"{name} - {user_id}")
-        user_list_text = "\n".join(user_lines)
-        await update.message.reply_text(f"<b>All Users:</b>\n<code>{user_list_text}</code>", parse_mode="HTML")
-    except Exception as e:
-        logger.error(f"Error in /stats users: {e}", exc_info=True)
-        await update.message.reply_text("An error occurred while fetching users.")
-
+        
     # Start typing indicator
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
 
@@ -258,8 +234,8 @@ async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         message = (
             f"<b>Total Users:</b> <code>{total_users}</code>\n"
             f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
-            f" <b>WEEKLY TOP EXPLORERS</b>:\n{weekly_explorers_text}\n\n"
-            f" <b>DAILY TOP EXPLORERS</b> :\n{daily_explorers_text}\n\n"
+            f" <b>WEEKLY TOP EXPLORERS:</b>\n{weekly_explorers_text}\n\n"
+            f" <b>DAILY TOP EXPLORERS:</b> :\n{daily_explorers_text}\n\n"
         )
 
         await update.message.reply_text(message, parse_mode="HTML")
@@ -267,6 +243,30 @@ async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.error(f"Error in stats_command: {e}", exc_info=True)
         await update.message.reply_text("An error occurred while processing the command.")
+# Mod-only command for /stats users
+@mod_only
+async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    db = context.bot_data.get("db")
+    if not db:
+        await update.message.reply_text("Error: Database not initialized.")
+        return
+    try:
+        users_cursor = db.players.find({}, {"name": 1, "user_id": 1, "username": 1})
+        users = await users_cursor.to_list(length=10000)
+        if not users:
+            await update.message.reply_text("No users found.")
+            return
+        user_lines = []
+        for user in users:
+            user_id = user.get("user_id", "N/A")
+            name = user.get("name", "Unknown")
+            user_lines.append(f"{name} - {user_id}")
+        user_list_text = "\n".join(user_lines)
+        await update.message.reply_text(f"<b>All Users:</b>\n<code>{user_list_text}</code>", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error in /stats users: {e}", exc_info=True)
+        await update.message.reply_text("An error occurred while fetching users.")
 
 # Hook into the explore command to track statistics
 async def track_explore_stats(user_id: str, name: str, battle_completed: bool = False):
