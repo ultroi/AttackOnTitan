@@ -384,8 +384,9 @@ def include_dashboard_route(app):
 
         # Check if already verified
         if player and player.get("hcaptcha_verified"):
-            start_time = player.get("hcaptcha_start_time", 0)
-            if now - start_time <= HCAPTCHA_TIMEOUT:
+            start_time = player.get("hcaptcha_start_time")
+            # Add None check before comparison
+            if start_time is not None and now - start_time <= HCAPTCHA_TIMEOUT:
                 return templates.TemplateResponse(
                     "already_verified.html",
                     {"request": request, "user_id": user_id}
