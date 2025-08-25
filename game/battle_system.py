@@ -1321,23 +1321,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         # Always send level up messages instantly
         if char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
-                stat_names = ["ATK", "DEF", "ACC", "INT", "SPD"]
-                stat_lines = []
-                for stat in stat_names:
-                    # Try multiple key formats to handle case sensitivity
-                    old = level_up.get(f"old_{stat.lower()}") or level_up.get(f"old_{stat}") or level_up.get(f"old{stat}")
-                    new = level_up.get(f"new_{stat.lower()}") or level_up.get(f"new_{stat}") or level_up.get(f"new{stat}")
-                    
-                    # Convert to integers if they're strings or ensure both are integers
-                    try:
-                        old_val = int(old) if old is not None else None
-                        new_val = int(new) if new is not None else None
-                        if old_val is not None and new_val is not None and new_val > old_val:
-                            stat_lines.append(f"<b>{stat}:</b> {old_val} ➜ {new_val} (<b>+{new_val-old_val}</b>)")
-                    except (ValueError, TypeError):
-                        # Skip this stat if conversion fails
-                        pass
-                msg = [
+                # Debug logging to understand what's in the level_up dictionary
+                logger.info(f"Level up data: {level_up}")
+                
+                stat_names                msg = [
                     f"🎊 <b>{battle.character.name} leveled Up !!</b>",
                     f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
                 ]

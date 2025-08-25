@@ -82,7 +82,7 @@ async def safe_edit_message_text(message: Message, text: str, reply_markup=None,
             
             # Rate limit if too many edits
             last_edit = _last_edit_time.get(message_key, 0)
-            min_interval = 0.3  # Base throttling - minimum 300ms between edits
+            min_interval = 0.8
             
             # Apply progressive throttling for spam protection
             if _edit_counters[message_key]["count"] > 3:
