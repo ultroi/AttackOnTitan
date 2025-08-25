@@ -50,7 +50,7 @@ from utils.fastapi_dashboard import include_dashboard_route
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command, convert_command
-from game.explore import explore, close_keyboard, reset_verify
+from game.explore import explore, close_keyboard, reset_verify, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
@@ -636,6 +636,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("start", start_character_selection))
     app_instance.add_handler(CommandHandler("inv", profile))
     app_instance.add_handler(CommandHandler("explore", explore))
+    app_instance.add_handler(CommandHandler("open", open_keyboard))
     app_instance.add_handler(CommandHandler("close", close_keyboard))
     app_instance.add_handler(CommandHandler("resetverify", reset_verify))
     app_instance.add_handler(CommandHandler("map", show_map))

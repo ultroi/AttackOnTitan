@@ -190,7 +190,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # /stats users: only mods can use
     if context.args and context.args[0] == "users":
-        return await stats_users_command(update, context)
+        await stats_users_command(update, context)
+        return
 # Mod-only command for /stats users
 @mod_only
 async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

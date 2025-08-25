@@ -165,6 +165,34 @@ async def reset_explore_timer(user_id, db):
     logger.info(f"Reset explore timer for user {user_id}")
     return True
 
+
+@maintenance_protected
+@ban_protected
+async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /open command to show the keyboard for exploring."""
+    
+    if not update.effective_chat or update.effective_chat.type != "private":
+        await update.message.reply_text("This command can only be used in private chats.")
+        return
+    
+    # Create a persistent keyboard with explore and close buttons
+    keyboard = [["/explore", "/close"]]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    
+    # Set flag to prevent showing keyboard multiple times
+    if context.user_data is not None:
+        context.user_data["persistent_keyboard_sent"] = True
+    
+    # Show keyboard to user
+    await update.message.reply_text(
+        "Keyboard opened. You can use these buttons to explore or close the keyboard.",
+        reply_markup=reply_markup
+    )
+
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Close the persistent keyboard menu."""
@@ -269,11 +297,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Fetch only required fields for player (minimize payload)
     player_task = db.get_player(user_id_str, fields=["level", "team", "location", "unlocked_areas", "hcaptcha_verified", "last_explore_time", "explore_start_time", "last_verified"])
-
-    # Show persistent keyboard in the background - non-blocking
-    if context.user_data is not None and not context.user_data.get("persistent_keyboard_sent"):
-        context.user_data["persistent_keyboard_sent"] = True
-        asyncio.create_task(_show_keyboard_background(update))
 
     is_in_battle = _is_in_battle(user_id_str)
 
