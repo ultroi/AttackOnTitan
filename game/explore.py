@@ -218,7 +218,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     now_ms = time.time()
     last_explore = user_last_explore.get(user_id_str, 0)
-    if now_ms - last_explore < 1.0:
+    if now_ms - last_explore < 1.2:
         # Ignore repeated /explore within 1 second
         return
     user_last_explore[user_id_str] = now_ms
