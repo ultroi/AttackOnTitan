@@ -84,11 +84,12 @@ async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_
     keyboard = []
     row = []
     
+    command_user_id = str(update.effective_user.id) if update.effective_user else ""
     for i, mission in enumerate(current_page_missions):
         if i % 3 == 0 and i > 0:
             keyboard.append(row)
             row = []
-        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_view_{mission.id}"))
+        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_view_{mission.id}_{command_user_id}"))
     
     if row:
         keyboard.append(row)
@@ -96,10 +97,10 @@ async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_
     # Add navigation buttons if needed
     nav_row = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"mission_page_{page-1}"))
+        nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"mission_page_{page-1}_{command_user_id}"))
     
     if end_idx < len(available_missions):
-        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"mission_page_{page+1}"))
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"mission_page_{page+1}_{command_user_id}"))
     
     if nav_row:
         keyboard.append(nav_row)
@@ -149,12 +150,13 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard = []
     row = []
     
+    command_user_id = str(update.effective_user.id) if update.effective_user else ""
     for i, mission_data in enumerate(active_missions):
         mission = mission_data["definition"]
         if i % 3 == 0 and i > 0:
             keyboard.append(row)
             row = []
-        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}"))
+        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}_{command_user_id}"))
     
     if row:
         keyboard.append(row)
@@ -225,8 +227,9 @@ async def show_mission_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
                 message += "\n*Time Expired!*"
     
     # Create keyboard with cancel button and back button
+    command_user_id = str(update.effective_user.id) if update.effective_user else ""
     keyboard = [
-        [InlineKeyboardButton("❌ Cancel Mission", callback_data=f"mission_cancel_{mission_id}")]
+        [InlineKeyboardButton("❌ Cancel Mission", callback_data=f"mission_cancel_{mission_id}_{command_user_id}")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -267,12 +270,13 @@ async def show_mission_view(update: Update, context: ContextTypes.DEFAULT_TYPE,
         message += f"\n*Time Limit:* {mission.time_limit_hours} hours"
     
     # Create keyboard with accept/decline buttons
+    command_user_id = str(update.effective_user.id) if update.effective_user else ""
     keyboard = [
         [
-            InlineKeyboardButton("✅ Accept", callback_data=f"mission_accept_{mission_id}"),
-            InlineKeyboardButton("❌ Decline", callback_data="mission_available")
+            InlineKeyboardButton("✅ Accept", callback_data=f"mission_accept_{mission_id}_{command_user_id}"),
+            InlineKeyboardButton("❌ Decline", callback_data=f"mission_available_{command_user_id}")
         ],
-        [InlineKeyboardButton("⬅️ Back to Available Missions", callback_data="mission_available")]
+        [InlineKeyboardButton("⬅️ Back to Available Missions", callback_data=f"mission_available_{command_user_id}")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -309,38 +313,36 @@ async def missions_callback_handler(update: Update, context: ContextTypes.DEFAUL
     
     # Parse callback data
     callback_data = query.data
-    
+    # Extract user_id from callback_data if present (always last part after last '_')
+    parts = callback_data.split('_')
+    cb_user_id = parts[-1] if parts[-1].isdigit() else None
+    # If callback is not for this user, block access
+    if cb_user_id and cb_user_id != user_id:
+        await query.answer("Only the user who issued the command can use these buttons.", show_alert=True)
+        return
+
+    # Remove user_id from callback_data for action parsing
+    if cb_user_id:
+        callback_data = '_'.join(parts[:-1])
+
     # Handle different callback actions
     if callback_data == "mission_available":
-        # Show available missions
         await show_available_missions(update, context, player, db)
-    
     elif callback_data == "mission_active":
-        # Show active missions
         await show_active_missions(update, context, player, db)
-    
     elif callback_data.startswith("mission_page_"):
-        # Handle pagination
         page = int(callback_data.split("_")[-1])
         await show_available_missions(update, context, player, db, page)
-    
     elif callback_data.startswith("mission_view_"):
-        # Show mission details with accept/decline options
         mission_id = int(callback_data.split("_")[-1])
         await show_mission_view(update, context, mission_id, player, db)
-    
     elif callback_data.startswith("mission_detail_"):
-        # Show active mission details with cancel option
         mission_id = int(callback_data.split("_")[-1])
         await show_mission_detail(update, context, mission_id, player, db)
-    
     elif callback_data.startswith("mission_accept_"):
-        # Accept a mission
         mission_id = int(callback_data.split("_")[-1])
         success, message = await start_mission(db, player, mission_id)
-        
         if success:
-            # Refresh player data after mission started
             player = await db.get_player(user_id)
             await query.edit_message_text(
                 f"✅ {message}\n\nUse /missions to check your mission progress.",
@@ -348,17 +350,11 @@ async def missions_callback_handler(update: Update, context: ContextTypes.DEFAUL
             )
         else:
             await query.answer(message)
-    
     elif callback_data.startswith("mission_cancel_"):
-        # Cancel a mission
         mission_id = int(callback_data.split("_")[-1])
         success, message = await cancel_mission(db, player, mission_id)
-        
         if success:
-            # Refresh player data after mission cancelled
             player = await db.get_player(user_id)
-            
-            # Show active missions or available missions if none active
             active_missions = await get_active_missions(db, player)
             if active_missions:
                 await show_active_missions(update, context, player, db, active_missions)
