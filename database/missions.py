@@ -294,7 +294,7 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
                     return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
             
             # If progress updated but not completed yet
-            return f"📝 Mission progress updated: {current_progress}/{mission_progress['required_progress']}"
+            return None
     
     return None  # No matching active mission found
 
