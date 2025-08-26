@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import pytz
 from typing import List
 from database.models import BankAccount, Player 
 
@@ -53,11 +54,15 @@ class BankSystem:
         player.crystal -= BANK_OPEN_FEE['crystal']
         await self.db.save_player(player)
 
+        # Use IST timezone for all time calculations
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+
         # Create and save the new bank account
         new_account = BankAccount(
             user_id=player.user_id,
             opened=True,
-            opened_at=datetime.now(),
+            opened_at=now_ist,
             penalty_rate=PENALTY_BASE
         )
         await self.db.save_bank_account(new_account)
@@ -74,7 +79,8 @@ class BankSystem:
         bank_balance_field = f"{currency}_balance"
         setattr(account, bank_balance_field, getattr(account, bank_balance_field) + amount)
 
-        account.last_deposit = datetime.now()
+        ist = pytz.timezone('Asia/Kolkata')
+        account.last_deposit = datetime.now(ist)
 
         # Save both objects to the database
         await self.db.save_player(player)
@@ -186,15 +192,18 @@ class BankSystem:
         return tax_info
 
     def apply_opening_penalty(self, player: Player, account: BankAccount) -> str:
-        # Penalty starts 1 week after crossing level 15
+        # Use IST timezone for all time calculations
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
+        # Penalty starts 3 days after crossing level 15
         if not account.opened and player.level >= BANK_OPEN_LEVEL:
             if account.penalty_start_date is None:
-                account.penalty_start_date = datetime.now() + timedelta(days=7)
+                account.penalty_start_date = now_ist + timedelta(days=3)
                 self.db.save_bank_account(account)
-                return "Penalty period will start in 7 days."
-            if datetime.now() >= account.penalty_start_date:
+                return "Penalty period will start in 3 days."
+            if now_ist >= account.penalty_start_date:
                 # Calculate penalty rate
-                days_since_start = (datetime.now() - account.penalty_start_date).days
+                days_since_start = (now_ist - account.penalty_start_date).days
                 penalty_rate = PENALTY_BASE + days_since_start * PENALTY_DAILY_INCREASE
                 # Deduct penalty from player inventory
                 player.marks = int(player.marks * (1 - penalty_rate / 100))
@@ -209,9 +218,12 @@ class BankSystem:
 
 
     def get_current_tax_rate(self, account: BankAccount):
+        # Use IST timezone for all time calculations
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist)
         # Returns current penalty/tax rate for player
         if account.penalty_start_date and not account.opened:
-            days_since_start = (datetime.now() - account.penalty_start_date).days
+            days_since_start = (now_ist - account.penalty_start_date).days
             return PENALTY_BASE + days_since_start * PENALTY_DAILY_INCREASE
         return 0.0
 
@@ -219,18 +231,19 @@ class BankSystem:
         """Apply midnight tax to all eligible players."""
         import logging
         logger = logging.getLogger("bank_system")
-        
+
         tax_reports = []
         all_players = await self.db.get_all_players()
         central_bank = await self.db.get_bank_account("central_bank")
-        
+
         # Get current datetime for comparison
-        now = datetime.now()
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
         today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
+
         logger.info(f"Starting midnight tax check at {now}")
         logger.info(f"Today's date for comparison: {today}")
-        
+
         # Initialize central bank if it doesn't exist
         if not central_bank:
             logger.info("Creating central bank account")
@@ -249,19 +262,19 @@ class BankSystem:
         if central_bank.last_tax_check:
             last_check_date = central_bank.last_tax_check.date() if hasattr(central_bank.last_tax_check, 'date') else central_bank.last_tax_check
             current_date = today.date()
-            
+
             logger.info(f"Last tax check: {last_check_date}, Current date: {current_date}")
-            
+
             if str(last_check_date) == str(current_date):
                 logger.info("Tax already applied today, skipping")
                 return []
         else:
             logger.info("No previous tax check found, proceeding with tax collection")
-        
+
         # Track total tax collected
         total_tax_collected = {"marks": 0, "valor": 0, "crystal": 0}
         players_taxed = 0
-        
+
         logger.info(f"Processing {len(all_players)} players for tax collection")
 
         # Process each player
@@ -272,37 +285,37 @@ class BankSystem:
 
             tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}
             tax_applied = False
-            
+
             # Check if player meets minimum level requirement for taxation (level 15+)
             if player.level < 15:
                 logger.debug(f"Player {player.user_id} (level {player.level}) is below level 15, skipping taxation")
                 continue
-                
+
             # Check each currency for tax eligibility
             for currency in ["marks", "valor", "crystal"]:
                 player_balance = getattr(player, currency, 0)
-                
+
                 logger.debug(f"Player {player.user_id} - {currency}: {player_balance} (threshold: {TAX_THRESHOLDS[currency]})")
-                
+
                 if player_balance > TAX_THRESHOLDS[currency]:
                     # Calculate tax
                     tax_amount = int(player_balance * TAX_RATE)
-                    
+
                     logger.info(f"Taxing player {player.user_id}: {tax_amount} {currency}")
-                    
+
                     # Deduct tax from player's inventory
                     new_balance = player_balance - tax_amount
                     setattr(player, currency, new_balance)
-                    
+
                     # Add tax to central bank
                     bank_balance_field = f"{currency}_balance"
                     current_bank_balance = getattr(central_bank, bank_balance_field, 0)
                     setattr(central_bank, bank_balance_field, current_bank_balance + tax_amount)
-                    
+
                     # Record tax information
                     tax_report["taxes"][currency] = tax_amount
                     total_tax_collected[currency] += tax_amount
-                    
+
                     # Add user message for this currency
                     tax_report["messages"].append(
                         f"💸 Tax Alert: `{tax_amount}` {currency} has been deducted from your inventory as tax."
@@ -312,59 +325,59 @@ class BankSystem:
             # Save player data and record tax if applied
             if tax_applied:
                 players_taxed += 1
-                
+
                 # Initialize tax history if it doesn't exist
                 if not hasattr(player, 'tax_history') or player.tax_history is None:
                     player.tax_history = []
-                
+
                 # Add tax record to player's history
                 tax_record = {
                     "date": today.isoformat(),
                     "taxes": tax_report["taxes"]
                 }
-                
+
                 # Keep only last 10 records
                 if isinstance(player.tax_history, list):
                     player.tax_history = player.tax_history[-9:] + [tax_record]
                 else:
                     player.tax_history = [tax_record]
-                
+
                 # Save player with updated balances and history
                 try:
                     await self.db.save_player(player)
                     logger.info(f"Successfully saved player {player.user_id} after tax collection")
                 except Exception as e:
                     logger.error(f"Error saving player {player.user_id}: {e}")
-                
+
                 tax_reports.append(tax_report)
 
         # Update central bank with tax collection info
         central_bank.last_tax_check = today
-        
+
         # Initialize central bank tax history if needed
         if not hasattr(central_bank, 'tax_history') or central_bank.tax_history is None:
             central_bank.tax_history = []
-        
+
         # Add tax collection record
         tax_record = {
             "date": today.isoformat(),
             "total_collected": total_tax_collected,
             "players_taxed": players_taxed
         }
-        
+
         # Keep only last 10 records
         if isinstance(central_bank.tax_history, list):
             central_bank.tax_history = central_bank.tax_history[-9:] + [tax_record]
         else:
             central_bank.tax_history = [tax_record]
-        
+
         # Save central bank changes
         try:
             await self.db.save_bank_account(central_bank)
             logger.info(f"Central bank updated successfully. Total collected: {total_tax_collected}")
         except Exception as e:
             logger.error(f"Error saving central bank: {e}")
-        
+
         logger.info(f"Tax collection completed. Taxed {players_taxed} players. Total: {total_tax_collected}")
         return tax_reports
 
@@ -379,7 +392,8 @@ class BankSystem:
         central_bank = await self.db.get_bank_account("central_bank")
         if central_bank:
             # Set to yesterday to force execution
-            yesterday = datetime.now() - timedelta(days=1)
+            ist = pytz.timezone('Asia/Kolkata')
+            yesterday = datetime.now(ist) - timedelta(days=1)
             central_bank.last_tax_check = yesterday
             await self.db.save_bank_account(central_bank)
             logger.info(f"Reset central bank last_tax_check to {yesterday}")
