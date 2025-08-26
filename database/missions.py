@@ -241,18 +241,13 @@ async def get_available_missions(db, player):
     
     available_missions = []
     for mission in MISSION_DEFINITIONS:
-        # Check level requirement
-        if player.level < mission.unlock_level:
-            continue
-            
+        # No level requirement: show all missions
         # Check if mission already completed
         if mission.id in completed_missions:
             continue
-            
         # Check prerequisites
         if all(prereq in completed_missions for prereq in mission.prerequisite_missions):
             available_missions.append(mission)
-            
     return available_missions
 
 async def get_active_missions(db, player):
@@ -311,9 +306,7 @@ async def start_mission(db, player, mission_id: int):
         
     mission = MISSIONS_BY_ID[mission_id]
     
-    # Check if player meets level requirement
-    if player.level < mission.unlock_level:
-        return False, f"You need to be level {mission.unlock_level} to start this mission"
+    # No level requirement: allow starting any mission
     
     # Check if player already has this mission active or completed
     player_missions = getattr(player, "missions", [])

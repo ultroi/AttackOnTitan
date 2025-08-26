@@ -78,6 +78,17 @@ class Database:
             # Test the connection
             await self.db.command('ping')
             
+            # --- AUTO DROP UNIQUE INDEX ON TITAN NAME (if exists) ---
+            try:
+                titan_indexes = await self.titans.index_information()
+                for idx_name, idx_info in titan_indexes.items():
+                    # Drop any unique index on 'name' field (single or compound)
+                    if idx_info.get('unique') and (('name', 1) in idx_info.get('key', []) or idx_info.get('key', []) == [('name', 1)]):
+                        logger.warning(f"Dropping unique index on titans: {idx_name}")
+                        await self.titans.drop_index(idx_name)
+            except Exception as e:
+                logger.warning(f"Could not drop unique index on titans.name: {e}")
+
             # Create indexes for faster queries
             # We'll make this more fault-tolerant by continuing if one index creation fails
             try:
