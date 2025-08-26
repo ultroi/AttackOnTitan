@@ -500,6 +500,12 @@ def calculate_gas_consumption(titan: Titan) -> int:
 def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['BattleSystem'] = None) -> None:
     """Clean up battle state and resources, remove from active battles."""
     user_id = str(user_id)
+    
+    # Skip cleanup for timeout_cancelled as this is a normal part of the battle flow
+    if result == "timeout_cancelled":
+        logger.info(f"Skipping battle cleanup for timeout_cancelled event for user {user_id}")
+        return
+        
     async def _cleanup():
         async with active_battles_lock:
             battle_instance = battle or active_battles.get(user_id)
@@ -843,8 +849,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode=ParseMode.HTML
     )
     
-    # Start timeout in background
-    asyncio.create_task(battle_timeout(user_id, query, battle, context))
+    # Start timeout in background and set it to battle
+    battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
     
     # Log performance metrics occasionally
     if random.random() < 0.1:  # Log only 10% of the time to reduce overhead
@@ -988,10 +994,12 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         full_message = []
         effects = {}
         
-        # Cancel timeout if exists
-        if battle.timeout_task:
+        # Cancel timeout if exists, but don't set to None yet
+        # as we need to properly handle the cancellation
+        if battle.timeout_task and not battle.timeout_task.done():
             battle.timeout_task.cancel()
-            battle.timeout_task = None
+            # Wait a small amount of time for the task to properly cancel
+            await asyncio.sleep(0.1)
         
         # Mark keyboard cache as invalid since state will change
         battle.keyboard_cache_invalid = True
@@ -1184,7 +1192,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 else:
                     # Just log any other errors rather than raising - keeps the UI functional
                     logger.error(f"Error editing message: {e}")        # Start timeout in background
-        asyncio.create_task(battle_timeout(user_id, query, battle, context))
+        # Create new timeout task and assign it to battle
+        battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
         
         # Log performance metrics for optimization tracking (only 5% of the time)
         if random.random() < 0.05:
@@ -1601,7 +1610,8 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                 cleanup_battle(user_id, "timeout", battle)
     except asyncio.CancelledError:
         logger.debug(f"Battle timeout cancelled for user {user_id}")
-        cleanup_battle(user_id, "timeout_cancelled", battle)
+        # Don't cleanup battle on timeout cancellation, as this is normal when setting a new timeout
+        # cleanup_battle(user_id, "timeout_cancelled", battle)
     except Exception as e:
         logger.error(f"Error in battle_timeout for user {user_id}: {e}")
         cleanup_battle(user_id, "timeout_error", battle)
