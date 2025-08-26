@@ -657,7 +657,6 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• When Referee reaches level 50, Referrer gets 2 Titan Crystals.\n\n"
         "<b>[©] Mass Share Milestones</b>\n"
         "• 2 Titan Crystals for 10 referrals.\n"
-        "• 20 Titan Crystals for 50 referrals.\n"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
