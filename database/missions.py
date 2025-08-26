@@ -497,3 +497,141 @@ async def add_mission_item(db, player, item_key):
     
     # Mission not active, just add to inventory
     return True, f"Found {item_data['emoji']} {item_data['name']}! Added to inventory."
+
+# Function to process explore mission progress
+async def process_explore_mission_progress(db, player, area=None):
+    """Update mission progress related to exploration"""
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        mission = MISSIONS_BY_ID.get(mission_id)
+        
+        if not mission:
+            continue
+            
+        # Mission 1: Scout's First March (150 explores outside starting district)
+        if mission_id == 1 and area and area != "Trost District":
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 9: Endurance Run (500 explores without returning home)
+        if mission_id == 9:
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+    
+    return notifications
+
+# Function to process mission progress for PVP battles
+async def process_pvp_mission_progress(db, player, won=True):
+    """Update mission progress related to PvP battles"""
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    # Check if won is True, as we only count wins for the mission
+    if not won:
+        return notifications
+        
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        
+        # Mission 4: Sparring Rounds (Win 3 player battles in one day)
+        if mission_id == 4:
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 15: Temporal Gambit - requires specific handling in pvp_system.py
+        # to check if Time Contract Scroll is active
+    
+    return notifications
+
+# Function to process mission progress for Titan rewards
+async def process_titan_reward_mission_progress(db, player, marks_earned):
+    """Update mission progress related to earning marks from Titans"""
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        
+        # Mission 3: Light Purse, Heavy Steps (Accumulate 10,000 Marks from Titans)
+        if mission_id == 3:
+            notification = await update_mission_progress(db, player, mission_id, marks_earned)
+            if notification:
+                notifications.append(notification)
+    
+    return notifications
+
+# Function to process mission progress for travel actions
+async def process_travel_mission_progress(db, player, from_location, to_location):
+    """Update mission progress related to travel"""
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        
+        # Mission 6: Travel Test (Move between two adjacent checkpoints)
+        if mission_id == 6:
+            # We consider any travel as completing this mission
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 13: March of the Walls (Travel from outer district to Stohess)
+        if mission_id == 13 and to_location == "Stohess District":
+            # This mission requires special handling in travel_system.py
+            # to track if 3 checkpoints have been crossed
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+    
+    return notifications
+
+# Function to process mission progress for item usage
+async def process_item_use_mission_progress(db, player, item_key):
+    """Update mission progress related to using items"""
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        
+        # Mission 2: Marksman in Training (Use Training Dummy 1 time)
+        if mission_id == 2 and item_key == "training_dummy":
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 7: First Bounty Attempt (Use 1 Bounty Permit)
+        if mission_id == 7 and item_key == "bounty_permit":
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 10: Tactician's Notes (Use Battle Journal 3 times)
+        if mission_id == 10 and item_key == "battle_journal":
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+    
+    return notifications

@@ -687,14 +687,27 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = str(update.effective_user.id)
     current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
     
-    # Fast path for mismatched battle IDs
-    if callback_data != current_battle_id:
-        return 
+    # Fast path for mismatched battle IDs or used battle IDs
+    if callback_data != current_battle_id or (callback_data and callback_data.startswith("used_")):
+        # Inform user that the button has already been used
+        await query.answer("This battle button has already been used. Please explore again.", show_alert=True)
+        return
+        
+    # Also check if this user has already started a battle with this titan
+    if f"titan_battle_started_{user_id}" in context.bot_data:
+        # Check if the battle was started recently
+        last_battle_time = context.bot_data.get(f"titan_battle_started_{user_id}", 0)
+        if time.time() - last_battle_time < 300:  # Within 5 minutes
+            await query.answer("You're already in battle. Please finish your current battle first.", show_alert=True)
+            return
     
     # Validate battle format
     if not callback_data or not callback_data.startswith("battle_"):
         await query.edit_message_text("Invalid battle request.")
         return
+        
+    # Immediately invalidate the battle ID to prevent duplicate use
+    context.bot_data[f"active_battle_id_{user_id}"] = f"used_{current_battle_id}"
     
     # Cancel any pending titan timeouts
     titan_timeout_key = f"titan_timeout_{user_id}"
@@ -818,8 +831,13 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Join all parts at once for better performance
     battle_message = "\n".join(message_parts)
     
-    # Edit message with complete content
-    await query.edit_message_text(
+    # Send a new message with the battle UI instead of editing the original message
+    # This way the original battle button becomes inactive and the battle UI appears in a new message
+    chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
+    
+    # Send the battle UI in a new message
+    await context.bot.send_message(
+        chat_id=chat_id,
         text=battle_message,
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
@@ -832,6 +850,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if random.random() < 0.1:  # Log only 10% of the time to reduce overhead
         end_time = time.time()
         logger.info(f"[PERF] Battle start took {end_time - start_time:.3f}s")
+        
+    # Add a record to track that this user has started a battle with this titan
+    # This prevents multiple battles from being started with the same titan
+    context.bot_data[f"titan_battle_started_{user_id}"] = time.time()
 
 # Helper function to move tracking to background
 async def _track_battle_start(user_id, effective_user, battle):
@@ -1522,9 +1544,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         pass
 
     
-    # # Clear active battle id so user can explore again
+    # Clear active battle id so user can explore again
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
+    
+    # Clear the battle started flag so user can start new battles
+    if f"titan_battle_started_{user_id}" in context.bot_data:
+        del context.bot_data[f"titan_battle_started_{user_id}"]
+        
     # Remove cached battle data after battle ends
     if hasattr(context, "user_data") and isinstance(context.user_data, dict):
         context.user_data.pop("battle_cache", None)
@@ -1555,6 +1582,10 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                     except Exception as e:
                         logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
                     try:
+                        # Clear the battle started flag so user can start new battles
+                        if f"titan_battle_started_{user_id}" in context.bot_data:
+                            del context.bot_data[f"titan_battle_started_{user_id}"]
+                            
                         await query.edit_message_text(
                             "⏰ Battle Expired ⏰\n\n"
                             "You didn't respond in time. The battle has expired.\n"

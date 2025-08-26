@@ -3,7 +3,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 
 from utils.maintenance import maintenance_protected
@@ -13,6 +13,9 @@ from database.missions import (
     MISSIONS_BY_ID, MISSION_DEFINITIONS,
     get_available_missions, get_active_missions, 
     start_mission, cancel_mission, update_mission_progress,
+    process_explore_mission_progress, process_pvp_mission_progress,
+    process_titan_reward_mission_progress, process_travel_mission_progress,
+    process_item_use_mission_progress,
     MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED
 )
 

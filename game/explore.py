@@ -18,7 +18,10 @@ from uuid import uuid4
 from game.stats_command import track_explore_stats
 
 # Import mission-related functions
-from database.missions import check_mission_item_drops, add_mission_item, process_explore_mission_progress
+from database.missions import (
+    check_mission_item_drops, add_mission_item, 
+    process_explore_mission_progress
+)
 
 logger = logging.getLogger(__name__)
 
@@ -488,11 +491,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Prepare minimal battle UI
     battle_id_key = f"active_battle_id_{user_id}"
-    if battle_id_key in context.bot_data:
-        battle_id = context.bot_data[battle_id_key]
-    else:
-        battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
-        context.bot_data[battle_id_key] = battle_id
+    # Always generate a new battle ID for each explore to ensure old buttons don't work
+    # This ensures any previous battle buttons are invalidated
+    battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
+    context.bot_data[battle_id_key] = battle_id
 
     # Minimal inline keyboard
     keyboard = [[InlineKeyboardButton("⚔️ Battle", callback_data=battle_id)]]
