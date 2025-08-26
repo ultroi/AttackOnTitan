@@ -1,4 +1,3 @@
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -9,7 +8,7 @@ from html import escape
 from datetime import datetime, timezone
 import logging
 import asyncio
-from game.battle_system import active_battles
+from game.battle_system import active_battles, cleanup_battle
 from utils.ban_utils import ban_protected
 from utils.maintenance import maintenance_protected
 
@@ -35,6 +34,8 @@ ALLOWED_CHARACTERS = set(CHARACTERS)
 @ban_protected
 async def start_character_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id) if update.effective_user else None
+    # Emergency cleanup: remove any active battle for this user
+    cleanup_battle(user_id, "force_reset")
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
 

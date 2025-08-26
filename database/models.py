@@ -341,50 +341,72 @@ class DailyExplores(BaseModel):
     count: int
 
 class Player(BaseModel):
+    # Basic player information
     user_id: str
     username: str
     name: str
     level: int = 1
     xp: int = 0
     total_xp: int = 0
-    gas: int = 1000
-    crystal: int = 0
-    valor: int = 0
+    
+    # Currencies
     marks: int = 0
-    explore_count: int = 0
+    valor: int = 0
+    crystal: int = 0
+    gas: int = 1000
+    
+    # Location and travel
+    location: str = ""
+    travel: dict = Field(default_factory=dict)
+    unlocked_areas: List[str] = Field(default_factory=list)
+    
+    # Characters and team
     owned_characters: List[str] = Field(default_factory=list)
-    location: str = ""  # Add location to Player, set on creation
-    travel: dict = Field(default_factory=dict)  # Add travel state
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    team: List[TeamMember] = Field(default_factory=list)
+    
+    # Progression tracking
+    explore_count: int = 0
+    daily_explores: List[DailyExplores] = Field(default_factory=list)
+    completed_quests: List[str] = Field(default_factory=list)
+    missions: List[Dict[str, Any]] = Field(default_factory=list)
+    
+    # Inventory and shop
+    inventory: Dict[str, Any] = Field(default_factory=dict)
+    shop_refresh_date: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
+    shop_refresh_count: int = 0
+    
+    # Daily bonuses
     daily_streak: int = 0
     last_daily_claim: Optional[datetime] = None
-    inventory: Dict[str, Any] = Field(default_factory=dict)
-    unlocked_areas: List[str] = Field(default_factory=list)
-    completed_quests: List[str] = Field(default_factory=list)
-    team: List[TeamMember] = Field(default_factory=list)
-    guild_id: Optional[int] = None
     double_exp_end: Optional[datetime] = None
-    daily_explores: List[DailyExplores] = Field(default_factory=list)
-    shop_refresh_date: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
-    shop_refresh_count: int = 0  # Added to track manual shop refreshes
-    referral_code: Optional[str] = None  # Unique code for sharing
-    referred_by: Optional[str] = None    # Referral code of the referrer
-    referral_count: int = 0              # Number of successful referrals
-    tax_history: List[dict] = []
-    referral_milestones: Dict[str, bool] = Field(default_factory=dict)  # Track milestone rewards
-    hcaptcha_verified: Optional[bool] = False
-    hcaptcha_start_time: Optional[float] = None
-    explore_start_time: Optional[float] = None
-    last_explore_time: Optional[float] = None
+    
+    # Guild
+    guild_id: Optional[int] = None
+    
+    # Referral system
+    referral_code: Optional[str] = None
+    referred_by: Optional[str] = None
+    referral_count: int = 0
+    referral_milestones: Dict[str, bool] = Field(default_factory=dict)
+    
     # PvP related fields
     pvp_wins: int = 0
     pvp_losses: int = 0
     battle_rating: int = 1000
-    pvp_matches: List[Dict[str, Any]] = Field(default_factory=list)  # Store recent match history
+    pvp_matches: List[Dict[str, Any]] = Field(default_factory=list)
+    
+    # Anti-abuse and taxation
+    tax_history: List[dict] = Field(default_factory=list)
+    hcaptcha_verified: Optional[bool] = False
+    hcaptcha_start_time: Optional[float] = None
+    explore_start_time: Optional[float] = None
+    last_explore_time: Optional[float] = None
+    
+    # Timestamps
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
-
     def xp_to_next_level(self) -> int:
         """Calculate XP needed for next level (no cap)"""
         if self.level < 50:
@@ -394,75 +416,7 @@ class Player(BaseModel):
         elif self.level < 500:
             return 50000 + (self.level * 500)
         else:
-            return 90000 + (self.level * 1000)  # Start at ~250k, increase by 200 per level
-
-    def calculate_exp_gain(self, action: str, amount: int = 1) -> int:
-        """Calculate EXP gain from various actions"""
-        base_exp = {
-            'titan_kill': random.randint(10, 20),
-            'pvp_win': 30,
-            'pvp_loss': 15,
-            'shop_purchase': random.randint(10, 15),
-            'daily_explore': 50,
-            'achievement': random.randint(100, 500)
-        }.get(action, 0) * amount
-        
-        # Apply boosts
-        total_exp = base_exp
-        
-        # Double EXP weekend
-        if self.double_exp_end and datetime.now(timezone.utc) < self.double_exp_end:
-            total_exp *= 2
-            
-        # Guild bonus
-        if self.guild_id is not None:
-            total_exp *= 1.15  # +15%
-            
-        return int(total_exp)
-
-    def level_up(self, db=None, context=None) -> dict:
-        old_level = self.level
-        self.level += 1
-        self.xp -= self.xp_to_next_level
-
-        # Apply rewards
-        rewards = self.get_level_up_rewards(self.level)
-        self.marks += rewards["marks"]
-        self.valor += rewards["valor"]
-        self.crystal += rewards["crystals"]
-        # Only run if db and context are provided (for async update)
-        import asyncio
-        async def _referral_levelup():
-            if self.referred_by and db is not None and context is not None:
-                ref_player = await db.players.find_one({"$or": [
-                    {"referral_code": self.referred_by},
-                    {"user_id": self.referred_by}
-                ]})
-                if ref_player:
-                    milestones = ref_player.get('referral_milestones', {}) or {}
-                    milestone_updates = {}
-                    milestone_msgs = []
-                    if self.level == 20 and not milestones.get(f"ref_{self.user_id}_lv20"):
-                        milestone_updates[f'referral_milestones.ref_{self.user_id}_lv20'] = True
-                        milestone_updates['valor'] = ref_player.get('valor', 0) + 50
-                        milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>50 Valor</b> because your referral {self.name} reached level 20!')
-                    if self.level == 50 and not milestones.get(f"ref_{self.user_id}_lv50"):
-                        milestone_updates[f'referral_milestones.ref_{self.user_id}_lv50'] = True
-                        milestone_updates['crystal'] = ref_player.get('crystal', 0) + 2
-                        milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>2 Titan Crystals</b> because your referral {self.name} reached level 50!')
-                    if milestone_updates:
-                        await db.players.update_one({"user_id": str(ref_player.get("user_id"))}, {"$set": milestone_updates})
-                        bot = getattr(context, 'bot', None)
-                        if bot and milestone_msgs:
-                            await bot.send_message(chat_id=str(ref_player.get("user_id")), text='\n'.join(milestone_msgs), parse_mode="HTML")
-        if db is not None and context is not None:
-            asyncio.create_task(_referral_levelup())
-
-        return {
-            "old_level": old_level,
-            "new_level": self.level,
-            "rewards": rewards
-        }
+            return 90000 + (self.level * 1000)
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
@@ -492,6 +446,52 @@ class Player(BaseModel):
             "current_level": self.level,
             "current_xp": self.xp,
             "xp_to_next": self.xp_to_next_level
+        }
+        
+    def level_up(self, db=None, context=None) -> dict:
+        old_level = self.level
+        self.level += 1
+        self.xp -= self.xp_to_next_level
+
+        # Apply rewards
+        rewards = self.get_level_up_rewards(self.level)
+        self.marks += rewards["marks"]
+        self.valor += rewards["valor"]
+        self.crystal += rewards["crystals"]
+        
+        # Only run if db and context are provided (for async update)
+        import asyncio
+        async def _referral_levelup():
+            if self.referred_by and db is not None and context is not None:
+                ref_player = await db.players.find_one({"$or": [
+                    {"referral_code": self.referred_by},
+                    {"user_id": self.referred_by}
+                ]})
+                if ref_player:
+                    milestones = ref_player.get('referral_milestones', {}) or {}
+                    milestone_updates = {}
+                    milestone_msgs = []
+                    if self.level == 20 and not milestones.get(f"ref_{self.user_id}_lv20"):
+                        milestone_updates[f'referral_milestones.ref_{self.user_id}_lv20'] = True
+                        milestone_updates['valor'] = ref_player.get('valor', 0) + 50
+                        milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>50 Valor</b> because your referral {self.name} reached level 20!')
+                    if self.level == 50 and not milestones.get(f"ref_{self.user_id}_lv50"):
+                        milestone_updates[f'referral_milestones.ref_{self.user_id}_lv50'] = True
+                        milestone_updates['crystal'] = ref_player.get('crystal', 0) + 2
+                        milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>2 Titan Crystals</b> because your referral {self.name} reached level 50!')
+                    if milestone_updates:
+                        await db.players.update_one({"user_id": str(ref_player.get("user_id"))}, {"$set": milestone_updates})
+                        bot = getattr(context, 'bot', None)
+                        if bot and milestone_msgs:
+                            await bot.send_message(chat_id=str(ref_player.get("user_id")), text='\n'.join(milestone_msgs), parse_mode="HTML")
+        
+        if db is not None and context is not None:
+            asyncio.create_task(_referral_levelup())
+
+        return {
+            "old_level": old_level,
+            "new_level": self.level,
+            "rewards": rewards
         }
 
     def get_level_up_rewards(self, new_level: int) -> dict:
@@ -560,7 +560,6 @@ class Player(BaseModel):
             elif new_level == 50:
                 rewards["unlocks"].append("Titan Lord Title")
 
-
         if new_level > 50:
             # Progressive scaling (2% increase per level beyond 50)
             scale = 1 + (new_level - 50) * 0.02
@@ -570,6 +569,31 @@ class Player(BaseModel):
             
         return rewards
 
+    def calculate_exp_gain(self, action: str, amount: int = 1) -> int:
+        """Calculate EXP gain from various actions"""
+        base_exp = {
+            'titan_kill': random.randint(10, 20),
+            'pvp_win': 30,
+            'pvp_loss': 15,
+            'shop_purchase': random.randint(10, 15),
+            'daily_explore': 50,
+            'achievement': random.randint(100, 500)
+        }.get(action, 0) * amount
+        
+        # Apply boosts
+        total_exp = base_exp
+        
+        # Double EXP weekend
+        if self.double_exp_end and datetime.now(timezone.utc) < self.double_exp_end:
+            total_exp *= 2
+            
+        # Guild bonus
+        if self.guild_id is not None:
+            total_exp *= 1.15  # +15%
+            
+        return int(total_exp)
+
+    # Character management methods
     def add_character(self, character_name: str) -> None:
         if character_name not in self.owned_characters:
             self.owned_characters.append(character_name)
@@ -578,6 +602,7 @@ class Player(BaseModel):
         if character_name in self.owned_characters:
             self.owned_characters.remove(character_name)
 
+    # Daily exploration tracking methods
     def get_daily_explores_count(self, date: datetime) -> int:
         """Get the number of explores for a specific date"""
         date_str = date.strftime('%Y-%m-%d')

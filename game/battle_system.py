@@ -687,17 +687,17 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = str(update.effective_user.id)
     current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
     
-    # Fast path for mismatched battle IDs or used battle IDs
-    if callback_data != current_battle_id or (callback_data and callback_data.startswith("used_")):
-        # Inform user that the button has already been used
+    # Only allow the battle button to be used once, and strictly reject any further callbacks with the same ID
+    if callback_data != current_battle_id:
         await query.answer("This battle button has already been used. Please explore again.", show_alert=True)
         return
-        
+    # Immediately delete the active battle id so it cannot be used again
+    if f"active_battle_id_{user_id}" in context.bot_data:
+        del context.bot_data[f"active_battle_id_{user_id}"]
     # Also check if this user has already started a battle with this titan
     if f"titan_battle_started_{user_id}" in context.bot_data:
-        # Check if the battle was started recently
         last_battle_time = context.bot_data.get(f"titan_battle_started_{user_id}", 0)
-        if time.time() - last_battle_time < 300:  # Within 5 minutes
+        if time.time() - last_battle_time < 180:  # Within 3 minutes
             await query.answer("You're already in battle. Please finish your current battle first.", show_alert=True)
             return
     
