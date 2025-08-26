@@ -670,7 +670,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("stats", stats_command))
     
     # Missions system
-    setup_missions_commands(app_instance)
+    # setup_missions_commands(app_instance)
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", handle_bank_command))
