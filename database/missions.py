@@ -477,17 +477,21 @@ async def add_mission_item(db, player, item_key):
     # Check for mission progress
     item_data = MISSION_ITEMS[item_key]
     mission_id = item_data["mission_id"]
-    
+
+    # Only show progress notification for missions 5, 8, 12 (collect missions)
+    notify_progress = mission_id in (5, 8, 12)
+
     # Update mission progress if the related mission is active
     player_missions = getattr(player, "missions", [])
     for mission_progress in player_missions:
         if (mission_progress["mission_id"] == mission_id and 
             mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
-            
-            notification = await update_mission_progress(db, player, mission_id, 1)
-            
-            return True, f"Found {item_data['emoji']} {item_data['name']}! Added to inventory.\n{notification if notification else ''}"
-    
+            notification = await update_mission_progress(db, player, mission_id, 1) if notify_progress else None
+            if notify_progress:
+                return True, f"Found {item_data['emoji']} {item_data['name']}! \n{notification if notification else ''}"
+            else:
+                return True, f"Found {item_data['emoji']} {item_data['name']}! "
+
     # Mission not active, just add to inventory
     return True, f"Found {item_data['emoji']} {item_data['name']}! Added to inventory."
 
