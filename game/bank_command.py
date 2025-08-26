@@ -114,8 +114,7 @@ async def handle_bank_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Secure your wealth with us and access exclusive features.\n\n"
             f"📜 <b>Opening Fee:</b>\n"
             f"🔹 Marks: <code>{BANK_OPEN_FEE['marks']}</code>\n"
-            f"🔸 Valor: <code>{BANK_OPEN_FEE['valor']}</code>\n"
-            f"💎 Crystal: <code>{BANK_OPEN_FEE['crystal']}</code>\n\n"
+            f"🔸 Valor: <code>{BANK_OPEN_FEE['valor']}</code>\n\n"
             f"🔓 Click the button below to pay and activate your account."
         )
         keyboard = [
