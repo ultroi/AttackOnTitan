@@ -566,7 +566,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     if ref_user_id:
                                         ref_message = (
                                             f"🎉 <b>Referral Reward!</b>\n\n"
-                                            f"You received <b>+40 Valor</b> because a new player joined using your referral link!\n"
+                                            f"You received <b>+20 Valor</b> because a new player joined using your referral link!\n"
                                             f"Keep sharing to earn more rewards."
                                         )
                                         await bot.send_message(chat_id=ref_user_id, text=ref_message, parse_mode=ParseMode.HTML)

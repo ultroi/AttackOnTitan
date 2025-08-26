@@ -380,8 +380,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if player_verified:
         # Keep last_verified, but reset hcaptcha_verified flag for next session (non-blocking)
         asyncio.create_task(db.update_player(user_id_str, {
-            "hcaptcha_verified": False,  # Reset for next session
-            "hcaptcha_start_time": None  # Clear start time
+            "hcaptcha_start_time": None 
         }))
 
     # Tracking happens in background - with reduced frequency for better performance
@@ -685,6 +684,10 @@ async def _handle_verification(update, context, user_id, now, db):
             # Database was updated, user was verified
             context.user_data["hcaptcha_prompted"] = False
             context.user_data["last_verification_check"] = now
+            await db.update_player(user_id_str, {
+                "hcaptcha_verified": True,
+                "last_verified": now 
+            })
             await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
             logger.info(f"Player {user_id} verification detected, cleared verification flags")
             return False
