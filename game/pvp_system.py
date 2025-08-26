@@ -12,6 +12,7 @@ from database.models import Character, Player, TeamMember
 from database.schemas import Ability, CharacterStats
 from game.battle_system import BattleSystem, active_battles, active_battles_lock, cleanup_battle
 from utils.monitor import track_battle_end
+from database.missions import process_pvp_mission_progress
 
 logger = logging.getLogger(__name__)
 
@@ -2330,8 +2331,19 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
         # Make sure battle.winner is not None before passing to track_battle_end
         if battle.winner and winner_id:
             track_battle_end(int(winner_id), battle.winner, "pvp_victory")
+            
+            # Process mission progress for PvP battles
+            winner_player = await db.get_player(winner_id)
+            if winner_player and hasattr(winner_player, "missions"):
+                # Check and update mission progress for PvP victories
+                mission_notifications = await process_pvp_mission_progress(db, winner_player, won=True)
+                
+                # Send mission notifications if any
+                if mission_notifications:
+                    for notification in mission_notifications[:1]:  # Limit to first notification
+                        await query.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
-        logger.error(f"Error in track_battle_end: {e}")
+        logger.error(f"Error in track_battle_end or mission processing: {e}")
         pass
 
 

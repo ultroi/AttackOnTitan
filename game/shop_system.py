@@ -193,7 +193,7 @@ class ShopSystem:
             "<b>💱 Exchange Rates</b>\n"
             "• 10,000 Marks ➜ 1 Valor\n"
             "• 200 Valor    ➜ 1 Crystal\n"
-            "• 4 Marks      ➜ 1 Gas\n\n"
+            "• 2 Marks      ➜ 1 Gas\n\n"
             "<b> How to Purchase</b>\n"
             "<code>/buy gas 10 </code>\n\n"
             "<b>⏰ Shop Information</b>\n"
@@ -417,7 +417,7 @@ class ShopSystem:
                 return "❌ Player not found! Create a profile with /start."
 
             if currency_type == "gas":
-                cost = amount * 4  # Rate: 4 marks for 1 gas
+                cost = amount * 2 
                 if player.marks < cost:
                     return f"❌ Insufficient marks! You need {cost:,} marks for {amount:,} gas."
                 await db.update_player(int(user_id), {"marks": player.marks - cost, "gas": player.gas + amount})

@@ -17,6 +17,9 @@ import asyncio
 from uuid import uuid4
 from game.stats_command import track_explore_stats
 
+# Import mission-related functions
+from database.missions import check_mission_item_drops, add_mission_item, process_explore_mission_progress
+
 logger = logging.getLogger(__name__)
 
 # Rate limiting for explore command
@@ -322,17 +325,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_explore = getattr(player, "last_explore_time", None)
     explore_start_time = getattr(player, "explore_start_time", None)
 
-    # Always reset the prompted flag if the player is verified in database
-    if player_verified:
-        if context.user_data.get("hcaptcha_prompted", False):
-            context.user_data["hcaptcha_prompted"] = False
-            # Show a success message if this is the first time seeing them after verification
-            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
-        logger.debug(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
 
-    # Check if verification is still being requested after checking database
-    if await _check_verification_required(player, user_id_str, context):
-        # Force fresh fetch from DB in case user just verified
+    # --- INSTANT HCAPTCHA VERIFICATION CHECK ---
+    # If hcaptcha_prompted is set, always fetch latest player data and clear flag instantly if verified
+    if context.user_data.get("hcaptcha_prompted", False):
         player_fresh = await db.get_player(user_id_str)
         player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
         last_verified_fresh = getattr(player_fresh, "last_verified", 0)
@@ -345,6 +341,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
             return
+    elif player_verified:
+        if context.user_data.get("hcaptcha_prompted", False):
+            context.user_data["hcaptcha_prompted"] = False
+            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
+        logger.debug(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
 
     # Non-blocking: Set or update explore start time for the 25-minute inactivity check
     if not explore_start_time:
@@ -507,6 +508,29 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break
     image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
 
+    # Check for mission item drops (optimized for speed)
+    mission_item_drops = []
+    mission_notifications = []
+    
+    # Only check for mission items if player has active missions (for optimization)
+    if hasattr(player, "missions") and player.missions:
+        active_missions = [m for m in player.missions if m["status"] == "in_progress"]
+        if active_missions:
+            # Check for mission item drops
+            mission_item_drops = await check_mission_item_drops(player)
+            
+            # Process drops if any
+            for item_drop in mission_item_drops:
+                success, msg = await add_mission_item(db, player, item_drop["key"])
+                if success and msg:
+                    mission_notifications.append(msg)
+            
+            # Process explore mission progress
+            area = getattr(player, "location", "Trost District")
+            progress_notifications = await process_explore_mission_progress(db, player, area)
+            if progress_notifications:
+                mission_notifications.extend(progress_notifications)
+    
     # Minimal reply text
     reply_text = (
         f"<code>-------------------------</code>\n"
@@ -514,6 +538,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>has blocked your way{image_embed}</b>\n"
         f"<code>-------------------------</code>\n"
     )
+    
+    # Add mission item drop messages if any
+    if mission_notifications:
+        # Limit to first notification to avoid spam
+        reply_text += f"\n{mission_notifications[0]}\n"
 
     # Minimal message parameters
     message_params = {

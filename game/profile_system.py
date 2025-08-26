@@ -1081,9 +1081,10 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         char_data = get_character_data(character.name)
         updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
         keyboard = [
-            [InlineKeyboardButton("Fill Gas", callback_data=query.data),
-             InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")] ,
-             [InlineKeyboardButton("Exit", callback_data="exit_profile")]
+            [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
+         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")],
+        [InlineKeyboardButton("Abilities", callback_data=f"view_abilities_{character.name.replace(' ', '_')}")],
+        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
         ]
         if query.message is not None and getattr(query.message, "photo", None):
             await query.edit_message_caption(

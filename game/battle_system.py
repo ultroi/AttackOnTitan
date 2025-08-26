@@ -10,6 +10,7 @@ from game.random_drop import get_random_drop
 import asyncio
 import random
 from utils.monitor import track_battle_end
+from database.missions import process_titan_reward_mission_progress
 import logging
 from datetime import datetime, timezone
 import time
@@ -1318,7 +1319,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         if rewards['valor'] > 0:
             reward_msg.append(f"⚔️ <b>Valor : +{rewards['valor']}</b>")
         await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
-
+        
+        # Process mission progress for titan rewards
+        try:
+            # Check and update mission progress based on titan rewards
+            player_obj_fresh = await db.get_player(user_id)
+            if player_obj_fresh and hasattr(player_obj_fresh, "missions"):
+                mission_notifications = await process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward)
+                # Send mission notifications if any
+                if mission_notifications:
+                    for notification in mission_notifications[:1]:  # Limit to first notification to avoid spam
+                        await send(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
+        except Exception as e:
+            logger.error(f"Error processing mission progress: {e}")
+            
         # Always send level up messages instantly
         if char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
@@ -1460,7 +1474,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        if random.random() < 0.04:
+        if random.random() < 0.05:
             drop = get_random_drop()
             # Get player object
             player_obj = await db.get_player(user_id)
@@ -1527,31 +1541,36 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                 db = context.bot_data.get("db")
                 if not db:
                     logger.error("Database not initialized")
-                    return
-                try:
-                    await db.characters.update_one(
-                        {"user_id": user_id, "name": battle.character.name},
-                        {"$set": {
-                            "current_hp": battle.character_hp,
-                            "gas": battle.character_gas,
-                            "max_gas": battle.character.max_gas,
-                            "ability_cooldowns": battle.ability_cooldowns
-                        }}
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
-                try:
-                    await query.edit_message_text(
-                        "⏰ Battle Expired ⏰\n\n"
-                        "You didn't respond in time. The battle has expired.\n"
-                        "Use /explore to find another titan."
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
-                await db.delete_titan(user_id)
+                else:
+                    try:
+                        await db.characters.update_one(
+                            {"user_id": user_id, "name": battle.character.name},
+                            {"$set": {
+                                "current_hp": battle.character_hp,
+                                "gas": battle.character_gas,
+                                "max_gas": battle.character.max_gas,
+                                "ability_cooldowns": battle.ability_cooldowns
+                            }}
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
+                    try:
+                        await query.edit_message_text(
+                            "⏰ Battle Expired ⏰\n\n"
+                            "You didn't respond in time. The battle has expired.\n"
+                            "Use /explore to find another titan."
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
+                    try:
+                        await db.delete_titan(user_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to delete titan on timeout for user {user_id}: {e}")
+                # Always cleanup battle, even if above fails
                 cleanup_battle(user_id, "timeout", battle)
     except asyncio.CancelledError:
         logger.debug(f"Battle timeout cancelled for user {user_id}")
+        cleanup_battle(user_id, "timeout_cancelled", battle)
     except Exception as e:
         logger.error(f"Error in battle_timeout for user {user_id}: {e}")
         cleanup_battle(user_id, "timeout_error", battle)

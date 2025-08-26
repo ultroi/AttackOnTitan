@@ -60,6 +60,7 @@ from game.captcha import button
 from game.pvp_system import pvp_command, pvp_callback_handler
 from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
+from game.missions import setup_missions_commands
 
 # Load environment variables
 load_dotenv()
@@ -667,6 +668,9 @@ def register_handlers(app_instance):
     
     # Stats command
     app_instance.add_handler(CommandHandler("stats", stats_command))
+    
+    # Missions system
+    setup_missions_commands(app_instance)
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", handle_bank_command))

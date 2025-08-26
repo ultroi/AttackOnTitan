@@ -77,34 +77,37 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
                 referral_code = parts[1]  # Accept direct code format too
             logger.info(f"Detected referral code: {referral_code} for user {user_id}")
 
+
     # Step 2: FULL MEMORY CLEANUP (except referral and hcaptcha_pending)
     if hasattr(context, 'user_data') and context.user_data is not None:
         hcaptcha_pending = context.user_data.get('hcaptcha_pending')
-        # Save any existing referral code before clearing
         existing_referral = context.user_data.get('referred_by')
-        # Use newly detected referral or keep existing one
         final_referral = referral_code or existing_referral
-        
-        context.user_data.clear()  # Clear all first
-        
+        context.user_data.clear()
         if final_referral:
-            context.user_data['referred_by'] = final_referral  # Restore referral
+            context.user_data['referred_by'] = final_referral
             logger.info(f"Saved referral code {final_referral} to context for user {user_id}")
         if hcaptcha_pending:
             context.user_data['hcaptcha_pending'] = hcaptcha_pending
 
-    # Step 3: Force cleanup battles/timeouts
+    # Step 3: Force cleanup battles/timeouts (robust)
     if user_id:
-        # Clean active battles with lock for safety
         try:
             from game.battle_system import active_battles, active_battles_lock
             async with active_battles_lock:
                 battle = active_battles.pop(user_id, None)
-            if battle and hasattr(battle, 'dispose'):
-                try:
-                    battle.dispose()
-                except Exception as dispose_err:
-                    logger.error(f"Battle dispose error: {dispose_err}")
+                if battle and hasattr(battle, 'dispose'):
+                    try:
+                        battle.dispose()
+                    except Exception as dispose_err:
+                        logger.error(f"Battle dispose error: {dispose_err}")
+                # Also cancel any running timeout task for this battle
+                if battle and getattr(battle, 'timeout_task', None):
+                    try:
+                        if not battle.timeout_task.done():
+                            battle.timeout_task.cancel()
+                    except Exception as timeout_err:
+                        logger.error(f"Timeout task cancel error: {timeout_err}")
         except Exception as e:
             logger.error(f"Battle cleanup error: {e}")
 
@@ -113,7 +116,10 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         if not (hasattr(context, 'user_data') and context.user_data.get('hcaptcha_pending')):
             if timeout_key in context.bot_data:
                 for task in context.bot_data[timeout_key]:
-                    task.cancel()
+                    try:
+                        task.cancel()
+                    except Exception as cancel_err:
+                        logger.error(f"Error cancelling titan timeout: {cancel_err}")
                 del context.bot_data[timeout_key]
 
     # Step 5: Send welcome message
