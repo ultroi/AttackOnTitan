@@ -612,8 +612,7 @@ async def notify_user_success(user_id: str, player: Optional[dict]):
     user_name = player.get("name", "Explorer") if player else "Explorer"
     message = (
         f"✅ <b>Verification Successful!</b>\n\n"
-        f"Hello {user_name}, you can now continue exploring! "
-        f"Use /explore to continue your journey."
+        f"Hello {user_name}, wait a few seconds then explore! "
     )
 
     # Try multiple times to ensure the message is delivered

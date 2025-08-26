@@ -441,10 +441,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if captcha_triggered:
             return
             
-    # Double-check that hCaptcha verification is not required before spawning titan
-    if await _check_verification_required(player, user_id_str, context):
-        await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-        return
         
     # Wait for character data
     player_character = await character_task
@@ -554,10 +550,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<code>-------------------------</code>\n"
     )
     
-    # Add mission item drop messages if any
-    if mission_notifications:
-        # Limit to first notification to avoid spam
-        reply_text += f"\n{mission_notifications[0]}\n"
+
+
 
     # Minimal message parameters
     message_params = {
@@ -567,7 +561,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "disable_web_page_preview": False
     }
 
-    # Send message
+    # Send titan encounter message
     sent_message = None
     try:
         if update.message:
@@ -578,6 +572,17 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.message:
             await update.message.reply_text("An error occurred. Please try again.")
         return
+
+    # Send mission notifications as new messages (not inside titan message)
+    if mission_notifications:
+        try:
+            for msg in mission_notifications:
+                if update.message:
+                    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                elif update.callback_query and update.callback_query.message:
+                    await update.callback_query.message.chat.send_message(msg, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
     # Don't wait for titan storage - let it run in the background
     
