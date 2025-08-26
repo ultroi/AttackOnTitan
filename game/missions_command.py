@@ -226,8 +226,7 @@ async def show_mission_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Create keyboard with cancel button and back button
     keyboard = [
-        [InlineKeyboardButton("❌ Cancel Mission", callback_data=f"mission_cancel_{mission_id}")],
-        [InlineKeyboardButton("⬅️ Back to Active Missions", callback_data="mission_active")]
+        [InlineKeyboardButton("❌ Cancel Mission", callback_data=f"mission_cancel_{mission_id}")]
     ]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
