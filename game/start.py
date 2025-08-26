@@ -112,6 +112,15 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         except Exception as e:
             logger.error(f"Battle cleanup error: {e}")
 
+        # Clear battle-related flags to fix button issues
+        if f"active_battle_id_{user_id}" in context.bot_data:
+            logger.info(f"Clearing active_battle_id for user {user_id}")
+            del context.bot_data[f"active_battle_id_{user_id}"]
+        
+        if f"titan_battle_started_{user_id}" in context.bot_data:
+            logger.info(f"Clearing titan_battle_started for user {user_id}")
+            del context.bot_data[f"titan_battle_started_{user_id}"]
+
         # Cancel titan timeouts ONLY if hCaptcha is not pending
         timeout_key = f"titan_timeouts_{user_id}"
         if not (hasattr(context, 'user_data') and context.user_data.get('hcaptcha_pending')):

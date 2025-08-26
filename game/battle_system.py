@@ -949,6 +949,13 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     async with active_battles_lock:
         battle = active_battles.get(user_id)
         if not battle or battle.battle_ended:
+            # Clear any stale battle flags to prevent issues with future battles
+            battle_id_key = f"active_battle_id_{user_id}"
+            battle_started_key = f"titan_battle_started_{user_id}"
+            
+            if battle_started_key in context.bot_data:
+                del context.bot_data[battle_started_key]
+                
             await query.answer("This battle has already ended or doesn't exist.")
             return
     

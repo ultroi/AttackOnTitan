@@ -158,9 +158,6 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if row:
         keyboard.append(row)
-        
-    # Add button to view available missions
-    keyboard.append([InlineKeyboardButton("📜 View Available Missions", callback_data="mission_available")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     

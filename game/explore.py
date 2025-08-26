@@ -132,6 +132,13 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
             if titan_in_db:
                 await db.delete_titan(user_id_str)
                 
+                # Clear battle flags to fix button issues
+                battle_id_key = f"active_battle_id_{user_id}"
+                battle_started_key = f"titan_battle_started_{user_id}"
+                
+                if battle_started_key in context.bot_data:
+                    del context.bot_data[battle_started_key]
+                
                 # Only edit message if no battle has started
                 if sent_message and current_battle_id == context.bot_data.get(battle_id_key):
                     try:
@@ -489,8 +496,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Store titan in DB in background (minimal fields)
         asyncio.create_task(db.store_titan(user_id_str, titan))
 
-    # Prepare minimal battle UI
+    # Clear any previous battle flags before creating new ones
     battle_id_key = f"active_battle_id_{user_id}"
+    battle_started_key = f"titan_battle_started_{user_id}"
+    
+    # Clear titan_battle_started flag if it exists
+    if battle_started_key in context.bot_data:
+        logger.info(f"Clearing existing titan_battle_started flag for user {user_id}")
+        del context.bot_data[battle_started_key]
+        
     # Always generate a new battle ID for each explore to ensure old buttons don't work
     # This ensures any previous battle buttons are invalidated
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
