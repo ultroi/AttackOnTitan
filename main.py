@@ -650,7 +650,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("give", disable_protected(give_command)))
     app_instance.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
     app_instance.add_handler(CommandHandler("stats", disable_protected(stats_command)))
-    app_instance.add_handler(CommandHandler("missions", missions_command))
+    app_instance.add_handler(CommandHandler("missions", disable_protected(missions_command)))
     app_instance.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
 
     # Mod/owner commands (not protected by disable)

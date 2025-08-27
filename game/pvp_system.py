@@ -12,7 +12,7 @@ from database.models import Character, Player, TeamMember
 from database.schemas import Ability, CharacterStats
 from game.battle_system import BattleSystem, active_battles, active_battles_lock, cleanup_battle
 from utils.monitor import track_battle_end
-from database.missions import process_pvp_mission_progress
+from database.missions import process_pvp_mission_progress, process_item_use_mission_progress
 
 logger = logging.getLogger(__name__)
 
@@ -475,6 +475,22 @@ class PvPBattleSystem:
                 base_damage = 10
                 weapon_name = "basic strike"
                 
+        # Check for mission-based PvP damage bonus
+        try:
+            if self.current_turn == self.challenger.name:
+                player = self.challenger_player
+            else:
+                player = self.defender_player
+                
+            pvp_bonuses = getattr(player, "pvp_bonuses", {})
+            if pvp_bonuses:
+                damage_bonus = pvp_bonuses.get("damage_bonus", 0)
+                if damage_bonus:
+                    base_damage += damage_bonus
+                    logger.debug(f"Applied PvP damage bonus: +{damage_bonus} (Mission 14 reward)")
+        except Exception as e:
+            logger.error(f"Error applying PvP damage bonus: {e}")
+                
         # Apply item effects
         damage_multiplier = 1.0
         
@@ -631,6 +647,22 @@ class PvPBattleSystem:
             effects["cooldown_reduction"] = cooldown_reduction
             active_items[item_key] = {"name": buff_name, "effect": "cooldown_reduction", "value": cooldown_reduction}
             
+            # Add time_contract to player's active effects for Mission 15: Temporal Gambit
+            try:
+                active_effects = getattr(current_player, "active_effects", {})
+                if not active_effects:
+                    active_effects = {}
+                active_effects["time_contract"] = {
+                    "started_at": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                }
+                
+                # Update player with active effect
+                updated_player_data = {"active_effects": active_effects}
+                await db.update_player(int(current_player.user_id), updated_player_data)
+            except Exception as e:
+                logger.error(f"Failed to update player active effects: {e}")
+            
         elif item_key == "training_dummy":
             # Increase attack and add buffs
             attack_multiplier = item.attributes.get("attack_multiplier", 1.05)
@@ -709,6 +741,18 @@ class PvPBattleSystem:
             self.challenger_used_item = True
         else:
             self.defender_used_item = True
+            
+        # Update mission progress for item usage
+        try:
+            from game.missions_command import process_item_use_mission_progress
+            # Get updated player object after inventory change
+            updated_player = await db.get_player(str(current_player.user_id))
+            if updated_player:
+                notifications = await process_item_use_mission_progress(db, updated_player, item_key)
+                if notifications:
+                    message += f"\n\n{notifications[0]}"
+        except Exception as e:
+            logger.error(f"Error updating mission progress for item use: {e}")
         
         return message, effects
     

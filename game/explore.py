@@ -20,7 +20,7 @@ from game.stats_command import track_explore_stats
 # Import mission-related functions
 from database.missions import (
     check_mission_item_drops, add_mission_item, 
-    process_explore_mission_progress
+    process_explore_mission_progress, process_travel_mission_progress
 )
 
 logger = logging.getLogger(__name__)
@@ -449,20 +449,35 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
         if travel_progress >= travel_required:
             # Update location and clear travel state
             new_location = travel.get("to", player.location)
+            from_location = travel.get("from", "Unknown")
             travel_update = {
                 "location": new_location,
                 "travel": {}
             }
+            
+            # Update travel mission progress
+            travel_notifications = []
+            try:
+                travel_notifications = await process_travel_mission_progress(db, player, from_location, new_location)
+            except Exception as e:
+                logger.error(f"Failed to update travel mission progress: {e}")
+            
             # Notify user of arrival
             try:
+                arrival_message = f"🗺️ You have arrived at <b>{new_location}</b>!"
+                
+                # Add any mission notifications
+                if travel_notifications:
+                    arrival_message += "\n\n" + "\n".join(travel_notifications)
+                
                 if update.message:
                     await update.message.reply_text(
-                        f"🗺️ You have arrived at <b>{new_location}</b>!",
+                        arrival_message,
                         parse_mode=ParseMode.HTML
                     )
                 elif update.callback_query and update.callback_query.message:
                     await update.callback_query.message.chat.send_message(
-                        f"🗺️ You have arrived at <b>{new_location}</b>!",
+                        arrival_message,
                         parse_mode=ParseMode.HTML
                     )
             except Exception:

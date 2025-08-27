@@ -144,12 +144,13 @@ MISSION_DEFINITIONS = [
     ),
     Mission(
         id=11,
-        title="Valor's Proof",
-        description="Demonstrate your courage by taking down high-value Titan targets.",
-        requirement="Defeat 2 bounty targets using Bounty Permits.",
-        required_progress=2,
-        reward_description="1 Titan Biology Manual",
-        rewards={"items": {"titan_biology_manual": 1}},
+        title="Relentless Scout",
+        description="Push yourself to the limits by exploring tirelessly across the land.",
+        requirement="Complete 2500 explores in a single week.",
+        required_progress=2500,
+        reward_description="45,000 Marks + 25 permanent Exploration Attack",
+        rewards={"marks": 45000, "permanent_stat": {"ATK": 25}},
+        time_limit_hours=168,  # 7 days (1 week)
     ),
     Mission(
         id=12,
@@ -171,13 +172,22 @@ MISSION_DEFINITIONS = [
     ),
     Mission(
         id=14,
-        title="Master of Hunts",
-        description="Become a specialist in hunting down high-value Titan targets.",
-        requirement="Complete 5 bounty missions with Bounty Permits within 3 days.",
-        required_progress=5,
-        reward_description="+1 Valor + 35,000 Marks",
-        rewards={"valor": 1, "marks": 35000},
-        time_limit_hours=72,
+        title="Never Stop!",
+        description="Become a true master of the entire map by exploring every region thoroughly.",
+        requirement="Complete 500 explores in each place of the map.",
+        required_progress=500,
+        reward_description="250,000 Marks + 1 of each Utilities +50 PvP damage",
+        rewards={
+            "marks": 250000, 
+            "items": {
+                "training_dummy": 1,
+                "battle_journal": 1,
+                "bounty_permit": 1,
+                "time_contract": 1,
+                "titan_biology_manual": 1
+            },
+            "pvp_damage_bonus": 50
+        },
     ),
     Mission(
         id=15,
@@ -398,6 +408,17 @@ async def apply_mission_rewards(db, player, mission):
                 # Update character stats
                 await db.update_character_stats(int(player.user_id), character_name, stats)
     
+    # Apply PvP damage bonus
+    if "pvp_damage_bonus" in rewards:
+        pvp_bonuses = getattr(player, "pvp_bonuses", {})
+        if not pvp_bonuses:
+            pvp_bonuses = {}
+        
+        # Add damage bonus
+        current_damage_bonus = pvp_bonuses.get("damage_bonus", 0)
+        pvp_bonuses["damage_bonus"] = current_damage_bonus + rewards["pvp_damage_bonus"]
+        update_data["pvp_bonuses"] = pvp_bonuses
+    
     # Apply special abilities if any
     if "special_ability" in rewards:
         # This would be handled elsewhere depending on the ability
@@ -496,17 +517,47 @@ async def process_explore_mission_progress(db, player, area=None):
         if not mission:
             continue
             
-        # Mission 1: Scout's First March (150 explores outside starting district)
+        # Mission 1: Scout's First March (500 explores outside starting district)
         if mission_id == 1 and area and area != "Trost District":
             notification = await update_mission_progress(db, player, mission_id, 1)
             if notification:
                 notifications.append(notification)
                 
-        # Mission 9: Endurance Run (500 explores without returning home)
+        # Mission 9: Endurance Run (1000 explores without returning home)
         if mission_id == 9:
             notification = await update_mission_progress(db, player, mission_id, 1)
             if notification:
                 notifications.append(notification)
+                
+        # Mission 11: Relentless Scout (2500 explores in a single week)
+        if mission_id == 11:
+            notification = await update_mission_progress(db, player, mission_id, 1)
+            if notification:
+                notifications.append(notification)
+                
+        # Mission 14: Never Stop! (500 explores in each place of the map)
+        if mission_id == 14:
+            # Track exploration counts by area
+            explore_counts = getattr(player, "area_explore_counts", {})
+            if not explore_counts:
+                explore_counts = {}
+            
+            # Update count for current area
+            if area:
+                explore_counts[area] = explore_counts.get(area, 0) + 1
+                
+                # Save updated counts
+                await db.update_player(int(player.user_id), {"area_explore_counts": explore_counts})
+                
+                # Check if this area reached 500 explores
+                if explore_counts.get(area) == 500:
+                    # Count how many areas have reached 500 explores
+                    completed_areas = sum(1 for count in explore_counts.values() if count >= 500)
+                    
+                    # Update mission progress based on number of completed areas
+                    notification = await update_mission_progress(db, player, mission_id, 1)
+                    if notification:
+                        notifications.append(notification)
     
     return notifications
 
@@ -532,8 +583,14 @@ async def process_pvp_mission_progress(db, player, won=True):
             if notification:
                 notifications.append(notification)
                 
-        # Mission 15: Temporal Gambit - requires specific handling in pvp_system.py
-        # to check if Time Contract Scroll is active
+        # Mission 15: Temporal Gambit - check if Time Contract Scroll is active
+        if mission_id == 15:
+            # Check if player has active effects from pvp_system
+            active_effects = getattr(player, "active_effects", {})
+            if active_effects.get("time_contract"):
+                notification = await update_mission_progress(db, player, mission_id, 1)
+                if notification:
+                    notifications.append(notification)
     
     return notifications
 
@@ -577,12 +634,30 @@ async def process_travel_mission_progress(db, player, from_location, to_location
                 notifications.append(notification)
                 
         # Mission 13: March of the Walls (Travel from outer district to Stohess)
-        if mission_id == 13 and to_location == "Stohess District":
-            # This mission requires special handling in travel_system.py
-            # to track if 3 checkpoints have been crossed
-            notification = await update_mission_progress(db, player, mission_id, 1)
-            if notification:
-                notifications.append(notification)
+        if mission_id == 13 and to_location == "Stohess":
+            # Define outer districts - any travel from these to Stohess counts
+            outer_districts = ["Shiganshina", "Orvud", "Karanes", "Trost", "Ehrmich"]
+            
+            # Get the player's travel history or create if not exists
+            travel_history = getattr(player, "travel_history", [])
+            if not travel_history:
+                travel_history = []
+            
+            # Add the current travel to history
+            travel_history.append({
+                "from": from_location,
+                "to": to_location,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            # Save updated travel history
+            await db.update_player(int(player.user_id), {"travel_history": travel_history})
+            
+            # Check if coming from outer district or if player has passed through multiple checkpoints
+            if from_location in outer_districts or len(travel_history) >= 3:
+                notification = await update_mission_progress(db, player, mission_id, 1)
+                if notification:
+                    notifications.append(notification)
     
     return notifications
 
