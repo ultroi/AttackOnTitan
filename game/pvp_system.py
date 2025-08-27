@@ -826,7 +826,7 @@ class PvPBattleSystem:
         }
         
     async def calculate_rewards(self, db: Database) -> Dict:
-        """Calculate rewards for winning a PvP battle"""
+        """Calculate rewards for winning a PvP battle (updated: winner XP 50-100, Marks 600-800; loser XP 50-70)"""
         rewards = {
             "winner": {
                 "xp": 0,
@@ -839,54 +839,27 @@ class PvPBattleSystem:
                 "valor": 0,
             }
         }
-        
+
         if not self.winner:
             return rewards
-            
-        # Determine winner and loser
+
+        # Winner and loser assignment (for possible future use)
         if self.winner == self.challenger.name:
             winner = self.challenger
             loser = self.defender
-            winner_player = self.challenger_player
-            loser_player = self.defender_player
         else:
             winner = self.defender
             loser = self.challenger
-            winner_player = self.defender_player
-            loser_player = self.challenger_player
-            
-        # Base rewards
-        level_diff = winner.level - loser.level
-        
-        # Calculate XP based on level difference (winner gets more if they beat a higher level player)
-        if level_diff < 0:
-            # Beating a higher level opponent gives bonus XP
-            winner_xp = 60 + (abs(level_diff) * 10)
-        else:
-            # Beating a lower level opponent gives less XP
-            winner_xp = max(30, 60 - (level_diff * 5))
-            
-        # Loser always gets some XP for participating
-        loser_xp = max(15, 25 - (abs(level_diff) * 2) if level_diff > 0 else 25)
-        
-        # Marks calculation - winner gets more
-        winner_marks = random.randint(50, 100) + (winner.level * 3)
-        loser_marks = random.randint(20, 40)  # Consolation prize
-        
-        # Valor calculation - only winner gets valor
-        winner_valor = random.randint(1, 3)
-        if level_diff < 0:
-            winner_valor += abs(level_diff) // 5  # Bonus for beating higher level players
-            
-        # Set rewards
-        rewards["winner"]["xp"] = winner_xp
-        rewards["winner"]["marks"] = winner_marks
-        rewards["winner"]["valor"] = winner_valor
-        
-        rewards["loser"]["xp"] = loser_xp
-        rewards["loser"]["marks"] = loser_marks
+
+        # Winner: XP 50-100, Marks 600-800
+        rewards["winner"]["xp"] = random.randint(50, 100)
+        rewards["winner"]["marks"] = random.randint(600, 800)
+
+        # Loser: XP 50-70, no marks or valor
+        rewards["loser"]["xp"] = random.randint(50, 70)
+        rewards["loser"]["marks"] = 0
         rewards["loser"]["valor"] = 0
-        
+
         return rewards
 
 
@@ -2236,7 +2209,7 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
                 battle_outcome = (
                     f"<b>🏆 {winner_mention} <i>defeated</i> {loser_mention} !</b>\n\n"
                     f"<blockquote><b>{winner_first_name}</b></blockquote>\n"
-                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor</b>\n\n"
+                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks</b>\n\n"
                     f"<blockquote><b>{loser_first_name}</b></blockquote>\n"
                     f"<b>Gain: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks</b>"
                 )
@@ -2407,7 +2380,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 battle_outcome = (
                     f"{timeout_message}\n\n"
                     f"<blockquote><b>{winner_first_name}</b></blockquote>\n"
-                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks, {rewards['winner']['valor']} Valor</b>\n\n"
+                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks</b>\n\n"
                     f"<blockquote><b>{loser_first_name}</b></blockquote>\n"
                     f"<b>Gain: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks</b>"
                 )
@@ -2439,7 +2412,6 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                         "pvp_wins": 1,
                         "xp": rewards["winner"]["xp"],
                         "marks": rewards["winner"]["marks"],
-                        "valor": rewards["winner"]["valor"],
                         "total_xp": rewards["winner"]["xp"]
                     }
                 }
@@ -2447,17 +2419,16 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 
             # Update loser statistics and rewards
             await db.players.update_one(
-                {"user_id": loser_id},
+                {"user_id": winner_id},
                 {
                     "$inc": {
-                        "pvp_losses": 1,
-                        "xp": rewards["loser"]["xp"],
-                        "marks": rewards["loser"]["marks"],
-                        "total_xp": rewards["loser"]["xp"]
+                        "pvp_wins": 1,
+                        "xp": rewards["winner"]["xp"],
+                        "marks": rewards["winner"]["marks"],
+                        "total_xp": rewards["winner"]["xp"]
                     }
                 }
             )
-                
             # Update characters with final HP and gas - avoid duplicate parameters
             challenger_data = battle.challenger.dict()
             challenger_data['current_hp'] = battle.challenger_hp

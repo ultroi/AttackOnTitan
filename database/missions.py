@@ -55,11 +55,10 @@ MISSION_DEFINITIONS = [
         id=1,
         title="Scout's First March",
         description="Prove your worth as a Scout by exploring beyond the safety of the walls.",
-        requirement="Complete 150 explores outside the starting district.",
+        requirement="Complete 500 explores outside the starting district.",
         required_progress=500,
         reward_description="15,000 Marks",
         rewards={"marks": 15000},
-        unlock_level=1
     ),
     Mission(
         id=2,
@@ -69,7 +68,6 @@ MISSION_DEFINITIONS = [
         required_progress=1,
         reward_description="+2 Atk permanently",
         rewards={"permanent_stat": {"ATK": 2}},
-        unlock_level=1
     ),
     Mission(
         id=3,
@@ -79,7 +77,6 @@ MISSION_DEFINITIONS = [
         required_progress=10000,
         reward_description="5 Training Dummies",
         rewards={"items": {"training_dummy": 5}},
-        unlock_level=1
     ),
     Mission(
         id=4,
@@ -90,7 +87,6 @@ MISSION_DEFINITIONS = [
         reward_description="12,000 Marks",
         rewards={"marks": 12000},
         time_limit_hours=24,
-        unlock_level=2
     ),
     Mission(
         id=5,
@@ -100,7 +96,6 @@ MISSION_DEFINITIONS = [
         required_progress=100,
         reward_description="80,000 Marks + 2 Valor",
         rewards={"marks": 80000, "valor": 2},
-        unlock_level=3
     ),
     Mission(
         id=6,
@@ -110,7 +105,6 @@ MISSION_DEFINITIONS = [
         required_progress=1,
         reward_description="12,500 Marks",
         rewards={"marks": 12500},
-        unlock_level=2
     ),
     Mission(
         id=7,
@@ -120,7 +114,6 @@ MISSION_DEFINITIONS = [
         required_progress=1,
         reward_description="+40 Hp when lower than 100 (only in Titan Battles)",
         rewards={"special_ability": "emergency_heal_40"},
-        unlock_level=5
     ),
     Mission(
         id=8,
@@ -130,7 +123,6 @@ MISSION_DEFINITIONS = [
         required_progress=5,
         reward_description="+2 Valor",
         rewards={"valor": 2},
-        unlock_level=4
     ),
     Mission(
         id=9,
@@ -140,7 +132,6 @@ MISSION_DEFINITIONS = [
         required_progress=500,
         reward_description="25,000 Marks",
         rewards={"marks": 25000},
-        unlock_level=10
     ),
     Mission(
         id=10,
@@ -150,7 +141,6 @@ MISSION_DEFINITIONS = [
         required_progress=3,
         reward_description="Permanent +2 Accuracy",
         rewards={"permanent_stat": {"ACC": 2}},
-        unlock_level=7
     ),
     Mission(
         id=11,
@@ -160,7 +150,6 @@ MISSION_DEFINITIONS = [
         required_progress=2,
         reward_description="1 Titan Biology Manual",
         rewards={"items": {"titan_biology_manual": 1}},
-        unlock_level=8
     ),
     Mission(
         id=12,
@@ -170,7 +159,6 @@ MISSION_DEFINITIONS = [
         required_progress=10,
         reward_description="20,000 Marks and +5 permanent intelligence",
         rewards={"marks": 20000, "permanent_stat": {"INT": 5}},
-        unlock_level=6
     ),
     Mission(
         id=13,
@@ -180,7 +168,6 @@ MISSION_DEFINITIONS = [
         required_progress=1,
         reward_description="50,000 Marks + 5 Time Contract Scroll",
         rewards={"marks": 50000, "items": {"time_contract_scroll": 5}},
-        unlock_level=12
     ),
     Mission(
         id=14,
@@ -191,7 +178,6 @@ MISSION_DEFINITIONS = [
         reward_description="+1 Valor + 35,000 Marks",
         rewards={"valor": 1, "marks": 35000},
         time_limit_hours=72,
-        unlock_level=10
     ),
     Mission(
         id=15,
@@ -201,7 +187,6 @@ MISSION_DEFINITIONS = [
         required_progress=5,
         reward_description="1 Titan Crystal OR +25 Atk Permanently",
         rewards={"special_reward": "crystal_or_attack"},
-        unlock_level=15
     ),
 ]
 
@@ -493,7 +478,7 @@ async def add_mission_item(db, player, item_key):
                 return True, f"Found {item_data['emoji']} {item_data['name']}! "
 
     # Mission not active, just add to inventory
-    return True, f"Found {item_data['emoji']} {item_data['name']}! Added to inventory."
+    return True, f"Found {item_data['emoji']} {item_data['name']}!"
 
 # Function to process explore mission progress
 async def process_explore_mission_progress(db, player, area=None):

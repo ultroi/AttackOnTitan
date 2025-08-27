@@ -312,8 +312,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.message.chat.send_message(
                 f"⚠️ <b>Decision Required!</b> ⚠️\n\n"
                 f"You are at a decision point: <b>{location}</b>\n"
-                f"You must choose a direction to continue your journey.\n\n"
-                f"<i>You cannot explore further until you make a choice.</i>",
+                f"You must choose a direction to continue your journey.\n\n",
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
