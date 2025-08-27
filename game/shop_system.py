@@ -19,6 +19,32 @@ class ShopSystem:
         self.hidden_items = {}  # Items that appear under special conditions
         self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         self.last_refresh_times = {}  # Track last refresh times per user
+        self.black_market_prices = {}  # {user_id: {item_key: valor_price}}
+
+    def _get_black_market_prices(self, user_id: str, item_keys: list) -> dict:
+        """Get or generate black market prices for a user for the current refresh."""
+        from random import random, randint
+        if user_id not in self.black_market_prices:
+            self.black_market_prices[user_id] = {}
+        prices = self.black_market_prices[user_id]
+        for key in item_keys:
+            # Only generate if not present (per refresh)
+            if key not in prices:
+                # Get real price in marks
+                item = self.shop_items.get(key)
+                if not item:
+                    continue
+                marks_price = item.price
+                valor_base = max(1, int(round(marks_price / 10000)))
+                # 70% chance loss (price > real valor), 30% profit/same
+                if random() < 0.7:
+                    # Loss: 10% to 40% higher
+                    valor_price = valor_base + randint(int(valor_base*0.1), int(valor_base*0.4))
+                else:
+                    # Profit or same: 0% to 20% lower
+                    valor_price = max(1, valor_base - randint(0, int(valor_base*0.2)))
+                prices[key] = valor_price
+        return prices
         
     async def _send_transaction_log(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, 
                                operation_type: str, amount: int, currency_type: str,
@@ -70,10 +96,10 @@ class ShopSystem:
             name="Dual Blades / Ultrahard Steel Blades", type="echo_shard", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "combat_boots": Equipment(
-            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 80.0, "damage_max": 120.0}, price=10000, currency="marks", description="Spears that unleash thunderous attacks."
+            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 40.0, "damage_max": 55.0}, price=40000, currency="marks", description="Spears that unleash thunderous attacks."
             ),
             "anti_titan_armor": Equipment(
-            name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=6000, currency="valor", description="Bolt-action rifles."
+            name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=20000, currency="marks", description="Bolt-action rifles."
             ),
             "time_contract": Equipment(
             name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={
@@ -81,7 +107,7 @@ class ShopSystem:
                 "cooldown_reduction": 1,
                 "battles_remaining": 5,
                 "flash_initiative": 3
-            }, price=260000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
+            }, price=100000, currency="marks", description="Reduces cooldown of all combat abilities by 1 turn for 5 battles. Also grants 'Flash Initiative': guaranteed first strike in your next 3 PvE fights."
             ),
             "bounty_permit": Equipment(
             name="Bounty Permit", type="utility", rarity="uncommon", attributes={
@@ -90,7 +116,7 @@ class ShopSystem:
                 "elite_double_loot_chance": 0.15,
                 "bounty_missions_unlocked": True,
                 "buff_duration_minutes": 30
-            }, price=320000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
+            }, price=125000, currency="marks", description="Unlocks access to hidden bounty missions. While active, +7% Valor drop rate and a 15% chance for double loot on elite Titan kills."
             ),
             "training_dummy": Equipment(
             name="Training Dummy", type="utility", rarity="common", attributes={
@@ -99,7 +125,7 @@ class ShopSystem:
                 "xp_gain_multiplier": 1.10,
                 "buff_duration_minutes": 15,
                 "crit_rate_bonus_regiment": 5
-            }, price=89000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
+            }, price=35000, currency="marks", description="Grants +5% Attack Power and +10% XP gain for 15 minutes after use. If used in a regiment zone, grants +5 Critical Hit Rate temporarily."
             ),
             "battle_journal": Equipment(
             name="Battle Journal", type="utility", rarity="common", attributes={
@@ -108,7 +134,7 @@ class ShopSystem:
                 "accuracy_bonus": 5,
                 "defense_bonus": 5,
                 "buff_trigger_uses": 3
-            }, price=140000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
+            }, price=40000, currency="marks", description="Logs enemy behavior patterns. After 3 uses, grants +5 Accuracy and +5 Defense against the last enemy."
             ),
             "titan_biology_manual": Equipment(
             name="Titan Biology Manual", type="utility", rarity="uncommon", attributes={
@@ -116,7 +142,7 @@ class ShopSystem:
                 "titan_damage_multiplier": 1.10,
                 "intelligence_bonus": 20,
                 "buff_duration_minutes": 30
-            }, price=240000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
+            }, price=60000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
             name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 35, "damage_max": 50}, price=70000, currency="marks", description="Blades made of ultrahard steel."
@@ -247,24 +273,24 @@ class ShopSystem:
 
         row = []
         for idx, (item_key, item) in enumerate(paged_items, start=1):
-            price_str = f"{item.price:,} {item.currency.title()}"
+            # Black Market: show valor price, others: normal
+            if category == "hollow":
+                prices = self._get_black_market_prices(str(player.user_id), [item_key])
+                valor_price = prices.get(item_key, 1)
+                price_str = f"{valor_price:,} Valor"
+                item_currency = "valor"
+            else:
+                price_str = f"{item.price:,} {item.currency.title()}"
+                item_currency = item.currency
             rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
-            
-            # Get rarity symbol and create consistent header format
             rarity_symbol = rarity_emoji.get(item.rarity, '⚪')
             item_header = f"{rarity_symbol} <b>{idx}. {item.name}</b>"
-            
-            # Handle damage attributes consistently for all item types
             damage_info = ""
             if "damage_min" in item.attributes and "damage_max" in item.attributes:
                 damage_min = item.attributes["damage_min"]
                 damage_max = item.attributes["damage_max"]
                 damage_info = f" | ⚔️ DMG: <code>{damage_min}-{damage_max}</code>"
-            
-            # Format price information consistently
             price_info = f"💰 <b>{price_str}</b>{damage_info}"
-            
-            # Collect all other attributes
             other_attrs = []
             important_attrs = ["speed", "accuracy", "defense", "area_damage"]
             for attr_name in important_attrs:
@@ -272,20 +298,19 @@ class ShopSystem:
                     attr_display_name = attr_name.replace('_', ' ').title()
                     attr_value = item.attributes[attr_name]
                     other_attrs.append(f"{attr_display_name}: <code>{attr_value}</code>")
-            
-            # Construct the full item text with consistent formatting
             item_text = f"{item_header}\n{price_info}\n"
-            
             if other_attrs:
                 item_text += f"📊 {' | '.join(other_attrs)}\n"
-                
-            # Always add description at the end
             item_text += f"📝 <i>{item.description}</i>\n\n"
-            
             message += item_text
-            
             # Add purchase buttons for affordable items
-            if await self._can_afford(player, item):
+            # For Black Market, check valor affordability
+            can_afford = False
+            if category == "hollow":
+                can_afford = player.valor >= valor_price
+            else:
+                can_afford = await self._can_afford(player, item)
+            if can_afford:
                 row.append(InlineKeyboardButton(f"🛒 {idx}", callback_data=f"buy_{item_key}"))
                 if len(row) == 3:
                     keyboard.append(row)
@@ -348,18 +373,32 @@ class ShopSystem:
             item = self.shop_items.get(item_name) or self.hidden_items.get(item_name)
             if not item:
                 return {"success": False, "message": "Item not found"}
-           
-
-            total_cost = item.price * quantity
-            if item.currency == "marks" and player.marks < total_cost:
-                return {"success": False, "message": "Not enough marks"}
-            elif item.currency == "valor" and player.valor < total_cost:
-                return {"success": False, "message": "Not enough valor"}
-            elif item.currency == "crystal" and player.crystal < total_cost:
-                return {"success": False, "message": "Not enough crystals"}
+            # Black Market purchase: override price/currency
+            is_black_market = False
+            valor_price = None
+            if item_name in self._get_category_items("hollow"):
+                # If user is currently viewing black market, use valor price
+                prices = self._get_black_market_prices(str(user_id), [item_name])
+                valor_price = prices.get(item_name, 1)
+                is_black_market = True
+            if is_black_market:
+                valor_price = int(valor_price) if valor_price is not None else 1
+                total_cost = valor_price * quantity
+                if player.valor < total_cost:
+                    return {"success": False, "message": "Not enough valor"}
+            else:
+                total_cost = item.price * quantity
+                if item.currency == "marks" and player.marks < total_cost:
+                    return {"success": False, "message": "Not enough marks"}
+                elif item.currency == "valor" and player.valor < total_cost:
+                    return {"success": False, "message": "Not enough valor"}
+                elif item.currency == "crystal" and player.crystal < total_cost:
+                    return {"success": False, "message": "Not enough crystals"}
 
             player.inventory[item_name] = player.inventory.get(item_name, 0) + quantity
-            if item.currency == "marks":
+            if is_black_market:
+                player.valor -= total_cost
+            elif item.currency == "marks":
                 player.marks -= total_cost
             elif item.currency == "valor":
                 player.valor -= total_cost
@@ -560,6 +599,8 @@ class ShopSystem:
         if category == "hollow":
             pick_count = min(6, len(all_items))
             selected = random.sample(all_items, pick_count)
+            # Generate black market prices for this user/refresh
+            self._get_black_market_prices(user_id, [item[0] for item in selected])
         else:
             pick_count = min(12, len(all_items))
             selected = random.sample(all_items, pick_count)
@@ -570,7 +611,7 @@ class ShopSystem:
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-        """Clear the user's random shop selection for all categories from bot_data."""
+        """Clear the user's random shop selection for all categories from bot_data and reset black market prices."""
         bot_data = context.bot_data if context is not None and hasattr(context, 'bot_data') else {}
         if 'shop_random_selections' not in bot_data:
             return
@@ -579,6 +620,9 @@ class ShopSystem:
             key = f"{user_id}_{category}"
             if key in shop_random_selections:
                 del shop_random_selections[key]
+        # Reset black market prices for this user
+        if user_id in self.black_market_prices:
+            del self.black_market_prices[user_id]
             
 
 shop_system = ShopSystem()
