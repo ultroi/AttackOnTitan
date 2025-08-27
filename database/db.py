@@ -607,6 +607,25 @@ class Database:
             logger.error(f"Failed to update character: {e}")
             raise
 
+    async def update_character_stats(self, user_id: str, character_name: str, new_stats: dict) -> bool:
+        """
+        Update only the 'stats' field of a character.
+        """
+        try:
+            result = await self.characters.update_one(
+                {"user_id": user_id, "name": character_name},
+                {"$set": {"stats": new_stats, "updated_at": datetime.now(timezone.utc)}}
+            )
+            if CACHE_ENABLED:
+                cache_key = f"character_{user_id}_{character_name}"
+                if cache_key in CHARACTER_CACHE:
+                    CHARACTER_CACHE[cache_key]["character"].stats = new_stats
+                    CHARACTER_CACHE[cache_key]["timestamp"] = time.time()
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Failed to update character stats: {e}")
+            return False
+
     async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[Ability]]:
         try:
             character = await self.get_character(user_id, character_name)

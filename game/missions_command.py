@@ -1,3 +1,16 @@
+def format_mission_14_progress(player, max_count=500):
+    """Format progress for Mission 14: 500 explores in each place of the map."""
+    AREAS = [
+        "Trost District", "Karanes District", "Shiganshina District",
+        "Stohess", "Orvud", "Ehrmich", "Mitras", "Ragako", "Utgard"
+    ]
+    explore_counts = getattr(player, "area_explore_counts", {}) or {}
+    lines = []
+    for area in AREAS:
+        count = explore_counts.get(area, 0)
+        status = "✅" if count >= max_count else f"{count}/{max_count}"
+        lines.append(f"• {area}: {status}")
+    return "\n".join(lines)
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -144,7 +157,12 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         progress = mission_data["progress"]
         
         message += f"*{mission.id}. {mission.title}*\n"
-        message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
+        # Special progress display for Mission 14
+        if mission.id == 14:
+            message += "Progress :\n"
+            message += format_mission_14_progress(player) + "\n\n"
+        else:
+            message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
     
     # Create keyboard with mission selection buttons for details
     keyboard = []

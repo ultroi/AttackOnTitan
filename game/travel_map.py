@@ -45,7 +45,7 @@ TRAVEL_MAP = {
     },
     "Shiganshina": {
         "North": ("Trost", 250),
-        "Northeast": ("Decision_NE_Shiganshina", 7),
+        "Northeast": ("Decision_NE_Shiganshina", 750),
         "Northwest": ("Decision_NW_Shiganshina", 750),
     },
     "Ehrmich": {

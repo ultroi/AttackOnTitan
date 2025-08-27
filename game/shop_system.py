@@ -96,7 +96,7 @@ class ShopSystem:
             name="Dual Blades / Ultrahard Steel Blades", type="echo_shard", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
             ),
             "combat_boots": Equipment(
-            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 40.0, "damage_max": 55.0}, price=40000, currency="marks", description="Spears that unleash thunderous attacks."
+            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 55.0, "damage_max": 90.0}, price=40000, currency="marks", description="Spears that unleash thunderous attacks."
             ),
             "anti_titan_armor": Equipment(
             name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=20000, currency="marks", description="Bolt-action rifles."
@@ -232,8 +232,8 @@ class ShopSystem:
              InlineKeyboardButton("🔷 Echo Shards", callback_data="shop_echo_shards")],
             [InlineKeyboardButton("🛡️ Gear", callback_data="shop_gear"),
              InlineKeyboardButton("🌀 Utilities", callback_data="shop_utilities")],
-            [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks"),
-             InlineKeyboardButton("💀 Black Market", callback_data="shop_hollow")],
+            [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks")],
+            #  InlineKeyboardButton("💀 Black Market", callback_data="shop_hollow")],
             [InlineKeyboardButton(f"🔄 Refresh Shop ({refresh_cost} Valor)", callback_data="shop_refresh")]
         ]
         return header, InlineKeyboardMarkup(keyboard)
