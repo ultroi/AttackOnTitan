@@ -667,9 +667,6 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("checkgroup", check_group_record))
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
-    
-
-    
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))
