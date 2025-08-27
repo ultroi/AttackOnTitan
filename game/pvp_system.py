@@ -275,9 +275,9 @@ class PvPBattleSystem:
         if not ability:
             return f"Error: Ability {cleaned_ability_name} not found", {}
             
-        # Check cooldown
-        if cooldowns.get(ability_name, 0) > 0:
-            return f"{ability_name} is on cooldown for {cooldowns[ability_name]} turns!", {}
+        # Check cooldown (always use cleaned name)
+        if cooldowns.get(cleaned_ability_name, 0) > 0:
+            return f"{cleaned_ability_name} is on cooldown for {cooldowns[cleaned_ability_name]} turns!", {}
             
         # Check gas cost
         gas_cost = ability.gas_cost or 20
@@ -358,19 +358,23 @@ class PvPBattleSystem:
                     if defense_boost > 0 and "character_stats" in ctx and "DEF" in ctx["character_stats"]:
                         ctx["character_stats"]["DEF"] = ctx["character_stats"]["DEF"] + defense_boost
                 
+                # Prevent action if stunned
+                if self.current_turn == self.challenger.name and self.challenger_debuffs.get("stun", 0) > 0:
+                    return f"{self.challenger.name} is stunned and cannot act this turn!", {}
+                if self.current_turn == self.defender.name and self.defender_debuffs.get("stun", 0) > 0:
+                    return f"{self.defender.name} is stunned and cannot act this turn!", {}
+
                 effect = ability.effect_function(ctx)
                 if effect:
                     # Apply the effect
                     damage = getattr(effect, 'damage', 0) or 0
                     heal = getattr(effect, 'healed', 0) or 0
                     message = getattr(effect, 'message', f"{ability_name} used successfully!")
-                    
                     # Apply damage to opponent
                     if self.current_turn == self.challenger.name:
                         self.defender_hp = max(0, self.defender_hp - damage)
                         if heal > 0:
                             self.challenger_hp = min(self.challenger.stats.HP, self.challenger_hp + heal)
-                            
                         # Apply other effects
                         if getattr(effect, 'shield', 0):
                             self.challenger_buffs["shield"] = self.challenger_buffs.get("shield", 0) + effect.shield
@@ -382,7 +386,6 @@ class PvPBattleSystem:
                         self.challenger_hp = max(0, self.challenger_hp - damage)
                         if heal > 0:
                             self.defender_hp = min(self.defender.stats.HP, self.defender_hp + heal)
-                            
                         # Apply other effects
                         if getattr(effect, 'shield', 0):
                             self.defender_buffs["shield"] = self.defender_buffs.get("shield", 0) + effect.shield
@@ -390,7 +393,6 @@ class PvPBattleSystem:
                             self.challenger_debuffs["stun"] = max(self.challenger_debuffs.get("stun", 0), effect.stun_duration)
                         if getattr(effect, 'bleed_applied', False):
                             self.challenger_debuffs["bleed"] = max(self.challenger_debuffs.get("bleed", 0), 3)
-                    
                     # Return effects for UI updates
                     effects = {
                         "damage": damage,
@@ -909,21 +911,17 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
                 continue
             if current_char.level < ability.level_required:
                 continue
-                
-            is_unlocked = ability.is_unlocked or current_char.unlocked_abilities.get(ability.name, False)
+            # Ensure is_unlocked is always a boolean
+            is_unlocked = bool(getattr(ability, 'is_unlocked', False)) or current_char.unlocked_abilities.get(ability.name, False)
             if not is_unlocked:
                 continue
-                
             # Skip abilities that are disabled in PvP
             if getattr(ability, 'disabled_in_pvp', False):
                 continue
-                
             gas_cost = ability.gas_cost or 0
             prefix = "⚔️" if ability_type == "active" else "✨" if ability_type == "ultimate" else " "
-            
             # Make sure ability name has no leading/trailing whitespace or underscores
             clean_ability_name = ability.name.strip().lstrip('_')
-            
             # Add available abilities
             if cooldowns.get(clean_ability_name, 0) == 0 and gas >= gas_cost:
                 keyboard.append([InlineKeyboardButton(
@@ -972,22 +970,10 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
         player_id = battle.defender.user_id
     
     # Add switch and surrender buttons (without item button for now)
-    if battle.switches_remaining > 0:
-        switch_surrender_row = [
-            InlineKeyboardButton(f"🔄 Switch ({battle.switches_remaining})", callback_data="pvp_switch"),
-            InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
-        ]
-    else:
-        switch_surrender_row = [
-            InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")
-        ]
-        
-    # Add the "Use Item" button to the switch/surrender row if player hasn't used an item yet
+    # Remove switch button if not implemented, or show disabled
+    switch_surrender_row = [InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")]
     if not used_item:
-        # Insert Use Item button at the beginning of the last row
         switch_surrender_row.insert(0, InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items"))
-    
-    # Add the row to the keyboard
     keyboard.append(switch_surrender_row)
     
     return keyboard
@@ -1358,15 +1344,11 @@ async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Switch turn after using item (item usage is considered a full turn)
     if battle.current_turn == battle.challenger.name:
         battle.current_turn = battle.defender.name
+        battle.challenger_used_item = False  # Only reset for the new turn's player
     else:
         battle.current_turn = battle.challenger.name
-    
-    # Increment turn counter
+        battle.defender_used_item = False
     battle.turn_count += 1
-    
-    # Reset used_item flags for the new turn
-    battle.challenger_used_item = False
-    battle.defender_used_item = False
     
     # Update battle display
     status = battle.get_battle_status()
@@ -1518,37 +1500,24 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             await safe_api_call(query.answer)
         except Exception as e:
-            # Handle expired callback queries gracefully
             logger.error(f"Error in answer: {e}")
-            # Continue processing even if the acknowledgment fails
-            # This allows the bot to still process the action even if the UI can't be updated
-        
-        callback_data = query.data
+        callback_data = getattr(query, 'data', None)
+        if not callback_data or not isinstance(callback_data, str):
+            await safe_api_call(query.answer, "Invalid callback data.", show_alert=True)
+            return
         user_id = str(update.effective_user.id)
-        
-        # Anti-spam protection
-        # Different cooldowns for different actions
-        cooldown = 0.5  # Default cooldown in seconds
-        
+        cooldown = 0.5
         if callback_data.startswith("pvp_ability_") or callback_data == "pvp_basic_attack":
-            # Combat actions have a shorter cooldown
             cooldown = 0.8
         elif callback_data in ["pvp_show_items", "pvp_back_to_battle"]:
-            # UI navigation should be responsive
             cooldown = 0.5
         elif callback_data.startswith("pvp_use_item_"):
-            # Item usage - a bit longer to prevent double-using items
             cooldown = 1.0
         elif callback_data == "pvp_surrender":
-            # Surrender has a longer cooldown to prevent accidental double-clicks
             cooldown = 2.0
-        
-        # Skip cooldown check for certain non-critical actions
         if not callback_data.startswith("pvp_cooldown_") and not callback_data.startswith("pvp_lowgas_") and not callback_data == "pvp_no_items":
             if not await check_button_cooldown(user_id, callback_data, cooldown):
-                # Silently ignore rapid button presses without showing any error message
                 return
-        
         if callback_data.startswith("pvp_accept_"):
             await handle_pvp_accept(update, context)
         elif callback_data.startswith("pvp_decline_"):
@@ -1560,13 +1529,16 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif callback_data == "pvp_basic_attack":
             await handle_pvp_basic_attack(update, context)
         elif callback_data.startswith("pvp_ability_"):
-            ability_name = callback_data[11:].strip()  # Remove "pvp_ability_" prefix and any whitespace
+            ability_name = callback_data[11:].strip()
+            if not ability_name:
+                await safe_api_call(query.answer, "Invalid ability name.", show_alert=True)
+                return
             logger.debug(f"Received ability callback: {ability_name}")
             await handle_pvp_ability(update, context, ability_name)
         elif callback_data == "pvp_surrender":
             await handle_pvp_surrender(update, context)
         elif callback_data == "pvp_switch":
-            await handle_pvp_switch(update, context)
+            await safe_api_call(query.answer, "Switching characters is not implemented yet.", show_alert=True)
         elif callback_data == "pvp_show_items":
             await handle_pvp_show_items(update, context)
         elif callback_data.startswith("pvp_use_item_"):
@@ -1576,19 +1548,15 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif callback_data == "pvp_no_items":
             await safe_api_call(query.answer, "You don't have any utility items to use.", show_alert=True)
         elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
-            # Show a message for abilities on cooldown or with insufficient gas
             try:
                 if callback_data.startswith("pvp_lowgas_"):
                     await safe_api_call(query.answer, "Not enough gas! Using an ability without sufficient gas will end the battle and you will lose.", show_alert=True)
                 else:
                     await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
             except Exception as e:
-                # Just log the error if the callback query is already expired
                 logger.debug(f"Could not answer callback query for cooldown/lowgas: {e}")
     except Exception as e:
         logger.error(f"Error in pvp_callback_handler: {e}")
-        # If we get here, something went wrong with handling the callback
-        # We'll silently fail since the user might try again
 
 
 async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, dome: bool = False) -> None:
