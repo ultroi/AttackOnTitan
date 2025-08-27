@@ -1020,6 +1020,14 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     f"You live to fight another day. Use /explore to find another titan."
                 )
                 cleanup_battle(user_id, "escaped")
+                # Remove active battle id and battle started flag so user can explore again
+                if f"active_battle_id_{user_id}" in context.bot_data:
+                    del context.bot_data[f"active_battle_id_{user_id}"]
+                if f"titan_battle_started_{user_id}" in context.bot_data:
+                    del context.bot_data[f"titan_battle_started_{user_id}"]
+                # Remove cached battle data
+                if hasattr(context, "user_data") and isinstance(context.user_data, dict):
+                    context.user_data.pop("battle_cache", None)
                 return
             else:
                 full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")

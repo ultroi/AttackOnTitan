@@ -432,10 +432,18 @@ class PvPBattleSystem:
             current_char = self.challenger
             opponent_char = self.defender
             gas = self.challenger_gas
+            
+            # Check for stun debuff
+            if self.challenger_debuffs.get("stun", 0) > 0:
+                return f"{self.challenger.name} is stunned and cannot act this turn!", {}
         else:
             current_char = self.defender
             opponent_char = self.challenger
             gas = self.defender_gas
+            
+            # Check for stun debuff
+            if self.defender_debuffs.get("stun", 0) > 0:
+                return f"{self.defender.name} is stunned and cannot act this turn!", {}
             
         # Check gas cost - basic attacks cost 20 gas
         if gas < 20:
@@ -764,9 +772,15 @@ class PvPBattleSystem:
         defender_player_name = self.defender_player.name
         
         # Clearly display which player controls which character
-        # Add "«" symbol next to the current turn player
+        # Add "«" symbol next to the current turn player (ensure only one player has the indicator)
         challenger_indicator = " « Turn" if self.current_turn == self.challenger.name else ""
         defender_indicator = " « Turn" if self.current_turn == self.defender.name else ""
+        
+        # Ensure only one player has the turn indicator
+        if self.current_turn == self.challenger.name:
+            defender_indicator = ""
+        else:
+            challenger_indicator = ""
         
         status_message = (
             f"Turn: {self.turn_count + 1}\n"
@@ -1445,9 +1459,15 @@ async def handle_pvp_back_to_battle(update: Update, context: ContextTypes.DEFAUL
         challenger_player_name = battle.challenger_player.name
         defender_player_name = battle.defender_player.name
         
-        # Add the "«" symbol to indicate whose turn it is
+        # Add the "«" symbol to indicate whose turn it is (ensure only one player has the indicator)
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        
+        # Ensure only one turn indicator is shown
+        if battle.current_turn == battle.challenger.name:
+            defender_turn_indicator = ""
+        else:
+            challenger_turn_indicator = ""
         
         await safe_api_call(
             query.edit_message_text,
@@ -1790,10 +1810,16 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
         challenger_first_name = challenger_player_name.split()[0] if challenger_player_name else "Player 1"
         defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
         
-        # Add the "«" symbol to indicate whose turn it is
+        # Add the "«" symbol to indicate whose turn it is (ensure only one player has the indicator)
         challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
         defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
         
+        # Ensure only one turn indicator is shown
+        if battle.current_turn == battle.challenger.name:
+            defender_turn_indicator = ""
+        else:
+            challenger_turn_indicator = ""
+            
         # Determine which player used the ability
         player_first_name = ""
         if battle.current_turn == battle.challenger.name:
@@ -1917,6 +1943,14 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
         except Exception as e:
             logger.error(f"Error refreshing defender character: {e}")
     
+    # Check for stun debuffs before allowing the attack
+    if battle.current_turn == battle.challenger.name and battle.challenger_debuffs.get("stun", 0) > 0:
+        await safe_api_call(query.answer, f"{battle.challenger.name} is stunned and cannot act this turn!", show_alert=True)
+        return
+    if battle.current_turn == battle.defender.name and battle.defender_debuffs.get("stun", 0) > 0:
+        await safe_api_call(query.answer, f"{battle.defender.name} is stunned and cannot act this turn!", show_alert=True)
+        return
+        
     # Use basic attack with refreshed character data
     message, effects = await battle.use_basic_attack(context)
     
