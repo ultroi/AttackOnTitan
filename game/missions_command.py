@@ -1,16 +1,3 @@
-def format_mission_14_progress(player, max_count=500):
-    """Format progress for Mission 14: 500 explores in each place of the map."""
-    AREAS = [
-        "Trost District", "Karanes District", "Shiganshina District",
-        "Stohess", "Orvud", "Ehrmich", "Mitras", "Ragako", "Utgard"
-    ]
-    explore_counts = getattr(player, "area_explore_counts", {}) or {}
-    lines = []
-    for area in AREAS:
-        count = explore_counts.get(area, 0)
-        status = "✅" if count >= max_count else f"{count}/{max_count}"
-        lines.append(f"• {area}: {status}")
-    return "\n".join(lines)
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -138,6 +125,21 @@ async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN
         )
+        
+
+def format_mission_14_progress(player, max_count=500):
+    """Format progress for Mission 14: 500 explores in each place of the map."""
+    AREAS = [
+        "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+        "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+    ]
+    explore_counts = getattr(player, "area_explore_counts", {}) or {}
+    lines = []
+    for area in AREAS:
+        count = explore_counts.get(area, 0)
+        status = "✅" if count >= max_count else f"{count}/{max_count}"
+        lines.append(f"• {area}: {status}")
+    return "\n".join(lines)
 
 async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                               player, db, active_missions=None) -> None:

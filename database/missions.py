@@ -270,24 +270,22 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
     for i, mission_progress in enumerate(player_missions):
         if (mission_progress["mission_id"] == mission_id and 
             mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
-            
             # Update progress
             current_progress = mission_progress["current_progress"] + progress_amount
             player_missions[i]["current_progress"] = current_progress
-            
+            # Save progress to DB after every update
+            await db.update_player(player.user_id, {"missions": player_missions})
             # Check if mission is completed
             if current_progress >= mission_progress["required_progress"]:
                 player_missions[i]["status"] = MISSION_STATUS_COMPLETED
                 player_missions[i]["completed_at"] = datetime.now(timezone.utc)
-                
+                await db.update_player(player.user_id, {"missions": player_missions})
                 # Apply rewards
                 mission_def = MISSIONS_BY_ID.get(mission_id)
                 if mission_def:
                     await apply_mission_rewards(db, player, mission_def)
-                    
                     # Return notification message
                     return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
-            
             # If progress updated but not completed yet
             return None
     

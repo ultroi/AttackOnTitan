@@ -99,7 +99,7 @@ class PvPBattleSystem:
         
         # Battle state tracking
         self.current_turn_user_id: str = str(challenger_player.user_id)  # Challenger goes first
-        self.current_turn: str = challenger.name  # For backward compatibility, but use user_id for logic
+        self.current_turn: str = str(challenger_player.user_id)  # Use user_id for logic
         self.turn_count: int = 0
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
@@ -169,11 +169,11 @@ class PvPBattleSystem:
         self.turn_count += 1
         if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.current_turn_user_id = str(self.defender_player.user_id)
-            self.current_turn = self.defender.name
+            self.current_turn = str(self.defender_player.user_id)
             self.defender_used_item = False
         else:
             self.current_turn_user_id = str(self.challenger_player.user_id)
-            self.current_turn = self.challenger.name
+            self.current_turn = str(self.challenger_player.user_id)
             self.challenger_used_item = False
         self.update_cooldowns()
     
@@ -389,13 +389,12 @@ class PvPBattleSystem:
         """
         message = ""
         effects = {"damage": 0}
-        
-        # Determine current character and opponent
-        if self.current_turn == self.challenger.name:
+
+        # Determine current character and opponent by user_id
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             current_char = self.challenger
             opponent_char = self.defender
             gas = self.challenger_gas
-            
             # Check for stun debuff
             if self.challenger_debuffs.get("stun", 0) > 0:
                 return f"{self.challenger.name} is stunned and cannot act this turn!", {}
@@ -403,38 +402,33 @@ class PvPBattleSystem:
             current_char = self.defender
             opponent_char = self.challenger
             gas = self.defender_gas
-            
             # Check for stun debuff
             if self.defender_debuffs.get("stun", 0) > 0:
                 return f"{self.defender.name} is stunned and cannot act this turn!", {}
-            
+
         # Check gas cost - basic attacks cost 20 gas
         if gas < 20:
             # End the battle automatically if player doesn't have enough gas
             message = f"Not enough gas to perform a basic attack! Battle automatically ends."
-            
-            # Set battle as ended
             self.battle_ended = True
-            
             # Set the opponent as winner
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.winner = self.defender.name
                 self.winner_char = self.defender
             else:
                 self.winner = self.challenger.name
                 self.winner_char = self.challenger
-                
             return message, {"insufficient_gas": True}
-            
+
         # Deduct gas
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.challenger_gas -= 20
         else:
             self.defender_gas -= 20
-            
+
         # Get equipped weapon for damage calculation
         shop_items = context.bot_data.get("shop_items") or {}
-        
+
         # Try to refresh character data from DB first
         db = context.bot_data.get("db") or Database()
         refreshed_character = None
@@ -443,7 +437,7 @@ class PvPBattleSystem:
                 refreshed_character = await db.get_character(int(current_char.user_id), current_char.name)
                 if refreshed_character:
                     # Update current character with refreshed data
-                    if self.current_turn == self.challenger.name:
+                    if self.current_turn_user_id == str(self.challenger_player.user_id):
                         self.challenger = refreshed_character
                         current_char = refreshed_character
                     else:
@@ -451,14 +445,14 @@ class PvPBattleSystem:
                         current_char = refreshed_character
         except Exception as e:
             logger.error(f"Error refreshing character data in use_basic_attack: {e}")
-        
+
         # Debug log to see equipped weapon
         logger.debug(f"Equipped weapon for {current_char.name}: {current_char.equipped_weapon}")
-        
+
         # Now get the weapon with latest data
         weapon = self.get_equipped_weapon(current_char, shop_items)
         logger.debug(f"Found weapon: {weapon.name if weapon else 'None'}")
-        
+
         # Calculate damage
         if weapon:
             damage_min = weapon.attributes.get("damage_min", 10)
@@ -474,14 +468,13 @@ class PvPBattleSystem:
                 logger.error(f"Error calculating basic attack damage: {e}")
                 base_damage = 10
                 weapon_name = "basic strike"
-                
+
         # Check for mission-based PvP damage bonus
         try:
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 player = self.challenger_player
             else:
                 player = self.defender_player
-                
             pvp_bonuses = getattr(player, "pvp_bonuses", {})
             if pvp_bonuses:
                 damage_bonus = pvp_bonuses.get("damage_bonus", 0)
@@ -490,16 +483,15 @@ class PvPBattleSystem:
                     logger.debug(f"Applied PvP damage bonus: +{damage_bonus} (Mission 14 reward)")
         except Exception as e:
             logger.error(f"Error applying PvP damage bonus: {e}")
-                
+
         # Apply item effects
         damage_multiplier = 1.0
-        
+
         # Check for attack boost from items
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             attack_boost = self.challenger_buffs.get("attack_boost", 1.0)
             if attack_boost > 1.0:
                 damage_multiplier *= attack_boost
-            
             # Check for item effects on critical hits
             crit_boost = self.challenger_buffs.get("crit_boost", 0)
             if crit_boost > 0 and random.randint(1, 100) <= crit_boost:
@@ -509,31 +501,30 @@ class PvPBattleSystem:
             attack_boost = self.defender_buffs.get("attack_boost", 1.0)
             if attack_boost > 1.0:
                 damage_multiplier *= attack_boost
-                
             # Check for item effects on critical hits
             crit_boost = self.defender_buffs.get("crit_boost", 0)
             if crit_boost > 0 and random.randint(1, 100) <= crit_boost:
                 damage_multiplier *= 1.5
                 weapon_name = f"{weapon_name} (CRITICAL)"
-                
+
         # Apply the multiplier
         total_damage = int(base_damage * damage_multiplier)
-                
+
         # Apply damage
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.defender_hp = max(0, self.defender_hp - total_damage)
         else:
             self.challenger_hp = max(0, self.challenger_hp - total_damage)
-        
-        # Check if this was a critical hit    
+
+        # Check if this was a critical hit
         is_critical = "CRITICAL" in weapon_name
         if is_critical:
             effects["critical"] = True
             weapon_name = weapon_name.replace(" (CRITICAL)", "")
-            
+
         message = f"⚔️ {current_char.name} attacks with {weapon_name}, dealing {total_damage} damage!"
         effects["damage"] = total_damage
-        
+
         # Check if battle has ended
         if self.challenger_hp <= 0 or self.defender_hp <= 0:
             self.battle_ended = True
@@ -543,7 +534,7 @@ class PvPBattleSystem:
             else:
                 self.winner = self.challenger.name
                 self.winner_char = self.challenger
-                
+
         return message, effects
         
     def surrender(self) -> str:
@@ -1065,13 +1056,13 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not challenger_char:
             await update.message.reply_text("Your primary character was not found!")
             return
-            
+
         # Get defender's character data
         defender_player = Player(**target_player)
         if not defender_player.team:
             await update.message.reply_text(f"{defender_player.name} doesn't have any characters in their team!")
             return
-            
+
         # Handle the TeamMember object or other formats for defender
         if hasattr(defender_player.team[0], 'character_name'):
             defender_char_name = defender_player.team[0].character_name
@@ -1079,7 +1070,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             defender_char_name = defender_player.team[0].get("character_name")
         else:
             defender_char_name = defender_player.team[0]
-            
+
         try:
             defender_char = await db.get_character(target_id, defender_char_name)
             if not defender_char:
@@ -1089,10 +1080,10 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             logger.error(f"Error getting defender character: {e}")
             await update.message.reply_text(f"Error retrieving {defender_player.name}'s character. They may need to set up their team properly.")
             return
-        
+
         # Generate a unique challenge ID
         challenge_id = f"pvp_{user_id}_{target_id}_{int(datetime.now().timestamp())}"
-        
+
         # Store challenge data
         pvp_challenges[challenge_id] = {
             "challenger_id": user_id,
@@ -1608,10 +1599,22 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             del pvp_challenges[challenge_id]
             return
     
+    # Ensure both challenger_char and defender_char are Character objects
+    from database.models import Character
+    challenger_char = challenge_data["challenger_char"]
+    defender_char = challenge_data["defender_char"]
+    # Convert dicts to Character if needed
+    if isinstance(challenger_char, dict):
+        challenger_char = Character(**challenger_char)
+    if isinstance(defender_char, dict):
+        defender_char = Character(**defender_char)
+    # Update challenge_data to ensure consistency
+    challenge_data["challenger_char"] = challenger_char
+    challenge_data["defender_char"] = defender_char
     # Create PvP battle instance
     battle = PvPBattleSystem(
-        challenger=challenge_data["challenger_char"],
-        defender=challenge_data["defender_char"],
+        challenger=challenger_char,
+        defender=defender_char,
         challenger_player=challenge_data["challenger_player"],
         defender_player=challenge_data["defender_player"],
         challenge_id=challenge_id
@@ -2346,7 +2349,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
             # Calculate rewards
             rewards = await battle.calculate_rewards(db)
             
-            # Send timeout message
+            # Edit existing battle message with timeout info
             try:
                 # Get player mentions for proper hyperlinks
                 challenger_mention = f'<a href="tg://user?id={challenger_id}">{battle.challenger_player.name}</a>'
@@ -2381,8 +2384,10 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     f"<b>Gain: {rewards['loser']['xp']} XP</b>"
                 )
                 
-                await context.bot.send_message(
+                # Edit the existing battle message instead of sending a new one
+                await context.bot.edit_message_text(
                     chat_id=chat_id,
+                    message_id=query.message.message_id if hasattr(query, 'message') else None,
                     text=(
                         f"{timeout_header}\n\n"
                         f"{battle_outcome}"
@@ -2390,7 +2395,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
-                logger.error(f"Failed to send PVP timeout message: {e}")
+                logger.error(f"Failed to edit PVP timeout message: {e}")
                 
             # Apply rewards and update statistics
             if battle.winner == battle.challenger.name:
