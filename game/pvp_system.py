@@ -97,8 +97,9 @@ class PvPBattleSystem:
         self.initial_challenger_gas: int = challenger.gas
         self.initial_defender_gas: int = defender.gas
         
-        # Battle state tracking
-        self.current_turn: str = challenger.name  # Challenger goes first
+    # Battle state tracking
+    self.current_turn_user_id: str = str(challenger_player.user_id)  # Challenger goes first
+    self.current_turn: str = challenger.name  # For backward compatibility, but use user_id for logic
         self.turn_count: int = 0
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
@@ -164,69 +165,54 @@ class PvPBattleSystem:
         return None
         
     def switch_turn(self) -> None:
-        """Switch turn between challenger and defender"""
+        """Switch turn between challenger and defender using user_id for clarity"""
         self.turn_count += 1
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            self.current_turn_user_id = str(self.defender_player.user_id)
             self.current_turn = self.defender.name
-            # Reset used item flag for the next player's turn
             self.defender_used_item = False
         else:
+            self.current_turn_user_id = str(self.challenger_player.user_id)
             self.current_turn = self.challenger.name
-            # Reset used item flag for the next player's turn
             self.challenger_used_item = False
-        
-        # Update cooldowns for current player
         self.update_cooldowns()
     
     def update_cooldowns(self) -> None:
-        """Update cooldowns for the current player"""
-        if self.current_turn == self.challenger.name:
-            # Update challenger cooldowns
+        """Update cooldowns for the current player using user_id for clarity"""
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            # ...existing code for challenger...
             for ability_name in list(self.challenger_cooldowns.keys()):
                 if self.challenger_cooldowns[ability_name] > 0:
                     self.challenger_cooldowns[ability_name] -= 1
-            
-            # Update challenger debuffs
             for debuff in list(self.challenger_debuffs.keys()):
                 if self.challenger_debuffs[debuff] > 0:
                     self.challenger_debuffs[debuff] -= 1
                     if self.challenger_debuffs[debuff] <= 0:
                         del self.challenger_debuffs[debuff]
-            
-            # Update buffs
             for buff in list(self.challenger_buffs.keys()):
                 if isinstance(self.challenger_buffs[buff], (int, float)) and buff != "shield":
                     if self.challenger_buffs[buff] > 1:
                         self.challenger_buffs[buff] -= 1
                         if self.challenger_buffs[buff] <= 0:
                             del self.challenger_buffs[buff]
-            
-            # Handle bleed effect
             if self.challenger_debuffs.get("bleed", 0) > 0:
                 bleed_damage = max(10, self.defender.stats.ATK // 2)
                 self.challenger_hp = max(0, self.challenger_hp - bleed_damage)
         else:
-            # Update defender cooldowns
             for ability_name in list(self.defender_cooldowns.keys()):
                 if self.defender_cooldowns[ability_name] > 0:
                     self.defender_cooldowns[ability_name] -= 1
-            
-            # Update defender debuffs
             for debuff in list(self.defender_debuffs.keys()):
                 if self.defender_debuffs[debuff] > 0:
                     self.defender_debuffs[debuff] -= 1
                     if self.defender_debuffs[debuff] <= 0:
                         del self.defender_debuffs[debuff]
-            
-            # Update buffs
             for buff in list(self.defender_buffs.keys()):
                 if isinstance(self.defender_buffs[buff], (int, float)) and buff != "shield":
                     if self.defender_buffs[buff] > 1:
                         self.defender_buffs[buff] -= 1
                         if self.defender_buffs[buff] <= 0:
                             del self.defender_buffs[buff]
-            
-            # Handle bleed effect
             if self.defender_debuffs.get("bleed", 0) > 0:
                 bleed_damage = max(10, self.challenger.stats.ATK // 2)
                 self.defender_hp = max(0, self.defender_hp - bleed_damage)
@@ -237,9 +223,8 @@ class PvPBattleSystem:
         """
         message = ""
         effects = {}
-        
-        # Determine current character and opponent
-        if self.current_turn == self.challenger.name:
+        # Use user_id for turn logic
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             current_char = self.challenger
             opponent_char = self.defender
             cooldowns = self.challenger_cooldowns
@@ -282,41 +267,35 @@ class PvPBattleSystem:
         # Check gas cost
         gas_cost = ability.gas_cost or 20
         if gas < gas_cost:
-            # End the battle automatically if player doesn't have enough gas
             message = f"Not enough gas to use {ability_name}! Battle automatically ends."
-            
-            # Set battle as ended
             self.battle_ended = True
-            
-            # Set the opponent as winner
-            if self.current_turn == self.challenger.name:
+            # Set the opponent as winner using user_id
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.winner = self.defender.name
                 self.winner_char = self.defender
             else:
                 self.winner = self.challenger.name
                 self.winner_char = self.challenger
-                
             return message, {"insufficient_gas": True}
-            
         # Deduct gas
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.challenger_gas -= gas_cost
         else:
             self.defender_gas -= gas_cost
             
         # Build context for ability effect
         ctx = {
-            "character_stats": current_char.stats.dict() if current_char.stats else {},
-            "opponent_stats": opponent_char.stats.dict() if opponent_char.stats else {},
-            "character_hp": self.challenger_hp if self.current_turn == self.challenger.name else self.defender_hp,
-            "opponent_hp": self.defender_hp if self.current_turn == self.challenger.name else self.challenger_hp,
-            "character_max_hp": current_char.stats.HP,
-            "opponent_max_hp": opponent_char.stats.HP,
-            "pvp": True,  # Flag to indicate PvP context
+            "character_stats": current_char.stats.dict() if getattr(current_char, 'stats', None) else {},
+            "opponent_stats": opponent_char.stats.dict() if getattr(opponent_char, 'stats', None) else {},
+            "character_hp": self.challenger_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.defender_hp,
+            "opponent_hp": self.defender_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.challenger_hp,
+            "character_max_hp": getattr(current_char.stats, 'HP', 0) if getattr(current_char, 'stats', None) else 0,
+            "opponent_max_hp": getattr(opponent_char.stats, 'HP', 0) if getattr(opponent_char, 'stats', None) else 0,
+            "pvp": True,
             "turn": self.turn_count,
             "gas": gas - gas_cost,
-            "character_level": current_char.level,
-            "opponent_level": opponent_char.level,
+            "character_level": getattr(current_char, 'level', 1),
+            "opponent_level": getattr(opponent_char, 'level', 1),
             "is_pvp": True,
         }
         
@@ -324,44 +303,31 @@ class PvPBattleSystem:
         try:
             if ability.effect_function:
                 from database.characters import AbilityEffect
-                
                 # Apply any item effects to the context before executing ability
-                if self.current_turn == self.challenger.name:
-                    # Check for attack boost from items
+                if self.current_turn_user_id == str(self.challenger_player.user_id):
                     attack_boost = self.challenger_buffs.get("attack_boost", 1.0)
-                    if attack_boost > 1.0:
-                        # Apply attack boost to character stats
-                        if "character_stats" in ctx and "ATK" in ctx["character_stats"]:
-                            ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
-                    
-                    # Apply accuracy boost from items
+                    if attack_boost > 1.0 and "character_stats" in ctx and "ATK" in ctx["character_stats"]:
+                        ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
                     accuracy_boost = self.challenger_buffs.get("accuracy_boost", 0)
                     if accuracy_boost > 0 and "character_stats" in ctx and "ACC" in ctx["character_stats"]:
                         ctx["character_stats"]["ACC"] = ctx["character_stats"]["ACC"] + accuracy_boost
-                        
-                    # Apply defense boost from items to character stats
                     defense_boost = self.challenger_buffs.get("defense_boost", 0)
                     if defense_boost > 0 and "character_stats" in ctx and "DEF" in ctx["character_stats"]:
                         ctx["character_stats"]["DEF"] = ctx["character_stats"]["DEF"] + defense_boost
                 else:
-                    # Same logic for defender
                     attack_boost = self.defender_buffs.get("attack_boost", 1.0)
-                    if attack_boost > 1.0:
-                        if "character_stats" in ctx and "ATK" in ctx["character_stats"]:
-                            ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
-                    
+                    if attack_boost > 1.0 and "character_stats" in ctx and "ATK" in ctx["character_stats"]:
+                        ctx["character_stats"]["ATK"] = int(ctx["character_stats"]["ATK"] * attack_boost)
                     accuracy_boost = self.defender_buffs.get("accuracy_boost", 0)
                     if accuracy_boost > 0 and "character_stats" in ctx and "ACC" in ctx["character_stats"]:
                         ctx["character_stats"]["ACC"] = ctx["character_stats"]["ACC"] + accuracy_boost
-                        
                     defense_boost = self.defender_buffs.get("defense_boost", 0)
                     if defense_boost > 0 and "character_stats" in ctx and "DEF" in ctx["character_stats"]:
                         ctx["character_stats"]["DEF"] = ctx["character_stats"]["DEF"] + defense_boost
-                
                 # Prevent action if stunned
-                if self.current_turn == self.challenger.name and self.challenger_debuffs.get("stun", 0) > 0:
+                if self.current_turn_user_id == str(self.challenger_player.user_id) and self.challenger_debuffs.get("stun", 0) > 0:
                     return f"{self.challenger.name} is stunned and cannot act this turn!", {}
-                if self.current_turn == self.defender.name and self.defender_debuffs.get("stun", 0) > 0:
+                if self.current_turn_user_id == str(self.defender_player.user_id) and self.defender_debuffs.get("stun", 0) > 0:
                     return f"{self.defender.name} is stunned and cannot act this turn!", {}
 
                 effect = ability.effect_function(ctx)
@@ -371,11 +337,10 @@ class PvPBattleSystem:
                     heal = getattr(effect, 'healed', 0) or 0
                     message = getattr(effect, 'message', f"{ability_name} used successfully!")
                     # Apply damage to opponent
-                    if self.current_turn == self.challenger.name:
+                    if self.current_turn_user_id == str(self.challenger_player.user_id):
                         self.defender_hp = max(0, self.defender_hp - damage)
                         if heal > 0:
-                            self.challenger_hp = min(self.challenger.stats.HP, self.challenger_hp + heal)
-                        # Apply other effects
+                            self.challenger_hp = min(getattr(self.challenger.stats, 'HP', self.challenger_hp), self.challenger_hp + heal)
                         if getattr(effect, 'shield', 0):
                             self.challenger_buffs["shield"] = self.challenger_buffs.get("shield", 0) + effect.shield
                         if getattr(effect, 'stun_duration', 0):
@@ -385,8 +350,7 @@ class PvPBattleSystem:
                     else:
                         self.challenger_hp = max(0, self.challenger_hp - damage)
                         if heal > 0:
-                            self.defender_hp = min(self.defender.stats.HP, self.defender_hp + heal)
-                        # Apply other effects
+                            self.defender_hp = min(getattr(self.defender.stats, 'HP', self.defender_hp), self.defender_hp + heal)
                         if getattr(effect, 'shield', 0):
                             self.defender_buffs["shield"] = self.defender_buffs.get("shield", 0) + effect.shield
                         if getattr(effect, 'stun_duration', 0):
@@ -414,10 +378,9 @@ class PvPBattleSystem:
             if self.challenger_hp <= 0:
                 self.winner = self.defender.name
                 self.winner_char = self.defender
-            else:
+            elif self.defender_hp <= 0:
                 self.winner = self.challenger.name
                 self.winner_char = self.challenger
-                
         return message, effects
         
     async def use_basic_attack(self, context: ContextTypes.DEFAULT_TYPE) -> Tuple[str, Dict]:
@@ -755,33 +718,20 @@ class PvPBattleSystem:
         """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
         challenger_hp_percent = self.challenger_hp / self.challenger.stats.HP
         defender_hp_percent = self.defender_hp / self.defender.stats.HP
-        
         challenger_bar = "█" * int(challenger_hp_percent * 10) + "▒" * (10 - int(challenger_hp_percent * 10))
         defender_bar = "█" * int(defender_hp_percent * 10) + "▒" * (10 - int(defender_hp_percent * 10))
-        
-        # Get player info for linking current turn player's name
-        if self.current_turn == self.challenger.name:
+        # Use user_id to determine current turn
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             current_player_id = self.challenger_player.user_id
             current_player_first_name = self.challenger_player.name
         else:
             current_player_id = self.defender_player.user_id
             current_player_first_name = self.defender_player.name
-            
-        # Create status message with hyperlinked player name for current turn
         challenger_player_name = self.challenger_player.name
         defender_player_name = self.defender_player.name
-        
-        # Clearly display which player controls which character
         # Add "«" symbol next to the current turn player (ensure only one player has the indicator)
-        challenger_indicator = " « Turn" if self.current_turn == self.challenger.name else ""
-        defender_indicator = " « Turn" if self.current_turn == self.defender.name else ""
-        
-        # Ensure only one player has the turn indicator
-        if self.current_turn == self.challenger.name:
-            defender_indicator = ""
-        else:
-            challenger_indicator = ""
-        
+        challenger_indicator = " « Turn" if self.current_turn_user_id == str(self.challenger_player.user_id) else ""
+        defender_indicator = " « Turn" if self.current_turn_user_id == str(self.defender_player.user_id) else ""
         status_message = (
             f"Turn: {self.turn_count + 1}\n"
             f"Current Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}'s {self.current_turn}</a>\n\n"
