@@ -298,16 +298,9 @@ async def initialize_application():
                 )
             except Exception as e:
                 logger.error(f"Failed to send error to group: {e}")
-                
-            # Notify user
-            if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
-                try:
-                    if update.effective_message:
-                        await update.effective_message.reply_text(
-                            "An error occurred! Please report to mods."
-                        )
-                except BadRequest:
-                    pass
+
+
+        
 
         application.add_error_handler(error_handler)
         if not app_initialized:
