@@ -97,9 +97,9 @@ class PvPBattleSystem:
         self.initial_challenger_gas: int = challenger.gas
         self.initial_defender_gas: int = defender.gas
         
-    # Battle state tracking
-    self.current_turn_user_id: str = str(challenger_player.user_id)  # Challenger goes first
-    self.current_turn: str = challenger.name  # For backward compatibility, but use user_id for logic
+        # Battle state tracking
+        self.current_turn_user_id: str = str(challenger_player.user_id)  # Challenger goes first
+        self.current_turn: str = challenger.name  # For backward compatibility, but use user_id for logic
         self.turn_count: int = 0
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
@@ -2378,7 +2378,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     f"<blockquote><b>{winner_first_name}</b></blockquote>\n"
                     f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks</b>\n\n"
                     f"<blockquote><b>{loser_first_name}</b></blockquote>\n"
-                    f"<b>Gain: {rewards['loser']['xp']} XP, {rewards['loser']['marks']} Marks</b>"
+                    f"<b>Gain: {rewards['loser']['xp']} XP</b>"
                 )
                 
                 await context.bot.send_message(
@@ -2415,13 +2415,13 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 
             # Update loser statistics and rewards
             await db.players.update_one(
-                {"user_id": winner_id},
+                {"user_id": loser_id},
                 {
                     "$inc": {
-                        "pvp_wins": 1,
-                        "xp": rewards["winner"]["xp"],
-                        "marks": rewards["winner"]["marks"],
-                        "total_xp": rewards["winner"]["xp"]
+                        "pvp_losses": 1,
+                        "xp": rewards["loser"]["xp"],
+                        "marks": rewards["loser"]["marks"],
+                        "total_xp": rewards["loser"]["xp"]
                     }
                 }
             )
