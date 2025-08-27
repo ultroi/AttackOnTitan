@@ -25,8 +25,10 @@ from database.missions import (
 
 logger = logging.getLogger(__name__)
 
-# Rate limiting for explore command
+
+# Rate limiting and locking for explore command
 user_last_explore: Dict[str, float] = {}
+user_explore_locks: Dict[str, asyncio.Lock] = {}
 TITAN_TIMEOUT_SECONDS = 60 * 3  # 3 minutes
 
 
@@ -48,7 +50,9 @@ DIFFICULTY_BY_LEVEL = {level: "Easy" if level < 8 else ("Normal" if level < 15 e
 # Pre-defined default areas to avoid recreating this list every time
 DEFAULT_AREAS = ["Trost District", "Karanes District", "Shiganshina District"]
 
-def generate_titan_directly(player_level: int, unlocked_areas: list = None):
+from typing import Optional, List
+
+def generate_titan_directly(player_level: int, unlocked_areas: Optional[List] = None):
     """Generate a titan directly without database calls for maximum speed - highly optimized version"""
     from database.models import Titan, generate_titan_name, generate_titan_hp, generate_titan_xp
     
@@ -231,6 +235,7 @@ def _is_in_battle(user_id_str: str) -> bool:
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ultra-fast explore: send titan instantly, run all checks in background, preserve all logic/messages."""
+
     if not update.effective_user:
         await _reply_error(update, "Cannot identify user. Please try again.")
         return
@@ -244,10 +249,24 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "This command can only be used in private chats.")
         return
 
-    now_ms = time.time()
-    if now_ms - user_last_explore.get(user_id_str, 0) < 1.2:
+
+    # Per-user lock to prevent overlapping explores (race condition fix)
+    if user_id_str not in user_explore_locks:
+        user_explore_locks[user_id_str] = asyncio.Lock()
+    lock = user_explore_locks[user_id_str]
+    if lock.locked():
+        await _reply_error(update, "Please wait, your previous explore is still processing.")
         return
-    user_last_explore[user_id_str] = now_ms
+    async with lock:
+        # Check if user is already in a battle BEFORE anything else
+        if _is_in_battle(user_id_str):
+            await _reply_error(update, f"{username or 'Player'} is currently battling!")
+            return
+
+        now_ms = time.time()
+        if now_ms - user_last_explore.get(user_id_str, 0) < 1.2:
+            return
+        user_last_explore[user_id_str] = now_ms
 
     # Get database immediately (critical dependency)
     db = context.bot_data.get("db")
@@ -270,6 +289,81 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
 
+    # Check for decision points first before generating a titan
+    location = getattr(player, "location", None)
+    if location and location in TRAVEL_MAP and location.startswith("Decision_"):
+        directions = TRAVEL_MAP[location]
+        keyboard = [
+            [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
+            for dir in directions.keys()
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        asyncio.create_task(_handle_decision_point_cleanup(user_id_str, context))
+        if update.message:
+            await update.message.reply_text(
+                f"⚠️ <b>Decision Required!</b> ⚠️\n\n"
+                f"You are at a decision point: <b>{location}</b>\n"
+                f"You must choose a direction to continue your journey.\n\n"
+                f"<i>You cannot explore further until you make a choice.</i>",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        elif update.callback_query and update.callback_query.message:
+            await update.callback_query.message.chat.send_message(
+                f"⚠️ <b>Decision Required!</b> ⚠️\n\n"
+                f"You are at a decision point: <b>{location}</b>\n"
+                f"You must choose a direction to continue your journey.\n\n"
+                f"<i>You cannot explore further until you make a choice.</i>",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        return
+    
+    # Check for captcha with lower probability (3% instead of 4%)
+    if random.random() < 0.03 and not context.user_data.get('captcha_active', False):
+        captcha_triggered = await spawn_captcha(update, context)
+        if captcha_triggered:
+            return
+    
+    # Check for verification requirement
+    now = time.time()
+    player_verified = getattr(player, "hcaptcha_verified", False)
+    last_explore = getattr(player, "last_explore_time", None)
+    explore_start_time = getattr(player, "explore_start_time", None)
+
+    if context.user_data.get("hcaptcha_prompted", False):
+        player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
+        player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
+        last_verified_fresh = getattr(player_fresh, "last_verified", 0)
+        now_fresh = time.time()
+        if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
+            context.user_data["hcaptcha_prompted"] = False
+            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
+            await db.update_player(user_id_str, {"hcaptcha_verified": True})
+            player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
+        else:
+            await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
+            return
+    
+    if not explore_start_time:
+        asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
+    else:
+        if (now - explore_start_time) > 1500:
+            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": None}))
+            last_verified_time = getattr(player, "last_verified", 0)
+            if not last_verified_time or (now - last_verified_time) > 1800:
+                if await _handle_verification(update, context, user_id, now, db):
+                    return
+        else:
+            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
+
+    if last_explore and (now - last_explore) > 1800:
+        last_verified_time = getattr(player, "last_verified", 0)
+        if not last_verified_time or (now - last_verified_time) > 1800:
+            if await _handle_verification(update, context, user_id, now, db):
+                return
+
+    # Now proceed with titan generation after all checks
     # --- INSTANT TITAN GENERATION & MESSAGE ---
     try:
         titan = generate_titan_directly(
@@ -342,11 +436,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- BACKGROUND LOGIC TASK ---
 async def _background_explore_checks(update, context, user_id, user_id_str, username, db, player, player_character_name, titan, sent_message):
+    """Run all explore logic/checks/messaging in background after titan message."""
     # --- TRAVEL PROGRESS LOGIC ---
     # Only increment travel progress if not in battle (after is_in_battle is set)
     travel = getattr(player, "travel", {})
-
     is_in_battle = _is_in_battle(user_id_str)
+    
     if travel.get("in_progress") and not is_in_battle:
         travel_progress = travel.get("progress", 0) + 1
         travel_required = travel.get("required", 1)
@@ -374,37 +469,7 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
             except Exception:
                 pass
         await db.update_player(user_id_str, travel_update)
-        # --- TRAVEL PROGRESS LOGIC ---
-        # Only increment travel progress if not in battle
-        travel = getattr(player, "travel", {})
-        if travel.get("in_progress") and not is_in_battle:
-            travel_progress = travel.get("progress", 0) + 1
-            travel_required = travel.get("required", 1)
-            travel_update = {"travel.progress": travel_progress}
-            # If travel completed
-            if travel_progress >= travel_required:
-                # Update location and clear travel state
-                new_location = travel.get("to", player.location)
-                travel_update = {
-                    "location": new_location,
-                    "travel": {}
-                }
-                # Notify user of arrival
-                try:
-                    if update.message:
-                        await update.message.reply_text(
-                            f"🗺️ You have arrived at <b>{new_location}</b>!",
-                            parse_mode=ParseMode.HTML
-                        )
-                    elif update.callback_query and update.callback_query.message:
-                        await update.callback_query.message.chat.send_message(
-                            f"🗺️ You have arrived at <b>{new_location}</b>!",
-                            parse_mode=ParseMode.HTML
-                        )
-                except Exception:
-                    pass
-            await db.update_player(user_id_str, travel_update)
-    """Run all explore logic/checks/messaging in background after titan message."""
+        
     try:
         # --- SPAM TRACKING: Warn at 10, ban at 15 explores without battle ---
         if "explore_spam_count" not in context.bot_data:
@@ -431,30 +496,6 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
         if not is_in_battle:
             db.invalidate_titan_cache(user_id_str)
 
-        # Handle travel/decision points
-        location = getattr(player, "location", None)
-        if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-            directions = TRAVEL_MAP[location]
-            keyboard = [
-                [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
-                for dir in directions.keys()
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            asyncio.create_task(_handle_decision_point_cleanup(user_id_str, context))
-            if update.message:
-                await update.message.reply_text(
-                    f"You are at a decision point: <b>{location}</b>\nChoose a direction to continue your journey:",
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
-            return
-
-        # Spawn CAPTCHA with lower probability (3% instead of 4%)
-        if random.random() < 0.03:
-            captcha_triggered = await spawn_captcha(update, context)
-            if captcha_triggered:
-                return
-
         # Get character data
         player_character = await db.get_character(user_id_str, player_character_name)
         if not player_character:
@@ -471,54 +512,14 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
                 await _reply_error(update, f"{player_character_name} doesn't have enough gas to explore (needs at least 100). Use /char char_name to refill gas.")
             return
 
-        # Use cached titan if available, otherwise store the new one
-        db._titan_cache[user_id_str] = titan
-        asyncio.create_task(db.store_titan(user_id_str, titan))
 
-        # Verification logic (unchanged, but in background)
-        now = time.time()
-        player_verified = getattr(player, "hcaptcha_verified", False)
-        last_explore = getattr(player, "last_explore_time", None)
-        explore_start_time = getattr(player, "explore_start_time", None)
-
-        if context.user_data.get("hcaptcha_prompted", False):
-            player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-            player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
-            last_verified_fresh = getattr(player_fresh, "last_verified", 0)
-            now_fresh = time.time()
-            if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
-                context.user_data["hcaptcha_prompted"] = False
-                await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
-                await db.update_player(user_id_str, {"hcaptcha_verified": True})
-                player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-            else:
-                await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-                return
-        elif player_verified:
-            if context.user_data.get("hcaptcha_prompted", False):
-                context.user_data["hcaptcha_prompted"] = False
-                await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
-            logger.debug(f"Player {user_id_str} verification confirmed in database, resetting hcaptcha_prompted flag")
-
-        if not explore_start_time:
-            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
-        else:
-            if (now - explore_start_time) > 1500:
-                asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": None}))
-                last_verified_time = getattr(player, "last_verified", 0)
-                if not last_verified_time or (now - last_verified_time) > 1800:
-                    if await _handle_verification(update, context, user_id, now, db):
-                        return
-            else:
-                asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
-
-        if last_explore and (now - last_explore) > 1800:
-            last_verified_time = getattr(player, "last_verified", 0)
-            if not last_verified_time or (now - last_verified_time) > 1800:
-                if await _handle_verification(update, context, user_id, now, db):
-                    return
+        # Only store titan if user is not in battle (double check for race conditions)
+        if not _is_in_battle(user_id_str):
+            db._titan_cache[user_id_str] = titan
+            asyncio.create_task(db.store_titan(user_id_str, titan))
 
         # Reset verification flag but maintain recent verification record
+        player_verified = getattr(player, "hcaptcha_verified", False)
         if player_verified:
             asyncio.create_task(db.update_player(user_id_str, {
                 "hcaptcha_start_time": None
@@ -695,6 +696,7 @@ async def _handle_verification(update, context, user_id, now, db):
     return True
 
 async def _handle_decision_point_cleanup(user_id_str, context):
+    """Cleanup all battle-related data when at a decision point"""
     try:
         # Use the helper function to check for battle
         if _is_in_battle(user_id_str):
@@ -708,7 +710,21 @@ async def _handle_decision_point_cleanup(user_id_str, context):
         battle_id_key = f"active_battle_id_{user_id_str}"
         if battle_id_key in context.bot_data:
             context.bot_data.pop(battle_id_key, None)
-    except Exception:
+            
+        # Clean up any titan data
+        db = context.bot_data.get("db")
+        if db:
+            await db.delete_titan(user_id_str)
+            
+        # Clear any timeout tasks
+        key = f"titan_timeouts_{user_id_str}"
+        if key in context.bot_data:
+            for task in context.bot_data[key]:
+                if not task.done():
+                    task.cancel()
+            context.bot_data[key] = []
+    except Exception as e:
+        logger.error(f"Error in decision point cleanup: {e}")
         pass
     
 async def _handle_spam_ban(user_id, update, context):
