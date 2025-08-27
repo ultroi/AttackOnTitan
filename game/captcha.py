@@ -134,12 +134,16 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_photo(
-        photo=captcha_image,
-        caption="Please select the correct CAPTCHA text:",
-        reply_markup=reply_markup,
-        has_spoiler=True
-    )
+    try:
+        await update.message.reply_photo(
+            photo=captcha_image,
+            caption="Please select the correct CAPTCHA text:",
+            reply_markup=reply_markup,
+            has_spoiler=True
+        )
+    except Exception as e:
+        await update.message.reply_text("❌ Failed to send CAPTCHA image (timeout or error). Please try again.")
+        # Optionally log the error: print(e) or use logging
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None

@@ -66,7 +66,7 @@ TRAVEL_MAP = {
     "Decision_NE_Krolva": {
         "Right": ("Utopia", 250),
         "Left": ("Karanes", 250),
-        "Straight": ("Mitras", 2),
+        "Straight": ("Mitras", 250),
     },
     "Decision_SE_Krolva": {
         "Right": ("Shiganshina", 250),
@@ -90,7 +90,7 @@ TRAVEL_MAP = {
         "Straight": ("Shiganshina", 250),
     },
     "Decision_NE_Shiganshina": {
-        "Right": ("Stohess", 5),
+        "Right": ("Stohess", 250),
         "Straight": ("Karanes", 250),
     },
     "Decision_NW_Shiganshina": {

@@ -24,6 +24,7 @@ from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
 from utils.mod_utils import promote_mod, demote_mod
 from utils.maintenance import maintenance_protected, maintenance
+from utils.disable_mode import disable_command, enable_command, disable_protected
 from utils.diagnostics import diagnostic_db_command, check_group_record
 
 # Import database models
@@ -60,7 +61,7 @@ from game.captcha import button
 from game.pvp_system import pvp_command, pvp_callback_handler
 from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
-from game.missions import setup_missions_commands
+from game.missions_command import missions_command, missions_callback_handler
 
 # Load environment variables
 load_dotenv()
@@ -631,55 +632,60 @@ async def monitor_dashboard(request: Request):
     
 
 
+
+
+
 def register_handlers(app_instance):
 
     # Command handlers
-    app_instance.add_handler(CommandHandler("start", start_character_selection))
-    app_instance.add_handler(CommandHandler("inv", profile))
-    app_instance.add_handler(CommandHandler("explore", explore))
-    app_instance.add_handler(CommandHandler("open", open_keyboard))
-    app_instance.add_handler(CommandHandler("close", close_keyboard))
-    app_instance.add_handler(CommandHandler("resetverify", reset_verify))
-    app_instance.add_handler(CommandHandler("map", show_map))
-    app_instance.add_handler(CommandHandler("travel", travel_command))
-    app_instance.add_handler(CommandHandler("shop", shop_command))
-    app_instance.add_handler(CommandHandler("status", profile))
-    app_instance.add_handler(CommandHandler("buy", buy_command))
 
-    app_instance.add_handler(CommandHandler("referral", referral_info))
+
+    # User commands (protected only by disable)
+    app_instance.add_handler(CommandHandler("start", disable_protected(start_character_selection)))
+    app_instance.add_handler(CommandHandler("inv", disable_protected(profile)))
+    app_instance.add_handler(CommandHandler("explore", disable_protected(explore)))
+    app_instance.add_handler(CommandHandler("open", disable_protected(open_keyboard)))
+    app_instance.add_handler(CommandHandler("close", disable_protected(close_keyboard)))
+    app_instance.add_handler(CommandHandler("resetverify", disable_protected(reset_verify)))
+    app_instance.add_handler(CommandHandler("map", disable_protected(show_map)))
+    app_instance.add_handler(CommandHandler("travel", disable_protected(travel_command)))
+    app_instance.add_handler(CommandHandler("shop", disable_protected(shop_command)))
+    app_instance.add_handler(CommandHandler("status", disable_protected(profile)))
+    app_instance.add_handler(CommandHandler("buy", disable_protected(buy_command)))
+    app_instance.add_handler(CommandHandler("referral", disable_protected(referral_info)))
+    app_instance.add_handler(CommandHandler("char", disable_protected(char_detail)))
+    app_instance.add_handler(CommandHandler("give", disable_protected(give_command)))
+    app_instance.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
+    app_instance.add_handler(CommandHandler("stats", disable_protected(stats_command)))
+    app_instance.add_handler(CommandHandler("missions", missions_command))
+    app_instance.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
+
+    # Mod/owner commands (not protected by disable)
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
     app_instance.add_handler(CommandHandler("nuke", reset_handler))
-    app_instance.add_handler(CommandHandler("char", char_detail))
     app_instance.add_handler(CommandHandler("bfb", ban_user))
     app_instance.add_handler(CommandHandler("ubfb", unban_user))
-    app_instance.add_handler(CommandHandler("give", give_command))
     app_instance.add_handler(CommandHandler("mod", promote_mod))
     app_instance.add_handler(CommandHandler("demod", demote_mod))
     app_instance.add_handler(CommandHandler("mm", maintenance))
-    app_instance.add_handler(CommandHandler("add", add_resource_command))
-    
-    # Diagnostic commands
+    app_instance.add_handler(CommandHandler("disablecmd", disable_command))
+    app_instance.add_handler(CommandHandler("enablecmd", enable_command))
     app_instance.add_handler(CommandHandler("dbdiag", diagnostic_db_command))
     app_instance.add_handler(CommandHandler("checkgroup", check_group_record))
-    
-    # Tax system commands
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
     
-    # Stats command
-    app_instance.add_handler(CommandHandler("stats", stats_command))
+
     
-    # Missions system
-    setup_missions_commands(app_instance)
 
     # Bank system handlers
-    app_instance.add_handler(CommandHandler("bank", handle_bank_command))
-    app_instance.add_handler(CommandHandler("deposit", handle_deposit_command))
-    app_instance.add_handler(CommandHandler("withdraw", handle_withdrawal_command))
+    app_instance.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))
+    app_instance.add_handler(CommandHandler("deposit", disable_protected(handle_deposit_command)))
+    app_instance.add_handler(CommandHandler("withdraw", disable_protected(handle_withdrawal_command)))
     app_instance.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
     
     # PVP system handlers
-    app_instance.add_handler(CommandHandler("pvp", pvp_command))
+    app_instance.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
     app_instance.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
 
     # Character selection and team management

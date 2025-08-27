@@ -13,9 +13,6 @@ from database.missions import (
     MISSIONS_BY_ID, MISSION_DEFINITIONS,
     get_available_missions, get_active_missions, 
     start_mission, cancel_mission, update_mission_progress,
-    process_explore_mission_progress, process_pvp_mission_progress,
-    process_titan_reward_mission_progress, process_travel_mission_progress,
-    process_item_use_mission_progress,
     MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED
 )
 
