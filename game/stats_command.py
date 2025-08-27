@@ -102,7 +102,7 @@ async def start_stats_scheduler(db):
 
     # Add job to reset weekly stats every Sunday at midnight IST
     stats_scheduler.add_job(
-        lambda: asyncio.create_task(reset_weekly_stats()),
+        lambda: asyncio.run(reset_weekly_stats()),
         'cron',
         day_of_week='sun',
         hour=0,
@@ -115,7 +115,7 @@ async def start_stats_scheduler(db):
 
     # Add job to reset daily stats every midnight IST
     stats_scheduler.add_job(
-        lambda: asyncio.create_task(reset_daily_stats()),
+        lambda: asyncio.run(reset_daily_stats()),
         'cron',
         hour=0,
         minute=0,

@@ -564,8 +564,8 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
                         await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
                     elif update.callback_query and update.callback_query.message:
                         await update.callback_query.message.chat.send_message(msg, parse_mode=ParseMode.HTML)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to send mission notification: {e}")
 
         # Setup timeout
         asyncio.create_task(_handle_post_explore_tasks(user_id, context, sent_message, time.time(), user_id_str))

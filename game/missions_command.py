@@ -135,10 +135,19 @@ def format_mission_14_progress(player, max_count=500):
     ]
     explore_counts = getattr(player, "area_explore_counts", {}) or {}
     lines = []
+    completed_areas = 0
+    
     for area in AREAS:
         count = explore_counts.get(area, 0)
-        status = "✅" if count >= max_count else f"{count}/{max_count}"
+        if count >= max_count:
+            status = "✅"
+            completed_areas += 1
+        else:
+            status = f"{count}/{max_count}"
         lines.append(f"• {area}: {status}")
+        
+    # Add summary line
+    lines.append(f"\n<b>Progress:</b> {completed_areas}/{len(AREAS)} areas completed")
     return "\n".join(lines)
 
 async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -161,7 +170,7 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         message += f"*{mission.id}. {mission.title}*\n"
         # Special progress display for Mission 14
         if mission.id == 14:
-            message += "Progress :\n"
+            message += "Progress:\n"
             message += format_mission_14_progress(player) + "\n\n"
         else:
             message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
@@ -224,7 +233,14 @@ async def show_mission_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
     message = f"📋 *Mission #{mission_id}: {mission.title}*\n\n"
     message += f"{mission.description}\n\n"
     message += f"*Requirement:* {mission.requirement}\n"
-    message += f"*Progress:* {mission_progress['current_progress']}/{mission_progress['required_progress']}\n\n"
+    
+    # Special handling for Mission 14 progress display
+    if mission_id == 14:
+        message += "*Progress:* \n"
+        message += format_mission_14_progress(player) + "\n\n"
+    else:
+        message += f"*Progress:* {mission_progress['current_progress']}/{mission_progress['required_progress']}\n\n"
+    
     message += f"*Reward:* {mission.reward_description}\n"
     
     # Add time limit info if applicable

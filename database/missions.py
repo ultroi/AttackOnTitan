@@ -284,8 +284,8 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
                 mission_def = MISSIONS_BY_ID.get(mission_id)
                 if mission_def:
                     await apply_mission_rewards(db, player, mission_def)
-                    # Return notification message
-                    return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
+                    # Return notification message - using HTML format for consistency
+                    return f"🎉 <b>Mission Completed!</b> 🎉\n\n<b>{mission_def.title}</b>\nYou've earned: {mission_def.reward_description}"
             # If progress updated but not completed yet
             return None
     
@@ -535,6 +535,12 @@ async def process_explore_mission_progress(db, player, area=None):
                 
         # Mission 14: Never Stop! (500 explores in each place of the map)
         if mission_id == 14:
+            # Define all required areas for Mission 14
+            REQUIRED_AREAS = [
+                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+            ]
+            
             # Track exploration counts by area
             explore_counts = getattr(player, "area_explore_counts", {})
             if not explore_counts:
@@ -547,15 +553,28 @@ async def process_explore_mission_progress(db, player, area=None):
                 # Save updated counts
                 await db.update_player(int(player.user_id), {"area_explore_counts": explore_counts})
                 
-                # Check if this area reached 500 explores
+                # Check if this area just reached 500 explores
                 if explore_counts.get(area) == 500:
                     # Count how many areas have reached 500 explores
-                    completed_areas = sum(1 for count in explore_counts.values() if count >= 500)
+                    completed_areas = sum(1 for area_name in REQUIRED_AREAS 
+                                         if explore_counts.get(area_name, 0) >= 500)
                     
-                    # Update mission progress based on number of completed areas
-                    notification = await update_mission_progress(db, player, mission_id, 1)
-                    if notification:
-                        notifications.append(notification)
+                    # Update mission progress to reflect number of completed areas
+                    # First reset progress to make sure it's accurate
+                    for i, mp in enumerate(player_missions):
+                        if mp["mission_id"] == mission_id:
+                            player_missions[i]["current_progress"] = completed_areas
+                            await db.update_player(int(player.user_id), {"missions": player_missions})
+                            
+                    # Check if all areas are now complete
+                    if completed_areas >= len(REQUIRED_AREAS):
+                        notification = await update_mission_progress(db, player, mission_id, 0)
+                        if notification:
+                            notifications.append(notification)
+                    else:
+                        # Send progress notification even if not complete
+                        notifications.append(f"🗺️ Area explored: {area} - 500 explores reached!\n"
+                                           f"Mission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
     
     return notifications
 
