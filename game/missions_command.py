@@ -235,9 +235,11 @@ async def show_mission_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
                 started_at = None
         
         if started_at:
+            # Ensure started_at is timezone-aware (UTC)
+            if started_at.tzinfo is None or started_at.tzinfo.utcoffset(started_at) is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
             expires_at = started_at + timedelta(hours=mission.time_limit_hours)
             now = datetime.now(timezone.utc)
-            
             if now < expires_at:
                 hours_left = (expires_at - now).total_seconds() / 3600
                 message += f"\n*Time Remaining:* {hours_left:.1f} hours"
