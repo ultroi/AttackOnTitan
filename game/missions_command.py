@@ -269,33 +269,33 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     # Create message text
     message = "📋 *Active Missions*\n\n"
     
-                                completed_missions = []
-                                keyboard = []
-                                row = []
-                                command_user_id = str(update.effective_user.id) if update.effective_user else ""
-                                for mission_data in active_missions:
-                                    mission = mission_data["definition"]
-                                    progress = mission_data["progress"]
-                                    is_completed = progress["status"] == "completed" or progress["current_progress"] >= progress["required_progress"]
-                                    if is_completed:
-                                        message += f"*{mission.id}. {mission.title}* ✅\n"
-                                        completed_missions.append(mission["id"])
-                                    else:
-                                        message += f"*{mission.id}. {mission.title}*\n"
-                                        # Special progress display for Mission 14
-                                        if mission.id == 14:
-                                            message += "Progress:\n"
-                                            message += format_mission_14_progress(player) + "\n\n"
-                                        else:
-                                            message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
-                                        # Only add button for non-completed missions
-                                        if len(row) == 3:
-                                            keyboard.append(row)
-                                            row = []
-                                        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}_{command_user_id}"))
-                                if row:
-                                    keyboard.append(row)
-                                reply_markup = InlineKeyboardMarkup(keyboard)
+    completed_missions = []
+    keyboard = []
+    row = []
+    command_user_id = str(update.effective_user.id) if update.effective_user else ""
+    for mission_data in active_missions:
+        mission = mission_data["definition"]
+        progress = mission_data["progress"]
+        is_completed = progress["status"] == "completed" or progress["current_progress"] >= progress["required_progress"]
+        if is_completed:
+            message += f"*{mission.id}. {mission.title}* ✅\n"
+            completed_missions.append(mission["id"])
+        else:
+            message += f"*{mission.id}. {mission.title}*\n"
+            # Special progress display for Mission 14
+            if mission.id == 14:
+                message += "Progress:\n"
+                message += format_mission_14_progress(player) + "\n\n"
+            else:
+                message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
+            # Only add button for non-completed missions
+            if len(row) == 3:
+                keyboard.append(row)
+                row = []
+            row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}_{command_user_id}"))
+    if row:
+        keyboard.append(row)
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Send message with keyboard
     if update.callback_query:

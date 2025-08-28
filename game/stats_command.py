@@ -214,24 +214,37 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Get all players for top explorer and top level
         players = await db.get_all_players()
 
+        # Try to get first_name from update.effective_user
+        def get_display_name(player, update):
+            if update.effective_user and hasattr(update.effective_user, 'id') and hasattr(player, 'user_id'):
+                if str(update.effective_user.id) == str(getattr(player, 'user_id', '')):
+                    return update.effective_user.first_name or player.name
+            return getattr(player, 'name', 'Unknown')
+
         # Top 3 explorers (by explore_count)
         top_explorers = sorted(players, key=lambda p: getattr(p, 'explore_count', 0), reverse=True)[:3]
         top_explorers_text = "\n".join([
-            f"{i+1}. {p.name} - {getattr(p, 'explore_count', 0)} explores"
+            f"{i+1}. {get_display_name(p, update)} - {getattr(p, 'explore_count', 0)} explores"
             for i, p in enumerate(top_explorers)
         ]) if top_explorers else "~"
 
         # Top 3 levels
         top_levels = sorted(players, key=lambda p: getattr(p, 'level', 0), reverse=True)[:3]
         top_levels_text = "\n".join([
-            f"{i+1}. {p.name} - Level {getattr(p, 'level', 0)}"
+            f"{i+1}. {get_display_name(p, update)} - Level {getattr(p, 'level', 0)}"
             for i, p in enumerate(top_levels)
         ]) if top_levels else "~"
 
         # Get top daily explorers (top 10, from stats_data)
+        def get_daily_display_name(name, update):
+            # If the current user is in the daily list, use their first_name
+            if update.effective_user and update.effective_user.first_name and name == getattr(update.effective_user, 'full_name', update.effective_user.first_name):
+                return update.effective_user.first_name
+            return name
+
         top_daily = get_top_explorers(stats_data["daily_explorers"], limit=10)
         daily_explorers_text = "\n".join([
-            f"{i+1}. {name} - {count} explores"
+            f"{i+1}. {get_daily_display_name(name, update)} - {count} explores"
             for i, (name, count) in enumerate(top_daily)
         ]) if top_daily else "No data yet"
 
