@@ -141,7 +141,7 @@ async def update_explorer_stats(user_id: str, name: str, battle_completed: bool 
         stats_data["weekly_explorers"][user_id]["count"] += 1
         stats_data["weekly_explorers"][user_id]["name"] = name
 
-    # Update daily stats
+    # Update daily stats (store first_name for display)
     if user_id not in stats_data["daily_explorers"]:
         stats_data["daily_explorers"][user_id] = {"name": name, "count": 1}
     else:
@@ -161,8 +161,8 @@ def get_top_explorers(explorer_data: dict, limit: int = 3):
         key=lambda x: x[1]["count"],
         reverse=True
     )
-    # Return top N explorers
-    return [(data["name"], data["count"]) for _, data in sorted_explorers[:limit]]
+    # Return top N explorers as (user_id, name, count)
+    return [(user_id, data["name"], data["count"]) for user_id, data in sorted_explorers[:limit]]
 
 @maintenance_protected
 @ban_protected
@@ -236,16 +236,16 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]) if top_levels else "~"
 
         # Get top daily explorers (top 10, from stats_data)
-        def get_daily_display_name(name, update):
-            # If the current user is in the daily list, use their first_name
-            if update.effective_user and update.effective_user.first_name and name == getattr(update.effective_user, 'full_name', update.effective_user.first_name):
-                return update.effective_user.first_name
+        def get_daily_display_name(user_id, name, update):
+            # Always use Telegram first_name if available for this user_id
+            if update.effective_user and str(update.effective_user.id) == str(user_id):
+                return update.effective_user.first_name or name
             return name
 
         top_daily = get_top_explorers(stats_data["daily_explorers"], limit=10)
         daily_explorers_text = "\n".join([
-            f"{i+1}. {get_daily_display_name(name, update)} - {count} explores"
-            for i, (name, count) in enumerate(top_daily)
+            f"{i+1}. {get_daily_display_name(user_id, name, update)} - {count} explores"
+            for i, (user_id, name, count) in enumerate(top_daily)
         ]) if top_daily else "No data yet"
 
         # Create message

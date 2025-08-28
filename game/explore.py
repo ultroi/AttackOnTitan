@@ -539,8 +539,6 @@ async def _background_explore_checks(update, context, user_id, user_id_str, user
                 "hcaptcha_start_time": None
             }))
 
-        # Track exploration for stats (set battle_completed=True to update stats)
-        asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.first_name, True))
 
         # Check for mission item drops (optimized for speed)
         mission_item_drops = []
