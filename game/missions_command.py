@@ -48,11 +48,117 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         
     # Default to showing active missions first
     active_missions = await get_active_missions(db, player)
-    
+
+    # --- Mission progress update logic ---
+    # For each active mission, update progress if possible (without adding items to inventory)
+    progress_notifications = []
+    for mission_data in active_missions:
+        mission = mission_data["definition"]
+        progress = mission_data["progress"]
+        # --- Collect-type missions (bricks, odm_gear_part, scout_journal) ---
+        if mission.id in (5, 8, 12):
+            inventory = getattr(player, "inventory", {})
+            item_key = None
+            if mission.id == 5:
+                item_key = "brick"
+            elif mission.id == 8:
+                item_key = "odm_gear_part"
+            elif mission.id == 12:
+                item_key = "scout_journal"
+            if item_key:
+                item_count = inventory.get(item_key, 0)
+                new_progress = min(item_count, mission.required_progress)
+                if progress["current_progress"] != new_progress:
+                    progress_amount = new_progress - progress["current_progress"]
+                    if progress_amount > 0:
+                        notification = await update_mission_progress(db, player, mission.id, progress_amount)
+                        if notification:
+                            progress_notifications.append(notification)
+        # --- Exploring-type missions ---
+        elif mission.id == 1:
+            # Mission 1: Complete 500 explores outside starting district
+            explores = getattr(player, "explores", 0)
+            new_progress = min(explores, mission.required_progress)
+            if progress["current_progress"] != new_progress:
+                progress_amount = new_progress - progress["current_progress"]
+                if progress_amount > 0:
+                    notification = await update_mission_progress(db, player, mission.id, progress_amount)
+                    if notification:
+                        progress_notifications.append(notification)
+        elif mission.id == 9:
+            # Mission 9: Complete 1000 explores without returning home (if tracked)
+            # If you have a specific stat for this, use it. Otherwise, fallback to total explores
+            explores = getattr(player, "explores", 0)
+            # We need to check if this mission has its own tracking value
+            travel_data = getattr(player, "travel", {})
+            # If the player is currently traveling or in active exploration session
+            if travel_data and not travel_data.get("in_progress", False):
+                # Use consecutive_explores if available, otherwise fallback to total explores
+                consecutive_explores = travel_data.get("consecutive_explores", 0)
+                new_progress = min(consecutive_explores, mission.required_progress)
+            else:
+                new_progress = min(explores, mission.required_progress)
+                
+            if progress["current_progress"] != new_progress:
+                progress_amount = new_progress - progress["current_progress"]
+                if progress_amount > 0:
+                    notification = await update_mission_progress(db, player, mission.id, progress_amount)
+                    if notification:
+                        progress_notifications.append(notification)
+                        
+        elif mission.id == 11:
+            # Mission 11: Complete 2500 explores in a single week (if tracked)
+            # Use the weekly_explores from daily_explores tracking if available
+            weekly_explores = 0
+            daily_explores_data = getattr(player, "daily_explores", {})
+            
+            if isinstance(daily_explores_data, dict):
+                # Sum up all explores from the past 7 days
+                current_time = datetime.now(timezone.utc)
+                one_week_ago = current_time - timedelta(days=7)
+                
+                for date_str, count in daily_explores_data.items():
+                    try:
+                        # Convert date string to datetime object for comparison
+                        date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                        if date >= one_week_ago:
+                            weekly_explores += count
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                # Fallback to overall explores if structured data not available
+                weekly_explores = getattr(player, "explores", 0)
+                
+            new_progress = min(weekly_explores, mission.required_progress)
+            if progress["current_progress"] != new_progress:
+                progress_amount = new_progress - progress["current_progress"]
+                if progress_amount > 0:
+                    notification = await update_mission_progress(db, player, mission.id, progress_amount)
+                    if notification:
+                        progress_notifications.append(notification)
+        elif mission.id == 14:
+            # Mission 14: 500 explores in each place of the map
+            area_explore_counts = getattr(player, "area_explore_counts", {}) or {}
+            completed_areas = 0
+            for area_count in area_explore_counts.values():
+                if area_count >= 500:
+                    completed_areas += 1
+            new_progress = min(completed_areas, mission.required_progress)
+            if progress["current_progress"] != new_progress:
+                progress_amount = new_progress - progress["current_progress"]
+                if progress_amount > 0:
+                    notification = await update_mission_progress(db, player, mission.id, progress_amount)
+                    if notification:
+                        progress_notifications.append(notification)
+
     # If no active missions, show available missions
     if not active_missions:
         await show_available_missions(update, context, player, db)
     else:
+        # Show progress notifications if any
+        if progress_notifications:
+            for msg in progress_notifications:
+                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
         await show_active_missions(update, context, player, db, active_missions)
 
 async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -163,34 +269,33 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     # Create message text
     message = "📋 *Active Missions*\n\n"
     
-    for mission_data in active_missions:
-        mission = mission_data["definition"]
-        progress = mission_data["progress"]
-        
-        message += f"*{mission.id}. {mission.title}*\n"
-        # Special progress display for Mission 14
-        if mission.id == 14:
-            message += "Progress:\n"
-            message += format_mission_14_progress(player) + "\n\n"
-        else:
-            message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
-    
-    # Create keyboard with mission selection buttons for details
-    keyboard = []
-    row = []
-    
-    command_user_id = str(update.effective_user.id) if update.effective_user else ""
-    for i, mission_data in enumerate(active_missions):
-        mission = mission_data["definition"]
-        if i % 3 == 0 and i > 0:
-            keyboard.append(row)
-            row = []
-        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}_{command_user_id}"))
-    
-    if row:
-        keyboard.append(row)
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
+                                completed_missions = []
+                                keyboard = []
+                                row = []
+                                command_user_id = str(update.effective_user.id) if update.effective_user else ""
+                                for mission_data in active_missions:
+                                    mission = mission_data["definition"]
+                                    progress = mission_data["progress"]
+                                    is_completed = progress["status"] == "completed" or progress["current_progress"] >= progress["required_progress"]
+                                    if is_completed:
+                                        message += f"*{mission.id}. {mission.title}* ✅\n"
+                                        completed_missions.append(mission["id"])
+                                    else:
+                                        message += f"*{mission.id}. {mission.title}*\n"
+                                        # Special progress display for Mission 14
+                                        if mission.id == 14:
+                                            message += "Progress:\n"
+                                            message += format_mission_14_progress(player) + "\n\n"
+                                        else:
+                                            message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
+                                        # Only add button for non-completed missions
+                                        if len(row) == 3:
+                                            keyboard.append(row)
+                                            row = []
+                                        row.append(InlineKeyboardButton(f"{mission.id}", callback_data=f"mission_detail_{mission.id}_{command_user_id}"))
+                                if row:
+                                    keyboard.append(row)
+                                reply_markup = InlineKeyboardMarkup(keyboard)
     
     # Send message with keyboard
     if update.callback_query:

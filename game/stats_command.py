@@ -211,19 +211,25 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Count total groups
         total_groups = await db.groups.count_documents({})
 
-        # Get top weekly explorers (top 3)
-        top_weekly = get_top_explorers(stats_data["weekly_explorers"], limit=3)
+        # Get all players for top explorer and top level
+        players = await db.get_all_players()
 
-        # Get top daily explorers (top 10)
+        # Top 3 explorers (by explore_count)
+        top_explorers = sorted(players, key=lambda p: getattr(p, 'explore_count', 0), reverse=True)[:3]
+        top_explorers_text = "\n".join([
+            f"{i+1}. {p.name} - {getattr(p, 'explore_count', 0)} explores"
+            for i, p in enumerate(top_explorers)
+        ]) if top_explorers else "~"
+
+        # Top 3 levels
+        top_levels = sorted(players, key=lambda p: getattr(p, 'level', 0), reverse=True)[:3]
+        top_levels_text = "\n".join([
+            f"{i+1}. {p.name} - Level {getattr(p, 'level', 0)}"
+            for i, p in enumerate(top_levels)
+        ]) if top_levels else "~"
+
+        # Get top daily explorers (top 10, from stats_data)
         top_daily = get_top_explorers(stats_data["daily_explorers"], limit=10)
-
-        # Format weekly explorers
-        weekly_explorers_text = "\n".join([
-            f"{i+1}. {name} - {count} explores"
-            for i, (name, count) in enumerate(top_weekly)
-        ]) if top_weekly else "No data yet"
-
-        # Format daily explorers
         daily_explorers_text = "\n".join([
             f"{i+1}. {name} - {count} explores"
             for i, (name, count) in enumerate(top_daily)
@@ -233,8 +239,9 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = (
             f"<b>Total Users:</b> <code>{total_users}</code>\n"
             f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
-            f" <b>WEEKLY TOP EXPLORERS:</b>\n{weekly_explorers_text}\n\n"
-            f" <b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
+            f"<b>TOP 3 EXPLORERS:</b>\n{top_explorers_text}\n\n"
+            f"<b>TOP 3 LEVELS:</b>\n{top_levels_text}\n\n"
+            f"<b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
         )
 
         await update.message.reply_text(message, parse_mode="HTML")

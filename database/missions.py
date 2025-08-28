@@ -55,7 +55,7 @@ MISSION_DEFINITIONS = [
         id=1,
         title="Scout's First March",
         description="Prove your worth as a Scout by exploring beyond the safety of the walls.",
-        requirement="Complete 500 explores outside the starting district.",
+        requirement="Complete 500 explores outside the current location.",
         required_progress=500,
         reward_description="15,000 Marks",
         rewards={"marks": 15000},
@@ -264,31 +264,46 @@ async def get_active_missions(db, player):
 
 async def update_mission_progress(db, player, mission_id: int, progress_amount: int):
     """Update progress for a specific mission"""
+    if progress_amount <= 0:
+        return None
+        
     player_missions = getattr(player, "missions", [])
     
     # Find the mission in player's active missions
     for i, mission_progress in enumerate(player_missions):
         if (mission_progress["mission_id"] == mission_id and 
             mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
+            # Get mission definition
+            mission_def = MISSIONS_BY_ID.get(mission_id)
+            if not mission_def:
+                return None
             # Update progress
-            current_progress = mission_progress["current_progress"] + progress_amount
+            previous_progress = mission_progress["current_progress"]
+            current_progress = min(previous_progress + progress_amount, mission_progress["required_progress"])
+            # If no change, don't update or notify
+            if current_progress == previous_progress:
+                return None
             player_missions[i]["current_progress"] = current_progress
             # Save progress to DB after every update
             await db.update_player(player.user_id, {"missions": player_missions})
             # Check if mission is completed
             if current_progress >= mission_progress["required_progress"]:
-                player_missions[i]["status"] = MISSION_STATUS_COMPLETED
-                player_missions[i]["completed_at"] = datetime.now(timezone.utc)
+                # Remove mission from active missions after completion
+                completed_mission = player_missions.pop(i)
+                completed_mission["status"] = MISSION_STATUS_COMPLETED
+                completed_mission["completed_at"] = datetime.now(timezone.utc)
+                # Optionally, you can store completed missions elsewhere if needed
                 await db.update_player(player.user_id, {"missions": player_missions})
                 # Apply rewards
-                mission_def = MISSIONS_BY_ID.get(mission_id)
                 if mission_def:
                     await apply_mission_rewards(db, player, mission_def)
                     # Return notification message - using HTML format for consistency
                     return f"🎉 <b>Mission Completed!</b> 🎉\n\n<b>{mission_def.title}</b>\nYou've earned: {mission_def.reward_description}"
             # If progress updated but not completed yet
+            progress_percent = int((current_progress / mission_progress["required_progress"]) * 100)
+            if progress_percent % 25 == 0 or current_progress == 1:  # Notify at 25%, 50%, 75% and on first progress
+                return f"📊 <b>Mission Progress Update</b>\n<b>{mission_def.title}</b>: {current_progress}/{mission_progress['required_progress']} ({progress_percent}%)"
             return None
-    
     return None  # No matching active mission found
 
 async def start_mission(db, player, mission_id: int):
@@ -328,7 +343,7 @@ async def start_mission(db, player, mission_id: int):
     expiry_at = None
     if mission.time_limit_hours:
         expiry_at = now + timedelta(hours=mission.time_limit_hours)
-        
+
     mission_progress = {
         "mission_id": mission_id,
         "status": MISSION_STATUS_IN_PROGRESS,
@@ -337,15 +352,17 @@ async def start_mission(db, player, mission_id: int):
         "started_at": now,
         "expiry_at": expiry_at
     }
-    
-    # Add to player's missions
-    if not hasattr(player, "missions") or not player.missions:
-        player.missions = []
-    player.missions.append(mission_progress)
-    
-    # Update player in database
-    await db.update_player(int(player.user_id), {"missions": player.missions})
-    
+
+    # For Mission 1, set starting_location if not already set
+    update_fields = {"missions": player.missions if hasattr(player, "missions") and player.missions else []}
+    if mission_id == 1:
+        if not hasattr(player, "starting_location") or not getattr(player, "starting_location", None):
+            # Use current location as starting_location
+            update_fields["starting_location"] = getattr(player, "location", None)
+            player.starting_location = getattr(player, "location", None)
+
+    update_fields["missions"] = update_fields["missions"] + [mission_progress]
+    await db.update_player(int(player.user_id), update_fields)
     return True, f"Mission '{mission.title}' started!"
 
 async def cancel_mission(db, player, mission_id: int):
@@ -450,17 +467,24 @@ async def update_character_stats(db_instance, user_id, character_name, stats):
 async def check_mission_item_drops(player):
     """Check if any mission items drop during exploration"""
     drops = []
-    
+    # Get active mission IDs for the player
+    active_mission_ids = set()
+    player_missions = getattr(player, "missions", [])
+    for mission in player_missions:
+        if mission.get("status") == "in_progress":
+            active_mission_ids.add(mission.get("mission_id"))
+
+    # Only allow drops for items whose mission is active
     for item_key, item_data in MISSION_ITEMS.items():
-        if random.random() < item_data["drop_chance"]:
-            # Item dropped!
-            drops.append({
-                "key": item_key,
-                "name": item_data["name"],
-                "emoji": item_data["emoji"],
-                "mission_id": item_data["mission_id"]
-            })
-    
+        if item_data["mission_id"] in active_mission_ids:
+            if random.random() < item_data["drop_chance"]:
+                # Item dropped!
+                drops.append({
+                    "key": item_key,
+                    "name": item_data["name"],
+                    "emoji": item_data["emoji"],
+                    "mission_id": item_data["mission_id"]
+                })
     return drops
 
 # Function to add mission items to player inventory
@@ -504,6 +528,7 @@ async def process_explore_mission_progress(db, player, area=None):
     """Update mission progress related to exploration"""
     player_missions = getattr(player, "missions", [])
     notifications = []
+    updated = False
     
     for pm in player_missions:
         if pm["status"] != MISSION_STATUS_IN_PROGRESS:
@@ -516,20 +541,25 @@ async def process_explore_mission_progress(db, player, area=None):
             continue
             
         # Mission 1: Scout's First March (500 explores outside starting district)
-        if mission_id == 1 and area and area != "Trost District":
-            notification = await update_mission_progress(db, player, mission_id, 1)
-            if notification:
-                notifications.append(notification)
+        if mission_id == 1:
+            starting_location = getattr(player, "starting_location", None)
+            if area and starting_location and area != starting_location:
+                notification = await update_mission_progress(db, player, mission_id, 1)
+                updated = True
+                if notification:
+                    notifications.append(notification)
                 
         # Mission 9: Endurance Run (1000 explores without returning home)
         if mission_id == 9:
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
         # Mission 11: Relentless Scout (2500 explores in a single week)
         if mission_id == 11:
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
@@ -576,6 +606,15 @@ async def process_explore_mission_progress(db, player, area=None):
                         notifications.append(f"🗺️ Area explored: {area} - 500 explores reached!\n"
                                            f"Mission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
     
+    # If any updates were made, refresh the player data
+    if updated:
+        # Get fresh player data after all the updates
+        updated_player = await db.get_player(player.user_id)
+        if updated_player:
+            # Update the player reference with fresh data
+            for key, value in updated_player.__dict__.items():
+                setattr(player, key, value)
+    
     return notifications
 
 # Function to process mission progress for PVP battles
@@ -583,6 +622,7 @@ async def process_pvp_mission_progress(db, player, won=True):
     """Update mission progress related to PvP battles"""
     player_missions = getattr(player, "missions", [])
     notifications = []
+    updated = False
     
     # Check if won is True, as we only count wins for the mission
     if not won:
@@ -597,6 +637,7 @@ async def process_pvp_mission_progress(db, player, won=True):
         # Mission 4: Sparring Rounds (Win 3 player battles in one day)
         if mission_id == 4:
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
@@ -606,8 +647,16 @@ async def process_pvp_mission_progress(db, player, won=True):
             active_effects = getattr(player, "active_effects", {})
             if active_effects.get("time_contract"):
                 notification = await update_mission_progress(db, player, mission_id, 1)
+                updated = True
                 if notification:
                     notifications.append(notification)
+    
+    # If updates were made, refresh player data
+    if updated:
+        updated_player = await db.get_player(player.user_id)
+        if updated_player:
+            for key, value in updated_player.__dict__.items():
+                setattr(player, key, value)
     
     return notifications
 
@@ -616,6 +665,7 @@ async def process_titan_reward_mission_progress(db, player, marks_earned):
     """Update mission progress related to earning marks from Titans"""
     player_missions = getattr(player, "missions", [])
     notifications = []
+    updated = False
     
     for pm in player_missions:
         if pm["status"] != MISSION_STATUS_IN_PROGRESS:
@@ -626,8 +676,16 @@ async def process_titan_reward_mission_progress(db, player, marks_earned):
         # Mission 3: Light Purse, Heavy Steps (Accumulate 10,000 Marks from Titans)
         if mission_id == 3:
             notification = await update_mission_progress(db, player, mission_id, marks_earned)
+            updated = True
             if notification:
                 notifications.append(notification)
+    
+    # If updates were made, refresh player data
+    if updated:
+        updated_player = await db.get_player(player.user_id)
+        if updated_player:
+            for key, value in updated_player.__dict__.items():
+                setattr(player, key, value)
     
     return notifications
 
@@ -636,6 +694,7 @@ async def process_travel_mission_progress(db, player, from_location, to_location
     """Update mission progress related to travel"""
     player_missions = getattr(player, "missions", [])
     notifications = []
+    updated = False
     
     for pm in player_missions:
         if pm["status"] != MISSION_STATUS_IN_PROGRESS:
@@ -647,6 +706,7 @@ async def process_travel_mission_progress(db, player, from_location, to_location
         if mission_id == 6:
             # We consider any travel as completing this mission
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
@@ -669,12 +729,20 @@ async def process_travel_mission_progress(db, player, from_location, to_location
             
             # Save updated travel history
             await db.update_player(int(player.user_id), {"travel_history": travel_history})
+            updated = True
             
             # Check if coming from outer district or if player has passed through multiple checkpoints
             if from_location in outer_districts or len(travel_history) >= 3:
                 notification = await update_mission_progress(db, player, mission_id, 1)
                 if notification:
                     notifications.append(notification)
+    
+    # If updates were made, refresh player data
+    if updated:
+        updated_player = await db.get_player(player.user_id)
+        if updated_player:
+            for key, value in updated_player.__dict__.items():
+                setattr(player, key, value)
     
     return notifications
 
@@ -683,6 +751,7 @@ async def process_item_use_mission_progress(db, player, item_key):
     """Update mission progress related to using items"""
     player_missions = getattr(player, "missions", [])
     notifications = []
+    updated = False
     
     for pm in player_missions:
         if pm["status"] != MISSION_STATUS_IN_PROGRESS:
@@ -693,19 +762,29 @@ async def process_item_use_mission_progress(db, player, item_key):
         # Mission 2: Marksman in Training (Use Training Dummy 1 time)
         if mission_id == 2 and item_key == "training_dummy":
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
         # Mission 7: First Bounty Attempt (Use 1 Bounty Permit)
         if mission_id == 7 and item_key == "bounty_permit":
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
                 
         # Mission 10: Tactician's Notes (Use Battle Journal 3 times)
         if mission_id == 10 and item_key == "battle_journal":
             notification = await update_mission_progress(db, player, mission_id, 1)
+            updated = True
             if notification:
                 notifications.append(notification)
+                
+    # If updates were made, refresh player data
+    if updated:
+        updated_player = await db.get_player(player.user_id)
+        if updated_player:
+            for key, value in updated_player.__dict__.items():
+                setattr(player, key, value)
     
     return notifications
