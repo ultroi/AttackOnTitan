@@ -161,7 +161,6 @@ def get_top_explorers(explorer_data: dict, limit: int = 3):
         key=lambda x: x[1]["count"],
         reverse=True
     )
-    
     # Return top N explorers
     return [(data["name"], data["count"]) for _, data in sorted_explorers[:limit]]
 
@@ -212,11 +211,11 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Count total groups
         total_groups = await db.groups.count_documents({})
 
-        # Get top weekly explorers
-        top_weekly = get_top_explorers(stats_data["weekly_explorers"])
+        # Get top weekly explorers (top 3)
+        top_weekly = get_top_explorers(stats_data["weekly_explorers"], limit=3)
 
-        # Get top daily explorers
-        top_daily = get_top_explorers(stats_data["daily_explorers"])
+        # Get top daily explorers (top 10)
+        top_daily = get_top_explorers(stats_data["daily_explorers"], limit=10)
 
         # Format weekly explorers
         weekly_explorers_text = "\n".join([
@@ -235,7 +234,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<b>Total Users:</b> <code>{total_users}</code>\n"
             f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
             f" <b>WEEKLY TOP EXPLORERS:</b>\n{weekly_explorers_text}\n\n"
-            f" <b>DAILY TOP EXPLORERS:</b> :\n{daily_explorers_text}\n\n"
+            f" <b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
         )
 
         await update.message.reply_text(message, parse_mode="HTML")

@@ -601,9 +601,7 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if db.players is None:
         await db.init_db()
     
-    # Directly fetch from MongoDB to bypass any caching
     if db.players is not None:
-        # Always fetch directly from the database to ensure we have the latest data
         player_doc = await db.players.find_one({"user_id": user_id})
         if player_doc:
             from database.models import Player
@@ -626,7 +624,6 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if CACHE_ENABLED:
         cache_key = f"player_{user_id}"
         if cache_key in PLAYER_CACHE:
-            logger.info(f"Clearing cache for player {user_id} in referral_info")
             del PLAYER_CACHE[cache_key]
     
     if not player:
@@ -637,7 +634,6 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     referral_code = player.referral_code or user_id
     referral_link = f"https://t.me/{bot_username}?start=referral_{referral_code}"
     referred_by = player.referred_by or "None"
-    # Access referral_count directly since it's defined in the Player model
     referral_count = player.referral_count if hasattr(player, 'referral_count') else 0
     
     # Log referral information to help with debugging
@@ -693,7 +689,6 @@ def _create_char_profile_text(character, char_data) -> str:
 
 
 def _create_abilities_text(character, char_data) -> str:
-    """Generates the character abilities text."""
     abilities_text = f"<b>{escape(character.name)}'s Abilities</b>\n\n"
     
     for ability_type in ["active", "passive", "ultimate"]:
@@ -1046,69 +1041,74 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
-    print(f"DEBUG fill_gas: user_id={user_id}, char_name={char_name}")
-    
-    # Check if user is in PVP battle
-    from game.pvp_system import active_pvp_battles
-    if user_id in active_pvp_battles:
-        await query.answer("⚔️ You cannot fill gas during PVP battles!", show_alert=True)
-        return
-        
     db = context.bot_data.get("db") or Database()
     try:
+        db.invalidate_character_cache(user_id, char_name)
         player = await db.get_player(user_id)
         character = await db.get_character(int(user_id), char_name)
         if not player or not character:
             await query.answer("❌ Character or Player not found.", show_alert=True)
             return
-        # Set base max_gas to 5000, then add 250 for each level above 1
         character.max_gas = 5000 + (max(0, character.level - 1) * 250)
         if character.gas >= character.max_gas:
             await query.answer(f"⛽ {character.name}'s gas is already full!", show_alert=True)
             return
         gas_needed = character.max_gas - character.gas
-        if player.gas < gas_needed:
-            await query.answer(f"⚠️ Not enough gas! Need {gas_needed}, you have {player.gas}.", show_alert=True)
+        if player.gas <= 0:
+            await query.answer("❌ You don't have sufficient gas to fill up.", show_alert=True)
             return
-        # Fill gas
-        player.gas -= gas_needed
-        character.gas = character.max_gas
-        print(f"DEBUG fill_gas: AFTER player.gas={player.gas}, character.gas={character.gas}")
-        update_player_result = await db.update_player(int(user_id), {"gas": player.gas})
-        update_character_result = await db.update_character(character)
-
+        gas_to_fill = min(gas_needed, player.gas)
+        try:
+            player.gas -= gas_to_fill
+            await db.update_player(int(user_id), {"gas": player.gas})
+            character.gas += gas_to_fill
+            await db.update_character(character)
+            db.invalidate_character_cache(user_id, char_name)
+        except Exception:
+            try:
+                await db.update_player(int(user_id), {"gas": player.gas + gas_to_fill})
+                await query.answer("❌ Gas filling failed. Your gas has been refunded.", show_alert=True)
+                return
+            except:
+                await query.answer("❌ Error occurred. Please check your gas balance.", show_alert=True)
+                return
         char_data = get_character_data(character.name)
         updated_profile = _create_char_profile_text(character, char_data) if char_data else "Profile updated."
         keyboard = [
             [InlineKeyboardButton("Fill Gas", callback_data=f"fill_gas_{character.name.replace(' ', '_')}"),
-         InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")],
-        [InlineKeyboardButton("Abilities", callback_data=f"view_abilities_{character.name.replace(' ', '_')}")],
-        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
+             InlineKeyboardButton("Weapons", callback_data=f"view_weapons_{character.name.replace(' ', '_')}")],
+            [InlineKeyboardButton("Abilities", callback_data=f"view_abilities_{character.name.replace(' ', '_')}")],
+            [InlineKeyboardButton("Exit", callback_data="exit_profile")]
         ]
-        if query.message is not None and getattr(query.message, "photo", None):
-            await query.edit_message_caption(
-                caption=updated_profile,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-        elif query.message is not None:
-            await query.edit_message_text(
-                text=updated_profile,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            # Fallback: send a new message if query.message is None
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text=updated_profile,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.HTML
-            )
-        await query.answer(f"✅ Gas filled! {gas_needed} used.", show_alert=True)
+        try:
+            if query.message is not None and getattr(query.message, "photo", None):
+                await query.edit_message_caption(
+                    caption=updated_profile,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.HTML
+                )
+            elif query.message is not None:
+                await query.edit_message_text(
+                    text=updated_profile,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=query.from_user.id,
+                    text=updated_profile,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.HTML
+                )
+            if gas_to_fill < gas_needed:
+                await query.answer(f"✅ {gas_to_fill} gas transferred.", show_alert=True)
+            else:
+                await query.answer(f"✅ Gas filled! {gas_to_fill} used.", show_alert=True)
+        except Exception:
+            await query.answer(f"✅ Gas filled! {gas_to_fill} used.", show_alert=True)
     except Exception as e:
         print(f"ERROR fill_gas: {e}")
-        await query.answer("❌ Error filling gas.", show_alert=True)
+        await query.answer("❌ Error filling gas. Try again later.", show_alert=True)
 
 
 async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
