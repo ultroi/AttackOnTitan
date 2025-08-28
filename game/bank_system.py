@@ -45,13 +45,11 @@ class BankSystem:
             return f"❌ Insufficient Marks. You need `{BANK_OPEN_FEE['marks']}`."
         if player.valor < BANK_OPEN_FEE['valor']:
             return f"❌ Insufficient Valor. You need `{BANK_OPEN_FEE['valor']}`."
-        if player.crystal < BANK_OPEN_FEE['crystal']:
-            return f"❌ Insufficient Crystals. You need `{BANK_OPEN_FEE['crystal']}`."
 
+        
         # Deduct opening fee from player's inventory
         player.marks -= BANK_OPEN_FEE['marks']
         player.valor -= BANK_OPEN_FEE['valor']
-        player.crystal -= BANK_OPEN_FEE['crystal']
         await self.db.save_player(player)
 
         # Use IST timezone for all time calculations
