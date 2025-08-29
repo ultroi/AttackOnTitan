@@ -369,6 +369,7 @@ class Player(BaseModel):
     daily_explores: List[DailyExplores] = Field(default_factory=list)
     completed_quests: List[str] = Field(default_factory=list)
     missions: List[Dict[str, Any]] = Field(default_factory=list)
+    area_explore_counts: Dict[str, int] = Field(default_factory=dict)  # Track explores per area for Mission 14
     
     # Inventory and shop
     inventory: Dict[str, Any] = Field(default_factory=dict)
