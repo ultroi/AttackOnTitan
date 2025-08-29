@@ -45,8 +45,8 @@ TITAN_TYPE_IMAGE_URLS = {
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
-# # Pre-calculate difficulty levels for faster lookup
-DIFFICULTY_BY_LEVEL = {level: "Easy" if level < 8 else ("Normal" if level < 15 else "Hard") for level in range(1, 30)}
+# # Pre-calculate difficulty levels for faster lookup - Single category
+DIFFICULTY_BY_LEVEL = {level: "Normal" for level in range(1, 30)}
 # Pre-defined default areas to avoid recreating this list every time
 DEFAULT_AREAS = ["Trost District", "Karanes District", "Shiganshina District"]
 
@@ -90,6 +90,36 @@ CACHED_TITANS = {
     }
 }
 
+# Enhanced cached titans for all levels with varied images - Single category
+ENHANCED_CACHED_TITANS = {
+    "All": {
+        "names": [
+            "Bearded Titan", "Potbellied Titan", "Goofy Grinning Titan", "Gaping Mouth Titan",
+            "Small Jogger Titan", "Leaper Titan", "Bloated Titan", "Staggering Creepers Titan",
+            "Wailing Titan", "Fierce Titan", "Devastating Titan", "Armored Titan",
+            "Clumsy Titan", "Stumbling Titan", "Bumbling Titan", "Sluggish Titan",
+            "Wandering Titan", "Lost Titan", "Confused Titan", "Limping Titan",
+            "Shambling Titan", "Drooling Titan", "Raging Titan", "Charging Titan",
+            "Brutal Titan", "Menacing Titan", "Territorial Titan", "Aggressive Titan",
+            "Bloodthirsty Titan", "Nightmare Titan", "Terror Titan", "Supreme Titan"
+        ],
+        "images": [
+            "https://i.ibb.co/dJ6J58s0/image.jpg",
+            "https://i.ibb.co/XkMw0Xt5/image.jpg",
+            "https://i.ibb.co/7J8S4s6v/image.jpg",
+            "https://i.ibb.co/9mMK2FG1/image.jpg",
+            "https://i.ibb.co/Fk8NspGP/image.jpg",
+            "https://i.ibb.co/k2XqYdX6/image.jpg",
+            "https://i.ibb.co/fYrcqngz/image.jpg",
+            "https://i.ibb.co/mFchdbj9/image.jpg",
+            "https://i.ibb.co/1JJQg9Db/image.jpg",
+            "https://i.ibb.co/dJ6J58s0/image.jpg",
+            "https://i.ibb.co/XkMw0Xt5/image.jpg",
+            "https://i.ibb.co/7J8S4s6v/image.jpg"
+        ]
+    }
+}
+
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     """Fast string formatting for titan messages - optimized for speed"""
     return (
@@ -100,30 +130,36 @@ def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     )
 
 def _generate_cached_titan(player_level: int, difficulty: str) -> dict:
-    """Generate a cached titan for the given level and difficulty - fallback function"""
-    # Base stats by difficulty
-    base_stats = {
-        "Easy": {"hp": 80, "xp": 25},
-        "Normal": {"hp": 100, "xp": 35},
-        "Hard": {"hp": 120, "xp": 50}
-    }
+    """Generate a cached titan for the given level with varied images and names - Single category"""
+    # Get titan data from single category
+    difficulty_data = ENHANCED_CACHED_TITANS["All"]
 
-    stats = base_stats.get(difficulty, base_stats["Normal"])
+    # Use current time for better randomness
+    seed = datetime.now(timezone.utc).microsecond
+    titan_random = random.Random(seed)
 
-    # Scale stats by player level (simple scaling)
+    # Select random name and image from the pool
+    name = titan_random.choice(difficulty_data["names"])
+    image_url = titan_random.choice(difficulty_data["images"])
+
+    # Base stats (single tier)
+    base_hp = 100
+    base_xp = 35
+
+    # Scale stats by player level
     level_multiplier = max(1, player_level // 5 + 1)
-    titan_level = max(1, player_level + random.randint(-1, 1))
+    titan_level = max(1, player_level + titan_random.randint(-1, 1))
 
     return {
-        "name": f"{difficulty} Titan",
+        "name": name,
         "level": titan_level,
-        "max_hp": stats["hp"] * level_multiplier,
-        "abilities": ["armor"] if difficulty == "Hard" else [],
-        "difficulty": difficulty,
+        "max_hp": base_hp * level_multiplier,
+        "abilities": [],
+        "difficulty": "Normal",  # Keep as Normal for compatibility
         "drop_table": {},
-        "xp_reward": stats["xp"] * level_multiplier,
+        "xp_reward": base_xp * level_multiplier,
         "min_level_requirement": max(1, player_level - 2),
-        "image_url": TITAN_TYPE_IMAGE_URLS.get("small jogger", "")
+        "image_url": image_url
     }
 
 # from typing import Optional, List
