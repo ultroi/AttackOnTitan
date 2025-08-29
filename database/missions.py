@@ -290,16 +290,13 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
             await db.update_player(player.user_id, {"missions": player_missions})
             # Check if mission is completed
             if current_progress >= mission_progress["required_progress"]:
-                # Remove mission from active missions after completion
-                completed_mission = player_missions.pop(i)
-                completed_mission["status"] = MISSION_STATUS_COMPLETED
-                completed_mission["completed_at"] = datetime.now(timezone.utc)
-                # Optionally, you can store completed missions elsewhere if needed
+                # Mark mission as completed but keep it in the missions list
+                player_missions[i]["status"] = MISSION_STATUS_COMPLETED
+                player_missions[i]["completed_at"] = datetime.now(timezone.utc)
                 await db.update_player(player.user_id, {"missions": player_missions})
                 # Apply rewards
                 if mission_def:
                     await apply_mission_rewards(db, player, mission_def)
-                    # Return notification message - using HTML format for consistency
                     return f"🎉 <b>Mission Completed!</b> 🎉\n\n<b>{mission_def.title}</b>\nYou've earned: {mission_def.reward_description}"
             # For exploration missions (1, 9, 11, 14), do NOT send progress notifications
             exploration_mission_ids = {1, 9, 11, 14}
@@ -318,8 +315,6 @@ async def start_mission(db, player, mission_id: int):
         return False, "Mission not found"
         
     mission = MISSIONS_BY_ID[mission_id]
-    
-    # No level requirement: allow starting any mission
     
     # Check if player already has this mission active or completed
     player_missions = getattr(player, "missions", [])

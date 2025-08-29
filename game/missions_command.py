@@ -86,14 +86,9 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     if notification:
                         progress_notifications.append(notification)
         elif mission.id == 9:
-            # Mission 9: Complete 1000 explores without returning home (if tracked)
-            # If you have a specific stat for this, use it. Otherwise, fallback to total explores
             explores = getattr(player, "explores", 0)
-            # We need to check if this mission has its own tracking value
             travel_data = getattr(player, "travel", {})
-            # If the player is currently traveling or in active exploration session
             if travel_data and not travel_data.get("in_progress", False):
-                # Use consecutive_explores if available, otherwise fallback to total explores
                 consecutive_explores = travel_data.get("consecutive_explores", 0)
                 new_progress = min(consecutive_explores, mission.required_progress)
             else:
@@ -107,21 +102,23 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         progress_notifications.append(notification)
                         
         elif mission.id == 11:
-            # Mission 11: Complete 2500 explores in a single week (if tracked)
-            # Use the weekly_explores from daily_explores tracking if available
             weekly_explores = 0
             daily_explores_data = getattr(player, "daily_explores", {})
             
-            if isinstance(daily_explores_data, dict):
-                # Sum up all explores from the past 7 days
-                current_time = datetime.now(timezone.utc)
-                one_week_ago = current_time - timedelta(days=7)
-                
+            # Get mission start time
+            mission_start_time = None
+            if progress.get("started_at"):
+                try:
+                    mission_start_time = datetime.fromisoformat(progress["started_at"].replace('Z', '+00:00'))
+                except (ValueError, TypeError):
+                    mission_start_time = datetime.now(timezone.utc) - timedelta(days=1)  # Fallback
+            
+            if isinstance(daily_explores_data, dict) and mission_start_time:
+                # Only count explores that happened after mission started
                 for date_str, count in daily_explores_data.items():
                     try:
-                        # Convert date string to datetime object for comparison
                         date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                        if date >= one_week_ago:
+                        if date >= mission_start_time:
                             weekly_explores += count
                     except (ValueError, TypeError):
                         pass
@@ -157,8 +154,13 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     else:
         # Show progress notifications if any
         if progress_notifications:
+            user_id = update.effective_user.id if update.effective_user else None
             for msg in progress_notifications:
-                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                if user_id:
+                    try:
+                        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML)
+                    except Exception as e:
+                        logger.error(f"Failed to send private mission completion message: {e}")
         await show_active_missions(update, context, player, db, active_missions)
 
 async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -282,7 +284,18 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     for mission_data in active_missions:
         mission = mission_data["definition"]
         progress = mission_data["progress"]
-        is_completed = progress["status"] == "completed" or progress["current_progress"] >= progress["required_progress"]
+        # For Mission 14, always show latest area_explore_counts progress in UI
+        if mission.id == 14:
+            area_explore_counts = getattr(player, "area_explore_counts", {}) or {}
+            completed_areas = 0
+            for area_count in area_explore_counts.values():
+                if area_count >= 500:
+                    completed_areas += 1
+            display_progress = completed_areas
+            is_completed = progress["status"] == "completed" or display_progress >= progress["required_progress"]
+        else:
+            display_progress = progress["current_progress"]
+            is_completed = progress["status"] == "completed" or display_progress >= progress["required_progress"]
         message += "━━━━━━━━━━━━━━━━━━━━━━\n"
         if is_completed:
             message += f"*{mission.id}. {mission.title}* ✅\n"
@@ -295,7 +308,7 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
             message += "*Progress:*\n"
             message += format_mission_14_progress(player) + "\n"
         else:
-            message += f"*Progress:* {progress['current_progress']}/{progress['required_progress']}\n"
+            message += f"*Progress:* {display_progress}/{progress['required_progress']}\n"
         message += f"*Reward:* `{mission.reward_description}`\n"
         if hasattr(mission, "time_limit_hours") and mission.time_limit_hours:
             message += f"⏳ *Time Limit:* {mission.time_limit_hours} hours\n"

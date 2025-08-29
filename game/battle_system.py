@@ -1033,6 +1033,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
         
         elif action == "action_basic_attack":
+            # Immediately answer the callback to prevent Telegram timeout
+            try:
+                await query.answer()
+            except Exception:
+                pass
             # Optimize basic attack with less DB access
             shop_items = context.bot_data.get("shop_items") or {}
             

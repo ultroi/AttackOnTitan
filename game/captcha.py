@@ -142,8 +142,10 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
             has_spoiler=True
         )
     except Exception as e:
-        await update.message.reply_text("❌ Failed to send CAPTCHA image (timeout or error). Please try again.")
-        # Optionally log the error: print(e) or use logging
+        if 'captcha_timeout_task' in context.user_data:
+            context.user_data['captcha_timeout_task'].cancel()
+        context.user_data['captcha_active'] = False
+        print(f"CAPTCHA image error: {e}")
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else None
@@ -153,6 +155,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query:
             await query.answer("Session expired. Start again with /start")
         return
+
+    # Always answer callback query immediately to avoid timeout errors
+    try:
+        await query.answer()
+    except Exception:
+        pass
 
     user_answer = getattr(query, "data", None)
     correct_answer = context.user_data.get('captcha_answer', '')

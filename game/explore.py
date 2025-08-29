@@ -120,9 +120,6 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         user_id_str = str(user_id)
         last_explore_time = user_last_explore.get(user_id_str, 0)
         if last_explore_time > start_time:
-            # User has already started a new explore after this timeout task began
-            # So we shouldn't expire this titan - they might be actively using it
-            logger.info(f"User {user_id} has recent activity, not expiring titan")
             return
         
         # Use helper function to check if there's an active battle
@@ -179,7 +176,6 @@ async def cleanup_user_timeouts(user_id: int, context: ContextTypes.DEFAULT_TYPE
 async def reset_explore_timer(user_id, db):
     """Reset the explore_start_time for a user (for inactivity/hCaptcha logic)."""
     await db.update_player(user_id, {"explore_start_time": None})
-    logger.info(f"Reset explore timer for user {user_id}")
     return True
 
 
@@ -240,7 +236,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     debug_times = {}
     debug_times['start'] = time.time()
     if not update.effective_user:
-        logger.info(f"[DEBUG] explore: fail - no effective_user at {time.time() - debug_times['start']:.4f}s")
         await _reply_error(update, "Cannot identify user. Please try again.")
         return
 
@@ -251,7 +246,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Only use in private chats
     if not update.effective_chat or update.effective_chat.type != "private":
-        logger.info(f"[DEBUG] explore: fail - not private chat at {time.time() - debug_times['start']:.4f}s")
         await _reply_error(update, "This command can only be used in private chats.")
         return
 
@@ -262,20 +256,17 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_explore_locks[user_id_str] = asyncio.Lock()
     lock = user_explore_locks[user_id_str]
     if lock.locked():
-        logger.info(f"[DEBUG] explore: fail - lock locked at {time.time() - debug_times['start']:.4f}s")
         await _reply_error(update, "Please wait, your previous explore is still processing.")
         return
     async with lock:
         debug_times['after_lock'] = time.time()
         # Check if user is already in a battle BEFORE anything else
         if _is_in_battle(user_id_str):
-            logger.info(f"[DEBUG] explore: fail - in battle at {time.time() - debug_times['start']:.4f}s")
             await _reply_error(update, f"{username or 'Player'} is currently battling!")
             return
 
         now_ms = time.time()
         if now_ms - user_last_explore.get(user_id_str, 0) < 1.2:
-            logger.info(f"[DEBUG] explore: fail - rate limit at {time.time() - debug_times['start']:.4f}s")
             return
         user_last_explore[user_id_str] = now_ms
         debug_times['after_rate'] = time.time()
@@ -283,7 +274,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get database immediately (critical dependency)
     db = context.bot_data.get("db")
     if db is None:
-        logger.info(f"[DEBUG] explore: fail - db not initialized at {time.time() - debug_times['start']:.4f}s")
         await _reply_error(update, "Internal error: Database not initialized.")
         return
 
@@ -292,7 +282,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get player data (await, as we need team for titan gen)
     t0 = time.time()
     player = await db.get_player(user_id_str)
-    logger.info(f"[DEBUG] explore: after get_player {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
     if not player:
         if update.message:
             await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
@@ -305,7 +294,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get character name for titan gen
     player_character_name = player.team[0].character_name if player.team else None
     if not player_character_name:
-        logger.info(f"[DEBUG] explore: fail - no character in team at {time.time() - debug_times['start']:.4f}s")
         await _reply_error(update, "You don't have any character in your team.")
         return
 
@@ -314,7 +302,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check for decision points first before generating a titan
     location = getattr(player, "location", None)
     if location and location in TRAVEL_MAP and location.startswith("Decision_"):
-        logger.info(f"[DEBUG] explore: decision point at {time.time() - debug_times['start']:.4f}s")
         directions = TRAVEL_MAP[location]
         keyboard = [
             [InlineKeyboardButton(dir, callback_data=f"travel_decision_{dir.strip().lower()}")]
@@ -347,7 +334,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if random.random() < 0.03 and not context.user_data.get('captcha_active', False):
         t0 = time.time()
         captcha_triggered = await spawn_captcha(update, context)
-        logger.info(f"[DEBUG] explore: after spawn_captcha {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
         if captcha_triggered:
             return
 
@@ -362,7 +348,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("hcaptcha_prompted", False):
         t0 = time.time()
         player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-        logger.info(f"[DEBUG] explore: after get_player (fresh) {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
         player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
         last_verified_fresh = getattr(player_fresh, "last_verified", 0)
         now_fresh = time.time()
@@ -372,7 +357,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.update_player(user_id_str, {"hcaptcha_verified": True})
             player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
         else:
-            logger.info(f"[DEBUG] explore: fail - hcaptcha not complete at {time.time() - debug_times['start']:.4f}s")
             await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
             return
 
@@ -387,7 +371,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not last_verified_time or (now - last_verified_time) > 1800:
                 t0 = time.time()
                 if await _handle_verification(update, context, user_id, now, db):
-                    logger.info(f"[DEBUG] explore: after _handle_verification (explore_start_time) {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
                     return
         else:
             asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
@@ -399,12 +382,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not last_verified_time or (now - last_verified_time) > 1800:
             t0 = time.time()
             if await _handle_verification(update, context, user_id, now, db):
-                logger.info(f"[DEBUG] explore: after _handle_verification (last_explore) {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
                 return
 
     debug_times['after_last_explore'] = time.time()
 
-    # Now proceed with titan generation after all checks
     # --- INSTANT TITAN GENERATION & MESSAGE ---
     try:
         t0 = time.time()
@@ -412,7 +393,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_level=getattr(player.team[0], 'level', 1),
             unlocked_areas=player.unlocked_areas
         )
-        logger.info(f"[DEBUG] explore: after generate_titan_directly {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
     except Exception:
         titan = Titan(
             name="Unknown Titan",
@@ -470,13 +450,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=False
             )
-        logger.info(f"[DEBUG] explore: after reply_text {time.time() - t0:.4f}s (total {time.time() - debug_times['start']:.4f}s)")
     except Exception:
         if update.message:
             await update.message.reply_text("An error occurred. Please try again.")
         return
-
-    logger.info(f"[DEBUG] explore: END main handler total {time.time() - debug_times['start']:.4f}s")
 
     # --- ALL LOGIC, CHECKS, MESSAGING IN BACKGROUND ---
     asyncio.create_task(_background_explore_checks(
@@ -487,7 +464,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _background_explore_checks(update, context, user_id, user_id_str, username, db, player, player_character_name, titan, sent_message):
     """Run all explore logic/checks/messaging in background after titan message."""
     # --- TRAVEL PROGRESS LOGIC ---
-    # Only increment travel progress if not in battle (after is_in_battle is set)
     travel = getattr(player, "travel", {})
     is_in_battle = _is_in_battle(user_id_str)
     
@@ -646,9 +622,6 @@ async def _handle_timeout_setup(user_id, context, sent_message):
         context.bot_data["task_creation_times"] = {}
     context.bot_data["task_creation_times"][task_id] = time.time()
     
-    # Log creation of timeout task (debug level)
-    logger.debug(f"Created new timeout task for user {user_id}")
-    
     # Limit to max 2 tasks
     if len(context.bot_data[key]) > 2:
         context.bot_data[key] = context.bot_data[key][-2:]
@@ -665,7 +638,6 @@ async def _handle_post_explore_tasks(user_id, context, sent_message, start_time,
     # Log performance
     end_time = time.time()
     response_time = end_time - start_time
-    tasks.append(_log_performance(user_id_str, response_time))
     await asyncio.gather(*tasks)
 
 
@@ -676,7 +648,6 @@ async def _handle_verification(update, context, user_id, now, db):
     
     if player and getattr(player, "hcaptcha_verified", True):
         context.user_data["hcaptcha_prompted"] = False
-        logger.info(f"Player {user_id} is verified in database, cleared hcaptcha_prompted flag")
         return False
     
     # Check for verification success message from web
@@ -684,10 +655,8 @@ async def _handle_verification(update, context, user_id, now, db):
     if last_verified_time and now - last_verified_time < 600:  # Within 10 minutes
         # User was recently verified via web
         context.user_data["hcaptcha_prompted"] = False
-        # Ensure database state is synchronized
         await db.update_player(user_id_str, {"hcaptcha_verified": True})
         await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
-        logger.info(f"Player {user_id} was recently verified via web, cleared verification flags")
         return False
     
     # Check if verification is already in progress
@@ -702,7 +671,6 @@ async def _handle_verification(update, context, user_id, now, db):
                 "last_verified": now 
             })
             await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
-            logger.info(f"Player {user_id} verification detected, cleared verification flags")
             return False
         else:
             # Update the last check timestamp
@@ -741,11 +709,9 @@ async def _handle_verification(update, context, user_id, now, db):
             "hcaptcha_verified": False,  # Explicitly set to false
             "explore_start_time": None   # Reset explore timer when verification is required
         })
-        
-        logger.info(f"Sent verification request to player {user_id} and reset explore timer")
+
     except Exception as e:
-        logger.error(f"Failed to send verification message: {e}")
-        # If we fail to send the message, don't leave the user stuck in verification limbo
+        
         context.user_data["hcaptcha_prompted"] = False
     
     return True
@@ -818,19 +784,6 @@ async def _handle_spam_ban(user_id, update, context):
         await context.bot.send_message(BAN_LOG_CHAT_ID, msg, parse_mode=ParseMode.HTML)
     except Exception:
         pass
-        
-async def _log_performance(user_id_str, response_time):
-    """Log performance metrics for monitoring asynchronously"""
-    # Use a dedicated background task to avoid blocking the main flow
-    try:
-        # Only log if it's slower than expected (>0.5s)
-        if response_time > 0.5:
-            logger.info(f"[PERFORMANCE] Explore command for user {user_id_str} took {response_time:.3f}s")
-        # For very fast responses, log at debug level only
-        else:
-            logger.debug(f"[PERFORMANCE] Fast explore response for user {user_id_str}: {response_time:.3f}s")
-    except Exception:
-        pass  # Never fail on logging
 
 
 async def _expire_cache_key(context, cache_key, seconds):
@@ -855,10 +808,6 @@ async def cleanup_stale_explore_records(max_age_hours: int = 24):
             await asyncio.sleep(3600)
 
 async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Reset verification state for a user who might be stuck in verification limbo.
-    This function clears all verification flags in context and database.
-    """
     user_id_str = str(user_id)
     db = context.bot_data.get("db")
     if not db:
@@ -878,7 +827,6 @@ async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_T
             "last_explore_time": current_time    # Update last explore time too
         })
         
-        logger.info(f"Reset verification state for user {user_id} and set explore timer")
         return True
     except Exception as e:
         logger.error(f"Failed to reset verification state: {e}")
@@ -920,11 +868,6 @@ async def start_cleanup_task():
 
 @mod_only
 async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Command to reset verification state for a user.
-    Usage: /resetverify [user_id] or reply to a user's message
-    Only moderators can use this command.
-    """
     if not update.effective_user:
         return
     
@@ -975,8 +918,7 @@ except ImportError:
                 if (existing_markup is None and reply_markup is None) or \
                    (existing_markup is not None and reply_markup is not None and 
                     existing_markup.to_dict() == reply_markup.to_dict()):
-                    # Both text and markup are identical - don't attempt edit
-                    logging.debug(f"Skipping edit: message content and markup unchanged")
+        
                     return False
                     
             # Create kwargs dynamically
@@ -991,8 +933,6 @@ except ImportError:
             
         except Exception as e:
             if "message is not modified" in str(e).lower():
-                # Just log at debug level
-                logging.debug(f"Message not modified: {e}")
                 return False
             else:
                 # Log other errors at warning level
@@ -1009,8 +949,6 @@ except ImportError:
                 if (existing_markup is None and reply_markup is None) or \
                    (existing_markup is not None and reply_markup is not None and 
                     existing_markup.to_dict() == reply_markup.to_dict()):
-                    # Both caption and markup are identical - don't attempt edit
-                    logging.debug(f"Skipping edit: caption and markup unchanged")
                     return False
                     
             # Create kwargs dynamically
@@ -1025,10 +963,6 @@ except ImportError:
             
         except Exception as e:
             if "message is not modified" in str(e).lower():
-                # Just log at debug level
-                logging.debug(f"Caption not modified: {e}")
                 return False
             else:
-                # Log other errors at warning level
-                logging.warning(f"Error editing caption: {e}")
                 return False
