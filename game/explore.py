@@ -773,30 +773,7 @@
 #             pass
 #             await asyncio.sleep(3600)
 
-# async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-#     user_id_str = str(user_id)
-#     db = context.bot_data.get("db")
-#     if not db:
-#         return False
-        
-#     try:
-#         # Clear verification flags in context
-#         if context.user_data:
-#             context.user_data["hcaptcha_prompted"] = False
-            
-#         # Reset verification in database
-#         current_time = time.time()
-#         await db.update_player(user_id, {
-#             "hcaptcha_verified": False,
-#             "hcaptcha_start_time": None,
-#             "explore_start_time": current_time,  # Set current time to reset the 25-minute timer
-#             "last_explore_time": current_time    # Update last explore time too
-#         })
-        
-#         return True
-#     except Exception as e:
-#         logger.error(f"Failed to reset verification state: {e}")
-#         return False
+
 
 # async def force_cleanup_user(user_id: int, db: Database):
 #     """Force cleanup of all user-related data."""
@@ -1100,33 +1077,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # Fast player data fetch - only essential fields
-    try:
-        # Use a faster query that only gets essential fields
-        player_data = await db.get_player_fast(user_id_str)  # Assume this method exists or create it
-        if not player_data:
-            await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
-            return
-        
-        # Extract essential data
-        player_level = player_data.get('team', [{}])[0].get('level', 1) if player_data.get('team') else 1
-        character_name = player_data.get('team', [{}])[0].get('character_name') if player_data.get('team') else None
-        location = player_data.get('location')
-        gas = player_data.get('team', [{}])[0].get('gas', 0) if player_data.get('team') else 0
-        unlocked_areas = player_data.get('unlocked_areas', DEFAULT_AREAS)
-        
-    except Exception:
-        # Fallback to regular method if fast method fails
-        player = await db.get_player(user_id_str)
-        if not player or not player.team:
-            await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
-            return
-        
-        player_level = player.team[0].level
-        character_name = player.team[0].character_name
-        location = getattr(player, 'location', None)
-        gas = player.team[0].gas
-        unlocked_areas = player.unlocked_areas
+    # Always use db.get_player and fetch character for level
+    player = await db.get_player(user_id_str)
+    if not player or not player.team:
+        await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
+        return
+
+    # Get character name from first team member
+    character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
+    # Fetch character object for level
+    character = await db.get_character(player.user_id, character_name)
+    player_level = character.level if character and hasattr(character, 'level') else 1
+    location = getattr(player, 'location', None)
+    gas = player.team[0].gas if hasattr(player.team[0], 'gas') else 0
+    unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
     
     # Quick validations
     if not character_name:
@@ -1213,42 +1177,44 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Run ALL background processing asynchronously
     asyncio.create_task(_handle_explore_background(
         update, context, user_id, user_id_str, username, db, 
-        player_data, titan, sent_message, start_time
+        player, titan, sent_message, start_time
     ))
 
 async def _handle_explore_background(update, context, user_id, user_id_str, username, db, 
-                                   player_data, titan, sent_message, start_time):
+                                   player, titan, sent_message, start_time):
     """Handle all background processing after sending the titan message"""
     try:
         # Store titan in database and cache
         if not _is_in_battle(user_id_str):
             db._titan_cache[user_id_str] = titan
             asyncio.create_task(db.store_titan(user_id_str, titan))
-        
+
         # Spam protection
         if "explore_spam_count" not in context.bot_data:
             context.bot_data["explore_spam_count"] = {}
         spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0) + 1
         context.bot_data["explore_spam_count"][user_id_str] = spam_count
-        
+
         if spam_count == 10:
             await update.message.reply_text("⚠️ Warning: Don't spam, you will be banned.")
         elif spam_count >= 15:
             asyncio.create_task(_handle_spam_ban(user_id, update, context))
             return
-        
+
         # Reset spam count if in battle
         if _is_in_battle(user_id_str):
             context.bot_data["explore_spam_count"][user_id_str] = 0
-        
+
         # Setup timeout
         asyncio.create_task(_setup_timeout(user_id, context, sent_message))
-        
+
         # Handle other background tasks (verification, missions, etc.)
+        # Pass player_character_name for mission/item logic
+        player_character_name = player.team[0].character_name if player.team else None
         asyncio.create_task(_handle_additional_background_tasks(
-            update, context, user_id, user_id_str, db, player_data
+            update, context, user_id, user_id_str, db, player_character_name
         ))
-        
+
     except Exception as e:
         logger.error(f"Background processing error: {e}")
 
@@ -1274,24 +1240,24 @@ async def _handle_additional_background_tasks(update, context, user_id, user_id_
         player = await db.get_player(user_id_str)
         if not player:
             return
-        
+
         # Handle verification logic
         await _handle_verification_background(update, context, user_id, db, player)
-        
+
         # Handle travel progress
         await _handle_travel_progress(update, context, user_id_str, db, player)
-        
+
         # Handle mission items (if player has missions)
         if hasattr(player, "missions") and player.missions:
             await _handle_mission_items(update, context, db, player)
-        
+
         # Update explore times
         now = time.time()
         asyncio.create_task(db.update_player(user_id_str, {
             "last_explore_time": now,
-            "explore_start_time": player.explore_start_time or now
+            "explore_start_time": getattr(player, 'explore_start_time', None) or now
         }))
-        
+
     except Exception as e:
         logger.error(f"Additional background tasks error: {e}")
 
@@ -1503,3 +1469,29 @@ async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Closing keyboard...",
             reply_markup=ReplyKeyboardRemove()
         )
+
+
+async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    user_id_str = str(user_id)
+    db = context.bot_data.get("db")
+    if not db:
+        return False
+        
+    try:
+        # Clear verification flags in context
+        if context.user_data:
+            context.user_data["hcaptcha_prompted"] = False
+            
+        # Reset verification in database
+        current_time = time.time()
+        await db.update_player(user_id, {
+            "hcaptcha_verified": False,
+            "hcaptcha_start_time": None,
+            "explore_start_time": current_time,  # Set current time to reset the 25-minute timer
+            "last_explore_time": current_time    # Update last explore time too
+        })
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to reset verification state: {e}")
+        return False
