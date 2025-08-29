@@ -308,10 +308,10 @@ class Database:
                     return await self.get_player(str(user_id))
             
             # Check if this is a small update that doesn't need a full database refresh
-            is_minor_update = len(update_data) == 1 and (
-                'explore_start_time' in update_data or
-                'hcaptcha_start_time' in update_data
-            )
+            is_minor_update = len(update_data) <= 2 and all(key in [
+                'explore_start_time', 'hcaptcha_start_time', 'hcaptcha_verified',
+                'last_explore_time', 'travel.progress', 'location', 'travel'
+            ] for key in update_data.keys())
             
             # For minor updates, don't need to return the document
             if is_minor_update:
@@ -545,16 +545,13 @@ class Database:
             # Cache miss or expired
             CACHE_STATS["misses"] += 1
             
-            # Use projection for faster reads
+            # Use projection for faster reads - include only essential fields for explore
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
             }, {
                 "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
-                "xp": 1, "total_xp": 1, "stats": 1, "gas": 1, "max_gas": 1,
-                "equipped_weapon": 1,
-                "active_abilities": 1, "passive_abilities": 1, "ultimate_abilities": 1,
-                "unlocked_abilities": 1
+                "xp": 1, "gas": 1, "equipped_weapon": 1
             })
             
             if character_data:

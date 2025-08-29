@@ -1008,8 +1008,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # Start multiple async operations in parallel
-    # This reduces waiting time by running DB queries concurrently
+    # PARALLEL DATABASE QUERIES - This is the key optimization
+    # Run player and character queries simultaneously instead of sequentially
     player_future = db.get_player(user_id_str)
     
     # Always use db.get_player and fetch character for level
