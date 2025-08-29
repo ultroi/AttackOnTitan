@@ -10,7 +10,7 @@ from game.random_drop import get_random_drop
 import asyncio
 import random
 from utils.monitor import track_battle_end
-from database.missions import process_titan_reward_mission_progress
+from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress
 import logging
 from datetime import datetime, timezone
 import time
@@ -1366,16 +1366,29 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             reward_msg.append(f"⚔️ <b>Valor : +{rewards['valor']}</b>")
         await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
         
-        # Process mission progress for titan rewards
+        # Process mission progress for titan rewards and exploration
         try:
             # Check and update mission progress based on titan rewards
             player_obj_fresh = await db.get_player(user_id)
             if player_obj_fresh and hasattr(player_obj_fresh, "missions"):
-                mission_notifications = await process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward)
+                # Process titan reward mission progress
+                titan_notifications = await process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward)
+                
+                # Process exploration mission progress
+                current_area = getattr(player_obj_fresh, "location", None)
+                explore_notifications = await process_explore_mission_progress(db, player_obj_fresh, current_area)
+                
+                # Combine all notifications
+                all_notifications = []
+                if titan_notifications:
+                    all_notifications.extend(titan_notifications)
+                if explore_notifications:
+                    all_notifications.extend(explore_notifications)
+                
                 # Send mission notifications if any
-                if mission_notifications:
-                    for notification in mission_notifications[:1]:  # Limit to first notification to avoid spam
-                        await send(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
+                if all_notifications:
+                    for notification in all_notifications[:2]:  # Limit to first 2 notifications to avoid spam
+                        await send(chat_id, notification, parse_mode=ParseMode.HTML)
         except Exception as e:
             logger.error(f"Error processing mission progress: {e}")
             
@@ -1509,6 +1522,22 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         updates.append(db.players.update_one({"user_id": user_id}, {"$inc": {"explore_count": 1}}))
         await asyncio.gather(*updates)
         await query.edit_message_text(f"{battle.character.name} was defeated by {battle.titan.name}!")
+        
+        # Process exploration mission progress even if player is defeated
+        try:
+            player_obj_fresh = await db.get_player(user_id)
+            if player_obj_fresh and hasattr(player_obj_fresh, "missions"):
+                # Process exploration mission progress
+                current_area = getattr(player_obj_fresh, "location", None)
+                explore_notifications = await process_explore_mission_progress(db, player_obj_fresh, current_area)
+                
+                # Send mission notifications if any
+                if explore_notifications:
+                    for notification in explore_notifications[:2]:  # Limit to first 2 notifications to avoid spam
+                        await send(chat_id, notification, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.error(f"Error processing exploration mission progress after defeat: {e}")
+            
         try:
             track_battle_end(int(user_id), battle.character.name, "defeat")
             # Track successful exploration for stats (use player first name)

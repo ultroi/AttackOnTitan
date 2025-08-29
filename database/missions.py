@@ -5,6 +5,8 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
 from database.models import CharacterStats
 
+logger = logging.getLogger(__name__)
+
 # Mission status enum-like constants
 MISSION_STATUS_NOT_STARTED = "not_started"
 MISSION_STATUS_IN_PROGRESS = "in_progress"
@@ -299,7 +301,10 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
                     await apply_mission_rewards(db, player, mission_def)
                     # Return notification message - using HTML format for consistency
                     return f"🎉 <b>Mission Completed!</b> 🎉\n\n<b>{mission_def.title}</b>\nYou've earned: {mission_def.reward_description}"
-            # If progress updated but not completed yet
+            # For exploration missions (1, 9, 11, 14), do NOT send progress notifications
+            exploration_mission_ids = {1, 9, 11, 14}
+            if mission_id in exploration_mission_ids:
+                return None
             progress_percent = int((current_progress / mission_progress["required_progress"]) * 100)
             if progress_percent % 25 == 0 or current_progress == 1:  # Notify at 25%, 50%, 75% and on first progress
                 return f"📊 <b>Mission Progress Update</b>\n<b>{mission_def.title}</b>: {current_progress}/{mission_progress['required_progress']} ({progress_percent}%)"
@@ -565,7 +570,7 @@ async def process_explore_mission_progress(db, player, area=None):
                 
         # Mission 14: Never Stop! (500 explores in each place of the map)
         if mission_id == 14:
-            # Define all required areas for Mission 14
+            # Define all required areas for Mission 14 (note: match exact location names used in game)
             REQUIRED_AREAS = [
                 "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
                 "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
@@ -576,19 +581,46 @@ async def process_explore_mission_progress(db, player, area=None):
             if not explore_counts:
                 explore_counts = {}
             
+            # Debug log to help diagnose the issue
+            logger.info(f"Processing Mission 14 for player {player.user_id}. Current area: {area}, explore_counts: {explore_counts}")
+            
             # Update count for current area
             if area:
-                explore_counts[area] = explore_counts.get(area, 0) + 1
+                # Ensure area name matches one of the required areas by checking case-insensitive
+                matching_area = None
+                for required_area in REQUIRED_AREAS:
+                    if area.lower() == required_area.lower() or required_area.lower() in area.lower():
+                        matching_area = required_area
+                        break
+                
+                # If we found a matching area, update its count
+                if matching_area:
+                    explore_counts[matching_area] = explore_counts.get(matching_area, 0) + 1
+                    logger.info(f"Updating area count for {matching_area}: {explore_counts[matching_area]}")
+                else:
+                    # Try to extract the area name from the location (e.g., "Trost District" -> "Trost")
+                    for required_area in REQUIRED_AREAS:
+                        if required_area.lower() in area.lower():
+                            explore_counts[required_area] = explore_counts.get(required_area, 0) + 1
+                            logger.info(f"Matched partial area name: {required_area}, count: {explore_counts[required_area]}")
+                            matching_area = required_area
+                            break
+                
+                # If we couldn't match the area, still track it for debugging
+                if not matching_area:
+                    explore_counts[area] = explore_counts.get(area, 0) + 1
+                    logger.info(f"Tracking unknown area: {area}, count: {explore_counts[area]}")
                 
                 # Save updated counts
                 await db.update_player(int(player.user_id), {"area_explore_counts": explore_counts})
                 
+                # Count how many areas have reached 500 explores
+                completed_areas = sum(1 for area_name in REQUIRED_AREAS 
+                                     if explore_counts.get(area_name, 0) >= 500)
+                
                 # Check if this area just reached 500 explores
-                if explore_counts.get(area) == 500:
-                    # Count how many areas have reached 500 explores
-                    completed_areas = sum(1 for area_name in REQUIRED_AREAS 
-                                         if explore_counts.get(area_name, 0) >= 500)
-                    
+                matched_area = matching_area or area
+                if explore_counts.get(matched_area, 0) == 500:
                     # Update mission progress to reflect number of completed areas
                     # First reset progress to make sure it's accurate
                     for i, mp in enumerate(player_missions):
@@ -603,7 +635,7 @@ async def process_explore_mission_progress(db, player, area=None):
                             notifications.append(notification)
                     else:
                         # Send progress notification even if not complete
-                        notifications.append(f"🗺️ Area explored: {area} - 500 explores reached!\n"
+                        notifications.append(f"🗺️ Area explored: {matched_area} - 500 explores reached!\n"
                                            f"Mission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
     
     # If any updates were made, refresh the player data

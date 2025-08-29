@@ -179,12 +179,19 @@ async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_
     end_idx = min(start_idx + MISSIONS_PER_PAGE, len(available_missions))
     current_page_missions = available_missions[start_idx:end_idx]
     
-    # Create message text
+    # Create improved message text
     message = "📜 *Available Missions*\n\n"
-    
     for mission in current_page_missions:
-        message += f"*{mission.id}. {mission.title}*\n"
-        message += f"_{mission.description}_\n\n"
+        message += (
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"*{mission.id}. {mission.title}*\n"
+            f"_{mission.description}_\n"
+            f"*Requirement:* `{mission.requirement}`\n"
+            f"*Reward:* `{mission.reward_description}`\n"
+        )
+        if mission.time_limit_hours:
+            message += f"⏳ *Time Limit:* {mission.time_limit_hours} hours\n"
+        message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     # Create keyboard with mission selection buttons
     keyboard = []
@@ -266,9 +273,8 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         await show_available_missions(update, context, player, db)
         return
     
-    # Create message text
+    # Create improved message text
     message = "📋 *Active Missions*\n\n"
-    
     completed_missions = []
     keyboard = []
     row = []
@@ -277,18 +283,25 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         mission = mission_data["definition"]
         progress = mission_data["progress"]
         is_completed = progress["status"] == "completed" or progress["current_progress"] >= progress["required_progress"]
+        message += "━━━━━━━━━━━━━━━━━━━━━━\n"
         if is_completed:
             message += f"*{mission.id}. {mission.title}* ✅\n"
             completed_missions.append(mission["id"])
         else:
             message += f"*{mission.id}. {mission.title}*\n"
-            # Special progress display for Mission 14
-            if mission.id == 14:
-                message += "Progress:\n"
-                message += format_mission_14_progress(player) + "\n\n"
-            else:
-                message += f"Progress: {progress['current_progress']}/{progress['required_progress']}\n\n"
-            # Only add button for non-completed missions
+        message += f"_{mission.description}_\n"
+        message += f"*Requirement:* `{mission.requirement}`\n"
+        if mission.id == 14:
+            message += "*Progress:*\n"
+            message += format_mission_14_progress(player) + "\n"
+        else:
+            message += f"*Progress:* {progress['current_progress']}/{progress['required_progress']}\n"
+        message += f"*Reward:* `{mission.reward_description}`\n"
+        if hasattr(mission, "time_limit_hours") and mission.time_limit_hours:
+            message += f"⏳ *Time Limit:* {mission.time_limit_hours} hours\n"
+        message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        # Only add button for non-completed missions
+        if not is_completed:
             if len(row) == 3:
                 keyboard.append(row)
                 row = []
