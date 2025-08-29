@@ -179,41 +179,7 @@
 #     return True
 
 
-# @maintenance_protected
-# @ban_protected
-# async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """Handle the /open command to show the keyboard for exploring."""
-    
-#     if not update.effective_chat or update.effective_chat.type != "private":
-#         await update.message.reply_text("This command can only be used in private chats.")
-#         return
-    
-#     # Create a persistent keyboard with explore and close buttons
-#     keyboard = [["/explore", "/close"]]
-#     reply_markup = ReplyKeyboardMarkup(
-#         keyboard,
-#         resize_keyboard=True,
-#         one_time_keyboard=False
-#     )
-    
-#     # Set flag to prevent showing keyboard multiple times
-#     if context.user_data is not None:
-#         context.user_data["persistent_keyboard_sent"] = True
-    
-#     # Show keyboard to user
-#     await update.message.reply_text(
-#         "Keyboard opened. You can use these buttons to explore or close the keyboard.",
-#         reply_markup=reply_markup
-#     )
 
-# @ban_protected
-# async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """Close the persistent keyboard menu."""
-#     if update.message:
-#         await update.message.reply_text(
-#             "Closing keyboard...",
-#             reply_markup=ReplyKeyboardRemove()
-#         )
 
 # # Helper function to check if a user is in battle - reduces code duplication
 # def _is_in_battle(user_id_str: str) -> bool:
@@ -866,41 +832,7 @@
 #     asyncio.create_task(cleanup_stale_explore_records())
 
 
-# @mod_only
-# async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     if not update.effective_user:
-#         return
-    
-#     # Determine target user (either from reply or from args)
-#     target_user_id = None
-    
-#     # Check if replying to a message
-#     if update.message.reply_to_message and update.message.reply_to_message.from_user:
-#         target_user_id = update.message.reply_to_message.from_user.id
-#         target_user_name = update.message.reply_to_message.from_user.first_name
-#     # Check if user ID was provided as argument
-#     elif context.args and context.args[0].isdigit():
-#         target_user_id = int(context.args[0])
-#         target_user_name = f"User {target_user_id}"
-#     else:
-#         await update.message.reply_text(
-#             "❌ Please either reply to a user's message or provide a user ID."
-#         )
-#         return
-    
-#     # Reset verification for the target user
-#     success = await reset_verification_state(target_user_id, context)
-    
-#     if success:
-#         await update.message.reply_text(
-#             f"✅ Verification state has been reset for {target_user_name}.\n"
-#             f"They can now use /explore again normally."
-#         )
-#     else:
-#         await update.message.reply_text(
-#             f"❌ Failed to reset verification state for {target_user_name}.\n"
-#             f"Please try again later or check if the user ID is valid."
-#         )
+
 
 
 # # Import centralized safe edit functions
@@ -1497,3 +1429,77 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         pass
     except Exception as e:
         logger.error(f"Error in titan_encounter_timeout: {e}")
+
+
+@mod_only
+async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.effective_user:
+        return
+    
+    # Determine target user (either from reply or from args)
+    target_user_id = None
+    
+    # Check if replying to a message
+    if update.message.reply_to_message and update.message.reply_to_message.from_user:
+        target_user_id = update.message.reply_to_message.from_user.id
+        target_user_name = update.message.reply_to_message.from_user.first_name
+    # Check if user ID was provided as argument
+    elif context.args and context.args[0].isdigit():
+        target_user_id = int(context.args[0])
+        target_user_name = f"User {target_user_id}"
+    else:
+        await update.message.reply_text(
+            "❌ Please either reply to a user's message or provide a user ID."
+        )
+        return
+    
+    # Reset verification for the target user
+    success = await reset_verification_state(target_user_id, context)
+    
+    if success:
+        await update.message.reply_text(
+            f"✅ Verification state has been reset for {target_user_name}.\n"
+            f"They can now use /explore again normally."
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Failed to reset verification state for {target_user_name}.\n"
+            f"Please try again later or check if the user ID is valid."
+        )
+
+
+@maintenance_protected
+@ban_protected
+async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /open command to show the keyboard for exploring."""
+    
+    if not update.effective_chat or update.effective_chat.type != "private":
+        await update.message.reply_text("This command can only be used in private chats.")
+        return
+    
+    # Create a persistent keyboard with explore and close buttons
+    keyboard = [["/explore", "/close"]]
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+    
+    # Set flag to prevent showing keyboard multiple times
+    if context.user_data is not None:
+        context.user_data["persistent_keyboard_sent"] = True
+    
+    # Show keyboard to user
+    await update.message.reply_text(
+        "Keyboard opened. You can use these buttons to explore or close the keyboard.",
+        reply_markup=reply_markup
+    )
+
+@ban_protected
+async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Close the persistent keyboard menu."""
+    if update.message:
+        await update.message.reply_text(
+            "Closing keyboard...",
+            reply_markup=ReplyKeyboardRemove()
+        )
