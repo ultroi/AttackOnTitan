@@ -1089,7 +1089,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     character = await db.get_character(player.user_id, character_name)
     player_level = character.level if character and hasattr(character, 'level') else 1
     location = getattr(player, 'location', None)
-    gas = player.team[0].gas if hasattr(player.team[0], 'gas') else 0
+    gas = character.gas if character and hasattr(character, 'gas') else 0
     unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
     
     # Quick validations
@@ -1098,7 +1098,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if gas < 100:
-        await _reply_error(update, f"{character_name} doesn't have enough gas to explore (needs at least 100).")
+        await _reply_error(update, f"{character_name} doesn't have enough gas to explore (needs at least 100). Current: {gas}")
         return
     
     # Decision point check (fast)
