@@ -548,7 +548,7 @@ def _is_in_battle(user_id_str: str) -> bool:
 #     if travel.get("in_progress") and not is_in_battle:
 #         travel_progress = travel.get("progress", 0) + 1
 #         travel_required = travel.get("required", 1)
-#         travel_update = {"travel.progress": travel_progress}
+#         travel_update = {"travel": updated_travel}
 #         # If travel completed
 #         if travel_progress >= travel_required:
 #             # Update location and clear travel state
@@ -1372,8 +1372,11 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
         except Exception:
             pass
     else:
-        # Update progress
-        await db.update_player(user_id_str, {"travel.progress": travel_progress})
+        # Update progress - fix for travel.progress field issue
+        current_travel = getattr(player, "travel", {})
+        updated_travel = current_travel.copy()
+        updated_travel["progress"] = travel_progress
+        await db.update_player(user_id_str, {"travel": updated_travel})
 
 async def _handle_mission_items(update, context, db, player):
     """Handle mission item drops in background"""

@@ -310,7 +310,7 @@ class Database:
             # Check if this is a small update that doesn't need a full database refresh
             is_minor_update = len(update_data) <= 2 and all(key in [
                 'explore_start_time', 'hcaptcha_start_time', 'hcaptcha_verified',
-                'last_explore_time', 'travel.progress', 'location', 'travel'
+                'last_explore_time', 'location', 'travel'
             ] for key in update_data.keys())
             
             # For minor updates, don't need to return the document
