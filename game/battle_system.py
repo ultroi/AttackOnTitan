@@ -469,9 +469,9 @@ class BattleSystem:
         # Marks: fixed per battle (current system, no difficulty bonus)
         marks = max(1, random.randint(70, 100) + (titan.level * 2))
         
-        # Valor: much lower chance (2.5%)
+        # Valor: much lower chance (1.5%)
         valor = 0
-        if player and random.random() < 0.025:
+        if player and random.random() < 0.015:
             valor = max(1, random.randint(1, 4))
             
         # Crystal: very rare (1% chance)
@@ -1554,7 +1554,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Add random drop after battle end
     try:
-        if random.random() < 0.05:
+        if random.random() < 0.08:
             drop = get_random_drop()
             # Get player object
             player_obj = await db.get_player(user_id)
