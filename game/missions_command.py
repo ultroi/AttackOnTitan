@@ -52,6 +52,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # --- Mission progress update logic ---
     # For each active mission, update progress if possible (without adding items to inventory)
     progress_notifications = []
+    player_updated = False
     for mission_data in active_missions:
         mission = mission_data["definition"]
         progress = mission_data["progress"]
@@ -74,9 +75,9 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         notification = await update_mission_progress(db, player, mission.id, progress_amount)
                         if notification:
                             progress_notifications.append(notification)
+                        player_updated = True
         # --- Exploring-type missions ---
         elif mission.id == 1:
-            # Mission 1: Complete 500 explores outside starting district
             explores = getattr(player, "explores", 0)
             new_progress = min(explores, mission.required_progress)
             if progress["current_progress"] != new_progress:
@@ -85,6 +86,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     notification = await update_mission_progress(db, player, mission.id, progress_amount)
                     if notification:
                         progress_notifications.append(notification)
+                    player_updated = True
         elif mission.id == 9:
             explores = getattr(player, "explores", 0)
             travel_data = getattr(player, "travel", {})
@@ -93,28 +95,23 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 new_progress = min(consecutive_explores, mission.required_progress)
             else:
                 new_progress = min(explores, mission.required_progress)
-                
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
                 if progress_amount > 0:
                     notification = await update_mission_progress(db, player, mission.id, progress_amount)
                     if notification:
                         progress_notifications.append(notification)
-                        
+                    player_updated = True
         elif mission.id == 11:
             weekly_explores = 0
             daily_explores_data = getattr(player, "daily_explores", {})
-            
-            # Get mission start time
             mission_start_time = None
             if progress.get("started_at"):
                 try:
                     mission_start_time = datetime.fromisoformat(progress["started_at"].replace('Z', '+00:00'))
                 except (ValueError, TypeError):
-                    mission_start_time = datetime.now(timezone.utc) - timedelta(days=1)  # Fallback
-            
+                    mission_start_time = datetime.now(timezone.utc) - timedelta(days=1)
             if isinstance(daily_explores_data, dict) and mission_start_time:
-                # Only count explores that happened after mission started
                 for date_str, count in daily_explores_data.items():
                     try:
                         date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
@@ -123,9 +120,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     except (ValueError, TypeError):
                         pass
             else:
-                # Fallback to overall explores if structured data not available
                 weekly_explores = getattr(player, "explores", 0)
-                
             new_progress = min(weekly_explores, mission.required_progress)
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
@@ -133,12 +128,16 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     notification = await update_mission_progress(db, player, mission.id, progress_amount)
                     if notification:
                         progress_notifications.append(notification)
+                    player_updated = True
         elif mission.id == 14:
-            # Mission 14: 500 explores in each place of the map
             area_explore_counts = getattr(player, "area_explore_counts", {}) or {}
+            AREAS = [
+                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+            ]
             completed_areas = 0
-            for area_count in area_explore_counts.values():
-                if area_count >= 500:
+            for area in AREAS:
+                if area_explore_counts.get(area, 0) >= 500:
                     completed_areas += 1
             new_progress = min(completed_areas, mission.required_progress)
             if progress["current_progress"] != new_progress:
@@ -147,6 +146,10 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     notification = await update_mission_progress(db, player, mission.id, progress_amount)
                     if notification:
                         progress_notifications.append(notification)
+                    player_updated = True
+    # Always refresh player object after any progress update
+    if player_updated:
+        player = await db.get_player(user_id)
 
     # If no active missions, show available missions
     if not active_missions:
