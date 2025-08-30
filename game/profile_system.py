@@ -582,11 +582,8 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"DB not initialized, using cached player for {user_id}")
     
     # Clear cache for this player to ensure subsequent calls get fresh data
-    from database.db import PLAYER_CACHE, CACHE_ENABLED
-    if CACHE_ENABLED:
-        cache_key = f"player_{user_id}"
-        if cache_key in PLAYER_CACHE:
-            del PLAYER_CACHE[cache_key]
+    if hasattr(db, 'invalidate_player_cache'):
+        db.invalidate_player_cache(user_id)
     
     if not player:
         await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")

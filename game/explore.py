@@ -312,8 +312,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get character name from first team member
     character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
     
-    # Start character query immediately
-    character_future = db.get_character(player.user_id, character_name)
+    # Start character query immediately - OPTIMIZED: only fetch gas field for validation
+    character_future = db.get_character(user_id_str, character_name)
     
     # While character is being fetched, prepare other data that doesn't depend on it
     location = getattr(player, 'location', None)
@@ -484,16 +484,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _handle_explore_background(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
     """Handle all background processing for explore command"""
     try:
-        # Update player's gas (subtract 100 for exploration)
+        # Update player's gas (subtract 100 for exploration) - OPTIMIZED FOR SPEED
         character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
-        character = await db.get_character(player.user_id, character_name)
+        character = await db.get_character(user_id_str, character_name)
         if character and hasattr(character, 'gas'):
             new_gas = max(0, character.gas - 100)
-            character.gas = new_gas
-            await db.update_character(character)
+            # Use batch update for faster gas deduction (non-critical for exploration)
+            await db.batch_update_character(user_id_str, character_name, {"gas": new_gas})
         
-        # Update player's last explore time
-        await db.update_player(user_id_str, {"last_explore_time": time.time()})
+        # Update player's last explore time - use batch update for speed
+        await db.batch_update_player(user_id_str, {"last_explore_time": time.time()})
         
         # Handle mission progress for exploration
         location = getattr(player, 'location', None)

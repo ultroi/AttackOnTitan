@@ -24,6 +24,15 @@ async def reset_user_data(self, user_id: str):
         await self.shop_purchases_collection.delete_many({"user_id": user_id})
         if self.bank_accounts is not None:
             await self.bank_accounts.delete_many({"user_id": user_id})
+        
+        # Clear caches to ensure fresh data after reset
+        if hasattr(self, 'invalidate_player_cache'):
+            self.invalidate_player_cache(user_id)
+        if hasattr(self, 'invalidate_all_character_caches'):
+            self.invalidate_all_character_caches(user_id)
+        if hasattr(self, 'invalidate_battle_caches'):
+            self.invalidate_battle_caches(user_id)
+            
     except Exception as e:
         raise
 

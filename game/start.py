@@ -418,6 +418,8 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await _safe_edit_message(query, "An error occurred while creating your player. Please try again.")
                     return
             existing_char = await db.get_character(int(user_id), selected_character)
+            is_new_character = not existing_char
+            
             if existing_char:
                 # Character already exists, just show the welcome message again (idempotent)
                 # Use actual player/character values instead of undefined starter_rewards
@@ -487,9 +489,9 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     await query.edit_message_text("An error occurred while creating your character. Please try again.")
                 return
-            # Set player location to selected location and give starter rewards only if new
+            # Set player location to selected location and give starter rewards only if new character
             starter_rewards = None
-            if is_new_player:
+            if is_new_character:
                 starter_rewards = STARTER_REWARDS.copy()
                 extra_data = {
                     "team": [TeamMember(character_name=selected_character, position=1).dict()],
@@ -541,12 +543,8 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 logger.info(f"Referral update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
                                 
                                 # Clear cache for the referrer to ensure fresh data
-                                from database.db import PLAYER_CACHE, CACHE_ENABLED
-                                if CACHE_ENABLED:
-                                    cache_key = f"player_{ref_user_id}"
-                                    if cache_key in PLAYER_CACHE:
-                                        logger.info(f"Clearing cache for referrer {ref_user_id}")
-                                        del PLAYER_CACHE[cache_key]
+                                if hasattr(db, 'invalidate_player_cache'):
+                                    db.invalidate_player_cache(ref_user_id)
                                 
                                 # Double-check referrer after update to verify count was increased
                                 updated_referrer = await db.players.find_one({"user_id": ref_user_id})
@@ -588,13 +586,9 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     player_update = {**starter_rewards, **extra_data}
                     await db.update_player(int(user_id), player_update)
                     
-                    # Clear cache for the referred user to ensure fresh data
-                    from database.db import PLAYER_CACHE, CACHE_ENABLED
-                    if CACHE_ENABLED:
-                        cache_key = f"player_{user_id}"
-                        if cache_key in PLAYER_CACHE:
-                            logger.info(f"Clearing cache for referred user {user_id}")
-                            del PLAYER_CACHE[cache_key]
+                    # Clear cache for the user to ensure fresh data
+                    if hasattr(db, 'invalidate_player_cache'):
+                        db.invalidate_player_cache(user_id)
                 except Exception as update_err:
                     logger.error(f"Failed to update player with starter rewards: {update_err}")
                     # Rollback: delete player and character if possible
@@ -620,7 +614,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
             # Prepare reward summary for welcome message
             reward_lines = []
-            if is_new_player and starter_rewards:
+            if is_new_character and starter_rewards:
                 reward_lines = [
                     f"• 🔋 <b>Gas:</b> <code>{starter_rewards['gas']}</code>",
                     f"• 🔮 <b>Titan Crystals:</b> <code>{starter_rewards['crystal']}</code>",
