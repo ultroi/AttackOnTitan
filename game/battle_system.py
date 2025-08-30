@@ -1363,7 +1363,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         gas_consumed = max(0, battle.initial_gas - battle.character.gas)
         battle.character.gas = max(0, battle.character_gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
-        battle.character.current_hp = max(0, battle.character_hp)
+        battle.character.current_hp = battle.character.stats.HP  # Restore to full HP after victory
 
         # Clear all battle-related caches immediately after victory
         db.invalidate_battle_caches(user_id)
@@ -1456,49 +1456,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         # Process exploration mission progress in background
         asyncio.create_task(_process_defeat_updates(db, player_data, user_id, chat_id, send))
 
-    # Handle random drops immediately (fast operation)
+    # Handle auto drop (ho jyga) - chance for random items after battle
     try:
         if random.random() < 0.08:
-            drop = get_random_drop()
-            if drop is not None:
-                # Get fresh player data for drop processing
-                player_obj = await db.get_player(user_id)
-                if player_obj:
-                    # Ensure we have the complete current inventory
-                    current_inv = player_obj.inventory or {}
-                    update_data = {}
-
-                    if drop['type'] in ['bottle', 'cylinder']:
-                        # Update gas in inventory and player object
-                        current_inv['gas'] = current_inv.get('gas', 0) + drop['amount']
-                        update_data['gas'] = getattr(player_obj, 'gas', 0) + drop['amount']
-                        await query.message.reply_photo(
-                            photo=drop['image'],
-                            caption=drop['message'],
-                            parse_mode=ParseMode.HTML
-                        )
-                    elif drop['type'] == 'valors':
-                        # Update valor in inventory and player object
-                        current_inv['valor'] = current_inv.get('valor', 0) + drop['amount']
-                        update_data['valor'] = getattr(player_obj, 'valor', 0) + drop['amount']
-                        await query.message.reply_text(
-                            drop['message'],
-                            parse_mode=ParseMode.HTML
-                        )
-                    elif drop['type'] == 'crystals':
-                        # Update crystal in inventory and player object
-                        current_inv['crystal'] = current_inv.get('crystal', 0) + drop['amount']
-                        update_data['crystal'] = getattr(player_obj, 'crystal', 0) + drop['amount']
-                        await query.message.reply_text(
-                            drop['message'],
-                            parse_mode=ParseMode.HTML
-                        )
-
-                    # Update the complete inventory
-                    update_data['inventory'] = current_inv
-                    await db.update_player(user_id, update_data)
+            get_random_drop()
+            
+            
     except Exception as e:
-        logger.error(f"Error processing random drop: {e}")
+        logger.error(f"Error processing auto drop: {e}")
 
     # Clear battle flags immediately
     if f"active_battle_id_{user_id}" in context.bot_data:

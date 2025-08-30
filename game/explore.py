@@ -2,7 +2,7 @@ from utils.mod_utils import mod_only
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
-from database.models import Player, Character, Titan, DailyExplores, TITAN_NAME_VARIANTS
+from database.models import Player, Character, Titan, DailyExplores, TITAN_NAME_VARIANTS, generate_titan_hp
 from database.db import Database
 from game.travel_map import TRAVEL_MAP
 from game.captcha import spawn_captcha
@@ -149,17 +149,19 @@ def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> 
         image_url = titan_random.choice(list(TITAN_TYPE_IMAGE_URLS.values()))
 
     # Base stats (single tier)
-    base_hp = 100
     base_xp = 35
 
     # Scale stats by player level
     level_multiplier = max(1, player_level // 5 + 1)
     titan_level = max(1, player_level + titan_random.randint(-1, 1))
 
+    # Use varying HP from models
+    max_hp = generate_titan_hp(titan_level, difficulty)
+
     return {
         "name": name,
         "level": titan_level,
-        "max_hp": base_hp * level_multiplier,
+        "max_hp": max_hp,
         "abilities": [],
         "difficulty": "Normal", 
         "drop_table": {},
