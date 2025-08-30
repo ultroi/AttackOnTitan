@@ -40,6 +40,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.callback_query.answer("⚔️ You cannot access your inventory during an active battle with a titan!", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
+    
+    # Force fresh player data fetch to prevent stale data issues after battles
+    if hasattr(db, 'invalidate_player_cache'):
+        db.invalidate_player_cache(user_id)
+    
+    # Get fresh player data
     player = await db.get_player(user_id)
     if not player:
         if update.message:
@@ -316,6 +322,13 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
+    
+    # Always invalidate player cache before showing inventory
+    # This ensures we get fresh data and don't use stale cached data
+    if hasattr(db, 'invalidate_player_cache'):
+        db.invalidate_player_cache(user_id)
+    
+    # Get fresh player data
     player = await db.get_player(user_id)
     if not player:
         await query.edit_message_text("❌ You have no player account.")

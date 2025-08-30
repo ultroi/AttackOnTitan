@@ -628,7 +628,7 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
         refreshed_character = None
         try:
             if hasattr(battle.character, 'user_id') and hasattr(battle.character, 'name'):
-                refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+                refreshed_character = await db.get_character(str(battle.character.user_id), battle.character.name)
         except Exception:
             pass
         if refreshed_character:
@@ -843,15 +843,25 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Send a new message with the battle UI instead of editing the original message
     # This way the original battle button becomes inactive and the battle UI appears in a new message
-    chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
+    chat_id = None
+    if query.message:
+        try:
+            # Try to get chat_id in a safe way
+            if hasattr(query.message, 'chat_id'):
+                chat_id = getattr(query.message, 'chat_id', None)
+            elif hasattr(query.message, 'chat') and query.message.chat:
+                chat_id = getattr(query.message.chat, 'id', None)
+        except (AttributeError, TypeError):
+            pass
     
-    # Send the battle UI in a new message
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=battle_message,
-        reply_markup=reply_markup,
-        parse_mode=ParseMode.HTML
-    )
+    if chat_id:
+        # Send the battle UI in a new message
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=battle_message,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
     
     # Start timeout in background and set it to battle
     battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
@@ -1051,7 +1061,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             if now - last_refresh > 60:  # Refresh only every 60 seconds max
                 db = context.bot_data.get("db") or Database()
                 try:
-                    refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
+                    refreshed_character = await db.get_character(str(battle.character.user_id), battle.character.name)
                     if refreshed_character:
                         battle.character = refreshed_character
                         battle.last_character_refresh = now
@@ -1254,12 +1264,16 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 modified_message = battle_message
             
             # Always try to edit the message, never send a new one - this fixes the button spam issue
-            await safe_edit_message_text(
-                query.message,
-                modified_message,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
+            try:
+                await safe_edit_message_text(
+                    query.message,  # type: ignore
+                    modified_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            except (TypeError, AttributeError):
+                # If message type is not compatible, skip editing
+                pass
             # Don't send a new message even if edit fails - silently continue with the battle
         except ImportError:
             # Fallback to direct edit
@@ -1330,7 +1344,16 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     explore_count = player_data.get("explore_count", 0)
     send = context.bot.send_message
-    chat_id = query.message.chat_id if hasattr(query.message, 'chat_id') else query.message.chat.id
+    chat_id = None
+    if query.message:
+        try:
+            # Try to get chat_id in a safe way
+            if hasattr(query.message, 'chat_id'):
+                chat_id = getattr(query.message, 'chat_id', None)
+            elif hasattr(query.message, 'chat') and query.message.chat:
+                chat_id = getattr(query.message.chat, 'id', None)
+        except (AttributeError, TypeError):
+            pass
 
     # Pre-calculate all rewards and updates to minimize DB calls
     victory = battle.titan_hp <= 0
@@ -1367,7 +1390,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
         # Clear all battle-related caches immediately after victory
         db.invalidate_battle_caches(user_id)
-
+        
+        # Clear player cache to avoid overwriting inventory with stale data
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(user_id)
+        
+        # Get fresh player data to prevent overwriting inventory and other resources
+        fresh_player = await db.get_player(user_id)
+        
         # Prepare all database updates in parallel tasks
         update_tasks = []
 
@@ -1385,11 +1415,16 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         update_tasks.append(db.batch_update_character(str(battle.character.user_id), battle.character.name, character_update_data))
 
         # Player update task (batch all increments)
+        # Get current values from fresh player data to avoid overwriting inventory
+        current_crystal = getattr(fresh_player, 'crystal', 0) if fresh_player else player_obj.crystal
+        current_valor = getattr(fresh_player, 'valor', 0) if fresh_player else player_obj.valor  
+        current_marks = getattr(fresh_player, 'marks', 0) if fresh_player else player_obj.marks
+        
         player_update_data = {
-            "crystal": max(0, rewards["crystal"]),
-            "valor": max(0, rewards["valor"]),
-            "marks": max(0, rewards["marks"]),
-            "explore_count": 1,
+            "crystal": max(0, current_crystal + rewards["crystal"]),
+            "valor": max(0, current_valor + rewards["valor"]),
+            "marks": max(0, current_marks + rewards["marks"]),
+            "explore_count": getattr(fresh_player, 'explore_count', 0) + 1 if fresh_player else 1,
             "xp": max(0, player_obj.xp),
             "total_xp": max(0, player_obj.total_xp),
             "level": max(1, player_obj.level),
@@ -1431,6 +1466,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
         # Clear all battle-related caches after defeat
         db.invalidate_battle_caches(user_id)
+        
+        # Clear player cache to avoid overwriting inventory with stale data
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(user_id)
+        
+        # Get latest player data to avoid resource overwrite issues
+        fresh_player = await db.get_player(user_id)
+        explore_count = fresh_player.get("explore_count", 0) + 1 if fresh_player else (player_data.get("explore_count", 0) + 1)
 
         # Parallel updates for defeat
         defeat_updates = [
@@ -1441,7 +1484,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 "updated_at": datetime.now(timezone.utc)
             }),
             db.batch_update_player(str(user_id), {
-                "explore_count": (player_data.get("explore_count", 0) + 1),
+                "explore_count": explore_count,
                 "updated_at": datetime.now(timezone.utc)
             })
         ]

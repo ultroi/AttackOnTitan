@@ -32,7 +32,7 @@ load_dotenv()
 
 class Database:
     def __init__(self):
-        self.db: AsyncIOMotorDatabase = None
+        self.db: Optional[AsyncIOMotorDatabase] = None
         self.characters = None
         self.players = None
         self.titans = None
@@ -158,7 +158,7 @@ class Database:
             return []
 
     # Player operations
-    async def create_player(self, user_id: int, username: str, name: str, referral_code: str = None, referred_by: str = None) -> Player:
+    async def create_player(self, user_id: str, username: str, name: str, referral_code: str = None, referred_by: str = None) -> Player:
         try:
             import time
             start = time.perf_counter()
@@ -258,7 +258,7 @@ class Database:
             logger.error(f"Failed to get player: {e}")
             raise
 
-    async def update_player(self, user_id: int, update_data: Dict) -> Optional[Player]:
+    async def update_player(self, user_id: str, update_data: Dict) -> Optional[Player]:
         try:
             import time
             start = time.perf_counter()
@@ -378,7 +378,7 @@ class Database:
             logger.error(f"Failed to update player: {e}")
             raise
             
-    async def _background_update_player(self, user_id: int, update_data: Dict):
+    async def _background_update_player(self, user_id: str, update_data: Dict):
         """
         Internal method to update player data in the background without blocking.
         Used for non-critical updates like timestamp tracking.
@@ -400,6 +400,19 @@ class Database:
             if cache_key in CHARACTER_CACHE:
                 CHARACTER_CACHE.pop(cache_key, None)
                 logger.debug(f"Invalidated character cache for {character_name}")
+                return True
+        return False
+        
+    def invalidate_player_cache(self, user_id: str):
+        """
+        Invalidate player cache for a specific user.
+        Call this during battle operations to ensure fresh data.
+        """
+        if CACHE_ENABLED:
+            cache_key = f"player_{user_id}"
+            if cache_key in PLAYER_CACHE:
+                PLAYER_CACHE.pop(cache_key, None)
+                logger.debug(f"Invalidated player cache for user {user_id}")
                 return True
         return False
 
@@ -484,7 +497,7 @@ class Database:
             raise
 
         
-    async def get_player_characters(self, user_id: int) -> List[Character]:
+    async def get_player_characters(self, user_id: str) -> List[Character]:
         try:
             cursor = self.characters.find({"user_id": str(user_id)})
             characters = await cursor.to_list(None)
@@ -493,7 +506,7 @@ class Database:
             logger.error(f"Failed to get player characters: {e}")
             raise
 
-    async def add_character_to_player(self, user_id: int, character_name: str) -> bool:
+    async def add_character_to_player(self, user_id: str, character_name: str) -> bool:
         try:
             result = await self.players.update_one(
                 {"user_id": str(user_id)},
@@ -589,7 +602,7 @@ class Database:
             logger.error(f"Failed to create character: {e}")
             raise
 
-    async def get_character(self, user_id: int, character_name: str) -> Optional[Character]:
+    async def get_character(self, user_id: str, character_name: str) -> Optional[Character]:
         try:
             # Check cache first for better performance
             cache_key = f"character_{user_id}_{character_name}"
@@ -756,9 +769,9 @@ class Database:
             logger.error(f"Failed to batch update player: {e}")
             return False
 
-    async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[Ability]]:
+    async def get_character_abilities(self, user_id: str, character_name: str) -> Dict[str, List[Ability]]:
         try:
-            character = await self.get_character(user_id, character_name)
+            character = await self.get_character(str(user_id), character_name)
             if not character:
                 return {"active": [], "passive": [], "ultimate": []}
             return {
@@ -770,7 +783,7 @@ class Database:
             logger.error(f"Failed to get character abilities: {e}")
             raise
 
-    async def get_character_fresh(self, user_id: int, character_name: str) -> Optional[Character]:
+    async def get_character_fresh(self, user_id: str, character_name: str) -> Optional[Character]:
         """Get character directly from database, bypassing cache for critical operations."""
         try:
             # Use projection for faster reads - include only essential fields for explore
@@ -885,6 +898,27 @@ class Database:
             logger.error(f"Error generating multiple titans: {e}")
             
         return titans
+
+    async def create_new_titan(self, level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
+        """Create a new titan with specified parameters."""
+        name = generate_titan_name(difficulty)
+        max_hp = generate_titan_hp(level, difficulty)
+        xp_reward = generate_titan_xp(level, difficulty)
+        now = datetime.now(timezone.utc)
+        
+        titan = Titan(
+            name=name,
+            level=level,
+            max_hp=max_hp,
+            abilities=[],
+            created_at=now,
+            difficulty=difficulty,
+            spawn_areas=spawn_areas,
+            drop_table={},
+            xp_reward=xp_reward,
+            min_level_requirement=level
+        )
+        return titan
 
     # Titan cache for better performance
     _titan_cache = {}
@@ -1054,15 +1088,15 @@ class Database:
             return player.shop_refresh_count or 0
         return 0
 
-    async def add_new_character_to_player(self, user_id: int, character_name: str) -> bool:
+    async def add_new_character_to_player(self, user_id: str, character_name: str) -> bool:
         try:
             char_data = get_character_data(character_name)
             if not char_data:
                 return False
-            existing_char = await self.get_character(user_id, character_name)
+            existing_char = await self.get_character(str(user_id), character_name)
             if existing_char:
                 return False
-            await self.create_character(user_id, character_name, character_name, current_hp=char_data.base_stats.get("current_hp", 100))
+            await self.create_character(str(user_id), character_name, character_name, current_hp=getattr(char_data.base_stats, "current_hp", 100))
             return True
         except Exception as e:
             logger.error(f"Failed to add new character to player: {e}")
@@ -1110,7 +1144,7 @@ class Database:
             logger.error(f"Failed to update group {group_id}: {e}")
             return False
 
-    async def get_all_groups(self, filter_data: Dict = None) -> List[Dict]:
+    async def get_all_groups(self, filter_data: Optional[Dict] = None) -> List[Dict]:
         """Get all groups, optionally filtered"""
         try:
             if self.groups is None:
