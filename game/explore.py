@@ -705,9 +705,9 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
             logger.warning(f"User {user_id} reached spam threshold ({SPAM_THRESHOLD}) - triggering ban")
             # Create a mock update object for the ban function
             class MockUpdate:
-            def __init__(self, user_id, context):
-                self.effective_user = type('obj', (object,), {'id': user_id, 'first_name': f'User_{user_id}'})()
-                self.message = type('obj', (object,), {'reply_text': lambda text: None})()
+                def __init__(self, user_id, context):
+                    self.effective_user = type('obj', (object,), {'id': user_id, 'first_name': f'User_{user_id}'})()
+                    self.message = type('obj', (object,), {'reply_text': lambda text: None})()
             
             mock_update = MockUpdate(user_id, context)
             await _handle_spam_ban(user_id, mock_update, context)
