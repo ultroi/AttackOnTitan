@@ -20,7 +20,7 @@ from game.stats_command import track_explore_stats
 # Import mission-related functions
 from database.missions import (
     check_mission_item_drops, add_mission_item, 
-    process_travel_mission_progress
+    process_travel_mission_progress, process_explore_mission_progress
 )
 
 logger = logging.getLogger(__name__)
@@ -475,20 +475,35 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def _handle_verification_background(update, context, user_id, db, player):
-    """Handle verification checks in background"""
-    now = time.time()
-    explore_start_time = getattr(player, "explore_start_time", None)
-    
-    if not explore_start_time:
-        return
-    
-    # Check if verification is needed (25 minutes of exploring)
-    if (now - explore_start_time) > 1500:
-        last_verified_time = getattr(player, "last_verified", 0)
-        if not last_verified_time or (now - last_verified_time) > 1800:
-            # User needs verification - this will be handled on next explore
-            pass
+async def _handle_explore_background(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
+    """Handle all background processing for explore command"""
+    try:
+        # Update player's gas (subtract 100 for exploration)
+        character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
+        character = await db.get_character(player.user_id, character_name)
+        if character and hasattr(character, 'gas'):
+            new_gas = max(0, character.gas - 100)
+            await db.update_character(player.user_id, character_name, {"gas": new_gas})
+        
+        # Update player's last explore time
+        await db.update_player(user_id_str, {"last_explore_time": time.time()})
+        
+        # Handle mission progress for exploration
+        location = getattr(player, 'location', None)
+        await process_explore_mission_progress(db, player, location)
+        
+        # Track explore stats
+        await track_explore_stats(user_id_str, username, battle_completed=False)
+        
+        # Start titan encounter timeout
+        asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+        
+        # Handle other background tasks
+        await _handle_travel_progress(update, context, user_id_str, db, player)
+        await _handle_mission_items(update, context, db, player)
+        
+    except Exception as e:
+        logger.error(f"Error in _handle_explore_background: {e}", exc_info=True)
 
 async def _handle_travel_progress(update, context, user_id_str, db, player):
     """Handle travel progress in background"""

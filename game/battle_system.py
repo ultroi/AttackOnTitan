@@ -59,7 +59,7 @@ class BattleSystem:
         self.titan_hp: int = titan.max_hp
         self.gas: int = character.gas
         self.character_gas: int = character.max_gas  # Max gas for display and checks
-        self.max_gas: int = min(character.max_gas, 5000)  # Cap max gas at 5000
+        self.max_gas: int = character.max_gas  # Use character's actual max_gas without capping
         self.character.max_gas = self.max_gas  # Sync with character
         self.character.stats = character.stats or CharacterStats(HP=650, ATK=25, DEF=10, SPD=10, ACC=10, INT=10)
         self.ability_cooldowns: Dict[str, int] = {
