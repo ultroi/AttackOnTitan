@@ -16,12 +16,16 @@ from datetime import datetime, timezone
 
 # Enhanced player cache for improved performance
 PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 300  # Increased from 60 to 300 seconds (5 minutes)
+PLAYER_CACHE_TTL = 1800  # Increased from 300 to 1800 seconds (30 minutes)
 CHARACTER_CACHE = {}  # Add character cache
-CHARACTER_CACHE_TTL = 60  # Increased from 10 to 60 seconds
+CHARACTER_CACHE_TTL = 900  # Increased from 60 to 900 seconds (15 minutes)
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
 CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
+
+# Add pre-warm cache for frequently accessed data
+PREWARM_CACHE = {}
+PREWARM_CACHE_TTL = 3600  # 1 hour for pre-warmed data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,86 +48,92 @@ class Database:
         self.groups = None  # For storing groups information
         self.stats = None  # For storing game statistics
 
-    async def init_db(self):
+    async def init_db(self, db: AsyncIOMotorDatabase):
+        """Initialize database collections"""
+        self.db = db
+        self.characters = db.characters
+        self.players = db.players
+        self.titans = db.titans
+        self.equipment = db.equipment
+        self.shop_purchases = db.shop_purchases
+        self.shop_purchases_collection = db.shop_purchases  # For shop_system compatibility
+        self.bank_accounts = db.bank_accounts
+        self.bans = db.bans
+        self.groups = db.groups  # For storing groups information
+        self.stats = db.stats  # For storing game statistics
+        logger.info("Database collections initialized successfully")
+        """Pre-warm caches with frequently accessed data for ultra-fast responses"""
         try:
-            # Check if we already have a database connection to avoid reinitializing
-            if self.db is not None:
-                # If we already have a connection, just verify it with a ping
-                try:
-                    await self.db.command('ping')
-                    logger.info("Reusing existing database connection")
-                    return  # Connection is good, we can exit early
-                except Exception:
-                    # If ping fails, we'll try to reconnect below
-                    logger.warning("Existing database connection failed, reconnecting...")
-                    
-            # Get a new database connection
-            self.db = await get_database()
-            if self.db is None:
-                raise ConnectionError("Failed to get database instance")
-                
-            # Initialize collection references
-            self.characters = self.db.characters
-            self.players = self.db.players
-            self.players_collection = self.players 
-            self.titans = self.db.titans
-            self.equipment = self.db.equipment
-            self.groups = self.db.groups 
-            self.shop_purchases = self.db.shop_purchases
-            self.shop_purchases_collection = self.db.shop_purchases  # Alias for shop_system
-            self.bank_accounts = self.db.bank_accounts
-            self.bans = self.db.bans
-            self.stats = self.db.stats  # Add stats collection for tracking game statistics
+            logger.info("Starting cache pre-warming...")
             
-            # Test the connection
-            await self.db.command('ping')
+            # Pre-warm active players (recently active)
+            recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
             
-            # --- AUTO DROP UNIQUE INDEX ON TITAN NAME (if exists) ---
-            try:
-                titan_indexes = await self.titans.index_information()
-                for idx_name, idx_info in titan_indexes.items():
-                    # Drop any unique index on 'name' field (single or compound)
-                    if idx_info.get('unique') and (('name', 1) in idx_info.get('key', []) or idx_info.get('key', []) == [('name', 1)]):
-                        logger.warning(f"Dropping unique index on titans: {idx_name}")
-                        await self.titans.drop_index(idx_name)
-            except Exception as e:
-                logger.warning(f"Could not drop unique index on titans.name: {e}")
-
-            # Create indexes for faster queries
-            # We'll make this more fault-tolerant by continuing if one index creation fails
-            try:
-                index_name = "user_id_1"
-                indexes = await self.players.index_information()
-                if index_name in indexes:
-                    await self.players.drop_index(index_name)
-                await self.players.create_index("user_id", name=index_name, unique=True, background=True)
-            except Exception as e:
-                logger.warning(f"Failed to create player index: {e}")
-                
-            try:
-                char_index_name = "user_id_1_name_1"
-                char_indexes = await self.characters.index_information()
-                if char_index_name in char_indexes:
-                    await self.characters.drop_index(char_index_name)
-                await self.characters.create_index([("user_id", 1), ("name", 1)], name=char_index_name, unique=True, background=True)
-            except Exception as e:
-                logger.warning(f"Failed to create character index: {e}")
-                
-            try:
-                await self.titans.create_index("user_id")
-            except Exception as e:
-                logger.warning(f"Failed to create titans index: {e}")
-                
-            try:
-                await self.bank_accounts.create_index("user_id", name="user_id_1", unique=True, background=True)
-            except Exception as e:
-                logger.warning(f"Failed to create bank accounts index: {e}")
-                
-            logger.info("Database connection verified (Motor) and indexes created")
+            # Get recently active players
+            recent_players = await self.players.find({
+                "updated_at": {"$gte": recent_cutoff}
+            }, {
+                "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
+                "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
+                "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
+                "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
+                "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
+                "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
+                "missions": 1, "area_explore_counts": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
+                "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
+                "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
+            }).to_list(length=100)  
+            
+            # Cache them
+            current_time = time.time()
+            for player_data in recent_players:
+                user_id = player_data.get("user_id")
+                if user_id:
+                    cache_key = f"player_{user_id}"
+                    player = Player(**player_data)
+                    PLAYER_CACHE[cache_key] = {
+                        "player": player,
+                        "timestamp": current_time
+                    }
+            
+            logger.info(f"Pre-warmed {len(recent_players)} player caches")
+            
+            # Pre-warm frequently used characters
+            for player_data in recent_players[:20]:  # Top 20 most recent
+                user_id = player_data.get("user_id")
+                team = player_data.get("team", [])
+                if team and user_id:
+                    for team_member in team:
+                        if isinstance(team_member, dict) and "character_name" in team_member:
+                            char_name = team_member["character_name"]
+                            await self._prewarm_character_cache(user_id, char_name)
+            
+            logger.info("Cache pre-warming completed")
+            
         except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
-            logger.info("Continuing with limited functionality - database operations may be slower")
-            raise
+            logger.error(f"Error during cache pre-warming: {e}")
+    
+    async def _prewarm_character_cache(self, user_id: str, character_name: str):
+        """Pre-warm a specific character cache"""
+        try:
+            cache_key = f"character_{user_id}_{character_name}"
+            if cache_key not in CHARACTER_CACHE:
+                character_data = await self.characters.find_one({
+                    "user_id": str(user_id),
+                    "name": character_name
+                }, {
+                    "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
+                    "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
+                })
+                
+                if character_data:
+                    character = Character(**character_data)
+                    CHARACTER_CACHE[cache_key] = {
+                        "character": character,
+                        "timestamp": time.time()
+                    }
+        except Exception as e:
+            logger.debug(f"Error pre-warming character {character_name}: {e}")
 
     # --- Banking System Methods ---
     async def get_bank_account(self, user_id: str):

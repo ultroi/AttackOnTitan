@@ -247,6 +247,9 @@ async def initialize_application():
             if fixes_applied:
                 logger.info("Applied battle system fixes")
             
+            # Pre-warm caches for ultra-fast responses
+            asyncio.create_task(global_db.prewarm_caches())
+            
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
         application.bot_data["shop_system"] = shop_system

@@ -25,12 +25,21 @@ from database.missions import (
 
 logger = logging.getLogger(__name__)
 
+def get_titan_difficulty_by_level(level: int) -> str:
+    """Get titan difficulty based on level ranges"""
+    if level <= 50:
+        return "Easy"
+    elif level <= 100:
+        return "Normal"
+    else:
+        return "Hard"
+
 # Pre-generate titan pool for instant generation
 TITAN_POOL = {}
 for lvl in range(1, 126):
     TITAN_POOL[lvl] = []
     for _ in range(20):  # 20 variations per level for better randomness
-        difficulty = "Normal"
+        difficulty = get_titan_difficulty_by_level(lvl)
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(lvl, difficulty)
         xp = generate_titan_xp(lvl, difficulty)
@@ -119,15 +128,18 @@ def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> 
     level_multiplier = max(1, player_level // 5 + 1)
     titan_level = max(1, player_level + titan_random.randint(-1, 1))
 
+    # Get correct difficulty based on titan level
+    actual_difficulty = get_titan_difficulty_by_level(titan_level)
+
     # Use varying HP from models
-    max_hp = generate_titan_hp(titan_level, difficulty)
+    max_hp = generate_titan_hp(titan_level, actual_difficulty)
 
     return {
         "name": name,
         "level": titan_level,
         "max_hp": max_hp,
         "abilities": [],
-        "difficulty": "Normal", 
+        "difficulty": actual_difficulty, 
         "drop_table": {},
         "xp_reward": base_xp * level_multiplier,
         "min_level_requirement": max(1, player_level - 2),
