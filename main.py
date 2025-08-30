@@ -238,7 +238,7 @@ async def initialize_application():
             # Use persistent DB connection for best performance
             motor_db = await get_persistent_database()
             global_db = Database()
-            await global_db.init_db(motor_db)  # Pass the motor_db instance to init_db
+            await global_db.init_db(motor_db)  # Pass the database instance to init_db
             await migrate_schema(global_db)
             
             # Apply battle system fixes
@@ -246,9 +246,6 @@ async def initialize_application():
             fixes_applied = await apply_battle_fixes(global_db)
             if fixes_applied:
                 logger.info("Applied battle system fixes")
-            
-            # Pre-warm caches for ultra-fast responses
-            asyncio.create_task(global_db.prewarm_caches())
             
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()

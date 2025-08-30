@@ -114,6 +114,10 @@ class Database:
         except Exception as e:
             logger.error(f"Error during cache pre-warming: {e}")
     
+    async def prewarm_caches(self):
+        """Pre-warm caches - already done in init_db, this method exists for compatibility"""
+        pass  # Cache pre-warming is handled in init_db method
+    
     async def _prewarm_character_cache(self, user_id: str, character_name: str):
         """Pre-warm a specific character cache"""
         try:
