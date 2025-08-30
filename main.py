@@ -62,6 +62,7 @@ from game.pvp_system import pvp_command, pvp_callback_handler
 from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler
+from game.reset_mission_command import reset_mission_command, remission_command, reset_mission_callback_handler
 
 # Load environment variables
 load_dotenv()
@@ -651,7 +652,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
     app_instance.add_handler(CommandHandler("stats", disable_protected(stats_command)))
     app_instance.add_handler(CommandHandler("missions", disable_protected(missions_command)))
+    app_instance.add_handler(CommandHandler("resetmission", disable_protected(reset_mission_command)))
+    app_instance.add_handler(CommandHandler("remission", disable_protected(remission_command)))
     app_instance.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
+    app_instance.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
 
     # Mod/owner commands (not protected by disable)
     app_instance.add_handler(CommandHandler("monitor", monitor_command))

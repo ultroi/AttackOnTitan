@@ -19,33 +19,7 @@ class ShopSystem:
         self.hidden_items = {}  # Items that appear under special conditions
         self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         self.last_refresh_times = {}  # Track last refresh times per user
-        self.black_market_prices = {}  # {user_id: {item_key: valor_price}}
 
-    def _get_black_market_prices(self, user_id: str, item_keys: list) -> dict:
-        """Get or generate black market prices for a user for the current refresh."""
-        from random import random, randint
-        if user_id not in self.black_market_prices:
-            self.black_market_prices[user_id] = {}
-        prices = self.black_market_prices[user_id]
-        for key in item_keys:
-            # Only generate if not present (per refresh)
-            if key not in prices:
-                # Get real price in marks
-                item = self.shop_items.get(key)
-                if not item:
-                    continue
-                marks_price = item.price
-                valor_base = max(1, int(round(marks_price / 10000)))
-                # 70% chance loss (price > real valor), 30% profit/same
-                if random() < 0.7:
-                    # Loss: 10% to 40% higher
-                    valor_price = valor_base + randint(int(valor_base*0.1), int(valor_base*0.4))
-                else:
-                    # Profit or same: 0% to 20% lower
-                    valor_price = max(1, valor_base - randint(0, int(valor_base*0.2)))
-                prices[key] = valor_price
-        return prices
-        
     async def _send_transaction_log(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, 
                                operation_type: str, amount: int, currency_type: str,
                                transaction_details: str = ""):
@@ -233,7 +207,6 @@ class ShopSystem:
             [InlineKeyboardButton("🛡️ Gear", callback_data="shop_gear"),
              InlineKeyboardButton("🌀 Utilities", callback_data="shop_utilities")],
             [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks")],
-            #  InlineKeyboardButton("💀 Black Market", callback_data="shop_hollow")],
             [InlineKeyboardButton(f"🔄 Refresh Shop ({refresh_cost} Valor)", callback_data="shop_refresh")]
         ]
         return header, InlineKeyboardMarkup(keyboard)
@@ -260,8 +233,7 @@ class ShopSystem:
             "echo_shards": "🔷 Echo Shards",
             "gear": "🛡️ Gear",
             "utilities": "🌀 Utilities",
-            "barracks": "🏛️ Barracks Quartermaster",
-            "hollow": "💀 Black Market"
+            "barracks": "🏛️ Barracks Quartermaster"
         }
         
         # Header with divider
@@ -273,15 +245,8 @@ class ShopSystem:
 
         row = []
         for idx, (item_key, item) in enumerate(paged_items, start=1):
-            # Black Market: show valor price, others: normal
-            if category == "hollow":
-                prices = self._get_black_market_prices(str(player.user_id), [item_key])
-                valor_price = prices.get(item_key, 1)
-                price_str = f"{valor_price:,} Valor"
-                item_currency = "valor"
-            else:
-                price_str = f"{item.price:,} {item.currency.title()}"
-                item_currency = item.currency
+            price_str = f"{item.price:,} {item.currency.title()}"
+            item_currency = item.currency
             rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
             rarity_symbol = rarity_emoji.get(item.rarity, '⚪')
             item_header = f"{rarity_symbol} <b>{idx}. {item.name}</b>"
@@ -304,12 +269,7 @@ class ShopSystem:
             item_text += f"📝 <i>{item.description}</i>\n\n"
             message += item_text
             # Add purchase buttons for affordable items
-            # For Black Market, check valor affordability
-            can_afford = False
-            if category == "hollow":
-                can_afford = player.valor >= valor_price
-            else:
-                can_afford = await self._can_afford(player, item)
+            can_afford = await self._can_afford(player, item)
             if can_afford:
                 row.append(InlineKeyboardButton(f"🛒 {idx}", callback_data=f"buy_{item_key}"))
                 if len(row) == 3:
@@ -340,10 +300,6 @@ class ShopSystem:
             basic_items = {k: v for k, v in self.shop_items.items() if v.type in ["weapon", "gear"] and v.rarity in ["common", "uncommon"]}
             barracks_items.update(basic_items)
             return barracks_items
-        elif category == "hollow":
-            regular_items = {k: v for k, v in self.shop_items.items() if v.rarity in ["rare", "epic", "legendary"]}
-            regular_items.update(self.hidden_items)
-            return regular_items
         return {}
 
     async def _can_afford(self, player: Player, item: Equipment) -> bool:
@@ -373,32 +329,16 @@ class ShopSystem:
             item = self.shop_items.get(item_name) or self.hidden_items.get(item_name)
             if not item:
                 return {"success": False, "message": "Item not found"}
-            # Black Market purchase: override price/currency
-            is_black_market = False
-            valor_price = None
-            if item_name in self._get_category_items("hollow"):
-                # If user is currently viewing black market, use valor price
-                prices = self._get_black_market_prices(str(user_id), [item_name])
-                valor_price = prices.get(item_name, 1)
-                is_black_market = True
-            if is_black_market:
-                valor_price = int(valor_price) if valor_price is not None else 1
-                total_cost = valor_price * quantity
-                if player.valor < total_cost:
-                    return {"success": False, "message": "Not enough valor"}
-            else:
-                total_cost = item.price * quantity
-                if item.currency == "marks" and player.marks < total_cost:
-                    return {"success": False, "message": "Not enough marks"}
-                elif item.currency == "valor" and player.valor < total_cost:
-                    return {"success": False, "message": "Not enough valor"}
-                elif item.currency == "crystal" and player.crystal < total_cost:
-                    return {"success": False, "message": "Not enough crystals"}
+            total_cost = item.price * quantity
+            if item.currency == "marks" and player.marks < total_cost:
+                return {"success": False, "message": "Not enough marks"}
+            elif item.currency == "valor" and player.valor < total_cost:
+                return {"success": False, "message": "Not enough valor"}
+            elif item.currency == "crystal" and player.crystal < total_cost:
+                return {"success": False, "message": "Not enough crystals"}
 
             player.inventory[item_name] = player.inventory.get(item_name, 0) + quantity
-            if is_black_market:
-                player.valor -= total_cost
-            elif item.currency == "marks":
+            if item.currency == "marks":
                 player.marks -= total_cost
             elif item.currency == "valor":
                 player.valor -= total_cost
@@ -583,10 +523,10 @@ class ShopSystem:
             bot_data['shop_random_selections'] = {}
         shop_random_selections = bot_data['shop_random_selections']
         key = f"{user_id}_{category}"
-        # For all categories (including hollow), persist selection until refresh
+        # For all categories, persist selection until refresh
         if key in shop_random_selections:
             selected_keys = shop_random_selections[key]
-            expected_len = 6 if category == "hollow" else 12
+            expected_len = 12
             if (
                 len(selected_keys) == expected_len and
                 all(k in all_keys for k in selected_keys)
@@ -596,14 +536,8 @@ class ShopSystem:
                 selected.sort(key=lambda x: x[1].price)
                 return selected
         # If not present or invalid, randomize and store
-        if category == "hollow":
-            pick_count = min(6, len(all_items))
-            selected = random.sample(all_items, pick_count)
-            # Generate black market prices for this user/refresh
-            self._get_black_market_prices(user_id, [item[0] for item in selected])
-        else:
-            pick_count = min(12, len(all_items))
-            selected = random.sample(all_items, pick_count)
+        pick_count = min(12, len(all_items))
+        selected = random.sample(all_items, pick_count)
         # Store the keys for persistence
         shop_random_selections[key] = [item[0] for item in selected]
         # Sort by price (ascending order)
@@ -611,18 +545,15 @@ class ShopSystem:
         return selected
 
     def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-        """Clear the user's random shop selection for all categories from bot_data and reset black market prices."""
+        """Clear the user's random shop selection for all categories from bot_data."""
         bot_data = context.bot_data if context is not None and hasattr(context, 'bot_data') else {}
         if 'shop_random_selections' not in bot_data:
             return
         shop_random_selections = bot_data['shop_random_selections']
-        for category in ["weapons", "echo_shards", "gear", "utilities", "barracks", "hollow"]:
+        for category in ["weapons", "echo_shards", "gear", "utilities", "barracks"]:
             key = f"{user_id}_{category}"
             if key in shop_random_selections:
                 del shop_random_selections[key]
-        # Reset black market prices for this user
-        if user_id in self.black_market_prices:
-            del self.black_market_prices[user_id]
             
 
 shop_system = ShopSystem()

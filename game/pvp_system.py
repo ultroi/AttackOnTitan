@@ -745,7 +745,15 @@ class PvPBattleSystem:
             if updated_player:
                 notifications = await process_item_use_mission_progress(db, updated_player, item_key)
                 if notifications:
-                    message += f"\n\n{notifications[0]}"
+                    # Send mission notification privately instead of adding to battle message
+                    try:
+                        await context.bot.send_message(
+                            chat_id=int(current_player.user_id),
+                            text=notifications[0],
+                            parse_mode=ParseMode.MARKDOWN
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send private mission notification for item use: {e}")
         except Exception as e:
             logger.error(f"Error updating mission progress for item use: {e}")
         
@@ -2311,7 +2319,15 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
                 # Send mission notifications if any
                 if mission_notifications:
                     for notification in mission_notifications[:1]:  # Limit to first notification
-                        await query.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN)
+                        # Send mission notification privately to the winner instead of in PVP chat
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(winner_id),
+                                text=notification,
+                                parse_mode=ParseMode.MARKDOWN
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send private mission notification to winner: {e}")
     except Exception as e:
         logger.error(f"Error in track_battle_end or mission processing: {e}")
         pass

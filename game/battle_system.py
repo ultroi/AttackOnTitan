@@ -214,13 +214,26 @@ class BattleSystem:
             # Apply any passive abilities triggered by dodge
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
+        
+        # Enhanced damage calculation using character DEF more effectively
         base_damage = max(15, self.titan.level * 8 + 10)
-        damage_multipliers = {"Easy": 0.7, "Normal": 1.0, "Hard": 1.4}
-        base_damage = int(base_damage * damage_multipliers.get(self.titan.difficulty, 1.0))
+        difficulty_multipliers = {"Easy": 0.7, "Normal": 1.0, "Hard": 1.4}
+        base_damage = int(base_damage * difficulty_multipliers.get(self.titan.difficulty, 1.0))
         special_messages = []
 
-        # Calculate final damage
-        damage = int(base_damage * (1 - min(0.75, self.character.stats.DEF / 250))) + 25  # Ensure at least 25 extra damage
+        # Character DEF reduces damage more significantly
+        def_reduction = min(0.8, self.character.stats.DEF / 300)  # Max 80% reduction at 240 DEF
+        damage = int(base_damage * (1 - def_reduction))
+        
+        # SPD affects dodge chance
+        spd_dodge_chance = min(0.25, self.character.stats.SPD / 400)  # Max 25% dodge at 100 SPD
+        if random.random() < spd_dodge_chance:
+            messages = self.apply_passives("dodge")
+            return 0, f"{self.character.name} dodged the attack with lightning speed!\n" + "\n".join(messages)
+        
+        # Ensure minimum damage
+        damage = max(5, damage + random.randint(5, 15))
+        
         if self.buffs.get("damage_reduction", 0):
             damage = int(damage * (1 - self.buffs["damage_reduction"]))
         if self.buffs.get("shield", 0) > 0:
@@ -229,7 +242,9 @@ class BattleSystem:
             damage -= shield_absorb
             if self.buffs["shield"] <= 0:
                 del self.buffs["shield"]
+        
         self.character_hp = max(0, self.character_hp - damage)
+        
         # Passive triggers
         if damage > 0 and not self.trigger_states["first_damage_taken"]:
             self.trigger_states["first_damage_taken"] = True
@@ -297,14 +312,25 @@ class BattleSystem:
         self.gas -= gas_cost
         self.character_gas = self.gas  # Sync with character
         
-        # Build context and apply effect
+        # Build context with enhanced INT-based damage calculation
         ctx = self.build_context("ability_use", ability)
+        
+        # Enhance ability damage with INT stat
+        int_damage_bonus = 0
+        if ability.base_damage and ability.base_damage > 0:
+            int_damage_bonus = int(ability.base_damage * (self.character.stats.INT / 200))  # Max +50% at 100 INT
+            ability.base_damage += int_damage_bonus
+        
         try:
             if ability.effect_function:
                 effect = ability.effect_function(ctx)
                 if effect:
                     self.apply_effect(effect)
                     message = effect.message or f"{ability_name} used successfully!"
+                    
+                    # Show INT contribution in ability message if damage was enhanced
+                    if int_damage_bonus > 0:
+                        message += f" [INT bonus: +{int_damage_bonus} damage]"
                     
                     # Optimized effects extraction with defaults
                     effects = {
@@ -419,34 +445,10 @@ class BattleSystem:
         # Build status message efficiently with array join (faster than string concatenation)
         status_parts = [f"Turn: {self.turn + 1}", f"Difficulty: {self.titan.difficulty}"]
         
-        # Add status info conditionally - only if they exist
-        if self.titan_debuffs:
-            # Optimize list comprehension for speed
-            debuffs = []
-            for k, v in self.titan_debuffs.items():
-                debuffs.append(f"{k}({int(v)})" if isinstance(v, (int, float)) else k)
-            status_parts.append(f"🔽 Titan debuffs: {', '.join(debuffs)}")
-        
-        if self.buffs:
-            buffs = []
-            for k, v in self.buffs.items():
-                if k != "items_dropped":
-                    if isinstance(v, (int, float)) and v > 1:
-                        buffs.append(f"{k}({int(v)})")
-                    else:
-                        buffs.append(k)
-            if buffs:
-                status_parts.append(f"🔼 Character buffs: {', '.join(buffs)}")
-        
-        items_dropped = self.buffs.get("items_dropped")
-        if items_dropped:
-            status_parts.append(f"💎 Items available: {', '.join(items_dropped)}")
-        
-        if self.debuffs:
-            debuffs_char = []
-            for k, v in self.debuffs.items():
-                debuffs_char.append(f"{k}({int(v)})" if isinstance(v, (int, float)) else k)
-            status_parts.append(f"🔥 Character debuffs: {', '.join(debuffs_char)}")
+        # Add character stats display
+        if self.character.stats:
+            status_parts.append(f"⚔️ ATK: {self.character.stats.ATK} | 🛡️ DEF: {self.character.stats.DEF}")
+            status_parts.append(f"🎯 ACC: {self.character.stats.ACC} | 🧠 INT: {self.character.stats.INT} | ⚡ SPD: {self.character.stats.SPD}")
         
         # Join all parts at once - more efficient than incremental additions
         status_message = "\n".join(status_parts)
@@ -1054,33 +1056,98 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 except Exception as e:
                     logger.debug(f"Character refresh error (non-critical): {e}")
             
-            # Process attack
+            # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
                 battle.gas -= 20
                 battle.character_gas = battle.gas
                 
                 if weapon:
-                    # Fast weapon attack calculation
-                    damage_min = int(weapon.attributes.get("damage_min", 10))
-                    damage_max = int(weapon.attributes.get("damage_max", 20))
-                    total_damage = random.randint(damage_min, damage_max)
+                    # Enhanced weapon attack calculation with all stats
+                    weapon_damage_min = int(weapon.attributes.get("damage_min", 10))
+                    weapon_damage_max = int(weapon.attributes.get("damage_max", 20))
+                    
+                    # Base weapon damage
+                    base_weapon_damage = random.randint(weapon_damage_min, weapon_damage_max)
+                    
+                    # Character ATK stat bonus (scales with weapon damage)
+                    atk_bonus = int(base_weapon_damage * (battle.character.stats.ATK / 100))
+                    
+                    # ACC affects critical hit chance and hit chance
+                    acc_crit_chance = min(0.4, battle.character.stats.ACC / 250)  # Max 40% crit at 100 ACC
+                    is_critical = random.random() < acc_crit_chance
+                    
+                    # SPD affects attack speed (multiple hits chance)
+                    spd_multi_hit_chance = min(0.2, battle.character.stats.SPD / 500)  # Max 20% multi-hit at 100 SPD
+                    
+                    # INT affects damage multiplier for special weapons
+                    int_multiplier = 1.0
+                    if weapon.attributes.get("accuracy"):  # Precision weapons benefit from INT
+                        int_multiplier += (battle.character.stats.INT / 200)  # Max +50% at 100 INT
+                    
+                    # Calculate total damage
+                    total_damage = int((base_weapon_damage + atk_bonus) * int_multiplier)
+                    
+                    if is_critical:
+                        total_damage = int(total_damage * 1.5)  # 50% crit damage
+                        crit_text = " (CRITICAL HIT!)"
+                    else:
+                        crit_text = ""
+                    
+                    # Apply multi-hit chance
+                    if random.random() < spd_multi_hit_chance:
+                        multi_damage = random.randint(int(total_damage * 0.3), int(total_damage * 0.6))
+                        total_damage += multi_damage
+                        multi_text = f" + {multi_damage} multi-hit"
+                    else:
+                        multi_text = ""
+                    
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
+                    
                     item_type = getattr(weapon, 'type', 'weapon')
                     # Add item type emoji based on the type
                     item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!")
+                    
+                    # Show stat contributions in attack message
+                    stat_breakdown = f" [ATK:{atk_bonus}"
+                    if int_multiplier > 1.0:
+                        stat_breakdown += f" INT:+{int((int_multiplier-1)*100)}%"
+                    stat_breakdown += "]"
+                    
+                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage{crit_text}{multi_text}{stat_breakdown}!")
                 else:
-                    # Fast basic attack calculation
-                    try:
-                        base_damage = battle.character.stats.ATK or 25
-                        total_damage = max(1, base_damage + random.randint(25, 35))
-                        battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                    except Exception:
-                        # Simplified error handling for speed
-                        total_damage = 10
-                        battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage!")
+                    # Enhanced basic attack calculation with all stats
+                    base_damage = max(10, battle.character.stats.ATK + random.randint(15, 25))
+                    
+                    # ACC affects critical hit chance
+                    acc_crit_chance = min(0.3, battle.character.stats.ACC / 300)  # Max 30% crit at 90 ACC
+                    is_critical = random.random() < acc_crit_chance
+                    
+                    # SPD affects attack speed bonus
+                    spd_damage_bonus = int(battle.character.stats.SPD / 10)  # +1 damage per 10 SPD
+                    
+                    # INT affects basic attack effectiveness
+                    int_damage_bonus = int(battle.character.stats.INT / 15)  # +1 damage per 15 INT
+                    
+                    total_damage = base_damage + spd_damage_bonus + int_damage_bonus
+                    
+                    if is_critical:
+                        total_damage = int(total_damage * 1.4)  # 40% crit damage for basic attacks
+                        crit_text = " (CRITICAL HIT!)"
+                    else:
+                        crit_text = ""
+                    
+                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
+                    
+                    # Show stat contributions
+                    stat_breakdown = f" [ATK:{battle.character.stats.ATK}"
+                    if spd_damage_bonus > 0:
+                        stat_breakdown += f" SPD:{spd_damage_bonus}"
+                    if int_damage_bonus > 0:
+                        stat_breakdown += f" INT:{int_damage_bonus}"
+                    stat_breakdown += "]"
+                    
+                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage{crit_text}{stat_breakdown}!")
             else:
                 # Not enough gas case
                 message = f"❌ {battle.character.name} doesn't have enough gas for {'weapon' if weapon else 'basic'} attack!"

@@ -12,42 +12,9 @@ from utils.maintenance import maintenance_protected
 from typing import Optional
 import logging
 import re
+from game.battle_system import active_battles
 
 logger = logging.getLogger(__name__)
-
-def check_authorization(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """Check if the user is authorized to access the current interaction."""
-    if context.user_data is None:
-        context.user_data = {}
-    effective_user = getattr(update, 'effective_user', None)
-    if not effective_user or not hasattr(effective_user, 'id') or effective_user.id is None:
-        return False
-    user_id = str(effective_user.id)
-    callback_query = getattr(update, 'callback_query', None)
-    callback_data = getattr(callback_query, 'data', None) if callback_query else None
-    # For callback queries, verify the user matches
-    if callback_query and hasattr(callback_query, 'from_user') and str(getattr(callback_query.from_user, 'id', '')) != user_id:
-        logger.warning(f"Unauthorized access attempt by {getattr(callback_query.from_user, 'id', 'unknown')} for {user_id}'s data")
-        return False
-    # Check if we have a valid user in context
-    if not context.user_data.get('authorized', False):
-        context.user_data['authorized'] = True  # Mark as authorized for this session
-    return True
-
-async def handle_unauthorized(update: Update):
-    """Handle unauthorized access attempts."""
-    callback_query = getattr(update, 'callback_query', None)
-    message = getattr(update, 'message', None)
-    if callback_query:
-        try:
-            await callback_query.answer("⚠️ You cannot use this button !", show_alert=True)
-        except Exception as e:
-            logger.error(f"Error handling unauthorized access: {e}")
-    elif message:
-        try:
-            await message.reply_text("⚠️ Authorization required!")
-        except Exception as e:
-            logger.error(f"Error sending unauthorized message: {e}")
 
 
 @maintenance_protected
@@ -55,9 +22,6 @@ async def handle_unauthorized(update: Update):
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     user_id = str(update.effective_user.id)
     context.user_data['owner_id'] = user_id  # Set owner for this session
     # --- Anti-spam: ignore if called again within 1.5s ---
@@ -66,6 +30,15 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if now - last < 1.5:
         return  # Ignore spam clicks silently
     context.user_data['last_profile_click'] = now
+    # Check if user is in active battle
+    if user_id in active_battles:
+        first_name = escape(update.effective_user.first_name)
+        battle_message = f"⚔️ <a href='tg://user?id={user_id}'>{first_name}</a> is currently battling!"
+        if update.message:
+            await update.message.reply_text(battle_message, parse_mode=ParseMode.HTML)
+        elif update.callback_query:
+            await update.callback_query.answer("⚔️ You cannot access your inventory during an active battle with a titan!", show_alert=True)
+        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -120,13 +93,10 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(query.from_user.id)
@@ -215,13 +185,10 @@ def get_position_emoji(position: int) -> str:
 async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     char_name = query.data.replace("add_to_team_", "")
@@ -239,13 +206,10 @@ async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     char_name = query.data.replace("remove_from_team_", "")
@@ -264,13 +228,10 @@ async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     context.user_data["team"] = []
@@ -280,13 +241,10 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
     if str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(query.from_user.id)
@@ -320,9 +278,6 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     user_id = str(update.effective_user.id)
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -336,13 +291,10 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -352,9 +304,13 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if now - last < 1.5:
         return
     context.user_data['last_inventory_click'] = now
+    # Check if user is in active battle
+    if user_id in active_battles:
+        await query.edit_message_text("⚔️ You cannot access your inventory during an active battle with a titan!")
+        return
     # --- Privacy: Only allow owner to access ---
     if str(query.from_user.id) != user_id:
-        await handle_unauthorized(update)
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
@@ -401,13 +357,11 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -440,13 +394,11 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -479,13 +431,11 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -518,13 +468,11 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -557,13 +505,11 @@ async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
@@ -659,13 +605,11 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data['owner_id'] if hasattr(context, 'user_data') and context.user_data else None
+    owner_id = context.user_data.get('owner_id')
     if not query or str(query.from_user.id) != owner_id:
-        await handle_unauthorized(update)
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     # Call the main profile function to show the profile
@@ -713,6 +657,13 @@ def _create_abilities_text(character, char_data) -> str:
 @maintenance_protected
 @ban_protected
 async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, char_name=None):
+    if context.user_data is None:
+        context.user_data = {}
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id')
+    if query and str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
     db = context.bot_data.get("db") or Database()
     user_id = update.effective_user.id
     player = await db.get_player(str(user_id))
@@ -830,6 +781,10 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
 # Wrapper for char_detail to extract character name from callback data
 async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if query and str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
     char_name = None
     if query and hasattr(query, 'data') and query.data.startswith("char_detail_"):
         char_name = query.data.replace("char_detail_", "").replace("_", " ")
@@ -839,12 +794,11 @@ async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
-    if not check_authorization(update, context):
-        await handle_unauthorized(update)
-        return
     query = getattr(update, 'callback_query', None)
-    if not query:
-        await handle_unauthorized(update)
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     char_name = query.data.replace("view_abilities_", "").replace("_", " ")
@@ -863,7 +817,7 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ You have no player account.")
         return
         
-    character = await db.get_character(user_id, char_name)
+    character = await db.get_character(int(user_id), char_name)
     if not character:
         await query.edit_message_text(f"❌ Character {char_name} not found.")
         return
@@ -897,6 +851,11 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Weapons View and Equip Handlers ---
 async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, *, char_name=None, status_message=None):
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
+        return
     logger.info(f"[view_weapons_char] Callback data: {getattr(query, 'data', None)}")
     await query.answer()
     user_id = str(query.from_user.id)
@@ -990,6 +949,11 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
+        return
     logger.info(f"[equip_weapon] Callback data: {query.data}")
     await query.answer()
     user_id = str(query.from_user.id)
@@ -998,6 +962,11 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from game.pvp_system import active_pvp_battles
     if user_id in active_pvp_battles:
         await query.answer("⚔️ You cannot equip items during PVP battles!", show_alert=True)
+        return
+    
+    # Check if user is in titan battle
+    if user_id in active_battles:
+        await query.answer("⚔️ You cannot equip items during titan battles!", show_alert=True)
         return
     
     data = query.data.replace("equip_weapon_", "")
@@ -1038,6 +1007,11 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not query or str(query.from_user.id) != owner_id:
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
+        return
     await query.answer()
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")

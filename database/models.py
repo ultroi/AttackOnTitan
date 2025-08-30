@@ -522,9 +522,7 @@ class Player(BaseModel):
             if new_level == 15:
                 rewards["crystals"] = 1
             
-            if new_level == 12:
-                rewards["unlocks"].append("Hollow Exchange")
-            elif new_level == 18:
+            if new_level == 18:
                 rewards["unlocks"].append("Second Echo Trait Slot")
 
         # Tier 3: Customization (21-30)

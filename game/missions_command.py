@@ -18,6 +18,7 @@ from database.missions import (
     process_travel_mission_progress,
     MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED
 )
+from utils.mod_utils import mod_only
 
 logger = logging.getLogger(__name__)
 
@@ -536,3 +537,309 @@ async def missions_callback_handler(update: Update, context: ContextTypes.DEFAUL
             await query.answer(message)
 
 
+import logging
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
+
+from utils.maintenance import maintenance_protected
+from utils.ban_utils import ban_protected
+from database.db import Database
+from database.missions import (
+    MISSIONS_BY_ID, MISSION_DEFINITIONS,
+    get_available_missions, get_active_missions,
+    start_mission, cancel_mission, update_mission_progress,
+    process_item_use_mission_progress, process_titan_reward_mission_progress,
+    process_pvp_mission_progress, process_explore_mission_progress,
+    process_travel_mission_progress,
+    MISSION_STATUS_IN_PROGRESS, MISSION_STATUS_COMPLETED,
+    MISSION_STATUS_CANCELLED, MISSION_STATUS_FAILED
+)
+
+logger = logging.getLogger(__name__)
+
+
+@mod_only
+@maintenance_protected
+@ban_protected
+async def reset_mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Command handler for /resetmission - Reset all user missions and deduct rewards if claimed"""
+    if not update.effective_user or not update.message:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Get DB instance
+    db = context.bot_data.get("db")
+    if not db:
+        db = Database()
+        await db.init_db()
+        context.bot_data["db"] = db
+    
+    # Get player data
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You need to start the game first! Use /start")
+        return
+    
+    # Get all player missions
+    player_missions = getattr(player, "missions", [])
+    if not player_missions:
+        await update.message.reply_text("📜 No missions found to reset.")
+        return
+    
+    # Count missions and calculate total rewards to deduct
+    completed_missions = []
+    total_marks_deduct = 0
+    total_valor_deduct = 0
+    reset_count = 0
+    
+    for mission_progress in player_missions:
+        if mission_progress["status"] == MISSION_STATUS_COMPLETED:
+            mission_id = mission_progress["mission_id"]
+            mission = MISSIONS_BY_ID.get(mission_id)
+            if mission:
+                completed_missions.append(mission)
+                reset_count += 1
+                
+                # Calculate rewards to deduct
+                rewards = mission.rewards
+                if "marks" in rewards:
+                    total_marks_deduct += rewards["marks"]
+                if "valor" in rewards:
+                    total_valor_deduct += rewards["valor"]
+    
+    if reset_count == 0:
+        await update.message.reply_text("📜 No completed missions found to reset.")
+        return
+    
+    # Check if player has enough resources to deduct
+    if player.marks < total_marks_deduct:
+        await update.message.reply_text(f"❌ Not enough marks! Need {total_marks_deduct} marks, you have {player.marks}.")
+        return
+        
+    if player.valor < total_valor_deduct:
+        await update.message.reply_text(f"❌ Not enough valor! Need {total_valor_deduct} valor, you have {player.valor}.")
+        return
+    
+    # Create confirmation message
+    message = "🔄 *Reset All Missions*\n\n"
+    message += f"📊 Missions to reset: {reset_count}\n"
+    message += f"💰 Total marks to deduct: {total_marks_deduct}\n"
+    message += f"⚔️ Total valor to deduct: {total_valor_deduct}\n\n"
+    message += "⚠️ *This action cannot be undone!*\n\n"
+    message += "Are you sure you want to reset all completed missions?"
+    
+    # Create confirmation keyboard
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Yes, Reset All", callback_data=f"reset_all_confirm_{user_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data="reset_cancel")
+        ]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        message,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+@mod_only
+@maintenance_protected
+@ban_protected
+async def remission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Command handler for /remission <mission_no> - Reset a specific mission"""
+    if not update.effective_user or not update.message:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Get DB instance
+    db = context.bot_data.get("db")
+    if not db:
+        db = Database()
+        await db.init_db()
+        context.bot_data["db"] = db
+    
+    # Get player data
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You need to start the game first! Use /start")
+        return
+    
+    # Parse mission number from command
+    args = context.args
+    if not args:
+        await update.message.reply_text("❌ Please specify a mission number. Usage: /remission <mission_no>")
+        return
+    
+    try:
+        mission_no = int(args[0])
+    except ValueError:
+        await update.message.reply_text("❌ Invalid mission number. Please use a number.")
+        return
+    
+    # Check if mission exists
+    mission = MISSIONS_BY_ID.get(mission_no)
+    if not mission:
+        await update.message.reply_text(f"❌ Mission #{mission_no} not found.")
+        return
+    
+    # Find the mission in player's missions
+    player_missions = getattr(player, "missions", [])
+    mission_progress = None
+    
+    for pm in player_missions:
+        if pm["mission_id"] == mission_no:
+            mission_progress = pm
+            break
+    
+    if not mission_progress:
+        await update.message.reply_text(f"📜 You haven't started mission #{mission_no} yet.")
+        return
+    
+    if mission_progress["status"] != MISSION_STATUS_COMPLETED:
+        await update.message.reply_text(f"📜 Mission #{mission_no} is not completed yet.")
+        return
+    
+    # Calculate rewards to deduct
+    rewards = mission.rewards
+    marks_deduct = rewards.get("marks", 0)
+    valor_deduct = rewards.get("valor", 0)
+    
+    # Check if player has enough resources
+    if player.marks < marks_deduct:
+        await update.message.reply_text(f"❌ Not enough marks! Need {marks_deduct} marks, you have {player.marks}.")
+        return
+        
+    if player.valor < valor_deduct:
+        await update.message.reply_text(f"❌ Not enough valor! Need {valor_deduct} valor, you have {player.valor}.")
+        return
+    
+    # Reset the mission
+    mission_progress["status"] = MISSION_STATUS_CANCELLED
+    mission_progress["cancelled_at"] = datetime.now(timezone.utc)
+    mission_progress["current_progress"] = 0
+    
+    # Deduct rewards
+    update_data = {"missions": player_missions}
+    if marks_deduct > 0:
+        update_data["marks"] = player.marks - marks_deduct
+    if valor_deduct > 0:
+        update_data["valor"] = player.valor - valor_deduct
+    
+    # Update player in database
+    await db.update_player(int(player.user_id), update_data)
+    
+    # Send confirmation message
+    message = f"✅ *Mission #{mission_no} Reset!*\n\n"
+    message += f"📜 {mission.title}\n"
+    if marks_deduct > 0:
+        message += f"💰 Deducted: {marks_deduct} marks\n"
+    if valor_deduct > 0:
+        message += f"⚔️ Deducted: {valor_deduct} valor\n"
+    message += "\n🔄 You can now attempt this mission again!"
+    
+    await update.message.reply_text(
+        message,
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+async def reset_mission_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler for reset mission-related callback queries"""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    # Answer callback query to clear the loading icon
+    await query.answer()
+    
+    user_id = str(update.effective_user.id)
+    
+    # Get DB instance
+    db = context.bot_data.get("db")
+    if not db:
+        db = Database()
+        await db.init_db()
+        context.bot_data["db"] = db
+    
+    # Get player data
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("You need to start the game first! Use /start")
+        return
+    
+    # Parse callback data
+    callback_data = query.data
+    
+    if callback_data.startswith("reset_all_confirm_"):
+        # Extract user_id from callback_data
+        parts = callback_data.split('_')
+        cb_user_id = parts[-1]
+        
+        # Check if callback is for this user
+        if cb_user_id != user_id:
+            await query.answer("Only the user who issued the command can use these buttons.", show_alert=True)
+            return
+        
+        # Reset all completed missions
+        await _reset_all_missions(db, player, query)
+        
+    elif callback_data == "reset_cancel":
+        await query.edit_message_text("🔄 Mission reset cancelled.")
+
+async def _reset_all_missions(db, player, query):
+    """Reset all completed missions for a player"""
+    player_missions = getattr(player, "missions", [])
+    
+    total_marks_deduct = 0
+    total_valor_deduct = 0
+    reset_count = 0
+    
+    # Calculate total deductions and reset missions
+    for mission_progress in player_missions:
+        if mission_progress["status"] == MISSION_STATUS_COMPLETED:
+            mission_id = mission_progress["mission_id"]
+            mission = MISSIONS_BY_ID.get(mission_id)
+            if mission:
+                # Reset mission
+                mission_progress["status"] = MISSION_STATUS_CANCELLED
+                mission_progress["cancelled_at"] = datetime.now(timezone.utc)
+                mission_progress["current_progress"] = 0
+                reset_count += 1
+                
+                # Calculate rewards to deduct
+                rewards = mission.rewards
+                if "marks" in rewards:
+                    total_marks_deduct += rewards["marks"]
+                if "valor" in rewards:
+                    total_valor_deduct += rewards["valor"]
+    
+    # Deduct rewards
+    update_data = {"missions": player_missions}
+    if total_marks_deduct > 0:
+        update_data["marks"] = player.marks - total_marks_deduct
+    if total_valor_deduct > 0:
+        update_data["valor"] = player.valor - total_valor_deduct
+    
+    # Update player in database
+    await db.update_player(int(player.user_id), update_data)
+    
+    # Send confirmation message
+    message = f"✅ *All Missions Reset!*\n\n"
+    message += f"📊 Missions reset: {reset_count}\n"
+    if total_marks_deduct > 0:
+        message += f"💰 Marks deducted: {total_marks_deduct}\n"
+    if total_valor_deduct > 0:
+        message += f"⚔️ Valor deducted: {total_valor_deduct}\n"
+    message += "\n🔄 All completed missions have been reset. You can attempt them again!"
+    
+    await query.edit_message_text(
+        message,
+        parse_mode=ParseMode.MARKDOWN
+    )
