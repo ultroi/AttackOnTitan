@@ -240,6 +240,13 @@ async def initialize_application():
             global_db = Database()
             await global_db.init_db()  # This will set up collections using motor_db internally
             await migrate_schema(global_db)
+            
+            # Apply battle system fixes
+            from game.battle_fix import apply_battle_fixes
+            fixes_applied = await apply_battle_fixes(global_db)
+            if fixes_applied:
+                logger.info("Applied battle system fixes")
+            
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
         application.bot_data["shop_system"] = shop_system

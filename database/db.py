@@ -681,6 +681,37 @@ class Database:
             logger.error(f"Failed to batch update character: {e}")
             return False
 
+    async def batch_update_player(self, user_id: str, update_data: Dict) -> bool:
+        """Batch update multiple player fields at once for better performance."""
+        try:
+            import time
+            start = time.perf_counter()
+
+            update_data["updated_at"] = datetime.now(timezone.utc)
+
+            result = await self.players.update_one(
+                {"user_id": user_id},
+                {"$set": update_data}
+            )
+
+            # Update cache if it exists
+            if CACHE_ENABLED:
+                cache_key = f"player_{user_id}"
+                if cache_key in PLAYER_CACHE:
+                    cached_player = PLAYER_CACHE[cache_key]["player"]
+                    for key, value in update_data.items():
+                        if hasattr(cached_player, key):
+                            setattr(cached_player, key, value)
+                    PLAYER_CACHE[cache_key]["timestamp"] = time.time()
+
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"batch_update_player query time: {elapsed:.2f} ms")
+            return result.modified_count > 0
+
+        except Exception as e:
+            logger.error(f"Failed to batch update player: {e}")
+            return False
+
     async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[Ability]]:
         try:
             character = await self.get_character(user_id, character_name)
