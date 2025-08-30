@@ -269,7 +269,9 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
     if progress_amount <= 0:
         return None
         
-    player_missions = getattr(player, "missions", [])
+    # Get current missions from database to ensure we have the latest data
+    current_player = await db.get_player(player.user_id)
+    player_missions = getattr(current_player, "missions", [])
     
     # Find the mission in player's active missions
     for i, mission_progress in enumerate(player_missions):
@@ -354,18 +356,18 @@ async def start_mission(db, player, mission_id: int):
     }
 
     # For Mission 1, set starting_location in mission progress
-    update_fields = {"missions": player.missions if hasattr(player, "missions") and player.missions else []}
-    if mission_id == 1:
-        # Store starting location in mission progress data
-        mission_progress["starting_location"] = getattr(player, "location", None)
-
-    update_fields["missions"] = update_fields["missions"] + [mission_progress]
+    # Get current missions from database to avoid overwriting
+    current_player = await db.get_player(int(player.user_id))
+    current_missions = getattr(current_player, "missions", [])
+    update_fields = {"missions": current_missions + [mission_progress]}
     await db.update_player(int(player.user_id), update_fields)
     return True, f"Mission '{mission.title}' started!"
 
 async def cancel_mission(db, player, mission_id: int):
     """Cancel an active mission"""
-    player_missions = getattr(player, "missions", [])
+    # Get current missions from database to ensure we have the latest data
+    current_player = await db.get_player(int(player.user_id))
+    player_missions = getattr(current_player, "missions", [])
     
     # Find the mission in player's active missions
     for i, mission_progress in enumerate(player_missions):
@@ -507,8 +509,10 @@ async def add_mission_item(db, player, item_key):
     # Only show progress notification for missions 5, 8, 12 (collect missions)
     notify_progress = mission_id in (5, 8, 12)
 
-    # Update mission progress if the related mission is active
-    player_missions = getattr(player, "missions", [])
+    # Get current missions from database
+    current_player = await db.get_player(player.user_id)
+    player_missions = getattr(current_player, "missions", [])
+    
     for mission_progress in player_missions:
         if (mission_progress["mission_id"] == mission_id and 
             mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):

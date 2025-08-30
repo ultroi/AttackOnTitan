@@ -151,6 +151,8 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Always refresh player object after any progress update
     if player_updated:
         player = await db.get_player(user_id)
+        # Recalculate active missions after player refresh
+        active_missions = await get_active_missions(db, player)
 
     # If no active missions, show available missions
     if not active_missions:

@@ -224,7 +224,10 @@ class Database:
                 "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
                 "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
                 "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
-                "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1
+                "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
+                "missions": 1, "area_explore_counts": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
+                "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
+                "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
             })
             
             elapsed = (time.perf_counter() - start) * 1000
@@ -321,17 +324,30 @@ class Database:
                     {"$set": update_data}
                 )
                 
-                # Update cache if it exists
+                # Update cache if it exists - for mission updates, refresh from database
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
                     if cache_key in PLAYER_CACHE:
-                        player = PLAYER_CACHE[cache_key]["player"]
-                        for key, value in update_data.items():
-                            setattr(player, key, value)
-                        PLAYER_CACHE[cache_key] = {
-                            "player": player,
-                            "timestamp": time.time()
-                        }
+                        # For mission updates, refresh from database to ensure consistency
+                        if "missions" in update_data:
+                            # Get fresh data from database
+                            fresh_player_data = await self.players.find_one({"user_id": str(user_id)})
+                            if fresh_player_data:
+                                fresh_player = Player(**fresh_player_data)
+                                PLAYER_CACHE[cache_key] = {
+                                    "player": fresh_player,
+                                    "timestamp": time.time()
+                                }
+                        else:
+                            # For other minor updates, just update the cached object
+                            player = PLAYER_CACHE[cache_key]["player"]
+                            for key, value in update_data.items():
+                                if hasattr(player, key):
+                                    setattr(player, key, value)
+                            PLAYER_CACHE[cache_key] = {
+                                "player": player,
+                                "timestamp": time.time()
+                            }
                 
                 elapsed = (time.perf_counter() - start) * 1000
                 logger.info(f"update_player (minor) query time: {elapsed:.2f} ms")
