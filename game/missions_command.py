@@ -50,6 +50,44 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Default to showing active missions first
     active_missions = await get_active_missions(db, player)
 
+    # --- Check for expired missions and cancel them automatically ---
+    expired_missions = []
+    player_missions = getattr(player, "missions", [])
+    now = datetime.now(timezone.utc)
+    
+    for i, mission_progress in enumerate(player_missions):
+        if mission_progress["status"] == MISSION_STATUS_IN_PROGRESS:
+            mission_id = mission_progress["mission_id"]
+            mission = MISSIONS_BY_ID.get(mission_id)
+            
+            if mission and mission.time_limit_hours:
+                started_at = mission_progress.get("started_at")
+                if isinstance(started_at, str):
+                    try:
+                        started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        continue
+                
+                if started_at:
+                    # Ensure started_at is timezone-aware (UTC)
+                    if started_at.tzinfo is None or started_at.tzinfo.utcoffset(started_at) is None:
+                        started_at = started_at.replace(tzinfo=timezone.utc)
+                    
+                    expires_at = started_at + timedelta(hours=mission.time_limit_hours)
+                    
+                    if now >= expires_at:
+                        # Mission has expired, cancel it
+                        player_missions[i]["status"] = MISSION_STATUS_CANCELLED
+                        player_missions[i]["cancelled_at"] = now
+                        expired_missions.append(mission.title)
+                        logger.info(f"Auto-cancelled expired mission {mission_id} for player {user_id}")
+    
+    # Update player data if any missions were cancelled
+    if expired_missions:
+        await db.update_player(int(user_id), {"missions": player_missions})
+        player = await db.get_player(user_id)  # Refresh player data
+        active_missions = await get_active_missions(db, player)  # Refresh active missions list
+
     # --- Mission progress update logic ---
     # For each active mission, update progress if possible (without adding items to inventory)
     progress_notifications = []
@@ -167,6 +205,25 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         await context.bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML)
                     except Exception as e:
                         logger.error(f"Failed to send private mission completion message: {e}")
+        
+        # Show expired mission notifications if any
+        if expired_missions:
+            user_id = update.effective_user.id if update.effective_user else None
+            if user_id:
+                expired_message = "⏰ *Expired Missions Cancelled:*\n\n"
+                for mission_title in expired_missions:
+                    expired_message += f"❌ {mission_title}\n"
+                expired_message += "\n*Time ran out!*"
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id, 
+                        text=expired_message, 
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send expired mission notification: {e}")
+        
         await show_active_missions(update, context, player, db, active_missions)
 
 async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -306,18 +363,42 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         if is_completed:
             message += f"*{mission.id}. {mission.title}* ✅\n"
             completed_missions.append(mission["id"])
+            # For completed missions, show only a short summary instead of full details
+            message += f"_{mission.title} - Completed!_\n"
         else:
             message += f"*{mission.id}. {mission.title}*\n"
-        message += f"_{mission.description}_\n"
-        message += f"*Requirement:* `{mission.requirement}`\n"
-        if mission.id == 14:
-            message += "*Progress:*\n"
-            message += format_mission_14_progress(player) + "\n"
-        else:
-            message += f"*Progress:* {display_progress}/{progress['required_progress']}\n"
-        message += f"*Reward:* `{mission.reward_description}`\n"
-        if hasattr(mission, "time_limit_hours") and mission.time_limit_hours:
-            message += f"⏳ *Time Limit:* {mission.time_limit_hours} hours\n"
+            message += f"_{mission.description}_\n"
+            message += f"*Requirement:* `{mission.requirement}`\n"
+            if mission.id == 14:
+                message += "*Progress:*\n"
+                message += format_mission_14_progress(player) + "\n"
+            else:
+                message += f"*Progress:* {display_progress}/{progress['required_progress']}\n"
+            message += f"*Reward:* `{mission.reward_description}`\n"
+            if hasattr(mission, "time_limit_hours") and mission.time_limit_hours:
+                # Calculate remaining time
+                started_at = progress.get("started_at")
+                if isinstance(started_at, str):
+                    try:
+                        started_at = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                    except (ValueError, TypeError):
+                        started_at = None
+                
+                if started_at:
+                    # Ensure started_at is timezone-aware (UTC)
+                    if started_at.tzinfo is None or started_at.tzinfo.utcoffset(started_at) is None:
+                        started_at = started_at.replace(tzinfo=timezone.utc)
+                    expires_at = started_at + timedelta(hours=mission.time_limit_hours)
+                    now = datetime.now(timezone.utc)
+                    if now < expires_at:
+                        hours_left = (expires_at - now).total_seconds() / 3600
+                        if hours_left < 1:
+                            minutes_left = int(hours_left * 60)
+                            message += f"⏳ *Time Left:* {minutes_left} minutes\n"
+                        else:
+                            message += f"⏳ *Time Left:* {hours_left:.1f} hours\n"
+                    else:
+                        message += "⏳ *Time Expired!*\n"
         message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         # Only add button for non-completed missions
         if not is_completed:
