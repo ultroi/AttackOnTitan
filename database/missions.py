@@ -479,6 +479,7 @@ async def check_mission_item_drops(player):
         # Always allow drops, but increase chance if mission is active
         drop_chance = item_data["drop_chance"]
         if item_data["mission_id"] in active_mission_ids:
+            drop_chance *= 2  # Double the drop chance for active missions
         
         if random.random() < drop_chance:
             # Item dropped!
