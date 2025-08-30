@@ -67,8 +67,27 @@ class Character(BaseModel):
         if hasattr(self, 'character_type') and self.character_type:
             character_data = get_character_data(self.character_type)
             if character_data:
-                self.stats.HP = character_data.get_max_hp(self.level)
-                self.current_hp = self.stats.HP
+                # Only update HP if it's not already set properly
+                expected_max_hp = character_data.get_max_hp(self.level)
+                if self.stats.HP != expected_max_hp:
+                    self.stats.HP = expected_max_hp
+                    self.current_hp = min(self.current_hp, expected_max_hp)
+                
+                # Ensure other stats are set from base stats if they're still at defaults
+                base_stats = character_data.base_stats.dict() if hasattr(character_data, 'base_stats') else {}
+                if base_stats:
+                    for stat in ['ATK', 'DEF', 'ACC', 'INT', 'SPD']:
+                        if getattr(self.stats, stat, 0) <= 10:  # If still at or below default
+                            base_value = base_stats.get(stat, getattr(self.stats, stat, 10))
+                            # Calculate current level's stat value
+                            if hasattr(character_data, 'max_potential') and character_data.max_potential:
+                                max_val = character_data.max_potential.get(stat, base_value)
+                                # Linear scaling from base to max_potential over 125 levels
+                                stat_increase = (max_val - base_value) / (125 - 1)
+                                current_value = base_value + (stat_increase * (self.level - 1))
+                                setattr(self.stats, stat, int(round(min(current_value, max_val))))
+                            else:
+                                setattr(self.stats, stat, base_value)
 
     @property
     def xp_to_next_level(self) -> int:

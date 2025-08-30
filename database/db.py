@@ -551,7 +551,7 @@ class Database:
                 "name": character_name
             }, {
                 "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
-                "xp": 1, "gas": 1, "equipped_weapon": 1
+                "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
             })
             
             if character_data:
@@ -571,56 +571,98 @@ class Database:
 
     async def update_character(self, character: Character) -> Character:
         try:
+            import time
+            start = time.perf_counter()
+
             character.updated_at = datetime.now(timezone.utc)
-            character_dict = character.dict() 
+            character_dict = character.dict()
+
             if 'passive_abilities' in character_dict:
                 for ability in character_dict['passive_abilities']:
                     ability['unlocked'] = ability.get('is_unlocked', False)
-                    
-            # Update the character in the database
-            await self.characters.find_one_and_update(
-                {
-                    "user_id": character.user_id,
-                    "name": character.name
-                },
-                {"$set": character_dict},  # Use the dumped dict
-                return_document=True
-            )
-            
-            # Important: Update or invalidate cache when character is updated
-            # This fixes the issue with HP not being updated properly
-            if CACHE_ENABLED:
-                cache_key = f"character_{character.user_id}_{character.name}"
-                if cache_key in CHARACTER_CACHE:
-                    # Option 1: Update the cached character with the new values
+
+            # Check if this is a critical update that needs immediate return
+            is_critical_update = any(key in character_dict for key in [
+                'current_hp', 'gas', 'level', 'xp'
+            ])
+
+            if is_critical_update:
+                # For critical updates, use find_one_and_update to get updated document
+                result = await self.characters.find_one_and_update(
+                    {
+                        "user_id": character.user_id,
+                        "name": character.name
+                    },
+                    {"$set": character_dict},
+                    return_document=True
+                )
+
+                # Update cache immediately
+                if CACHE_ENABLED and result:
+                    cache_key = f"character_{character.user_id}_{character.name}"
+                    CHARACTER_CACHE[cache_key] = {
+                        "character": Character(**result),
+                        "timestamp": time.time()
+                    }
+
+                elapsed = (time.perf_counter() - start) * 1000
+                logger.info(f"update_character (critical) query time: {elapsed:.2f} ms")
+                return Character(**result) if result else character
+            else:
+                # For non-critical updates, use faster update_one and return immediately
+                await self.characters.update_one(
+                    {
+                        "user_id": character.user_id,
+                        "name": character.name
+                    },
+                    {"$set": character_dict}
+                )
+
+                # Update cache
+                if CACHE_ENABLED:
+                    cache_key = f"character_{character.user_id}_{character.name}"
                     CHARACTER_CACHE[cache_key] = {
                         "character": character,
                         "timestamp": time.time()
                     }
-                    logger.debug(f"Updated character cache for {character.name}, HP: {character.current_hp}")
-                    
-            return character
+
+                elapsed = (time.perf_counter() - start) * 1000
+                logger.info(f"update_character (non-critical) query time: {elapsed:.2f} ms")
+                return character
+
         except Exception as e:
             logger.error(f"Failed to update character: {e}")
             raise
 
-    async def update_character_stats(self, user_id: str, character_name: str, new_stats: dict) -> bool:
-        """
-        Update only the 'stats' field of a character.
-        """
+    async def batch_update_character(self, user_id: str, character_name: str, update_data: Dict) -> bool:
+        """Batch update multiple character fields at once for better performance."""
         try:
+            import time
+            start = time.perf_counter()
+
+            update_data["updated_at"] = datetime.now(timezone.utc)
+
             result = await self.characters.update_one(
                 {"user_id": user_id, "name": character_name},
-                {"$set": {"stats": new_stats, "updated_at": datetime.now(timezone.utc)}}
+                {"$set": update_data}
             )
+
+            # Update cache if it exists
             if CACHE_ENABLED:
                 cache_key = f"character_{user_id}_{character_name}"
                 if cache_key in CHARACTER_CACHE:
-                    CHARACTER_CACHE[cache_key]["character"].stats = new_stats
+                    cached_character = CHARACTER_CACHE[cache_key]["character"]
+                    for key, value in update_data.items():
+                        if hasattr(cached_character, key):
+                            setattr(cached_character, key, value)
                     CHARACTER_CACHE[cache_key]["timestamp"] = time.time()
+
+            elapsed = (time.perf_counter() - start) * 1000
+            logger.info(f"batch_update_character query time: {elapsed:.2f} ms")
             return result.modified_count > 0
+
         except Exception as e:
-            logger.error(f"Failed to update character stats: {e}")
+            logger.error(f"Failed to batch update character: {e}")
             return False
 
     async def get_character_abilities(self, user_id: int, character_name: str) -> Dict[str, List[Ability]]:

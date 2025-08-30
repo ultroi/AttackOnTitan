@@ -211,21 +211,21 @@ MISSION_ITEMS = {
         "name": "Wall Brick",
         "emoji": "🧱",
         "description": "Material needed for wall reconstruction",
-        "drop_chance": 0.01,  # 1% drop rate (approx 1 in 100 explores)
+        "drop_chance": 0.1,  # 10% drop rate (approx 1 in 10 explores) - increased for testing
         "mission_id": 5
     },
     "odm_gear_part": {
         "name": "ODM Gear Part",
         "emoji": "⚙️",
         "description": "Component of the ODM mobility gear",
-        "drop_chance": 0.015,  # 1.5% drop rate (approx 1 in 67 explores)
+        "drop_chance": 0.1,  # 10% drop rate (approx 1 in 10 explores) - increased for testing
         "mission_id": 8
     },
     "scout_journal": {
         "name": "Scout's Journal",
         "emoji": "📔",
         "description": "Journal left behind by a fallen scout",
-        "drop_chance": 0.015,  # 1.5% drop rate (approx 1 in 67 explores)
+        "drop_chance": 0.1,  # 10% drop rate (approx 1 in 10 explores) - increased for testing
         "mission_id": 12
     }
 }
