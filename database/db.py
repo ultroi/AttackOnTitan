@@ -16,9 +16,9 @@ from datetime import datetime, timezone, timedelta
 
 # Enhanced player cache for improved performance
 PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 1800  # Increased from 300 to 1800 seconds (30 minutes)
+PLAYER_CACHE_TTL = 3600  # Increased to 3600 seconds (1 hour)
 CHARACTER_CACHE = {}  # Add character cache
-CHARACTER_CACHE_TTL = 900  # Increased from 60 to 900 seconds (15 minutes)
+CHARACTER_CACHE_TTL = 3600  # Increased to 3600 seconds (1 hour)
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
 CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
@@ -100,7 +100,7 @@ class Database:
             logger.info(f"Pre-warmed {len(recent_players)} player caches")
             
             # Pre-warm frequently used characters
-            for player_data in recent_players[:20]:  # Top 20 most recent
+            for player_data in recent_players[:50]:  # Top 50 most recent
                 user_id = player_data.get("user_id")
                 team = player_data.get("team", [])
                 if team and user_id:
@@ -628,6 +628,7 @@ class Database:
                 if current_time - cached_data["timestamp"] < CHARACTER_CACHE_TTL:
                     # Cache hit
                     CACHE_STATS["hits"] += 1
+                    logger.info(f"get_character cache hit for {character_name}")
                     return cached_data["character"]
                     
             # Cache miss or expired

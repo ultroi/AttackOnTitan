@@ -474,21 +474,18 @@ async def check_mission_item_drops(player):
         if mission.get("status") == "in_progress":
             active_mission_ids.add(mission.get("mission_id"))
 
-    # Allow drops for all mission items, but prioritize active missions
+    # Only allow drops for items whose missions are active
     for item_key, item_data in MISSION_ITEMS.items():
-        # Always allow drops, but increase chance if mission is active
-        drop_chance = item_data["drop_chance"]
+        # Only drop if the mission is active
         if item_data["mission_id"] in active_mission_ids:
-            drop_chance *= 2  # Double the drop chance for active missions
-        
-        if random.random() < drop_chance:
-            # Item dropped!
-            drops.append({
-                "key": item_key,
-                "name": item_data["name"],
-                "emoji": item_data["emoji"],
-                "mission_id": item_data["mission_id"]
-            })
+            if random.random() < item_data["drop_chance"]:
+                # Item dropped!
+                drops.append({
+                    "key": item_key,
+                    "name": item_data["name"],
+                    "emoji": item_data["emoji"],
+                    "mission_id": item_data["mission_id"]
+                })
     return drops
 
 # Function to add mission items to player inventory

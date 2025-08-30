@@ -10,7 +10,7 @@ from game.random_drop import get_random_drop
 import asyncio
 import random
 from utils.monitor import track_battle_end
-from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress
+from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress, check_mission_item_drops, add_mission_item
 import logging
 from datetime import datetime, timezone
 import time
@@ -1454,7 +1454,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         # Process mission progress and level ups in background (non-blocking)
         asyncio.create_task(_process_post_battle_updates(
             db, player_obj, battle.character, user_id, chat_id, send,
-            char_level_info, player_level_info, rewards["marks"], battle
+            char_level_info, player_level_info, rewards["marks"], battle, victory=True
         ))
 
     else:
@@ -1527,7 +1527,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
 
 async def _process_post_battle_updates(db, player_obj, character, user_id, chat_id, send_func,
-                                      char_level_info, player_level_info, marks_reward, battle):
+                                      char_level_info, player_level_info, marks_reward, battle, victory=False):
     """Process mission progress and level up messages in background."""
     try:
         # Get fresh player data for mission processing
@@ -1555,6 +1555,22 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                     await send_func(chat_id, notification, parse_mode=ParseMode.HTML)
                 except Exception as e:
                     logger.error(f"Error sending mission notification: {e}")
+
+        # Process mission item drops only for victories
+        if victory:
+            try:
+                mission_item_drops = await check_mission_item_drops(player_obj_fresh)
+                for item_drop in mission_item_drops:
+                    result = await add_mission_item(db, player_obj_fresh, item_drop["key"])
+                    if isinstance(result, tuple) and len(result) == 2:
+                        success, msg = result
+                        if success and msg:
+                            try:
+                                await send_func(chat_id, msg, parse_mode=ParseMode.HTML)
+                            except Exception as e:
+                                logger.error(f"Error sending mission item notification: {e}")
+            except Exception as e:
+                logger.error(f"Error processing mission item drops: {e}")
 
         # Send level up messages immediately after mission notifications
         await _send_level_up_messages(char_level_info, player_level_info, character, player_obj, chat_id, send_func)

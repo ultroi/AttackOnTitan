@@ -302,9 +302,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
+    logger.info(f"Explore start for user {user_id}")
+    
     # PARALLEL DATABASE QUERIES - Start both immediately
     player_future = db.get_player(user_id_str)
     player = await player_future
+    db_time = time.time() - start_time
+    logger.info(f"Player fetch time: {db_time*1000:.1f}ms")
+    
     if not player or not player.team:
         await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
         return
@@ -321,6 +326,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Await character data
     character = await character_future
+    char_time = time.time() - start_time - db_time
+    logger.info(f"Character fetch time: {char_time*1000:.1f}ms")
+    
     player_level = character.level if character and hasattr(character, 'level') else 1
     gas = character.gas if character and hasattr(character, 'gas') else 0
     
@@ -489,11 +497,11 @@ async def _handle_explore_background(update, context, user_id, user_id_str, user
         character = await db.get_character(user_id_str, character_name)
         if character and hasattr(character, 'gas'):
             new_gas = max(0, character.gas - 100)
-            # Use batch update for faster gas deduction (non-critical for exploration)
-            await db.batch_update_character(user_id_str, character_name, {"gas": new_gas})
+            # Use batch update for faster gas deduction (fire-and-forget for speed)
+            asyncio.create_task(db.batch_update_character(user_id_str, character_name, {"gas": new_gas}))
         
-        # Update player's last explore time - use batch update for speed
-        await db.batch_update_player(user_id_str, {"last_explore_time": time.time()})
+        # Update player's last explore time - use batch update for speed (fire-and-forget)
+        asyncio.create_task(db.batch_update_player(user_id_str, {"last_explore_time": time.time()}))
         
         # Handle mission progress for exploration
         location = getattr(player, 'location', None)
@@ -548,28 +556,7 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
         updated_travel["progress"] = travel_progress
         await db.update_player(user_id_str, {"travel": updated_travel})
 
-async def _handle_mission_items(update, context, db, player):
-    """Handle mission item drops in background"""
-    try:
-        active_missions = [m for m in player.missions if m["status"] == "in_progress"]
-        if not active_missions:
-            return
-        
-        mission_item_drops = await check_mission_item_drops(player)
-        
-        for item_drop in mission_item_drops:
-            result = await add_mission_item(db, player, item_drop["key"])
-            if isinstance(result, tuple) and len(result) == 2:
-                success, msg = result
-                if success and msg:
-                    try:
-                        if update.message:
-                            await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
-                    except Exception:
-                        pass
-                    
-    except Exception as e:
-        logger.error(f"Mission items error: {e}")
+
 
 async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, warning_level: int, message: str):
     """Send spam warning message to user in background"""
