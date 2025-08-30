@@ -95,11 +95,18 @@ class BattleSystem:
         if self.timeout_task and not self.timeout_task.done():
             self.timeout_task.cancel()
         self.timeout_task = None
+        self.clear_internal_caches()
         self.buffs.clear()
         self.debuffs.clear()
         self.titan_debuffs.clear()
         self.ability_cooldowns.clear()
         self.trigger_states.clear()
+
+    def clear_internal_caches(self) -> None:
+        """Clear all internal battle caches to free memory."""
+        self.keyboard_cache = None
+        self.keyboard_cache_invalid = True
+        logger.debug("Cleared internal battle caches")
 
     # ---------- Context & Effects ----------
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
@@ -770,8 +777,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     team_member = player_data['team'][0]
     character_name = team_member['character_name'] if isinstance(team_member, dict) else team_member
     
-    # Invalidate character cache BEFORE starting battle to ensure fresh HP data
-    db.invalidate_character_cache(user_id, character_name)
+    # Clear all battle-related caches BEFORE starting battle to ensure fresh data
+    db.invalidate_battle_caches(user_id)
     
     # Get character data FRESH from database (bypass cache for battle start)
     try:
@@ -1358,8 +1365,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = max(0, battle.character_hp)
 
-        # Invalidate character cache immediately
-        db.invalidate_character_cache(user_id, battle.character.name)
+        # Clear all battle-related caches immediately after victory
+        db.invalidate_battle_caches(user_id)
 
         # Prepare all database updates in parallel tasks
         update_tasks = []
@@ -1422,8 +1429,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
 
-        # Invalidate character cache
-        db.invalidate_character_cache(user_id, battle.character.name)
+        # Clear all battle-related caches after defeat
+        db.invalidate_battle_caches(user_id)
 
         # Parallel updates for defeat
         defeat_updates = [
@@ -1676,6 +1683,8 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                     except Exception as e:
                         logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
                     try:
+                        # Clear all battle-related caches on timeout
+                        db.invalidate_battle_caches(user_id)
                         # Clear the battle started flag so user can start new battles
                         if f"titan_battle_started_{user_id}" in context.bot_data:
                             del context.bot_data[f"titan_battle_started_{user_id}"]

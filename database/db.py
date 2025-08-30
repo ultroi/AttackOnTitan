@@ -395,10 +395,6 @@ class Database:
             # No raise here since this is a background task
             
     def invalidate_character_cache(self, user_id: str, character_name: str):
-        """
-        Invalidate the character cache for a specific character.
-        Call this when HP changes or other important stats are modified.
-        """
         if CACHE_ENABLED:
             cache_key = f"character_{user_id}_{character_name}"
             if cache_key in CHARACTER_CACHE:
@@ -406,6 +402,54 @@ class Database:
                 logger.debug(f"Invalidated character cache for {character_name}")
                 return True
         return False
+
+    def invalidate_all_character_caches(self, user_id: str):
+        """
+        Invalidate all character caches for a specific user.
+        Call this during battle operations to ensure fresh data.
+        """
+        if CACHE_ENABLED:
+            keys_to_remove = []
+            for cache_key in CHARACTER_CACHE.keys():
+                if cache_key.startswith(f"character_{user_id}_"):
+                    keys_to_remove.append(cache_key)
+
+            for cache_key in keys_to_remove:
+                CHARACTER_CACHE.pop(cache_key, None)
+                logger.debug(f"Invalidated character cache: {cache_key}")
+
+            if keys_to_remove:
+                logger.info(f"Cleared {len(keys_to_remove)} character cache entries for user {user_id}")
+            return len(keys_to_remove) > 0
+        return False
+
+    def invalidate_battle_caches(self, user_id: str):
+        """
+        Invalidate all battle-related caches for a user (character, player, titan).
+        Call this at the start/end of battles to ensure data consistency.
+        """
+        cleared_count = 0
+
+        # Clear all character caches for this user
+        if self.invalidate_all_character_caches(user_id):
+            cleared_count += 1
+
+        # Clear player cache for this user
+        if CACHE_ENABLED:
+            player_cache_key = f"player_{user_id}"
+            if player_cache_key in PLAYER_CACHE:
+                PLAYER_CACHE.pop(player_cache_key, None)
+                logger.debug(f"Invalidated player cache for user {user_id}")
+                cleared_count += 1
+
+        # Clear titan cache for this user
+        if self.invalidate_titan_cache(user_id):
+            cleared_count += 1
+
+        if cleared_count > 0:
+            logger.info(f"Cleared {cleared_count} battle-related cache entries for user {user_id}")
+
+        return cleared_count > 0
         
     def invalidate_titan_cache(self, user_id: str):
         if user_id in self._titan_cache:
