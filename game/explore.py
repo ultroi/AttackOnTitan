@@ -161,7 +161,7 @@ def _generate_cached_titan(player_level: int, difficulty: str) -> dict:
         "level": titan_level,
         "max_hp": base_hp * level_multiplier,
         "abilities": [],
-        "difficulty": "Normal",  # Keep as Normal for compatibility
+        "difficulty": "Normal", 
         "drop_table": {},
         "xp_reward": base_xp * level_multiplier,
         "min_level_requirement": max(1, player_level - 2),
