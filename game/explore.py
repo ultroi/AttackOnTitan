@@ -515,7 +515,6 @@ async def _handle_explore_background(update, context, user_id, user_id_str, user
         
         # Handle other background tasks
         await _handle_travel_progress(update, context, user_id_str, db, player)
-        await _handle_mission_items(update, context, db, player)
         
     except Exception as e:
         logger.error(f"Error in _handle_explore_background: {e}", exc_info=True)
