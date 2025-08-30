@@ -733,6 +733,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not battle_cache.get("player_data"):
         player_data_task = db.players.find_one({"user_id": user_id})
     
+    # Clear any existing titan cache for this user to prevent data leakage between battles
+    if f"last_titan_data_{user_id}" in context.bot_data:
+        del context.bot_data[f"last_titan_data_{user_id}"]
+    
     # Wait for titan data
     titan_obj = await titan_task
     if not titan_obj:
@@ -1015,6 +1019,9 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     del context.bot_data[f"active_battle_id_{user_id}"]
                 if f"titan_battle_started_{user_id}" in context.bot_data:
                     del context.bot_data[f"titan_battle_started_{user_id}"]
+                # Clear titan cache to prevent data leakage
+                if f"last_titan_data_{user_id}" in context.bot_data:
+                    del context.bot_data[f"last_titan_data_{user_id}"]
                 # Remove cached battle data
                 if hasattr(context, "user_data") and isinstance(context.user_data, dict):
                     context.user_data.pop("battle_cache", None)
@@ -1172,6 +1179,9 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if has_unlocked_passive and battle.gas < min_ability_cost:
             await query.edit_message_text(f"{battle.character.name} is out of gas and cannot continue the battle!")
+            # Clear titan cache before cleanup
+            if f"last_titan_data_{user_id}" in context.bot_data:
+                del context.bot_data[f"last_titan_data_{user_id}"]
             cleanup_battle(user_id, "out_of_gas")
             return
         
@@ -1484,6 +1494,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     if f"titan_battle_started_{user_id}" in context.bot_data:
         del context.bot_data[f"titan_battle_started_{user_id}"]
+    
+    # Clear titan cache to prevent data leakage between battles
+    if f"last_titan_data_{user_id}" in context.bot_data:
+        del context.bot_data[f"last_titan_data_{user_id}"]
 
     # Remove cached battle data
     if hasattr(context, "user_data") and isinstance(context.user_data, dict):
@@ -1665,6 +1679,9 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                         # Clear the battle started flag so user can start new battles
                         if f"titan_battle_started_{user_id}" in context.bot_data:
                             del context.bot_data[f"titan_battle_started_{user_id}"]
+                        # Clear titan cache to prevent data leakage
+                        if f"last_titan_data_{user_id}" in context.bot_data:
+                            del context.bot_data[f"last_titan_data_{user_id}"]
                             
                         await query.edit_message_text(
                             "⏰ Battle Expired ⏰\n\n"

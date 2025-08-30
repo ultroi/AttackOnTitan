@@ -126,15 +126,15 @@ def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
         f"<code>-------------------------</code>"
     )
 
-def _generate_cached_titan(player_level: int, difficulty: str) -> dict:
+def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> dict:
     """Generate a cached titan for the given level with varied images and names - Single category"""
     # Get titan data from single category
     difficulty_data = ENHANCED_CACHED_TITANS["All"]
 
-    # Use multiple sources for better randomness
+    # Use multiple sources for better randomness including user_id for uniqueness
     import time
     current_time = time.time()
-    seed = int((current_time * 1000000) + id(difficulty_data) + player_level) % (2**32)
+    seed = int((current_time * 1000000) + id(difficulty_data) + player_level + user_id) % (2**32)
     titan_random = random.Random(seed)
 
     # Select random name and image from the pool
@@ -298,10 +298,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_last_explore[user_id_str] = now_ms
     
-    # Reset explore spam count when user explores legitimately
-    if "explore_spam_count" in context.bot_data and user_id_str in context.bot_data["explore_spam_count"]:
-        context.bot_data["explore_spam_count"][user_id_str] = 0
-    
     # Battle check (fastest possible)
     if _is_in_battle(user_id_str):
         await _reply_error(update, f"{username} is currently battling!")
@@ -410,10 +406,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         context.user_data["last_verification_check"] = now
     
+    # Clear any existing titan cache for this user to prevent data leakage
+    if f"last_titan_data_{user_id_str}" in context.bot_data:
+        del context.bot_data[f"last_titan_data_{user_id_str}"]
+    
     # Generate titan instantly (from cache)
     titan_data = CACHED_TITANS.get(f"{player_level}_{DIFFICULTY_BY_LEVEL.get(player_level, 'Hard')}")
     if not titan_data:
-        titan_data = _generate_cached_titan(player_level, DIFFICULTY_BY_LEVEL.get(player_level, "Hard"))
+        titan_data = _generate_cached_titan(player_level, DIFFICULTY_BY_LEVEL.get(player_level, "Hard"), user_id)
     
     # Add slight randomization to cached titan
     titan_level = max(1, titan_data['level'] + random.randint(-1, 1))
@@ -572,6 +572,27 @@ async def _handle_mission_items(update, context, db, player):
     except Exception as e:
         logger.error(f"Mission items error: {e}")
 
+async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, warning_level: int, message: str):
+    """Send spam warning message to user in background"""
+    try:
+        # Get bot instance
+        bot = context.bot
+        if not bot:
+            return
+            
+        # Send warning message
+        await bot.send_message(
+            chat_id=user_id,
+            text=message,
+            parse_mode=ParseMode.HTML
+        )
+        
+        logger.info(f"Sent spam warning level {warning_level} to user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send spam warning to user {user_id}: {e}")
+
+
 async def _handle_spam_ban(user_id, update, context):
     """Handle spam banning in background - optimized for async"""
     try:
@@ -670,22 +691,27 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         
         # Increment spam count for not battling
         context.bot_data["explore_spam_count"][user_id_str] += 1
+        current_spam_count = context.bot_data["explore_spam_count"][user_id_str]
         
-        # Check if spam count exceeds threshold (3 timeouts without battle)
-        SPAM_THRESHOLD = 3
-        if context.bot_data["explore_spam_count"][user_id_str] >= SPAM_THRESHOLD:
+        # Send warning only at 10 timeouts
+        if current_spam_count == 10:
+            # Warning at 10 timeouts
+            asyncio.create_task(_send_spam_warning(user_id, context, 10, "🚨 <b>Warning:</b> You have let 10 titan encounters expire!\n\nContinuing this behavior may result in a ban. Please battle the titans you encounter."))
+        
+        # Check if spam count exceeds threshold (15 timeouts without battle)
+        SPAM_THRESHOLD = 15
+        if current_spam_count >= SPAM_THRESHOLD:
             # Trigger spam ban
             logger.warning(f"User {user_id} reached spam threshold ({SPAM_THRESHOLD}) - triggering ban")
             # Create a mock update object for the ban function
             class MockUpdate:
-                def __init__(self, user_id, context):
-                    self.effective_user = type('obj', (object,), {'id': user_id, 'first_name': f'User_{user_id}'})()
-                    self.message = type('obj', (object,), {'reply_text': lambda text: None})()
+            def __init__(self, user_id, context):
+                self.effective_user = type('obj', (object,), {'id': user_id, 'first_name': f'User_{user_id}'})()
+                self.message = type('obj', (object,), {'reply_text': lambda text: None})()
             
             mock_update = MockUpdate(user_id, context)
             await _handle_spam_ban(user_id, mock_update, context)
             return
-        
         # Get battle ID info to compare later
         battle_id_key = f"active_battle_id_{user_id}"
         current_battle_id = context.bot_data.get(battle_id_key)
