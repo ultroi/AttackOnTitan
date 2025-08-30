@@ -1464,11 +1464,13 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 # Get fresh player data for drop processing
                 player_obj = await db.get_player(user_id)
                 if player_obj:
-                    inv = player_obj.inventory or {}
+                    # Ensure we have the complete current inventory
+                    current_inv = player_obj.inventory or {}
                     update_data = {}
 
                     if drop['type'] in ['bottle', 'cylinder']:
-                        inv['gas'] = inv.get('gas', 0) + drop['amount']
+                        # Update gas in inventory and player object
+                        current_inv['gas'] = current_inv.get('gas', 0) + drop['amount']
                         update_data['gas'] = getattr(player_obj, 'gas', 0) + drop['amount']
                         await query.message.reply_photo(
                             photo=drop['image'],
@@ -1476,21 +1478,24 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                             parse_mode=ParseMode.HTML
                         )
                     elif drop['type'] == 'valors':
-                        inv['valor'] = inv.get('valor', 0) + drop['amount']
+                        # Update valor in inventory and player object
+                        current_inv['valor'] = current_inv.get('valor', 0) + drop['amount']
                         update_data['valor'] = getattr(player_obj, 'valor', 0) + drop['amount']
                         await query.message.reply_text(
                             drop['message'],
                             parse_mode=ParseMode.HTML
                         )
                     elif drop['type'] == 'crystals':
-                        inv['crystal'] = inv.get('crystal', 0) + drop['amount']
+                        # Update crystal in inventory and player object
+                        current_inv['crystal'] = current_inv.get('crystal', 0) + drop['amount']
                         update_data['crystal'] = getattr(player_obj, 'crystal', 0) + drop['amount']
                         await query.message.reply_text(
                             drop['message'],
                             parse_mode=ParseMode.HTML
                         )
 
-                    update_data['inventory'] = inv
+                    # Update the complete inventory
+                    update_data['inventory'] = current_inv
                     await db.update_player(user_id, update_data)
     except Exception as e:
         logger.error(f"Error processing random drop: {e}")
