@@ -298,6 +298,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_last_explore[user_id_str] = now_ms
     
+    # Reset explore spam count when user explores legitimately
+    if "explore_spam_count" in context.bot_data and user_id_str in context.bot_data["explore_spam_count"]:
+        context.bot_data["explore_spam_count"][user_id_str] = 0
+    
     # Battle check (fastest possible)
     if _is_in_battle(user_id_str):
         await _reply_error(update, f"{username} is currently battling!")
@@ -447,8 +451,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         min_level_requirement=titan_data['min_level_requirement']
     )
     
-    # Start background tasks while we wait for the message to send
-    # Launch titan storage immediately without waiting
     store_titan_task = asyncio.create_task(
         db.store_titan(user_id_str, titan)
     )
@@ -458,8 +460,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sent_message = await send_message_task
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
-        # Even if the message fails, we can still continue with background processing
-        # The user can try again, but we won't lose state
         return
     
     # Record response time
@@ -647,6 +647,31 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         
         # Check if user is in battle - no need to do anything if so
         if _is_in_battle(user_id_str):
+            return
+        
+        # SPAM DETECTION: User didn't explore or battle during timeout - increment spam count
+        if "explore_spam_count" not in context.bot_data:
+            context.bot_data["explore_spam_count"] = {}
+        
+        if user_id_str not in context.bot_data["explore_spam_count"]:
+            context.bot_data["explore_spam_count"][user_id_str] = 0
+        
+        # Increment spam count for not battling
+        context.bot_data["explore_spam_count"][user_id_str] += 1
+        
+        # Check if spam count exceeds threshold (3 timeouts without battle)
+        SPAM_THRESHOLD = 3
+        if context.bot_data["explore_spam_count"][user_id_str] >= SPAM_THRESHOLD:
+            # Trigger spam ban
+            logger.warning(f"User {user_id} reached spam threshold ({SPAM_THRESHOLD}) - triggering ban")
+            # Create a mock update object for the ban function
+            class MockUpdate:
+                def __init__(self, user_id, context):
+                    self.effective_user = type('obj', (object,), {'id': user_id, 'first_name': f'User_{user_id}'})()
+                    self.message = type('obj', (object,), {'reply_text': lambda text: None})()
+            
+            mock_update = MockUpdate(user_id, context)
+            await _handle_spam_ban(user_id, mock_update, context)
             return
         
         # Get battle ID info to compare later
