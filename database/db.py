@@ -12,7 +12,7 @@ from database.db_instance import get_database
 import logging
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Enhanced player cache for improved performance
 PLAYER_CACHE = {}
@@ -62,7 +62,8 @@ class Database:
         self.groups = db.groups  # For storing groups information
         self.stats = db.stats  # For storing game statistics
         logger.info("Database collections initialized successfully")
-        """Pre-warm caches with frequently accessed data for ultra-fast responses"""
+        
+        # Pre-warm caches with frequently accessed data for ultra-fast responses
         try:
             logger.info("Starting cache pre-warming...")
             
@@ -223,9 +224,9 @@ class Database:
             
             # Not in cache or expired, query database
             if self.players is None:
-                await self.init_db() 
-            if self.players is None:
-                raise ConnectionError("Database connection failed")
+                raise ConnectionError("Database not initialized. Call init_db() first.")
+                
+            # Use projection to only get needed fields for faster query
                 
             # Use projection to only get needed fields for faster query
             player_data = await self.players.find_one({"user_id": user_id}, {

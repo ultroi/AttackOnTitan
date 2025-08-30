@@ -238,7 +238,7 @@ async def initialize_application():
             # Use persistent DB connection for best performance
             motor_db = await get_persistent_database()
             global_db = Database()
-            await global_db.init_db()  # This will set up collections using motor_db internally
+            await global_db.init_db(motor_db)  # Pass the motor_db instance to init_db
             await migrate_schema(global_db)
             
             # Apply battle system fixes
