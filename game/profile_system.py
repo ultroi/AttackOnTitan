@@ -95,6 +95,9 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
+    if not owner_id:
+        owner_id = str(update.effective_user.id)
+        context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
@@ -661,6 +664,9 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
+    if not owner_id:
+        owner_id = str(update.effective_user.id)
+        context.user_data['owner_id'] = owner_id
     if query and str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
@@ -782,6 +788,11 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
 async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        if context.user_data is None:
+            context.user_data = {}
+        context.user_data['owner_id'] = owner_id
     if query and str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
@@ -796,6 +807,9 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
     owner_id = context.user_data.get('owner_id')
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         if query:
             await query.answer("You are not authorized to view this.", show_alert=True)
@@ -852,6 +866,11 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, *, char_name=None, status_message=None):
     query = update.callback_query
     owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        if context.user_data is None:
+            context.user_data = {}
+        context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         if query:
             await query.answer("You are not authorized to view this.", show_alert=True)
@@ -950,6 +969,11 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        if context.user_data is None:
+            context.user_data = {}
+        context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         if query:
             await query.answer("You are not authorized to view this.", show_alert=True)
@@ -1008,6 +1032,11 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     owner_id = context.user_data.get('owner_id') if context.user_data else None
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        if context.user_data is None:
+            context.user_data = {}
+        context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         if query:
             await query.answer("You are not authorized to view this.", show_alert=True)
@@ -1090,6 +1119,9 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     query = update.callback_query
     owner_id = context.user_data.get('owner_id')
+    if not owner_id and query:
+        owner_id = str(query.from_user.id)
+        context.user_data['owner_id'] = owner_id
     # Always try to close the profile, but show alert if unauthorized
     if not query:
         return
@@ -1098,19 +1130,16 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer("Profile closed.")
     try:
-        await query.message.delete()
-    except Exception:
-        try:
-            if getattr(query.message, "photo", None):
-                await query.edit_message_caption(
-                    caption="Profile closed.",
-                    reply_markup=None
-                )
-            else:
-                await query.edit_message_text(
-                    text="Profile closed.",
-                    reply_markup=None
-                )
-        except Exception as e2:
-            logger.error(f"Error closing profile: {e2}")
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption(
+                caption="Profile closed.",
+                reply_markup=None
+            )
+        else:
+            await query.edit_message_text(
+                text="Profile closed.",
+                reply_markup=None
+            )
+    except Exception as e:
+        logger.error(f"Error closing profile: {e}")
 

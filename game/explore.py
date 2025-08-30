@@ -483,7 +483,8 @@ async def _handle_explore_background(update, context, user_id, user_id_str, user
         character = await db.get_character(player.user_id, character_name)
         if character and hasattr(character, 'gas'):
             new_gas = max(0, character.gas - 100)
-            await db.update_character(player.user_id, character_name, {"gas": new_gas})
+            character.gas = new_gas
+            await db.update_character(character)
         
         # Update player's last explore time
         await db.update_player(user_id_str, {"last_explore_time": time.time()})
@@ -550,12 +551,14 @@ async def _handle_mission_items(update, context, db, player):
         mission_item_drops = await check_mission_item_drops(player)
         
         for item_drop in mission_item_drops:
-            success, msg = await add_mission_item(db, player, item_drop["key"])
-            if success and msg:
-                try:
-                    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
-                except Exception:
-                    pass
+            result = await add_mission_item(db, player, item_drop["key"])
+            if isinstance(result, tuple) and len(result) == 2:
+                success, msg = result
+                if success and msg:
+                    try:
+                        await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                    except Exception:
+                        pass
                     
     except Exception as e:
         logger.error(f"Mission items error: {e}")
