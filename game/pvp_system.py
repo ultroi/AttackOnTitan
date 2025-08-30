@@ -138,6 +138,9 @@ class PvPBattleSystem:
         self.challenger_active_items: Dict[str, Any] = {}
         self.defender_active_items: Dict[str, Any] = {}
 
+        # Store current battle message ID for timeout handling
+        self.current_message_id: Optional[int] = None
+
     def dispose(self) -> None:
         """Clean up battle resources and reset state."""
         if self._is_disposed:
@@ -543,7 +546,7 @@ class PvPBattleSystem:
         
     def surrender(self) -> str:
         """Handle surrender action"""
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.winner = self.defender.name
             self.winner_char = self.defender
             surrendered_player = self.challenger_player.name
@@ -581,7 +584,7 @@ class PvPBattleSystem:
         effects = {}
         
         # Determine current character and player
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             current_char = self.challenger
             opponent_char = self.defender
             current_player = self.challenger_player
@@ -630,7 +633,7 @@ class PvPBattleSystem:
         if item_key == "time_contract":
             # Reduce cooldowns
             cooldown_reduction = item.attributes.get("cooldown_reduction", 1)
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 for ability_name in self.challenger_cooldowns:
                     if self.challenger_cooldowns[ability_name] > 0:
                         self.challenger_cooldowns[ability_name] = max(0, self.challenger_cooldowns[ability_name] - cooldown_reduction)
@@ -661,7 +664,7 @@ class PvPBattleSystem:
         elif item_key == "training_dummy":
             # Increase attack and add buffs
             attack_multiplier = item.attributes.get("attack_multiplier", 1.05)
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.challenger_buffs["attack_boost"] = attack_multiplier
             else:
                 self.defender_buffs["attack_boost"] = attack_multiplier
@@ -673,7 +676,7 @@ class PvPBattleSystem:
             # Increase accuracy and defense
             accuracy_bonus = item.attributes.get("accuracy_bonus", 5)
             defense_bonus = item.attributes.get("defense_bonus", 5)
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.challenger_buffs["accuracy_boost"] = accuracy_bonus
                 self.challenger_buffs["defense_boost"] = defense_bonus
             else:
@@ -687,7 +690,7 @@ class PvPBattleSystem:
         elif item_key == "titan_biology_manual":
             # Critical rate boost in PvP
             crit_bonus = 15  # 15% crit chance increase in PvP
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.challenger_buffs["crit_boost"] = crit_bonus
             else:
                 self.defender_buffs["crit_boost"] = crit_bonus
@@ -698,7 +701,7 @@ class PvPBattleSystem:
         elif item_key == "bounty_permit":
             # Special case for bounty permit in PvP - small HP recovery
             heal_amount = int(current_char.stats.HP * 0.15)  # 15% HP recovery
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.challenger_hp = min(self.challenger.stats.HP, self.challenger_hp + heal_amount)
             else:
                 self.defender_hp = min(self.defender.stats.HP, self.defender_hp + heal_amount)
@@ -708,7 +711,7 @@ class PvPBattleSystem:
         
         else:
             # Generic effect for unknown utility items
-            if self.current_turn == self.challenger.name:
+            if self.current_turn_user_id == str(self.challenger_player.user_id):
                 self.challenger_buffs["item_boost"] = 1
             else:
                 self.defender_buffs["item_boost"] = 1
@@ -732,7 +735,7 @@ class PvPBattleSystem:
             # Still continue with the battle even if DB update fails
         
         # Mark that player used an item this turn
-        if self.current_turn == self.challenger.name:
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.challenger_used_item = True
         else:
             self.defender_used_item = True
@@ -780,15 +783,11 @@ class PvPBattleSystem:
         challenger_indicator = " « Turn" if self.current_turn_user_id == str(self.challenger_player.user_id) else ""
         defender_indicator = " « Turn" if self.current_turn_user_id == str(self.defender_player.user_id) else ""
         
-        # Add player identifiers to character names to avoid confusion when both players use the same character
-        challenger_char_identifier = " (P:1)"
-        defender_char_identifier = " (P:2)"
-        
         status_message = (
             f"Turn: {self.turn_count + 1}\n"
             f"Current Turn: <a href='tg://user?id={current_player_id}'>{current_player_first_name}'s {self.current_turn}</a>\n\n"
-            f"👤 {challenger_player_name} controls {self.challenger.name}{challenger_char_identifier}{challenger_indicator}\n"
-            f"👤 {defender_player_name} controls {self.defender.name}{defender_char_identifier}{defender_indicator}\n\n"
+            f"👤 {challenger_player_name} controls {self.challenger.name}{challenger_indicator}\n"
+            f"👤 {defender_player_name} controls {self.defender.name}{defender_indicator}\n\n"
         )
         
         # Add buffs and debuffs to status message
@@ -886,7 +885,7 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
     keyboard = []
     
     # Determine current character
-    if battle.current_turn == battle.challenger.name:
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id):
         current_char = battle.challenger
         cooldowns = battle.challenger_cooldowns
         gas = battle.challenger_gas
@@ -903,7 +902,7 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
             refreshed_character = await db.get_character(int(current_char.user_id), current_char.name)
             if refreshed_character:
                 # Update the character in the battle system with refreshed data
-                if battle.current_turn == battle.challenger.name:
+                if battle.current_turn_user_id == str(battle.challenger_player.user_id):
                     battle.challenger = refreshed_character
                     current_char = refreshed_character
                 else:
@@ -978,7 +977,7 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
     shop_items = context.bot_data.get("shop_items") or {}
     
     # Get player's utility items
-    if battle.current_turn == battle.challenger.name:
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id):
         used_item = battle.challenger_used_item
         player_id = battle.challenger.user_id
     else:
@@ -1189,7 +1188,7 @@ async def generate_pvp_items_keyboard(battle: PvPBattleSystem, context: ContextT
     keyboard = []
     
     # Determine current character and player
-    if battle.current_turn == battle.challenger.name:
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id):
         current_player = battle.challenger_player
     else:
         current_player = battle.defender_player
@@ -1266,7 +1265,7 @@ async def handle_pvp_show_items(update: Update, context: ContextTypes.DEFAULT_TY
     
     try:
         # Determine current player
-        if battle.current_turn == battle.challenger.name:
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
             current_player = battle.challenger_player
         else:
             current_player = battle.defender_player
@@ -1421,6 +1420,12 @@ async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
+        
+        # Store the current message ID for timeout handling
+        if query.message:
+            battle.current_message_id = query.message.message_id
+        else:
+            battle.current_message_id = None
     except Exception as e:
         logger.error(f"Failed to update battle message after using item: {e}")
     
@@ -1468,17 +1473,20 @@ async def handle_pvp_back_to_battle(update: Update, context: ContextTypes.DEFAUL
             text=(
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
                 f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
-                f"<blockquote><b>{battle.challenger.name}</b> <i>(P:1)</i>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
                 f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
                 f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
                 f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
-                f"<blockquote><b>{battle.defender.name}</b> <i>(P:2)</i>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
                 f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
+        
+        # Store the current message ID for timeout handling
+        battle.current_message_id = query.message.message_id
     except Exception as e:
         logger.error(f"Failed to update battle message: {e}")
 
@@ -1669,17 +1677,22 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             text=(
             f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
             f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
-            f"<blockquote><b>{battle.challenger.name}</b> <i>(P:1)</i>\n"
+            f"<blockquote><b>{battle.challenger.name}</b>\n"
             f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
             f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
             f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
-            f"<blockquote><b>{battle.defender.name}</b> <i>(P:2)</i>\n"
+            f"<blockquote><b>{battle.defender.name}</b>\n"
             f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
             f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
+        
+        # Store the current message ID for timeout handling
+        # Since we sent a reply, we need to get the message_id from the sent message
+        # For now, we'll use the original message ID as a fallback
+        battle.current_message_id = query.message.message_id
     except Exception as e:
         logger.error(f"Error sending battle start messages: {e}")
     
@@ -1875,17 +1888,20 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
                 f"<code>{battle_message}{effect_text}</code>\n\n"
                 f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
-                f"<blockquote><b>{battle.challenger.name}</b> <i>(P:1)</i>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
                 f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
                 f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
                 f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
-                f"<blockquote><b>{battle.defender.name}</b> <i>(P:2)</i>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
                 f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
                 f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
+        
+        # Store the current message ID for timeout handling
+        battle.current_message_id = query.message.message_id
     except Exception as e:
         logger.error(f"Failed to update battle message: {e}")
         # We'll still set the timeout task even if updating the message fails
@@ -1932,7 +1948,7 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
     
     # Refresh character data for weapon information
     db = context.bot_data.get("db") or Database()
-    if battle.current_turn == battle.challenger.name:
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id):
         try:
             refreshed_character = await db.get_character(int(battle.challenger.user_id), battle.challenger.name)
             if refreshed_character:
@@ -1948,10 +1964,10 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
             logger.error(f"Error refreshing defender character: {e}")
     
     # Check for stun debuffs before allowing the attack
-    if battle.current_turn == battle.challenger.name and battle.challenger_debuffs.get("stun", 0) > 0:
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id) and battle.challenger_debuffs.get("stun", 0) > 0:
         await safe_api_call(query.answer, f"{battle.challenger.name} is stunned and cannot act this turn!", show_alert=True)
         return
-    if battle.current_turn == battle.defender.name and battle.defender_debuffs.get("stun", 0) > 0:
+    if battle.current_turn_user_id == str(battle.defender_player.user_id) and battle.defender_debuffs.get("stun", 0) > 0:
         await safe_api_call(query.answer, f"{battle.defender.name} is stunned and cannot act this turn!", show_alert=True)
         return
         
@@ -2022,6 +2038,9 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.HTML
         )
+        
+        # Store the current message ID for timeout handling
+        battle.current_message_id = query.message.message_id
     except Exception as e:
         logger.error(f"Failed to update battle message: {e}")
         # We'll still set the timeout task even if updating the message fails
@@ -2125,8 +2144,8 @@ async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     battle = active_pvp_battles[user_id]
     
     # Check if it's user's turn
-    if (user_id == battle.challenger.user_id and battle.current_turn != battle.challenger.name) or \
-       (user_id == battle.defender.user_id and battle.current_turn != battle.defender.name):
+    if (user_id == str(battle.challenger.user_id) and battle.current_turn_user_id != str(battle.challenger_player.user_id)) or \
+       (user_id == str(battle.defender.user_id) and battle.current_turn_user_id != str(battle.defender_player.user_id)):
         await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
         return
     
@@ -2347,7 +2366,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 return
                 
             # Determine who timed out (whose turn it was)
-            if battle.current_turn == battle.challenger.name:
+            if battle.current_turn_user_id == str(battle.challenger_player.user_id):
                 # Challenger timed out, defender wins
                 battle.winner = battle.defender.name
                 battle.winner_char = battle.defender
@@ -2365,6 +2384,16 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
             
             # Edit existing battle message with timeout info
             try:
+                # First, try to delete the existing battle message if we have its ID
+                if hasattr(battle, 'current_message_id') and battle.current_message_id:
+                    try:
+                        await context.bot.delete_message(
+                            chat_id=chat_id,
+                            message_id=battle.current_message_id
+                        )
+                    except Exception as e:
+                        logger.debug(f"Could not delete existing battle message: {e}")
+                
                 # Get player mentions for proper hyperlinks
                 challenger_mention = f'<a href="tg://user?id={challenger_id}">{battle.challenger_player.name}</a>'
                 defender_mention = f'<a href="tg://user?id={defender_id}">{battle.defender_player.name}</a>'
@@ -2398,8 +2427,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     f"<b>Gain: {rewards['loser']['xp']} XP</b>"
                 )
                 
-                # Send a new message instead of trying to edit the existing one
-                # Since we don't have access to the message_id in this context
+                # Send the timeout message as a new message
                 await context.bot.send_message(
                     chat_id=chat_id,
                     text=(
