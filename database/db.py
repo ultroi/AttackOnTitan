@@ -16,9 +16,9 @@ from datetime import datetime, timezone
 
 # Enhanced player cache for improved performance
 PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 60  # 60 seconds for player data
+PLAYER_CACHE_TTL = 300  # Increased from 60 to 300 seconds (5 minutes)
 CHARACTER_CACHE = {}  # Add character cache
-CHARACTER_CACHE_TTL = 10  # Reduced to 10 seconds for character data to avoid stale HP values
+CHARACTER_CACHE_TTL = 60  # Increased from 10 to 60 seconds
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
 CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance

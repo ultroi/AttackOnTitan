@@ -722,7 +722,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
 
     # Group membership handler
-    app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=["my_chat_member", "chat_member"]))
+    app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
     app_instance.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, group_update_handler))
 
     # Generic button handler (should be last)

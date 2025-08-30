@@ -420,7 +420,7 @@ class BattleSystem:
         # Bleed effect
         if self.titan_debuffs.get("bleed", 0) > 0:
             character_atk = self.character.stats.ATK or 10
-            bleed_damage = max(10, character_atk // 2)
+            bleed_damage = max(10, character_atk)
             self.titan_hp = max(0, self.titan_hp - bleed_damage)
             self.titan_debuffs["bleed"] -= 1
             if self.titan_debuffs["bleed"] <= 0:
@@ -575,7 +575,7 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     equipped_weapon = getattr(battle.character, 'equipped_weapon', None)
     
     # Reduce debug logging for better performance
-    if random.random() < 0.1:  # Only log 10% of the time
+    if random.random() < 0.01:  # Only log 1% of the time
         logger.info(f"[DEBUG] Equipped weapon: {equipped_weapon}")
         logger.info(f"[DEBUG] Shop items count: {len(shop_items)}")
     
@@ -901,7 +901,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     current_time = time.time()
 
     # Rate limit to prevent spamming (400ms cooldown between actions - slightly higher)
-    if current_time - last_action_time < 0.4:
+    if current_time - last_action_time < 0.3:
         # Silent handling of spam - just ignore the action without any message
         return
     
@@ -1046,7 +1046,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             # Only refresh character if needed (use a timestamp to limit refreshes)
             now = time.time()
             last_refresh = getattr(battle, 'last_character_refresh', 0)
-            if now - last_refresh > 30:  # Refresh only every 30 seconds max
+            if now - last_refresh > 60:  # Refresh only every 60 seconds max
                 db = context.bot_data.get("db") or Database()
                 try:
                     refreshed_character = await db.get_character(int(battle.character.user_id), battle.character.name)
@@ -1055,7 +1055,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                         battle.last_character_refresh = now
                 except Exception as e:
                     logger.debug(f"Character refresh error (non-critical): {e}")
-            
             # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
@@ -1225,7 +1224,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         # Build message with array join (faster than string concatenation)
         message_parts = [
             "<b>⚔️ BATTLE ⚔️</b>\n",
-            " ".join(full_message),  # Join messages once
+            "\n".join(full_message),  # Join messages with newlines for better readability
             "",  # Empty line for spacing
             f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
             f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
@@ -1243,10 +1242,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         # Edit message with all content at once - safely
         try:
             from game.safe_edit import safe_edit_message_text
-            # Add a small randomization to the message to prevent "message not modified" errors
-            # Adding a zero-width space at random positions ensures the message is always different
-            random_pos = random.randint(0, len(battle_message)-1)
-            modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+            if random.random() < 0.1:  # Only randomize 10% of the time
+                random_pos = random.randint(0, len(battle_message)-1)
+                modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
+            else:
+                modified_message = battle_message
             
             # Always try to edit the message, never send a new one - this fixes the button spam issue
             await safe_edit_message_text(
@@ -1278,16 +1278,21 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     logger.debug(f"Query too old or invalid, but not creating new message to avoid spam")
                 else:
                     # Just log any other errors rather than raising - keeps the UI functional
-                    logger.error(f"Error editing message: {e}")        # Start timeout in background
+                    logger.error(f"Error editing message: {e}")
+        except Exception as e:
+            # Handle any other exceptions during message editing
+            logger.error(f"Unexpected error during battle message update: {e}")
+            # Continue with battle flow even if message update fails
+        finally:
+            pass
         # Create new timeout task and assign it to battle
         battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
         
-        # Log performance metrics for optimization tracking (only 5% of the time)
+        # Log performance metrics for optimization tracking (only 1% of the time)
         if random.random() < 0.05:
             end_time = time.time()
             logger.info(f"[PERF] Battle action took {end_time - start_time:.3f}s")
     finally:
-        # Release the action lock when done
         pass
 
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1623,48 +1628,49 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     try:
         if random.random() < 0.08:
             drop = get_random_drop()
-            # Get player object
-            player_obj = await db.get_player(user_id)
-            if player_obj:
-                inv = player_obj.inventory or {}
-                update_data = {}
-                if drop['type'] in ['bottle', 'cylinder']:
-                    inv['gas'] = inv.get('gas', 0) + drop['amount']
-                    update_data['gas'] = getattr(player_obj, 'gas', 0) + drop['amount']
-                    await query.message.reply_photo(
-                        photo=drop['image'],
-                        caption=drop['message'],
-                        parse_mode=ParseMode.HTML
-                    )
-                elif drop['type'] == 'valors':
-                    inv['valor'] = inv.get('valor', 0) + drop['amount']
-                    update_data['valor'] = getattr(player_obj, 'valor', 0) + drop['amount']
-                    await query.message.reply_text(
-                        drop['message'],
-                        parse_mode=ParseMode.HTML
-                    )
-                elif drop['type'] == 'crystals':
-                    inv['crystal'] = inv.get('crystal', 0) + drop['amount']
-                    update_data['crystal'] = getattr(player_obj, 'crystal', 0) + drop['amount']
-                    await query.message.reply_text(
-                        drop['message'],
-                        parse_mode=ParseMode.HTML
-                    )
-                update_data['inventory'] = inv
-                await db.update_player(user_id, update_data)
-            else:
-                # Fallback: just send message
-                if drop.get('image'):
-                    await query.message.reply_photo(
-                        photo=drop['image'],
-                        caption=drop['message'],
-                        parse_mode=ParseMode.HTML
-                    )
+            if drop is not None:
+                # Get player object
+                player_obj = await db.get_player(user_id)
+                if player_obj:
+                    inv = player_obj.inventory or {}
+                    update_data = {}
+                    if drop['type'] in ['bottle', 'cylinder']:
+                        inv['gas'] = inv.get('gas', 0) + drop['amount']
+                        update_data['gas'] = getattr(player_obj, 'gas', 0) + drop['amount']
+                        await query.message.reply_photo(
+                            photo=drop['image'],
+                            caption=drop['message'],
+                            parse_mode=ParseMode.HTML
+                        )
+                    elif drop['type'] == 'valors':
+                        inv['valor'] = inv.get('valor', 0) + drop['amount']
+                        update_data['valor'] = getattr(player_obj, 'valor', 0) + drop['amount']
+                        await query.message.reply_text(
+                            drop['message'],
+                            parse_mode=ParseMode.HTML
+                        )
+                    elif drop['type'] == 'crystals':
+                        inv['crystal'] = inv.get('crystal', 0) + drop['amount']
+                        update_data['crystal'] = getattr(player_obj, 'crystal', 0) + drop['amount']
+                        await query.message.reply_text(
+                            drop['message'],
+                            parse_mode=ParseMode.HTML
+                        )
+                    update_data['inventory'] = inv
+                    await db.update_player(user_id, update_data)
                 else:
-                    await query.message.reply_text(
-                        drop['message'],
-                        parse_mode=ParseMode.HTML
-                    )
+                    # Fallback: just send message
+                    if drop.get('image'):
+                        await query.message.reply_photo(
+                            photo=drop['image'],
+                            caption=drop['message'],
+                            parse_mode=ParseMode.HTML
+                        )
+                    else:
+                        await query.message.reply_text(
+                            drop['message'],
+                            parse_mode=ParseMode.HTML
+                        )
     except Exception:
         pass
 

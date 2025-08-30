@@ -354,53 +354,61 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, f"{character_name} doesn't have enough gas to explore (needs at least 100). Current: {gas}")
         return
     
-    # Check for captcha with lower probability (3% instead of 4%)
-    if random.random() < 0.03 and not context.user_data.get('captcha_active', False):
+    # Check for captcha with lower probability 
+    if random.random() < 0.02 and not context.user_data.get('captcha_active', False):
         t0 = time.time()
         captcha_triggered = await spawn_captcha(update, context)
         if captcha_triggered:
             return
 
-    # Check for verification requirement
+    # Check for verification requirement (only if not recently checked)
     now = time.time()
-    player_verified = getattr(player, "hcaptcha_verified", False)
-    last_explore = getattr(player, "last_explore_time", None)
-    explore_start_time = getattr(player, "explore_start_time", None)
+    last_verification_check = context.user_data.get("last_verification_check", 0)
+    
+    if now - last_verification_check > 300:  # Only check every 5 minutes
+        player_verified = getattr(player, "hcaptcha_verified", False)
+        last_explore = getattr(player, "last_explore_time", None)
+        explore_start_time = getattr(player, "explore_start_time", None)
 
-    if context.user_data.get("hcaptcha_prompted", False):
-        t0 = time.time()
-        player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-        player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
-        last_verified_fresh = getattr(player_fresh, "last_verified", 0)
-        now_fresh = time.time()
-        if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
-            context.user_data["hcaptcha_prompted"] = False
-            await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
-            await db.update_player(user_id_str, {"hcaptcha_verified": True})
-            player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
+        if context.user_data.get("hcaptcha_prompted", False):
+            t0 = time.time()
+            player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
+            player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
+            last_verified_fresh = getattr(player_fresh, "last_verified", 0)
+            now_fresh = time.time()
+            if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
+                context.user_data["hcaptcha_prompted"] = False
+                await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
+                await db.update_player(user_id_str, {"hcaptcha_verified": True})
+                player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
+            else:
+                await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
+                return
+
+        if not explore_start_time:
+            # Use background update for initial timestamp
+            asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": now}))
         else:
-            await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-            return
+            if (now - explore_start_time) > 1500:
+                # Reset timer in background
+                asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": None}))
+                last_verified_time = getattr(player, "last_verified", 0)
+                if not last_verified_time or (now - last_verified_time) > 1800:
+                    t0 = time.time()
+                    if await _handle_verification(update, context, user_id, now, db):
+                        return
+            else:
+                # Update timer in background
+                asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": now}))
 
-    if not explore_start_time:
-        asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
-    else:
-        if (now - explore_start_time) > 1500:
-            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": None}))
+        if last_explore and (now - last_explore) > 1800:
             last_verified_time = getattr(player, "last_verified", 0)
             if not last_verified_time or (now - last_verified_time) > 1800:
                 t0 = time.time()
                 if await _handle_verification(update, context, user_id, now, db):
                     return
-        else:
-            asyncio.create_task(db.update_player(user_id_str, {"last_explore_time": now, "explore_start_time": now}))
-
-    if last_explore and (now - last_explore) > 1800:
-        last_verified_time = getattr(player, "last_verified", 0)
-        if not last_verified_time or (now - last_verified_time) > 1800:
-            t0 = time.time()
-            if await _handle_verification(update, context, user_id, now, db):
-                return
+        
+        context.user_data["last_verification_check"] = now
     
     # Generate titan instantly (from cache)
     titan_data = CACHED_TITANS.get(f"{player_level}_{DIFFICULTY_BY_LEVEL.get(player_level, 'Hard')}")
@@ -451,6 +459,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         min_level_requirement=titan_data['min_level_requirement']
     )
     
+    # Record response time BEFORE background processing
+    response_time = (time.time() - start_time) * 1000
+    logger.info(f"Explore response time: {response_time:.1f}ms")
+    
+    # Store titan in background (don't wait)
     store_titan_task = asyncio.create_task(
         db.store_titan(user_id_str, titan)
     )
@@ -461,10 +474,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
         return
-    
-    # Record response time
-    response_time = (time.time() - start_time) * 1000
-    logger.info(f"Explore response time: {response_time:.1f}ms")
     
     # Run ALL background processing asynchronously
     # We don't await this - it runs completely in the background
