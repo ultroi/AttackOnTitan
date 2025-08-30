@@ -726,15 +726,32 @@ class Database:
             logger.error(f"Failed to get character abilities: {e}")
             raise
 
-    async def get_character_level(self, user_id: int, character_name: str) -> int:
+    async def get_character_fresh(self, user_id: int, character_name: str) -> Optional[Character]:
+        """Get character directly from database, bypassing cache for critical operations."""
         try:
-            character = await self.characters.find_one(
-                {"user_id": str(user_id), "name": character_name},
-                {"level": 1}
-            )
-            return character.get('level', 1) if character else 1
+            # Use projection for faster reads - include only essential fields for explore
+            character_data = await self.characters.find_one({
+                "user_id": str(user_id),
+                "name": character_name
+            }, {
+                "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
+                "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
+            })
+            
+            if character_data:
+                character = Character(**character_data)
+                
+                # Update cache with fresh data
+                if CACHE_ENABLED:
+                    cache_key = f"character_{user_id}_{character_name}"
+                    CHARACTER_CACHE[cache_key] = {
+                        "character": character,
+                        "timestamp": time.time()
+                    }
+                return character
+            return None
         except Exception as e:
-            logger.error(f"Failed to get character level: {e}")
+            logger.error(f"Failed to get fresh character: {e}")
             raise
 
 

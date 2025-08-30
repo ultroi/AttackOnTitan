@@ -766,24 +766,29 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     team_member = player_data['team'][0]
     character_name = team_member['character_name'] if isinstance(team_member, dict) else team_member
     
-    # Get character data (from cache or database)
-    character_task = None
-    if not battle_cache.get("character"):
-        character_task = db.get_character(user_id, character_name)
+    # Invalidate character cache BEFORE starting battle to ensure fresh HP data
+    db.invalidate_character_cache(user_id, character_name)
     
-    if character_task:
-        character = await character_task
+    # Get character data FRESH from database (bypass cache for battle start)
+    try:
+        character = await db.get_character_fresh(user_id, character_name)
+        if not character:
+            await query.edit_message_text(f"Error: Character {character_name} not found.")
+            return
         battle_cache["character"] = character
-    else:
-        character = battle_cache["character"]
+    except Exception as e:
+        logger.error(f"Failed to get character {character_name} for user {user_id}: {e}")
+        await query.edit_message_text(f"Error: Could not load character data.")
+        return
     
     # Validate character
     if not character:
         await query.edit_message_text(f"Error: Character {character_name} not found.")
         return
     
-    # Ensure character HP doesn't exceed maximum
-    if character.current_hp > character.stats.HP:
+    # Ensure character HP is valid and not from old cache
+    if character.current_hp <= 0 or character.current_hp > character.stats.HP:
+        logger.warning(f"Character {character_name} has invalid HP ({character.current_hp}), resetting to max")
         character.current_hp = character.stats.HP
     
     # Create player object and battle system

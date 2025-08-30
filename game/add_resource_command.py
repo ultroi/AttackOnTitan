@@ -3,6 +3,8 @@ from telegram.ext import ContextTypes, CommandHandler
 from utils.owners import get_owner_ids
 from utils.mod_utils import is_mod
 from database.db import Database
+from config import TRANSACTION_LOG_CHANNEL
+from telegram.constants import ParseMode
 import logging
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         
         # Handle level increase
         if target_level > character.level:
+            old_level = character.level
             level_ups = []
             while character.level < target_level:
                 result = character.level_up()
@@ -96,12 +99,44 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await db.update_character(character)
             if message:
                 await message.reply_text(f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
+            
+            # Log the character level up
+            admin_name = user.first_name or "Admin"
+            log_msg = (
+                f"<b>#CharacterLevelUp</b>\n\n"
+                f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+                f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+                f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+                f"<b>Character</b>: <code>{char_name}</code>\n"
+                f"<b>Level Change</b>: <code>{old_level} → {character.level}</code>\n"
+                f"<b>Levels Added</b>: <code>{len(level_ups)}</code>"
+            )
+            try:
+                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Failed to send character level up log: {e}")
         # Handle level decrease
         else:
+            old_level = character.level
             character.level = max(1, target_level)  # Ensure level doesn't go below 1
             await db.update_character(character)
             if message:
                 await message.reply_text(f"Character '{char_name}' level set to {character.level}.")
+            
+            # Log the character level decrease
+            admin_name = user.first_name or "Admin"
+            log_msg = (
+                f"<b>#CharacterLevelDown</b>\n\n"
+                f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+                f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+                f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+                f"<b>Character</b>: <code>{char_name}</code>\n"
+                f"<b>Level Change</b>: <code>{old_level} → {character.level}</code>"
+            )
+            try:
+                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Failed to send character level down log: {e}")
         return
 
     # --- Default: player resource/level add ---
@@ -169,6 +204,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         
         # Handle level increase
         if target_level > player.level:
+            old_level = player.level
             level_ups = []
             while player.level < target_level:
                 level_up_data = player.level_up()
@@ -176,16 +212,68 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await db.update_player(target_user_id_int, player.dict())
             if message:
                 await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
+            
+            # Log the player level up
+            admin_name = user.first_name or "Admin"
+            log_msg = (
+                f"<b>#PlayerLevelUp</b>\n\n"
+                f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+                f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+                f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+                f"<b>Level Change</b>: <code>{old_level} → {player.level}</code>\n"
+                f"<b>Levels Added</b>: <code>{len(level_ups)}</code>"
+            )
+            try:
+                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Failed to send player level up log: {e}")
             return
         # Handle level decrease
         else:
+            old_level = player.level
             # Simple approach - just set the level directly
             player.level = max(1, target_level)  # Ensure level doesn't go below 1
             await db.update_player(target_user_id_int, {"level": player.level})
             if message:
                 await message.reply_text(f"User {target_user_id_int} level set to {player.level}.")
+            
+            # Log the player level decrease
+            admin_name = user.first_name or "Admin"
+            log_msg = (
+                f"<b>#PlayerLevelDown</b>\n\n"
+                f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+                f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+                f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+                f"<b>Level Change</b>: <code>{old_level} → {player.level}</code>"
+            )
+            try:
+                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Failed to send player level down log: {e}")
             return
     await db.update_player(target_user_id_int, update_data)
+    
+    # Log the resource change
+    admin_name = user.first_name or "Admin"
+    action = "Added" if amount >= 0 else "Deducted"
+    preposition = "to" if amount >= 0 else "from"
+    display_amount = abs(amount)
+    
+    log_msg = (
+        f"<b>#ResourceChange</b>\n\n"
+        f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+        f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+        f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+        f"<b>Action</b>: <code>{action}</code>\n"
+        f"<b>Resource</b>: <code>{resource}</code>\n"
+        f"<b>Amount</b>: <code>{display_amount}</code>\n"
+        f"<b>Direction</b>: <code>{preposition} user</code>"
+    )
+    try:
+        await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.error(f"Failed to send resource change log: {e}")
+    
     if message:
         action_verb = "Added" if amount >= 0 else "Deducted"
         display_amount = abs(amount)  # Use absolute value for display
