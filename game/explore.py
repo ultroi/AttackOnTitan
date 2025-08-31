@@ -19,8 +19,7 @@ from game.stats_command import track_explore_stats
 
 # Import mission-related functions
 from database.missions import (
-    check_mission_item_drops, add_mission_item, 
-    process_travel_mission_progress, process_explore_mission_progress
+    check_mission_item_drops, add_mission_item
 )
 
 logger = logging.getLogger(__name__)
@@ -659,10 +658,6 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         
         if not player_verified:
             update_data["explore_start_time"] = time.time()
-        
-        # Handle mission progress updates
-        location = getattr(player, 'location', None)
-        mission_updates = await process_explore_mission_progress(db, player, location)
         
         # Track explore stats (fire-and-forget, no blocking)
         asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
