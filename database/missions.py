@@ -78,7 +78,7 @@ MISSION_DEFINITIONS = [
         description="Accumulate wealth by defeating Titans to fund your expeditions.",
         requirement="Earn 10,000 Marks by defeating Titans",
         required_progress=10000,
-        reward_description="5 Training Dummies",
+        reward_description="2 Training Dummies",
         rewards={"items": {"training_dummy": 2}},
     ),
     Mission(

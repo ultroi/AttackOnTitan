@@ -36,7 +36,7 @@ class BattleSystem:
             if self.character.equipped_weapon in shop_items:
                 item = shop_items[self.character.equipped_weapon]
                 # Allow using gear and military items as weapons
-                if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"]:
+                if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"] and hasattr(item, 'attributes'):
                     return item
             else:
                 pass
@@ -1048,7 +1048,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 battle.gas -= 20  
                 battle.character_gas = battle.gas
                 
-                if weapon:
+                if weapon and hasattr(weapon, 'attributes') and isinstance(weapon.attributes, dict):
                     # Enhanced weapon attack calculation with all stats
                     weapon_damage_min = int(weapon.attributes.get("damage_min", 10))
                     weapon_damage_max = int(weapon.attributes.get("damage_max", 20))

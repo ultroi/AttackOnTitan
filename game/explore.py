@@ -54,7 +54,8 @@ for lvl in range(1, 126):
 # Rate limiting and locking for explore command
 user_last_explore: Dict[str, float] = {}
 user_explore_locks: Dict[str, asyncio.Lock] = {}
-TITAN_TIMEOUT_SECONDS = 60 * 3  # 3 minutes
+user_timeout_tasks: Dict[str, asyncio.Task] = {}  # Track active timeout tasks
+TITAN_TIMEOUT_SECONDS = 60
 
 
 # # Titan type to image URL mapping
@@ -147,17 +148,18 @@ def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> 
     }
 
 
-async def _reply_error(update: Update, message: str):
-    """Helper to reply with error messages - simplified for speed."""
-    try:
-        # Faster implementation - directly check update.message
-        if update.message:
-            await update.message.reply_text(message)
-        # Fallback to callback query
-        elif update.callback_query:
-            await update.callback_query.answer(message)
-    except Exception:
-        pass
+async def cleanup_user_timeout_tasks():
+    """Clean up completed timeout tasks to prevent memory leaks"""
+    to_remove = []
+    for user_id_str, task in user_timeout_tasks.items():
+        if task.done():
+            to_remove.append(user_id_str)
+    
+    for user_id_str in to_remove:
+        del user_timeout_tasks[user_id_str]
+    
+    if to_remove:
+        logger.info(f"Cleaned up {len(to_remove)} completed timeout tasks")
 
 
 
@@ -306,11 +308,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id_str = str(user_id)
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
     
-    # Rate limiting check (in-memory only)
-    now_ms = time.time()
-    if now_ms - user_last_explore.get(user_id_str, 0) < 1.0:
-        return
-    user_last_explore[user_id_str] = now_ms
+    # Periodic cleanup of completed timeout tasks (every 100 explores)
+    if len(user_timeout_tasks) > 0 and random.random() < 0.01:  # 1% chance
+        asyncio.create_task(cleanup_user_timeout_tasks())
     
     # Battle check (fastest possible)
     if _is_in_battle(user_id_str):
@@ -357,7 +357,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    # 3. Check spam count
+    # 3. Fetch character to get correct level BEFORE generating titan
+    try:
+        character = await db.get_character(user_id_str, character_name)
+    except Exception as db_error:
+        logger.error(f"Database error fetching character for {user_id_str}: {db_error}")
+        await _reply_error(update, "Database error occurred. Please try again later.")
+        return
+    
+    if not character:
+        logger.info(f"Character {character_name} not found for player {user_id_str}")
+        await _reply_error(update, f"Character '{character_name}' not found. Please check your team setup.")
+        return
+    
+    # Get actual player level from character
+    actual_player_level = character.level if character and hasattr(character, 'level') else 1
+    
+    # 4. Check spam count
     if "explore_spam_count" not in context.bot_data:
         context.bot_data["explore_spam_count"] = {}
     
@@ -375,30 +391,47 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You are temporarily blocked due to spamming. Please wait before using /explore again.")
         return
     
-    # 4. Check hCaptcha verification - ALWAYS get fresh data
-    try:
-        fresh_player = await db.get_player(user_id_str)
-        if not fresh_player:
-            await _reply_error(update, "Player data not found. Please try again.")
-            return
-        player_verified = getattr(fresh_player, "hcaptcha_verified", False)
-        logger.info(f"Fresh verification check for user {user_id_str}: verified={player_verified}")
-    except Exception as e:
-        logger.error(f"Failed to get fresh player data for verification: {e}")
-        await _reply_error(update, "Database error occurred. Please try again later.")
-        return
+    # 4. Check hCaptcha verification - OPTIMIZED: Use cached verification status first
+    now = time.time()
+    user_verified = False
+    
+    # Check cached verification status first (much faster)
+    if context.user_data and context.user_data.get("hcaptcha_verified", False):
+        last_check = context.user_data.get("last_verification_check", 0)
+        if now - last_check < 300:  # Cache for 5 minutes
+            user_verified = True
+            logger.info(f"Using cached verification for user {user_id_str}")
+    
+    # If not cached or cache expired, check database
+    if not user_verified:
+        try:
+            fresh_player = await db.get_player(user_id_str)
+            if fresh_player:
+                player_verified = getattr(fresh_player, "hcaptcha_verified", False)
+                last_verified_time = getattr(fresh_player, "last_verified", 0)
+                
+                # Update cache
+                if context.user_data:
+                    context.user_data["hcaptcha_verified"] = player_verified
+                    context.user_data["last_verification_check"] = now
+                
+                user_verified = player_verified
+                logger.info(f"Fresh verification check for user {user_id_str}: verified={player_verified}")
+            else:
+                logger.warning(f"Player {user_id_str} not found during verification check")
+        except Exception as e:
+            logger.error(f"Failed to get fresh player data for verification: {e}")
     
     # Block exploration if not verified
-    if not player_verified:
-        verification_handled = await _handle_verification(update, context, user_id, time.time(), db)
+    if not user_verified:
+        verification_handled = await _handle_verification(update, context, user_id, now, db)
         if verification_handled:
             return  
         
-    # Generate titan instantly with default level BEFORE DB fetch
-    default_player_level = 1  # Use default level for initial generation
+    # Generate titan instantly with correct level
     titan_variations = []
     for offset in [-1, 0, 1]:
-        lvl = max(1, min(125, default_player_level + offset))
+        lvl = max(1, min(125, actual_player_level + offset))
         titan_variations.extend(TITAN_POOL[lvl])
     
     titan_data = random.choice(titan_variations)
@@ -452,14 +485,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(_validate_and_process(
         update, context, user_id, user_id_str, username, db, player_future, 
         titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
-        reply_markup, send_message_task, start_time
+        reply_markup, send_message_task, start_time, actual_player_level
     ))
 
 
 
 async def _validate_and_process(update, context, user_id, user_id_str, username, db, player_future, 
                                titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
-                               reply_markup, send_message_task, start_time):
+                               reply_markup, send_message_task, start_time, actual_player_level):
     """Validate player and process explore command in background"""
     try:
         # Handle database errors gracefully
@@ -514,12 +547,6 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
             await _reply_error(update, f"Character '{character_name}' not found. Please check your team setup.")
             return
         
-        actual_player_level = character.level if character and hasattr(character, 'level') else 1
-        default_player_level = 1
-        
-        # Check if we need to regenerate titan with correct level
-        needs_regeneration = abs(actual_player_level - default_player_level) > 1
-        
         # Additional validations that need character data
         if hasattr(character, 'level') and character.level < 1:
             logger.warning(f"Player {user_id_str} has invalid level: {character.level}")
@@ -532,49 +559,6 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
             asyncio.create_task(spawn_captcha(update, context))
 
         # NOTE: Verification check is now done upfront in explore()
-        
-        if needs_regeneration:
-            # Regenerate titan with correct level
-            titan_variations_correct = []
-            for offset in [-1, 0, 1]:
-                lvl = max(1, min(125, actual_player_level + offset))
-                titan_variations_correct.extend(TITAN_POOL[lvl])
-            
-            titan_data = random.choice(titan_variations_correct)
-            titan_name = titan_data["name"]
-            titan_level = titan_data["level"]
-            titan_max_hp = titan_data["max_hp"]
-            titan_xp = titan_data["xp_reward"]
-            difficulty = titan_data["difficulty"]
-            
-            # Update image
-            titan_key = titan_name.lower().replace(" titan", "")
-            if titan_key in TITAN_TYPE_IMAGE_URLS:
-                titan_image_url = TITAN_TYPE_IMAGE_URLS[titan_key]
-            else:
-                titan_image_url = random.choice(list(TITAN_TYPE_IMAGE_URLS.values()))
-            
-            # Update message with correct titan data
-            image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
-            updated_reply_text = format_titan_message(
-                name=titan_name,
-                level=titan_level,
-                image_embed=image_embed
-            )
-            
-            # Wait for original message to be sent, then edit it
-            try:
-                sent_message = await send_message_task
-                asyncio.create_task(
-                    sent_message.edit_text(
-                        updated_reply_text,
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML,
-                        disable_web_page_preview=False
-                    )
-                )
-            except Exception as e:
-                logger.error(f"Failed to edit titan message: {e}")
 
         # Wait for message to be sent if not already
         try:
@@ -655,8 +639,26 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         # Handle travel progress
         await _handle_travel_progress(update, context, user_id_str, db, player)
         
-        # Start titan encounter timeout
-        asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+        # Cancel any existing timeout task first and clean up previous titan
+        user_id_str = str(user_id)
+        if user_id_str in user_timeout_tasks:
+            existing_task = user_timeout_tasks[user_id_str]
+            if not existing_task.done():
+                existing_task.cancel()
+                logger.info(f"Cancelled existing timeout task for user {user_id}")
+        
+        # Clean up any existing titan from previous explore
+        try:
+            existing_titan = await db.get_titan(user_id_str)
+            if existing_titan:
+                await db.delete_titan(user_id_str)
+                logger.info(f"Cleaned up existing titan for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error cleaning up existing titan for user {user_id}: {e}")
+        
+        # Start new timeout task
+        timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+        user_timeout_tasks[user_id_str] = timeout_task
         
         # Single batched update for all player data changes
         if update_data:
@@ -805,6 +807,7 @@ async def _handle_spam_ban(user_id, update, context):
 # Keep existing timeout and other helper functions...
 async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
     """Handle titan encounter timeout with proper cleanup - optimized for async efficiency"""
+    user_id_str = str(user_id)
     try:
         # Record the start time to check if new explore commands happened during the timeout
         start_time = time.time()
@@ -814,13 +817,12 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         logger.info(f"Titan timeout completed for user {user_id} after {TITAN_TIMEOUT_SECONDS} seconds")
         
-        # Fast-fail conditions - check these first to exit early if possible
-        user_id_str = str(user_id)
-        
         # Check if user has explored since this timeout was created
         last_explore_time = user_last_explore.get(user_id_str, 0)
+        time_diff = last_explore_time - start_time
+        logger.info(f"Timeout check for user {user_id}: last_explore={last_explore_time}, start_time={start_time}, diff={time_diff}")
         if last_explore_time > start_time:
-            logger.info(f"User {user_id} explored again, cancelling timeout")
+            logger.info(f"User {user_id} explored again, cancelling timeout (diff: {time_diff}s)")
             return
         
         # Check if user is in battle - no need to do anything if so
@@ -887,6 +889,7 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
             mock_update = MockUpdate(user_id, context)
             await _handle_spam_ban(user_id, mock_update, context)
             return
+        
         # Get battle ID info to compare later
         battle_id_key = f"active_battle_id_{user_id}"
         current_battle_id = context.bot_data.get(battle_id_key)
@@ -925,10 +928,15 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
             await asyncio.gather(*tasks, return_exceptions=True)
                         
     except asyncio.CancelledError:
-        # Task was cancelled - this is expected behavior
+        # Task was cancelled - this is expected behavior when user explores again
+        logger.info(f"Titan timeout cancelled for user {user_id} (user explored again)")
         pass
     except Exception as e:
         logger.error(f"Error in titan_encounter_timeout: {e}", exc_info=True)
+    finally:
+        # Clean up the task reference when done
+        if user_id_str in user_timeout_tasks:
+            del user_timeout_tasks[user_id_str]
 
 
 async def check_spam_count(update: Update, context: ContextTypes.DEFAULT_TYPE):

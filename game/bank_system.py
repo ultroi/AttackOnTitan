@@ -5,7 +5,7 @@ from database.models import BankAccount, Player
 
 # --- Constants ---
 BANK_OPEN_LEVEL = 15
-BANK_OPEN_FEE = {'marks': 5000, 'valor': 500}
+BANK_OPEN_FEE = {'marks': 5000, 'valor': 50}
 ## DEPOSIT_CAPS removed: No weekly deposit cap
 PENALTY_BASE = 2.5
 PENALTY_DAILY_INCREASE = 1.5

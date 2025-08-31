@@ -87,9 +87,11 @@ class PvPBattleSystem:
         self.defender_player = defender_player
         self.challenge_id = challenge_id
         
+        # Reset HP to full for fair PVP battles
+        self.challenger_hp: int = challenger.stats.HP
+        self.defender_hp: int = defender.stats.HP
+        
         # Initialize battle state
-        self.challenger_hp: int = challenger.current_hp
-        self.defender_hp: int = defender.current_hp
         self.challenger_gas: int = challenger.gas
         self.defender_gas: int = defender.gas
         
