@@ -202,7 +202,7 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             for msg in progress_notifications:
                 if user_id:
                     try:
-                        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.HTML)
+                        await context.bot.send_message(chat_id=user_id, text=msg, parse_mode=ParseMode.MARKDOWN)
                     except Exception as e:
                         logger.error(f"Failed to send private mission completion message: {e}")
         
@@ -314,7 +314,7 @@ def format_mission_14_progress(player, max_count=500):
     explore_counts = getattr(player, "area_explore_counts", {}) or {}
     lines = []
     completed_areas = 0
-    
+
     for area in AREAS:
         count = explore_counts.get(area, 0)
         if count >= max_count:
@@ -323,9 +323,9 @@ def format_mission_14_progress(player, max_count=500):
         else:
             status = f"{count}/{max_count}"
         lines.append(f"• {area}: {status}")
-        
+
     # Add summary line
-    lines.append(f"\n<b>Progress:</b> {completed_areas}/{len(AREAS)} areas completed")
+    lines.append(f"\nProgress: {completed_areas}/{len(AREAS)} areas completed")
     return "\n".join(lines)
 
 async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 

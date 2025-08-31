@@ -289,8 +289,9 @@ async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # Hook into the explore command to track statistics
 async def track_explore_stats(user_id: str, name: str, battle_completed: bool = False):
-    """Track explore statistics for a user"""
+    """Track explore statistics for a user - fully fire-and-forget"""
     try:
-        await update_explorer_stats(user_id, name, battle_completed)
+        # Don't block on stats update - just fire and forget
+        asyncio.create_task(update_explorer_stats(user_id, name, battle_completed))
     except Exception as e:
         logger.error(f"Error tracking explore stats: {e}")

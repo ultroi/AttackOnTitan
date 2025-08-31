@@ -261,7 +261,7 @@ class BattleSystem:
         return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
     # ---------- Ability Usage ----------
-    def use_ability(self, ability_name: str) -> Tuple[int, str, Dict]:
+    def use_ability(self, ability_name: str) -> Tuple[int, str, Dict, bool]:
         """Use a character ability with gas cost and apply its effect."""
         # Invalidate keyboard cache since ability usage changes state
         self.keyboard_cache_invalid = True
@@ -273,12 +273,12 @@ class BattleSystem:
         
         # Fast-fail checks for critical dependencies
         if not self.character or not self.character.stats:
-            return damage, "Error: Character stats not available", effects
+            return damage, "Error: Character stats not available", effects, False
             
         # Get character data with early return for failures
         character_data = get_character_data(self.character.character_type)
         if not character_data:
-            return damage, "Error: Character abilities not found", effects
+            return damage, "Error: Character abilities not found", effects, False
             
         # Fast ability lookup using dictionary for speed
         ability_types = {
@@ -298,20 +298,16 @@ class BattleSystem:
                 break
                 
         if not ability:
-            return damage, f"Error: Ability {ability_name} not found", effects
+            return damage, f"Error: Ability {ability_name} not found", effects, False
             
         # Check cooldown and gas with early returns
         cooldown = self.ability_cooldowns.get(ability_name, 0)
         if cooldown > 0:
-            return damage, f"{ability_name} is on cooldown for {cooldown} turns!", effects
+            return damage, f"{ability_name} is on cooldown for {cooldown} turns!", effects, False
             
         gas_cost = ability.gas_cost or 20
         if self.gas < gas_cost:
-            return damage, f"Not enough gas to use {ability_name}!", effects
-            
-        # Apply gas cost
-        self.gas -= gas_cost
-        self.character_gas = self.gas  # Sync with character
+            return damage, f"out of gas refill it by /char {self.character.name}", effects, True
         
         # Build context with enhanced INT-based damage calculation
         ctx = self.build_context("ability_use", ability)
@@ -331,7 +327,7 @@ class BattleSystem:
                     
                     # Show INT contribution in ability message if damage was enhanced
                     if int_damage_bonus > 0:
-                        message += f" [INT bonus: +{int_damage_bonus} damage]"
+                        pass
                     
                     # Optimized effects extraction with defaults
                     effects = {
@@ -341,11 +337,11 @@ class BattleSystem:
                     }
         except Exception as e:
             logger.error(f"Error applying ability {ability_name}: {e}")
-            return damage, f"Error using {ability_name}", effects
+            return damage, f"Error using {ability_name}", effects, False
             
         # Set cooldown and return
         self.ability_cooldowns[ability_name] = ability.cooldown or 1
-        return damage, message, effects
+        return damage, message, effects, False
 
     def has_usable_abilities(self) -> bool:
         """Check if character has any usable (off-cooldown, enough gas) abilities."""
@@ -616,7 +612,7 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
                 )])
             elif gas_cost > 0:  # Implies battle.gas < gas_cost from earlier condition
                 keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"⛽ {prefix} {ability_display_name} (Need {gas_cost} gas)"),
+                    obfuscate_text(f"⛽ {prefix} {ability_display_name} (out of gas)"),
                     callback_data=f"lowgas_{ability.name}"
                 )])
     
@@ -653,10 +649,10 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
             # Get the appropriate emoji based on item type
             item_type = getattr(weapon, 'type', 'weapon')
             item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-            button_text = f"⛽ {item_emoji} {weapon.name} (Low Gas)"
+            button_text = f"⛽ {item_emoji} {weapon.name} (out of gas)"
             keyboard.append([InlineKeyboardButton(obfuscate_text(button_text), callback_data="lowgas_basic_attack")])
         else:
-            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (Low Gas)"), callback_data="lowgas_basic_attack")])
+            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (out of gas)"), callback_data="lowgas_basic_attack")])
     
     # Add run button
     keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
@@ -985,30 +981,11 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         elif action.startswith("lowgas_"):
             ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
             if ability_name == "basic_attack":
-                await query.answer("Not enough gas for basic attack! You need at least 20 gas.", show_alert=True)
+                await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
             else:
-                # Optimize ability gas cost lookup
-                gas_cost = 20  # Default value
-                character_data = get_character_data(battle.character.character_type)
-                if character_data:
-                    # Flatten the search
-                    all_abilities = []
-                    for ability_type in ["active", "passive", "ultimate"]:
-                        all_abilities.extend(getattr(character_data, f"{ability_type}_abilities", []))
-                    
-                    # Find the ability directly
-                    for ability in all_abilities:
-                        if ability and ability.name == ability_name:
-                            gas_cost = ability.gas_cost or 20
-                            break
-                
-                await query.answer(f"Not enough gas to use {ability_name}! You need {gas_cost} gas.", show_alert=True)
+                await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
             return
         
-        # We'll answer the callback inside handle_battle_action now
-        # Removed query.answer() from here to prevent duplicate answers
-        
-        # Initialize battle tracking variables
         full_message = []
         effects = {}
         
@@ -1070,7 +1047,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
-                battle.gas -= 20
+                # battle.gas -= 20  # Removed gas deduction
                 battle.character_gas = battle.gas
                 
                 if weapon:
@@ -1120,12 +1097,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
                     
                     # Show stat contributions in attack message
-                    stat_breakdown = f" [ATK:{atk_bonus}"
-                    if int_multiplier > 1.0:
-                        stat_breakdown += f" INT:+{int((int_multiplier-1)*100)}%"
-                    stat_breakdown += "]"
-                    
-                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage{crit_text}{multi_text}{stat_breakdown}!")
+                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage{crit_text}{multi_text}!")
                 else:
                     # Enhanced basic attack calculation with all stats
                     base_damage = max(10, battle.character.stats.ATK + random.randint(15, 25))
@@ -1151,22 +1123,18 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                     battle.titan_hp = max(0, battle.titan_hp - total_damage)
                     
                     # Show stat contributions
-                    stat_breakdown = f" [ATK:{battle.character.stats.ATK}"
-                    if spd_damage_bonus > 0:
-                        stat_breakdown += f" SPD:{spd_damage_bonus}"
-                    if int_damage_bonus > 0:
-                        stat_breakdown += f" INT:{int_damage_bonus}"
-                    stat_breakdown += "]"
-                    
-                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage{crit_text}{stat_breakdown}!")
+                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage{crit_text}!")
             else:
-                # Not enough gas case
-                message = f"❌ {battle.character.name} doesn't have enough gas for {'weapon' if weapon else 'basic'} attack!"
-                full_message.append(message)
+                # Not enough gas case - end battle immediately
+                message = f"out of gas refill it by /char {battle.character.name}"
+                battle.battle_ended = True
+                await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+                cleanup_battle(user_id, "out_of_gas")
+                return
         
         elif action.startswith("ability_"):
             # Handle ability use with optimized function
-            damage, message, effects = battle.use_ability(action[8:])
+            damage, message, effects, battle_end = battle.use_ability(action[8:])
             battle.character_gas = battle.gas
             full_message.append(message)
             
@@ -1177,29 +1145,18 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 full_message.append("Titan switched targets!")
             if effects.get("bleed_applied"):
                 full_message.append("Titan is bleeding!")
+            
+            # If battle should end due to out of gas, end it immediately
+            if battle_end:
+                battle.battle_ended = True
+                await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+                cleanup_battle(user_id, "out_of_gas")
+                return
         
         # Check for battle end conditions - titan defeated
         if battle.titan_hp <= 0:
             battle.battle_ended = True
             await handle_battle_end(query, battle, user_id, context)
-            return
-        
-        # Check for out-of-gas condition (optimized with simplified logic)
-        min_ability_cost = float('inf')
-        has_unlocked_passive = False
-        
-        for ability in battle.character.passive_abilities or []:
-            if getattr(ability, 'unlocked', False):
-                has_unlocked_passive = True
-                gas_cost = getattr(ability, 'gas_cost', float('inf'))
-                min_ability_cost = min(min_ability_cost, gas_cost)
-        
-        if has_unlocked_passive and battle.gas < min_ability_cost:
-            await query.edit_message_text(f"{battle.character.name} is out of gas and cannot continue the battle!")
-            # Clear titan cache before cleanup
-            if f"last_titan_data_{user_id}" in context.bot_data:
-                del context.bot_data[f"last_titan_data_{user_id}"]
-            cleanup_battle(user_id, "out_of_gas")
             return
         
         # Process titan's turn if character still alive
@@ -1236,22 +1193,20 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         # Get battle status once
         status = battle.get_battle_status()
         
-        # Build message with array join (faster than string concatenation)
         message_parts = [
             "<b>⚔️ BATTLE ⚔️</b>\n",
-            "\n".join(full_message),  # Join messages with newlines for better readability
-            "",  # Empty line for spacing
+            "\n".join(full_message),
+            "", 
             f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
             f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
             f"{status['titan_bar']}",
-            "",  # Empty line for spacing
+            "",  
             f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
             f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
             f"{status['character_bar']}",
             f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
         ]
         
-        # Join all parts at once (much faster than += concatenation)
         battle_message = "\n".join(message_parts)
     
         # Edit message with all content at once - safely
@@ -1274,11 +1229,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             except (TypeError, AttributeError):
                 # If message type is not compatible, skip editing
                 pass
-            # Don't send a new message even if edit fails - silently continue with the battle
         except ImportError:
             # Fallback to direct edit
             try:
-                # Add a small randomization to the message
+                
                 random_pos = random.randint(0, len(battle_message)-1)
                 modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
                 
@@ -1414,16 +1368,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         }
         update_tasks.append(db.batch_update_character(str(battle.character.user_id), battle.character.name, character_update_data))
 
-        # Player update task (batch all increments)
-        # Get current values from fresh player data to avoid overwriting inventory
-        current_crystal = getattr(fresh_player, 'crystal', 0) if fresh_player else player_obj.crystal
-        current_valor = getattr(fresh_player, 'valor', 0) if fresh_player else player_obj.valor  
-        current_marks = getattr(fresh_player, 'marks', 0) if fresh_player else player_obj.marks
-        
+        # Player update task - simple approach
+        # player_obj has level up rewards added, add battle rewards too
         player_update_data = {
-            "crystal": max(0, current_crystal + rewards["crystal"]),
-            "valor": max(0, current_valor + rewards["valor"]),
-            "marks": max(0, current_marks + rewards["marks"]),
+            "crystal": max(0, player_obj.crystal + rewards["crystal"]),
+            "valor": max(0, player_obj.valor + rewards["valor"]),
+            "marks": max(0, player_obj.marks + rewards["marks"]),
             "explore_count": getattr(fresh_player, 'explore_count', 0) + 1 if fresh_player else 1,
             "xp": max(0, player_obj.xp),
             "total_xp": max(0, player_obj.total_xp),
@@ -1552,7 +1502,7 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         if all_notifications:
             for notification in all_notifications[:2]:  # Limit to 2 notifications
                 try:
-                    await send_func(chat_id, notification, parse_mode=ParseMode.HTML)
+                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
                 except Exception as e:
                     logger.error(f"Error sending mission notification: {e}")
 
@@ -1566,7 +1516,7 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                         success, msg = result
                         if success and msg:
                             try:
-                                await send_func(chat_id, msg, parse_mode=ParseMode.HTML)
+                                await send_func(chat_id, msg, parse_mode=ParseMode.MARKDOWN)
                             except Exception as e:
                                 logger.error(f"Error sending mission item notification: {e}")
             except Exception as e:
@@ -1604,7 +1554,7 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         if explore_notifications:
             for notification in explore_notifications[:2]:
                 try:
-                    await send_func(chat_id, notification, parse_mode=ParseMode.HTML)
+                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
                 except Exception as e:
                     logger.error(f"Error sending defeat mission notification: {e}")
 

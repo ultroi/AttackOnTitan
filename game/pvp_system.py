@@ -1371,14 +1371,14 @@ async def handle_pvp_use_item(update: Update, context: ContextTypes.DEFAULT_TYPE
         defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
         
         # Add the "«" symbol to indicate whose turn it is
-        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
-        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
         
         # Format battle message with player's first name instead of character name
         battle_message = message
         
         # Replace character name with player's first name in the message
-        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):  
             battle_message = battle_message.replace(battle.defender.name, defender_first_name)
         else:
             battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
@@ -1459,11 +1459,11 @@ async def handle_pvp_back_to_battle(update: Update, context: ContextTypes.DEFAUL
         defender_player_name = battle.defender_player.name
         
         # Add the "«" symbol to indicate whose turn it is (ensure only one player has the indicator)
-        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
-        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
         
         # Ensure only one turn indicator is shown
-        if battle.current_turn == battle.challenger.name:
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
             defender_turn_indicator = ""
         else:
             challenger_turn_indicator = ""
@@ -1666,9 +1666,9 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         defender_player_name = battle.defender_player.name
         
         # Add the "«" symbol to indicate whose turn it is (only one at a time)
-        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
-        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
-        if battle.current_turn == battle.challenger.name:
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
             defender_turn_indicator = ""
         else:
             challenger_turn_indicator = ""
@@ -1829,27 +1829,27 @@ async def handle_pvp_ability(update: Update, context: ContextTypes.DEFAULT_TYPE,
         defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
         
         # Add the "«" symbol to indicate whose turn it is (ensure only one player has the indicator)
-        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
-        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
         
         # Ensure only one turn indicator is shown
-        if battle.current_turn == battle.challenger.name:
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
             defender_turn_indicator = ""
         else:
             challenger_turn_indicator = ""
             
         # Determine which player used the ability
         player_first_name = ""
-        if battle.current_turn == battle.challenger.name:
-            player_first_name = defender_first_name  # The player who just finished their turn
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
+            player_first_name = defender_first_name  
         else:
-            player_first_name = challenger_first_name  # The player who just finished their turn
+            player_first_name = challenger_first_name  
         
         # Format battle message with effects on separate lines
         battle_message = message
         
         # Replace character name with player's first name in the message
-        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):  # Turn just switched, so look at the opposite
             battle_message = battle_message.replace(battle.defender.name, defender_first_name)
         else:
             battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
@@ -1997,14 +1997,14 @@ async def handle_pvp_basic_attack(update: Update, context: ContextTypes.DEFAULT_
         defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
         
         # Add the "«" symbol to indicate whose turn it is
-        challenger_turn_indicator = " « Turn" if battle.current_turn == battle.challenger.name else ""
-        defender_turn_indicator = " « Turn" if battle.current_turn == battle.defender.name else ""
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
         
         # Format battle message with player's first name instead of character name
         battle_message = message
         
         # Replace character name with player's first name in the message
-        if battle.current_turn == battle.challenger.name:  # Turn just switched, so look at the opposite
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):  # Turn just switched, so look at the opposite
             battle_message = battle_message.replace(battle.defender.name, defender_first_name)
         else:
             battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
@@ -2333,7 +2333,7 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
             winner_player = await db.get_player(winner_id)
             if winner_player and hasattr(winner_player, "missions"):
                 # Check and update mission progress for PvP victories
-                mission_notifications = await process_pvp_mission_progress(db, winner_player, won=True)
+                mission_notifications = await process_pvp_mission_progress(db, winner_player, won=True, opponent_id=str(loser_id))
                 
                 # Send mission notifications if any
                 if mission_notifications:
@@ -2472,6 +2472,22 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                     }
                 }
             )
+            
+            # Process mission progress for PvP timeout win
+            winner_player = await db.get_player(winner_id)
+            if winner_player and hasattr(winner_player, "missions"):
+                mission_notifications = await process_pvp_mission_progress(db, winner_player, won=True, opponent_id=str(loser_id))
+                if mission_notifications:
+                    for notification in mission_notifications[:1]:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(winner_id),
+                                text=notification,
+                                parse_mode=ParseMode.MARKDOWN
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send private mission notification to winner on timeout: {e}")
+            
             # Update characters with final HP and gas - avoid duplicate parameters
             challenger_data = battle.challenger.dict()
             challenger_data['current_hp'] = battle.challenger_hp

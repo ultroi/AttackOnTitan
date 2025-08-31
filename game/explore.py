@@ -317,7 +317,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Get character name from first team member
     character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
     
-    # Start character query immediately - OPTIMIZED: only fetch gas field for validation
+    # Start character query immediately - gas no longer required for exploration
     character_future = db.get_character(user_id_str, character_name)
     
     # While character is being fetched, prepare other data that doesn't depend on it
@@ -330,25 +330,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Character fetch time: {char_time*1000:.1f}ms")
     
     player_level = character.level if character and hasattr(character, 'level') else 1
-    gas = character.gas if character and hasattr(character, 'gas') else 0
     
     # Quick validations that don't need DB
     if not character_name:
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    if gas < 100:
-        await _reply_error(update, f"{character_name} doesn't have enough gas to explore (needs at least 100). Current: {gas}")
-        return
     
-    # Check for captcha with lower probability 
+    
+    # Fast captcha check (background only)
     if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
-        t0 = time.time()
-        captcha_triggered = await spawn_captcha(update, context)
-        if captcha_triggered:
-            return
+        # Fire-and-forget captcha spawn
+        asyncio.create_task(spawn_captcha(update, context))
 
-    # Check for verification requirement (only if not recently checked)
+    # Quick verification check (only if needed)
     now = time.time()
     last_verification_check = context.user_data.get("last_verification_check", 0) if context.user_data else 0
     
@@ -357,45 +352,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         last_explore = getattr(player, "last_explore_time", None)
         explore_start_time = getattr(player, "explore_start_time", None)
 
-        if context.user_data and context.user_data.get("hcaptcha_prompted", False):
-            t0 = time.time()
-            player_fresh = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-            player_verified_fresh = getattr(player_fresh, "hcaptcha_verified", False)
-            last_verified_fresh = getattr(player_fresh, "last_verified", 0)
-            now_fresh = time.time()
-            if player_verified_fresh or (last_verified_fresh and (now_fresh - last_verified_fresh) < 600):
-                if context.user_data:
-                    context.user_data["hcaptcha_prompted"] = False
-                if update.message:
-                    await update.message.reply_text("✅ Verification confirmed! You can now continue exploring.")
-                await db.update_player(user_id_str, {"hcaptcha_verified": True})
-                player = await db.get_player(user_id_str, force_refresh=True) if hasattr(db, 'get_player') and 'force_refresh' in db.get_player.__code__.co_varnames else await db.get_player(user_id_str)
-            else:
-                await _reply_error(update, "Please complete the hCaptcha verification to continue exploring.")
-                return
-
-        if not explore_start_time:
-            # Use background update for initial timestamp
-            asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": now}))
-        else:
-            if (now - explore_start_time) > 1500:
-                # Reset timer in background
-                asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": None}))
-                last_verified_time = getattr(player, "last_verified", 0)
-                if not last_verified_time or (now - last_verified_time) > 1800:
-                    t0 = time.time()
-                    if await _handle_verification(update, context, user_id, now, db):
-                        return
-            else:
-                # Update timer in background
-                asyncio.create_task(db._background_update_player(user_id, {"last_explore_time": now, "explore_start_time": now}))
-
-        if last_explore and (now - last_explore) > 1800:
-            last_verified_time = getattr(player, "last_verified", 0)
-            if not last_verified_time or (now - last_verified_time) > 1800:
-                t0 = time.time()
-                if await _handle_verification(update, context, user_id, now, db):
-                    return
+        if not player_verified and explore_start_time and (now - explore_start_time) > 1500:
+            # Quick background verification check
+            asyncio.create_task(_handle_verification(update, context, user_id, now, db))
         
         if context.user_data:
             context.user_data["last_verification_check"] = now
@@ -482,45 +441,43 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Run ALL background processing asynchronously
-    asyncio.create_task(_handle_explore_background(
+    asyncio.create_task(_handle_explore_background_optimized(
         update, context, user_id, user_id_str, username, db,
         player, titan, sent_message, start_time
     ))
 
 
 
-async def _handle_explore_background(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
-    """Handle all background processing for explore command"""
+async def _handle_explore_background_optimized(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
+    """Handle all background processing for explore command with batched updates"""
     try:
-        # Update player's gas (subtract 100 for exploration) - OPTIMIZED FOR SPEED
-        character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
-        character = await db.get_character(user_id_str, character_name)
-        if character and hasattr(character, 'gas'):
-            new_gas = max(0, character.gas - 100)
-            # Use batch update for faster gas deduction (fire-and-forget for speed)
-            asyncio.create_task(db.batch_update_character(user_id_str, character_name, {"gas": new_gas}))
+        # Prepare all updates in a single batch operation
+        update_data = {
+            "last_explore_time": time.time()
+        }
         
-        # Update player's last explore time - use batch update for speed (fire-and-forget)
-        asyncio.create_task(db.batch_update_player(user_id_str, {"last_explore_time": time.time()}))
-        
-        # Handle mission progress for exploration
+        # Handle mission progress updates
         location = getattr(player, 'location', None)
-        await process_explore_mission_progress(db, player, location)
+        mission_updates = await process_explore_mission_progress(db, player, location)
         
-        # Track explore stats
-        await track_explore_stats(user_id_str, username, battle_completed=False)
+        # Track explore stats (fire-and-forget, no blocking)
+        asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
+        
+        # Handle travel progress
+        await _handle_travel_progress(update, context, user_id_str, db, player)
         
         # Start titan encounter timeout
         asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
         
-        # Handle other background tasks
-        await _handle_travel_progress(update, context, user_id_str, db, player)
+        # Single batched update for all player data changes
+        if update_data:
+            asyncio.create_task(db.batch_update_player(user_id_str, update_data))
         
     except Exception as e:
-        logger.error(f"Error in _handle_explore_background: {e}", exc_info=True)
+        logger.error(f"Error in _handle_explore_background_optimized: {e}", exc_info=True)
 
 async def _handle_travel_progress(update, context, user_id_str, db, player):
-    """Handle travel progress in background"""
+    """Handle travel progress in background with batched updates"""
     travel = getattr(player, "travel", {})
     
     if not travel.get("in_progress") or _is_in_battle(user_id_str):
@@ -539,13 +496,14 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
             "travel": {}
         }
         
-        await db.update_player(user_id_str, update_data)
+        # Fire-and-forget update
+        asyncio.create_task(db.batch_update_player(user_id_str, update_data))
         
         # Notify user
         try:
             arrival_message = f"🗺️ You have arrived at <b>{new_location}</b>!"
             if update.message:
-                await update.message.reply_text(arrival_message, parse_mode=ParseMode.HTML)
+                asyncio.create_task(update.message.reply_text(arrival_message, parse_mode=ParseMode.HTML))
         except Exception:
             pass
     else:
@@ -553,7 +511,9 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
         current_travel = getattr(player, "travel", {})
         updated_travel = current_travel.copy()
         updated_travel["progress"] = travel_progress
-        await db.update_player(user_id_str, {"travel": updated_travel})
+        
+        # Fire-and-forget update
+        asyncio.create_task(db.batch_update_player(user_id_str, {"travel": updated_travel}))
 
 
 
@@ -620,6 +580,13 @@ async def _handle_spam_ban(user_id, update, context):
         # Reset spam count immediately (in-memory operation)
         context.bot_data["explore_spam_count"][str(user_id)] = 0
         
+        # Also reset in database
+        await db.bans.update_one(
+            {"user_id": str(user_id)},
+            {"$set": {"spam_count": 0, "last_spam_update": int(time.time())}},
+            upsert=True
+        )
+        
         # Wait for database and notification tasks to complete
         await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -652,9 +619,11 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     try:
         # Record the start time to check if new explore commands happened during the timeout
         start_time = time.time()
+        logger.info(f"Started titan timeout for user {user_id}")
         
         # Sleep for the timeout duration
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
+        logger.info(f"Titan timeout completed for user {user_id} after {TITAN_TIMEOUT_SECONDS} seconds")
         
         # Fast-fail conditions - check these first to exit early if possible
         user_id_str = str(user_id)
@@ -662,25 +631,56 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         # Check if user has explored since this timeout was created
         last_explore_time = user_last_explore.get(user_id_str, 0)
         if last_explore_time > start_time:
+            logger.info(f"User {user_id} explored again, cancelling timeout")
             return
         
         # Check if user is in battle - no need to do anything if so
         if _is_in_battle(user_id_str):
+            logger.info(f"User {user_id} is in battle, skipping spam detection")
             return
         
+        # Check if the battle ID has changed (user started a new battle)
+        battle_id_key = f"active_battle_id_{user_id}"
+        original_battle_id = context.bot_data.get(battle_id_key)
+        current_battle_id = context.bot_data.get(battle_id_key)
+        
+        if original_battle_id != current_battle_id:
+            logger.info(f"User {user_id} started new battle, skipping spam detection")
+            return
+        
+        # Get database reference
+        db = context.bot_data.get("db")
+        if not db:
+            logger.error(f"No database available for spam detection on user {user_id}")
+            return
+            
         # SPAM DETECTION: User didn't explore or battle during timeout - increment spam count
+        # Load spam count from database if not in memory
         if "explore_spam_count" not in context.bot_data:
             context.bot_data["explore_spam_count"] = {}
         
         if user_id_str not in context.bot_data["explore_spam_count"]:
-            context.bot_data["explore_spam_count"][user_id_str] = 0
+            # Try to load from database
+            spam_count_doc = await db.bans.find_one({"user_id": user_id_str, "spam_count": {"$exists": True}})
+            if spam_count_doc:
+                context.bot_data["explore_spam_count"][user_id_str] = spam_count_doc.get("spam_count", 0)
+            else:
+                context.bot_data["explore_spam_count"][user_id_str] = 0
         
         # Increment spam count for not battling
         context.bot_data["explore_spam_count"][user_id_str] += 1
         current_spam_count = context.bot_data["explore_spam_count"][user_id_str]
         
+        # Persist spam count to database
+        await db.bans.update_one(
+            {"user_id": user_id_str},
+            {"$set": {"spam_count": current_spam_count, "last_spam_update": int(time.time())}},
+            upsert=True
+        )
+        
         # Send warning only at 10 timeouts
         if current_spam_count == 10:
+            logger.warning(f"User {user_id} reached spam warning threshold (10 timeouts)")
             # Warning at 10 timeouts
             asyncio.create_task(_send_spam_warning(user_id, context, 10, "🚨 <b>Warning:</b> You have let 10 titan encounters expire!\n\nContinuing this behavior may result in a ban. Please battle the titans you encounter."))
         
@@ -703,7 +703,6 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         current_battle_id = context.bot_data.get(battle_id_key)
         
         # Get database and check for titan
-        db = context.bot_data.get("db")
         if not db:
             return
             
@@ -743,8 +742,123 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error in titan_encounter_timeout: {e}", exc_info=True)
 
 
+async def check_spam_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check spam count for a user (moderator only)"""
+    if not update.effective_user:
+        return
+    
+    # Determine target user (either from reply or from args)
+    target_user_id = None
+    
+    # Check if replying to a message
+    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
+        target_user_id = update.message.reply_to_message.from_user.id
+        target_user_name = update.message.reply_to_message.from_user.first_name
+    # Check if user ID was provided as argument
+    elif context.args and context.args[0].isdigit():
+        target_user_id = int(context.args[0])
+        target_user_name = f"User {target_user_id}"
+    else:
+        if update.message:
+            await update.message.reply_text(
+                "❌ Please either reply to a user's message or provide a user ID."
+            )
+        return
+    
+    # Get database reference
+    db = context.bot_data.get("db")
+    if not db:
+        if update.message:
+            await update.message.reply_text("❌ Database not available.")
+        return
+    
+    try:
+        # Get spam count from database
+        spam_doc = await db.bans.find_one({"user_id": str(target_user_id), "spam_count": {"$exists": True}})
+        spam_count = spam_doc.get("spam_count", 0) if spam_doc else 0
+        
+        # Get in-memory count if available
+        memory_count = 0
+        if "explore_spam_count" in context.bot_data:
+            memory_count = context.bot_data["explore_spam_count"].get(str(target_user_id), 0)
+        
+        if update.message:
+            await update.message.reply_text(
+                f"📊 <b>Spam Count for {target_user_name}</b>\n\n"
+                f"<b>Database:</b> {spam_count}\n"
+                f"<b>Memory:</b> {memory_count}\n"
+                f"<b>User ID:</b> <code>{target_user_id}</code>",
+                parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        logger.error(f"Failed to check spam count: {e}")
+        if update.message:
+            await update.message.reply_text("❌ Failed to check spam count.")
+    """Reset spam count for a user (moderator only)"""
+    if not update.effective_user:
+        return
+    
+    # Determine target user (either from reply or from args)
+    target_user_id = None
+    
+    # Check if replying to a message
+    if update.message and update.message.reply_to_message and update.message.reply_to_message.from_user:
+        target_user_id = update.message.reply_to_message.from_user.id
+        target_user_name = update.message.reply_to_message.from_user.first_name
+    # Check if user ID was provided as argument
+    elif context.args and context.args[0].isdigit():
+        target_user_id = int(context.args[0])
+        target_user_name = f"User {target_user_id}"
+    else:
+        if update.message:
+            await update.message.reply_text(
+                "❌ Please either reply to a user's message or provide a user ID."
+            )
+        return
+    
+    # Reset spam count
+    success = await reset_user_spam_count(target_user_id, context)
+    
+    if success:
+        if update.message:
+            await update.message.reply_text(
+                f"✅ Spam count has been reset for {target_user_name}.\n"
+                f"They can now use /explore again normally."
+            )
+    else:
+        if update.message:
+            await update.message.reply_text(
+                f"❌ Failed to reset spam count for {target_user_name}.\n"
+                f"Please try again later or check if the user ID is valid."
+            )
+
+
+async def reset_user_spam_count(user_id: int, context: ContextTypes.DEFAULT_TYPE):
+    """Reset spam count for a user"""
+    user_id_str = str(user_id)
+    db = context.bot_data.get("db")
+    if not db:
+        return False
+        
+    try:
+        # Reset in memory
+        if "explore_spam_count" in context.bot_data:
+            context.bot_data["explore_spam_count"][user_id_str] = 0
+            
+        # Reset in database
+        await db.bans.update_one(
+            {"user_id": user_id_str},
+            {"$set": {"spam_count": 0, "last_spam_update": int(time.time())}},
+            upsert=True
+        )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to reset spam count: {e}")
+        return False
+    
 @mod_only
-async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE): 
     if not update.effective_user:
         return
     
