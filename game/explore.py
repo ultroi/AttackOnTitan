@@ -410,15 +410,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         return
         
-    # Get database reference for background task
+    # Get database reference for quick validation
     db = context.bot_data.get("db")
     if not db:
-        # Continue with message already sent but log error
-        logger.error("Database not initialized, titan sent but no data will be stored")
+        await _reply_error(update, "Database not available. Please try again later.")
         return
     
-    # ALL validation moved to background task for maximum speed
-    # Move ALL database operations to background task for immediate return
+    # Quick validation: Check if user has started the game
+    try:
+        player_check = await db.get_player(user_id_str)
+        if not player_check:
+            await _reply_error(update, "You need to start the game first! Use /start to begin your adventure.")
+            return
+    except Exception as e:
+        logger.error(f"Error checking player existence for {user_id_str}: {e}")
+        await _reply_error(update, "Unable to verify player data. Please try again.")
+        return
+    
     asyncio.create_task(_validate_and_process_optimized(
         update, context, user_id, user_id_str, username, db,
         titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
