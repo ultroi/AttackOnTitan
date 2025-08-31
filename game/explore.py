@@ -25,6 +25,11 @@ from database.missions import (
 
 logger = logging.getLogger(__name__)
 
+async def _reply_error(update: Update, message: str):
+    """Helper function to send error messages"""
+    if update.message:
+        await update.message.reply_text(message)
+
 def get_titan_difficulty_by_level(level: int) -> str:
     """Get titan difficulty based on level ranges"""
     if level <= 50:
@@ -705,7 +710,6 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
         
         # Fire-and-forget update
         asyncio.create_task(db.batch_update_player(user_id_str, {"travel": updated_travel}))
-
 
 
 async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, warning_level: int, message: str):
