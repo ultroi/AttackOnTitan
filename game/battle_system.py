@@ -325,6 +325,9 @@ class BattleSystem:
                     self.apply_effect(effect)
                     message = effect.message or f"{ability_name} used successfully!"
                     
+                    # Deduct gas after successful ability use
+                    self.gas -= gas_cost
+                    
                     # Show INT contribution in ability message if damage was enhanced
                     if int_damage_bonus > 0:
                         pass
@@ -1047,7 +1050,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
-                # battle.gas -= 20  # Removed gas deduction
+                battle.gas -= 20  
                 battle.character_gas = battle.gas
                 
                 if weapon:
@@ -1368,8 +1371,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         }
         update_tasks.append(db.batch_update_character(str(battle.character.user_id), battle.character.name, character_update_data))
 
-        # Player update task - simple approach
-        # player_obj has level up rewards added, add battle rewards too
+        
         player_update_data = {
             "crystal": max(0, player_obj.crystal + rewards["crystal"]),
             "valor": max(0, player_obj.valor + rewards["valor"]),

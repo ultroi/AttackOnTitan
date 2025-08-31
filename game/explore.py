@@ -302,68 +302,68 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    logger.info(f"Explore start for user {user_id}")
+    # 1. Check if player exists and has started game
+    try:
+        player = await db.get_player(user_id_str)
+    except Exception as db_error:
+        logger.error(f"Database error fetching player {user_id_str}: {db_error}")
+        await _reply_error(update, "Database error occurred. Please try again later.")
+        return
     
-    # PARALLEL DATABASE QUERIES - Start both immediately
-    player_future = db.get_player(user_id_str)
-    player = await player_future
-    db_time = time.time() - start_time
-    logger.info(f"Player fetch time: {db_time*1000:.1f}ms")
-    
-    if not player or not player.team:
+    if not player:
         await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
         return
-
-    # Get character name from first team member
-    character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
     
-    # Start character query immediately - gas no longer required for exploration
-    character_future = db.get_character(user_id_str, character_name)
+    if not hasattr(player, 'team') or not player.team:
+        await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
+        return
     
-    # While character is being fetched, prepare other data that doesn't depend on it
-    location = getattr(player, 'location', None)
-    unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
+    # 2. Check character in team
+    try:
+        character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
+    except (IndexError, AttributeError) as e:
+        await _reply_error(update, "Invalid team configuration. Please use /start to reset your account.")
+        return
     
-    # Await character data
-    character = await character_future
-    char_time = time.time() - start_time - db_time
-    logger.info(f"Character fetch time: {char_time*1000:.1f}ms")
-    
-    player_level = character.level if character and hasattr(character, 'level') else 1
-    
-    # Quick validations that don't need DB
-    if not character_name:
+    if not character_name or str(character_name).strip() == "":
         await _reply_error(update, "You don't have any character in your team.")
         return
     
+    # 3. Check spam count
+    if "explore_spam_count" not in context.bot_data:
+        context.bot_data["explore_spam_count"] = {}
     
+    if user_id_str not in context.bot_data["explore_spam_count"]:
+        spam_count_doc = await db.bans.find_one({"user_id": user_id_str, "spam_count": {"$exists": True}})
+        if spam_count_doc:
+            context.bot_data["explore_spam_count"][user_id_str] = spam_count_doc.get("spam_count", 0)
+        else:
+            context.bot_data["explore_spam_count"][user_id_str] = 0
     
-    # Fast captcha check (background only)
-    if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
-        # Fire-and-forget captcha spawn
-        asyncio.create_task(spawn_captcha(update, context))
-
-    # Quick verification check (only if needed)
+    current_spam_count = context.bot_data["explore_spam_count"][user_id_str]
+    SPAM_THRESHOLD = 15
+    if current_spam_count >= SPAM_THRESHOLD:
+        logger.warning(f"Player {user_id_str} has spam count {current_spam_count} - blocking explore")
+        await _reply_error(update, "You are temporarily blocked due to spamming. Please wait before using /explore again.")
+        return
+    
+    # 4. Check hCaptcha verification
+    player_verified = getattr(player, "hcaptcha_verified", False)
+    last_explore = getattr(player, "last_explore_time", None)
+    explore_start_time = getattr(player, "explore_start_time", None)
     now = time.time()
-    last_verification_check = context.user_data.get("last_verification_check", 0) if context.user_data else 0
     
-    if now - last_verification_check > 300:  # Only check every 5 minutes
-        player_verified = getattr(player, "hcaptcha_verified", False)
-        last_explore = getattr(player, "last_explore_time", None)
-        explore_start_time = getattr(player, "explore_start_time", None)
-
-        if not player_verified and explore_start_time and (now - explore_start_time) > 1500:
-            # Quick background verification check
-            asyncio.create_task(_handle_verification(update, context, user_id, now, db))
+    # Block exploration if not verified
+    if not player_verified:
+        verification_handled = await _handle_verification(update, context, user_id, now, db)
+        if verification_handled:
+            return  
         
-        if context.user_data:
-            context.user_data["last_verification_check"] = now
-    
-
-    # Generate a random titan instantly from pre-generated pool
+    # Generate titan instantly with default level BEFORE DB fetch
+    default_player_level = 1  # Use default level for initial generation
     titan_variations = []
     for offset in [-1, 0, 1]:
-        lvl = max(1, min(125, player_level + offset))
+        lvl = max(1, min(125, default_player_level + offset))
         titan_variations.extend(TITAN_POOL[lvl])
     
     titan_data = random.choice(titan_variations)
@@ -410,42 +410,184 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         return
 
-    # Create Titan object for database
-    titan = Titan(
-        name=titan_name,
-        level=titan_level,
-        max_hp=titan_max_hp,
-        abilities=[],
-        created_at=datetime.now(timezone.utc),
-        difficulty=difficulty,
-        spawn_areas=unlocked_areas,
-        drop_table={},
-        xp_reward=titan_xp,
-        min_level_requirement=max(1, player_level - 2)
-    )
-
-    # Record response time BEFORE background processing
-    response_time = (time.time() - start_time) * 1000
-    logger.info(f"Explore response time: {response_time:.1f}ms")
-
-    # Store titan in background
-    store_titan_task = asyncio.create_task(
-        db.store_titan(user_id_str, titan)
-    )
-
-    # Wait for message to be sent
-    try:
-        sent_message = await send_message_task
-    except Exception as e:
-        logger.error(f"Failed to send message: {e}")
-        return
-
-    # Run ALL background processing asynchronously
-    asyncio.create_task(_handle_explore_background_optimized(
-        update, context, user_id, user_id_str, username, db,
-        player, titan, sent_message, start_time
+    # PARALLEL DATABASE QUERIES - Start immediately after sending message
+    player_future = db.get_player(user_id_str)
+    
+    # Move validation and processing to background task for immediate return
+    asyncio.create_task(_validate_and_process(
+        update, context, user_id, user_id_str, username, db, player_future, 
+        titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
+        reply_markup, send_message_task, start_time
     ))
 
+
+
+async def _validate_and_process(update, context, user_id, user_id_str, username, db, player_future, 
+                               titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
+                               reply_markup, send_message_task, start_time):
+    """Validate player and process explore command in background"""
+    try:
+        # Handle database errors gracefully
+        try:
+            player = await player_future
+        except Exception as db_error:
+            logger.error(f"Database error fetching player {user_id_str}: {db_error}")
+            await _reply_error(update, "Database error occurred. Please try again later.")
+            return
+        
+        db_time = time.time() - start_time
+        logger.info(f"Player fetch time: {db_time*1000:.1f}ms")
+        
+        # NOTE: Player existence and team checks are now done upfront in explore()
+        
+        # Get character name from first team member (already validated upfront)
+        try:
+            character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
+        except (IndexError, AttributeError) as e:
+            logger.error(f"Error getting character name for player {user_id_str}: {e}")
+            await _reply_error(update, "Invalid team configuration. Please use /start to reset your account.")
+            return
+        
+        # NOTE: Character name validation is now done upfront in explore()
+        
+        # Start character query immediately
+        try:
+            character_future = db.get_character(user_id_str, character_name)
+        except Exception as db_error:
+            logger.error(f"Database error starting character fetch for {user_id_str}: {db_error}")
+            await _reply_error(update, "Database error occurred. Please try again later.")
+            return
+        
+        # While character is being fetched, prepare other data that doesn't depend on it
+        location = getattr(player, 'location', None)
+        unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
+        
+        # Await character data with error handling
+        try:
+            character = await character_future
+        except Exception as db_error:
+            logger.error(f"Database error fetching character for {user_id_str}: {db_error}")
+            await _reply_error(update, "Database error occurred. Please try again later.")
+            return
+            
+        char_time = time.time() - start_time - db_time
+        logger.info(f"Character fetch time: {char_time*1000:.1f}ms")
+        
+        # Validate character exists
+        if not character:
+            logger.info(f"Character {character_name} not found for player {user_id_str}")
+            await _reply_error(update, f"Character '{character_name}' not found. Please check your team setup.")
+            return
+        
+        actual_player_level = character.level if character and hasattr(character, 'level') else 1
+        default_player_level = 1
+        
+        # Check if we need to regenerate titan with correct level
+        needs_regeneration = abs(actual_player_level - default_player_level) > 1
+        
+        # Additional validations that need character data
+        if hasattr(character, 'level') and character.level < 1:
+            logger.warning(f"Player {user_id_str} has invalid level: {character.level}")
+            await _reply_error(update, "Invalid character data. Please contact support.")
+            return
+        
+        # Fast captcha check (background only)
+        if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
+            # Fire-and-forget captcha spawn
+            asyncio.create_task(spawn_captcha(update, context))
+
+        # NOTE: Verification check is now done upfront in explore()
+        
+        if needs_regeneration:
+            # Regenerate titan with correct level
+            titan_variations_correct = []
+            for offset in [-1, 0, 1]:
+                lvl = max(1, min(125, actual_player_level + offset))
+                titan_variations_correct.extend(TITAN_POOL[lvl])
+            
+            titan_data = random.choice(titan_variations_correct)
+            titan_name = titan_data["name"]
+            titan_level = titan_data["level"]
+            titan_max_hp = titan_data["max_hp"]
+            titan_xp = titan_data["xp_reward"]
+            difficulty = titan_data["difficulty"]
+            
+            # Update image
+            titan_key = titan_name.lower().replace(" titan", "")
+            if titan_key in TITAN_TYPE_IMAGE_URLS:
+                titan_image_url = TITAN_TYPE_IMAGE_URLS[titan_key]
+            else:
+                titan_image_url = random.choice(list(TITAN_TYPE_IMAGE_URLS.values()))
+            
+            # Update message with correct titan data
+            image_embed = f'<a href="{titan_image_url}">!</a>' if titan_image_url else ""
+            updated_reply_text = format_titan_message(
+                name=titan_name,
+                level=titan_level,
+                image_embed=image_embed
+            )
+            
+            # Wait for original message to be sent, then edit it
+            try:
+                sent_message = await send_message_task
+                asyncio.create_task(
+                    sent_message.edit_text(
+                        updated_reply_text,
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=False
+                    )
+                )
+            except Exception as e:
+                logger.error(f"Failed to edit titan message: {e}")
+
+        # Wait for message to be sent if not already
+        try:
+            sent_message = await send_message_task
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}")
+            return
+
+        # Create Titan object for database with correct data
+        titan = Titan(
+            name=titan_name,
+            level=titan_level,
+            max_hp=titan_max_hp,
+            abilities=[],
+            created_at=datetime.now(timezone.utc),
+            difficulty=difficulty,
+            spawn_areas=unlocked_areas,
+            drop_table={},
+            xp_reward=titan_xp,
+            min_level_requirement=max(1, actual_player_level - 2)
+        )
+
+        # Record response time BEFORE background processing
+        response_time = (time.time() - start_time) * 1000
+        logger.info(f"Explore response time: {response_time:.1f}ms")
+
+        # Store titan in background
+        try:
+            store_titan_task = asyncio.create_task(
+                db.store_titan(user_id_str, titan)
+            )
+        except Exception as db_error:
+            logger.error(f"Database error storing titan for {user_id_str}: {db_error}")
+            # Continue anyway - titan storage failure shouldn't break the flow
+
+        # Run ALL background processing asynchronously
+        asyncio.create_task(_handle_explore_background_optimized(
+            update, context, user_id, user_id_str, username, db,
+            player, titan, sent_message, start_time
+        ))
+        
+    except Exception as e:
+        logger.error(f"Error in _validate_and_process: {e}", exc_info=True)
+        # Send generic error message if something unexpected happens
+        try:
+            await _reply_error(update, "An unexpected error occurred. Please try again.")
+        except Exception:
+            pass  # Don't let error handling cause more errors
 
 
 async def _handle_explore_background_optimized(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
@@ -455,6 +597,11 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         update_data = {
             "last_explore_time": time.time()
         }
+        
+        # Reset explore_start_time for unverified users to prevent immediate verification
+        player_verified = getattr(player, "hcaptcha_verified", False)
+        if not player_verified:
+            update_data["explore_start_time"] = time.time()
         
         # Handle mission progress updates
         location = getattr(player, 'location', None)
