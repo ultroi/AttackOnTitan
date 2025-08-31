@@ -77,6 +77,8 @@ class BattleSystem:
             "focused_turns": 0,
             "ally_died": False
         }
+        # Add emergency heal usage flag
+        self.emergency_heal_used: bool = False
         # Auto-unlock abilities based on current level
         self.character._check_ability_unlocks()
         self.apply_passives("battle_start")
@@ -255,6 +257,26 @@ class BattleSystem:
             self.trigger_states["fear_counter"] += 1
             messages = self.apply_passives("low_hp")
             special_messages.extend(messages)
+        
+        # Mission 7 Emergency Heal: +40 HP when HP < 100 (only in Titan Battles)
+        if self.character_hp < 100 and self.player and not self.emergency_heal_used:
+            mission_7_completed = False
+            player_missions = getattr(self.player, "missions", [])
+            for mission in player_missions:
+                if (mission.get("mission_id") == 7 and 
+                    mission.get("status") == "completed"):
+                    mission_7_completed = True
+                    break
+            
+            if mission_7_completed:
+                heal_amount = 40
+                old_hp = self.character_hp
+                self.character_hp = min(self.character.stats.HP, self.character_hp + heal_amount)
+                actual_heal = self.character_hp - old_hp
+                if actual_heal > 0:
+                    special_messages.append(f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!")
+                    self.emergency_heal_used = True
+        
         self.trigger_states["focused_turns"] = min(3, self.trigger_states["focused_turns"] + 1)
         messages = self.apply_passives("titan_attack")
         special_messages.extend(messages)
@@ -800,6 +822,29 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     player = Player(**player_data) if player_data else None
     battle = BattleSystem(character, titan, player)
     
+    # Mission 7 Emergency Heal: Apply at battle start if HP < 100
+    emergency_heal_message = ""
+    if player:
+        mission_7_completed = False
+        player_missions = getattr(player, "missions", [])
+        for mission in player_missions:
+            if (mission.get("mission_id") == 7 and 
+                mission.get("status") == "completed"):
+                mission_7_completed = True
+                break
+        
+        if mission_7_completed and battle.character_hp < 100 and not battle.emergency_heal_used:
+            heal_amount = 40
+            old_hp = battle.character_hp
+            battle.character_hp = min(battle.character.stats.HP, battle.character_hp + heal_amount)
+            actual_heal = battle.character_hp - old_hp
+            if actual_heal > 0:
+                # Update character HP in database
+                character.current_hp = battle.character_hp
+                await db.update_character(str(user_id), character)
+                emergency_heal_message = f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!\n\n"
+                battle.emergency_heal_used = True
+    
     # Add battle to active battles
     async with active_battles_lock:
         active_battles[user_id] = battle
@@ -821,6 +866,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Build message efficiently with array join
     message_parts = [
         "<b>⚔️ BATTLE ⚔️</b>\n",
+        emergency_heal_message,  # Add emergency heal message if any
         "",  # Empty line for spacing
         f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
         f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",

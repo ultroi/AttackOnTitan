@@ -558,6 +558,28 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
             await _reply_error(update, "Invalid character data. Please contact support.")
             return
         
+        # Mission 7 Emergency Heal: Apply when exploring and encountering titan if HP < 100
+        if player:
+            mission_7_completed = False
+            player_missions = getattr(player, "missions", [])
+            for mission in player_missions:
+                if (mission.get("mission_id") == 7 and 
+                    mission.get("status") == "completed"):
+                    mission_7_completed = True
+                    break
+            
+            if mission_7_completed and character.current_hp < 100:
+                heal_amount = 40
+                old_hp = character.current_hp
+                character.current_hp = min(character.stats.HP, character.current_hp + heal_amount)
+                actual_heal = character.current_hp - old_hp
+                if actual_heal > 0:
+                    # Update character HP in database
+                    await db.update_character(user_id_str, character)
+                    # Add heal message to titan encounter message
+                    heal_message = f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!\n\n"
+                    reply_text = heal_message + reply_text
+        
         # Fast captcha check (background only)
         if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
             # Fire-and-forget captcha spawn

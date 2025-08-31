@@ -1,5 +1,6 @@
 import random
 import logging
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel, Field
@@ -115,7 +116,7 @@ MISSION_DEFINITIONS = [
         description="Test your mettle against a specially marked Titan target.",
         requirement="Use 1 Bounty Permit.",
         required_progress=1,
-        reward_description="+40 Hp when lower than 100 (only in Titan Battles)",
+        reward_description="+40 HP emergency heal when HP drops below 100 (once per battle)",
         rewards={"special_ability": "emergency_heal_40"},
     ),
     Mission(
@@ -153,7 +154,7 @@ MISSION_DEFINITIONS = [
         required_progress=2500,
         reward_description="45,000 Marks + 25 permanent Exploration Attack",
         rewards={"marks": 45000, "permanent_stat": {"ATK": 25}},
-        time_limit_hours=168,  # 7 days (1 week)
+        time_limit_hours=168,
     ),
     Mission(
         id=12,
@@ -355,6 +356,11 @@ async def start_mission(db, player, mission_id: int):
     }
 
     # For Mission 1, set starting_location in mission progress
+    if mission_id == 1:
+        # Get player's current location as starting location
+        starting_location = getattr(player, 'location', 'Trost')  # Default to Trost if no location
+        mission_progress["starting_location"] = starting_location
+    
     # Get current missions from database to avoid overwriting
     current_player = await db.get_player(int(player.user_id))
     current_missions = getattr(current_player, "missions", [])
@@ -630,7 +636,7 @@ async def process_explore_mission_progress(db, player, area=None):
     
     # Apply all batched updates in a single operation
     if batch_updates:
-        asyncio.create_task(db.batch_update_player(int(player.user_id), batch_updates))
+        await db.batch_update_player(int(player.user_id), batch_updates)
     
     return notifications
 
