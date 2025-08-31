@@ -744,7 +744,7 @@ class PvPBattleSystem:
             
         # Update mission progress for item usage
         try:
-            from game.missions_command import process_item_use_mission_progress
+            from database.missions import process_item_use_mission_progress
             # Get updated player object after inventory change
             updated_player = await db.get_player(str(current_player.user_id))
             if updated_player:

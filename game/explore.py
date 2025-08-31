@@ -596,6 +596,16 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             if mission_task:
                 await mission_task
             
+            # Update mission progress for exploration immediately 
+            try:
+                from database.missions import process_explore_mission_progress
+                mission_notifications = await process_explore_mission_progress(db, player, getattr(player, 'location', None))
+                if mission_notifications and update.message:
+                    for notification in mission_notifications[:2]:  # Limit to 2 notifications
+                        asyncio.create_task(update.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN))
+            except Exception as e:
+                logger.error(f"Error processing exploration mission progress: {e}")
+
             # Launch remaining background operations in parallel
             asyncio.create_task(_handle_explore_background_optimized(
                 update, context, user_id, user_id_str, username, db,
@@ -645,15 +655,58 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         
         # 2. Update last explore time and cancel previous timeout - batched operation
         current_time = time.time()
-        update_data = {
-            "last_explore_time": current_time
-        }
+        update_data = {} # Initialize empty dictionary for updates
+        update_data["last_explore_time"] = current_time
         
-        # 3. Handle travel progress asynchronously
+        # 3. Update mission14_area_counts for each explore if Mission 14 is active
+        try:
+            player_missions = getattr(player, "missions", [])
+            mission14_active = False
+            for mission in player_missions:
+                if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
+                    mission14_active = True
+                    break
+                    
+            if mission14_active:
+                location = getattr(player, "location", None)
+                if location:
+                    # List of all areas for mission 14
+                    AREAS = [
+                        "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                        "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+                    ]
+                    
+                    # Find matching area
+                    matching_area = None
+                    for area in AREAS:
+                        if location.lower() == area.lower() or area.lower() in location.lower():
+                            matching_area = area
+                            break
+                            
+                    if matching_area:
+                        mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
+                        old_count = mission_area_counts.get(matching_area, 0)
+                        mission_area_counts[matching_area] = old_count + 1
+                        
+                        # Update mission14_area_counts in database
+                        update_data["mission14_area_counts"] = mission_area_counts
+                        
+                        # Check if we just hit 500 for this area
+                        if old_count < 500 and mission_area_counts[matching_area] >= 500:
+                            # Fire-and-forget notification for area completion
+                            asyncio.create_task(update.message.reply_text(
+                                f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
+                                f"Mission 14 Progress: Area completed!",
+                                parse_mode=ParseMode.MARKDOWN
+                            ))
+        except Exception as e:
+            logger.error(f"Error updating mission14_area_counts: {e}")
+        
+        # 4. Handle travel progress asynchronously
         travel_task = asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
         tasks.append(travel_task)
         
-        # 4. Cancel existing timeout task if needed
+        # 5. Cancel existing timeout task if needed
         if user_id_str in user_timeout_tasks:
             existing_task = user_timeout_tasks[user_id_str]
             if not existing_task.done():
@@ -694,6 +747,7 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
         if travel_progress >= travel_required:
             # Travel completed - prepare update
             new_location = travel.get("to", player.location)
+            from_location = travel.get("from", player.location)
             
             # Direct update with minimal data
             update_data = {
@@ -703,6 +757,21 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
             
             # Fire-and-forget - update player data
             asyncio.create_task(db.batch_update_player(user_id_str, update_data))
+            
+            # Process travel mission progress in background
+            try:
+                from database.missions import process_travel_mission_progress
+                # Get fresh player data for mission processing
+                fresh_player = await db.get_player(user_id_str)
+                if fresh_player:
+                    # Process travel-related missions
+                    mission_notifications = await process_travel_mission_progress(db, fresh_player, from_location, new_location)
+                    # Send mission notifications if any
+                    if mission_notifications and update.message:
+                        for notification in mission_notifications:
+                            asyncio.create_task(update.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN))
+            except Exception as e:
+                logger.error(f"Error processing travel mission progress: {e}")
             
             # Notify user - also fire-and-forget
             if update.message:
