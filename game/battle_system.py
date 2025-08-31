@@ -464,27 +464,22 @@ class BattleSystem:
         }
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
-        """Calculate rewards for defeating the titan (XP, marks, crystals, valor) - simplified, no difficulty system."""
+        """Calculate rewards for defeating the titan (XP, marks, valor) - simplified, no difficulty system."""
         # XP: 150-200 random, same for player and character, but ensure it's always positive
         xp = max(1, random.randint(100, 180))
         
         # Marks: fixed per battle (current system, no difficulty bonus)
         marks = max(1, random.randint(70, 100) + (titan.level * 2))
         
-        # Valor: much lower chance (1.5%)
+        # Valor: spawn chance instead of crystal
         valor = 0
-        if player and random.random() < 0.015:
-            valor = max(1, random.randint(1, 4))
-            
-        # Crystal: very rare (1% chance)
-        crystal = 0
-        if random.random() < 0.0001:  # 0.01% chance
-            crystal = 1
+        if random.random() < 0.0001:  # 1% chance for valor spawn
+            valor = 1
             
         return {
             "xp": xp,
             "marks": marks,
-            "crystal": crystal,
+            "crystal": 0,  # Removed crystal rewards
             "valor": valor,
         }
 
@@ -1373,7 +1368,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
         
         player_update_data = {
-            "crystal": max(0, player_obj.crystal + rewards["crystal"]),
+            "crystal": max(0, player_obj.crystal),  # Keep existing crystals, no battle rewards
             "valor": max(0, player_obj.valor + rewards["valor"]),
             "marks": max(0, player_obj.marks + rewards["marks"]),
             "explore_count": getattr(fresh_player, 'explore_count', 0) + 1 if fresh_player else 1,
@@ -1396,8 +1391,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             f"⚡ <b>XP: +{rewards['xp']}</b>",
             f"🪙 <b>Marks: +{rewards['marks']}</b>",
         ]
-        if rewards['crystal'] > 0:
-            reward_msg.append(f"💠 <b>Titan Crystals: +{rewards['crystal']}</b>")
         if rewards['valor'] > 0:
             reward_msg.append(f"⚔️ <b>Valor : +{rewards['valor']}</b>")
 
@@ -1631,8 +1624,6 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
                     msg_parts.append(f"🪙 Marks: +{rewards['marks']}")
                 if rewards.get("valor", 0) > 0:
                     msg_parts.append(f"⚔️ Valor: +{rewards['valor']}")
-                if rewards.get("crystals", 0) > 0:
-                    msg_parts.append(f"💠 Crystals: +{rewards['crystals']}")
 
                 await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
 

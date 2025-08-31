@@ -477,7 +477,7 @@ class Player(BaseModel):
         rewards = self.get_level_up_rewards(self.level)
         self.marks += rewards["marks"]
         self.valor += rewards["valor"]
-        self.crystal += rewards["crystals"]
+        # Removed crystal rewards from level up
         
         # Only run if db and context are provided (for async update)
         import asyncio
@@ -523,11 +523,23 @@ class Player(BaseModel):
             "unlocks": []
         }
     
+        # Valor tier system based on level
+        if new_level <= 50:
+            # Below level 50: every 7 levels, 1 valor
+            if new_level % 7 == 0:
+                rewards["valor"] = 1
+        elif new_level <= 100:
+            # After 50: every 5 levels, 1 valor
+            if new_level % 5 == 0:
+                rewards["valor"] = 1
+        else:
+            # After 100: every 4 levels, 1 valor
+            if new_level % 4 == 0:
+                rewards["valor"] = 1
+    
         # Tier 1: Onboarding Phase (1-10)
         if 1 <= new_level <= 10:
             rewards["marks"] = random.randint(250, 500)
-            if new_level % 2 == 0:
-                rewards["valor"] = random.randint(1, 2)
         
             if new_level == 5:
                 rewards["unlocks"].append("First Echo Trait Slot")
@@ -537,19 +549,15 @@ class Player(BaseModel):
         # Tier 2: Core Progression (11-20)
         elif 11 <= new_level <= 20:
             rewards["marks"] = random.randint(600, 1000)
-            rewards["valor"] = 2
-            if new_level == 15:
-                rewards["crystals"] = 1
             
-            if new_level == 18:
+            if new_level == 15:
+                rewards["unlocks"].append("First Weapon Enhancement")
+            elif new_level == 18:
                 rewards["unlocks"].append("Second Echo Trait Slot")
 
         # Tier 3: Customization (21-30)
         elif 21 <= new_level <= 30:
             rewards["marks"] = random.randint(1500, 2000)
-            rewards["valor"] = 3
-            if new_level % 2 == 0:
-                rewards["crystals"] = 1
             
             if new_level == 22:
                 rewards["unlocks"].append("Respec Token")
@@ -559,8 +567,6 @@ class Player(BaseModel):
         # Tier 4: Prestige (31-40)
         elif 31 <= new_level <= 40:
             rewards["marks"] = random.randint(2000, 2500)
-            rewards["valor"] = 5
-            rewards["crystals"] = random.randint(1, 2)
         
             if new_level == 35:
                 rewards["unlocks"].append("Echo Trait Enhancement")
@@ -570,8 +576,6 @@ class Player(BaseModel):
         # Tier 5: Apex (41+)
         else:
             rewards["marks"] = 3000 + (min(new_level, 50) * 100)
-            rewards["valor"] = 6
-            rewards["crystals"] = 2
         
             if new_level == 45:
                 rewards["unlocks"].append("Elite Clan Access")
@@ -582,8 +586,6 @@ class Player(BaseModel):
             # Progressive scaling (2% increase per level beyond 50)
             scale = 1 + (new_level - 50) * 0.02
             rewards["marks"] = int(rewards["marks"] * scale)
-            rewards["valor"] = max(rewards["valor"], int(6 * scale))
-            rewards["crystals"] = min(rewards["crystals"], 5)  # Cap crystals at 5
             
         return rewards
 
