@@ -1194,3 +1194,16 @@ class Database:
             "item_key": item_key,
             "purchase_date": datetime.now(timezone.utc)
         })
+
+    async def update_character_stats(self, user_id: str, character_name: str, stats: Dict) -> bool:
+        """Update a character's stats"""
+        try:
+            character = await self.get_character(str(user_id), character_name)
+            if character:
+                character.stats = CharacterStats(**stats)
+                await self.update_character(character)
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to update character stats: {e}")
+            return False

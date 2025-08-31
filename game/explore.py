@@ -590,14 +590,17 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
         response_time = (time.time() - start_time) * 1000
         logger.info(f"Explore response time: {response_time:.1f}ms")
 
-        # Store titan in background
+        # Store titan synchronously to ensure it's available before cleanup
         try:
-            store_titan_task = asyncio.create_task(
-                db.store_titan(user_id_str, titan)
-            )
+            await db.store_titan(user_id_str, titan)
+            logger.info(f"Stored titan for user {user_id_str}: {titan.name} (Lv. {titan.level})")
+            
+            # Store titan data in cache for battle system fallback
+            context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
         except Exception as db_error:
             logger.error(f"Database error storing titan for {user_id_str}: {db_error}")
-            # Continue anyway - titan storage failure shouldn't break the flow
+            await _reply_error(update, "Database error occurred. Please try again later.")
+            return
 
         # Run ALL background processing asynchronously
         asyncio.create_task(_handle_explore_background_optimized(
@@ -656,8 +659,21 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         try:
             existing_titan = await db.get_titan(user_id_str)
             if existing_titan:
-                await db.delete_titan(user_id_str)
-                logger.info(f"Cleaned up existing titan for user {user_id}")
+                try:
+                    if hasattr(existing_titan, 'created_at') and existing_titan.created_at:
+                        titan_age = time.time() - existing_titan.created_at.timestamp()
+                        if titan_age > 60:  # Only delete if older than 60 seconds
+                            await db.delete_titan(user_id_str)
+                            logger.info(f"Cleaned up existing titan for user {user_id} (age: {titan_age:.1f}s)")
+                        else:
+                            logger.info(f"Skipping cleanup of recent titan for user {user_id} (age: {titan_age:.1f}s)")
+                    else:
+                        # If no created_at, assume it's old and delete
+                        await db.delete_titan(user_id_str)
+                        logger.info(f"Cleaned up titan without timestamp for user {user_id}")
+                except (AttributeError, TypeError, OSError) as e:
+                    logger.warning(f"Error checking titan age for user {user_id}: {e}, deleting anyway")
+                    await db.delete_titan(user_id_str)
         except Exception as e:
             logger.error(f"Error cleaning up existing titan for user {user_id}: {e}")
         
