@@ -176,122 +176,122 @@ def _is_in_battle(user_id_str: str) -> bool:
     except ImportError:
         return False
     
-async def _handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, now: float, db, player=None):
-    """Handle hCaptcha verification requirement - OPTIMIZED to reuse player data"""
-    user_id_str = str(user_id)
+# async def _handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, now: float, db, player=None):
+#     """Handle hCaptcha verification requirement - OPTIMIZED to reuse player data"""
+#     user_id_str = str(user_id)
 
-    # Use provided player data or fetch fresh if not provided
-    if player is None:
-        try:
-            player = await db.get_player(user_id_str)
-        except Exception as e:
-            logger.error(f"Failed to fetch fresh player data for verification: {e}")
-            return True  # Block exploration on error
+#     # Use provided player data or fetch fresh if not provided
+#     if player is None:
+#         try:
+#             player = await db.get_player(user_id_str)
+#         except Exception as e:
+#             logger.error(f"Failed to fetch fresh player data for verification: {e}")
+#             return True  # Block exploration on error
 
-    if not player:
-        logger.warning(f"Player {user_id_str} not found during verification check")
-        return True  # Block exploration if player not found
+#     if not player:
+#         logger.warning(f"Player {user_id_str} not found during verification check")
+#         return True  # Block exploration if player not found
 
-    # Check if player is already verified - use False as default for safety
-    player_verified = getattr(player, "hcaptcha_verified", False)
-    last_verified_time = getattr(player, "last_verified", 0)
+#     # Check if player is already verified - use False as default for safety
+#     player_verified = getattr(player, "hcaptcha_verified", False)
+#     last_verified_time = getattr(player, "last_verified", 0)
 
-    logger.info(f"Verification check for user {user_id_str}: verified={player_verified}, last_verified={last_verified_time}")
+#     logger.info(f"Verification check for user {user_id_str}: verified={player_verified}, last_verified={last_verified_time}")
 
-    # If already verified, clear any pending prompts and allow exploration
-    if player_verified:
-        if context.user_data:
-            context.user_data["hcaptcha_prompted"] = False
-            context.user_data["last_verification_check"] = now
-        logger.info(f"User {user_id_str} is already verified, allowing exploration")
-        return False
+#     # If already verified, clear any pending prompts and allow exploration
+#     if player_verified:
+#         if context.user_data:
+#             context.user_data["hcaptcha_prompted"] = False
+#             context.user_data["last_verification_check"] = now
+#         logger.info(f"User {user_id_str} is already verified, allowing exploration")
+#         return False
 
-    # Check for recent verification (within 10 minutes) - this handles web verification
-    if last_verified_time and now - last_verified_time < 600:
-        logger.info(f"User {user_id_str} was recently verified at {last_verified_time}, updating status")
-        # Update verification status and clear prompts
-        try:
-            await db.update_player(user_id_str, {
-                "hcaptcha_verified": True,
-                "last_verified": now  # Update timestamp to prevent repeated checks
-            })
-            if context.user_data:
-                context.user_data["hcaptcha_prompted"] = False
-                context.user_data["last_verification_check"] = now
-            if update.message:
-                await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
-            return False
-        except Exception as e:
-            logger.error(f"Failed to update verification status for user {user_id_str}: {e}")
-            return True  # Block on error
+#     # Check for recent verification (within 10 minutes) - this handles web verification
+#     if last_verified_time and now - last_verified_time < 600:
+#         logger.info(f"User {user_id_str} was recently verified at {last_verified_time}, updating status")
+#         # Update verification status and clear prompts
+#         try:
+#             await db.update_player(user_id_str, {
+#                 "hcaptcha_verified": True,
+#                 "last_verified": now  # Update timestamp to prevent repeated checks
+#             })
+#             if context.user_data:
+#                 context.user_data["hcaptcha_prompted"] = False
+#                 context.user_data["last_verification_check"] = now
+#             if update.message:
+#                 await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
+#             return False
+#         except Exception as e:
+#             logger.error(f"Failed to update verification status for user {user_id_str}: {e}")
+#             return True  # Block on error
 
-    # Check if verification is already in progress
-    if context.user_data and context.user_data.get("hcaptcha_prompted", False):
-        # Check if database has been updated since the last check
-        last_check = context.user_data.get("last_verification_check", 0)
-        if last_verified_time > last_check:
-            # Database was updated, user was verified
-            logger.info(f"User {user_id_str} verification detected via database update")
-            try:
-                await db.update_player(user_id_str, {
-                    "hcaptcha_verified": True,
-                    "last_verified": now
-                })
-                context.user_data["hcaptcha_prompted"] = False
-                context.user_data["last_verification_check"] = now
-                if update.message:
-                    await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
-                return False
-            except Exception as e:
-                logger.error(f"Failed to update verification status after detection: {e}")
-                return True
-        else:
-            # Still waiting for verification, update timestamp
-            context.user_data["last_verification_check"] = now
-            logger.info(f"User {user_id_str} still waiting for verification")
-            if update.message:
-                await update.message.reply_text(
-                    "🔄 Please complete the hCaptcha verification to continue exploring.\n"
-                    "If you've already completed verification, please wait a moment and try again.",
-                    parse_mode=ParseMode.HTML
-                )
-            return True
+#     # Check if verification is already in progress
+#     if context.user_data and context.user_data.get("hcaptcha_prompted", False):
+#         # Check if database has been updated since the last check
+#         last_check = context.user_data.get("last_verification_check", 0)
+#         if last_verified_time > last_check:
+#             # Database was updated, user was verified
+#             logger.info(f"User {user_id_str} verification detected via database update")
+#             try:
+#                 await db.update_player(user_id_str, {
+#                     "hcaptcha_verified": True,
+#                     "last_verified": now
+#                 })
+#                 context.user_data["hcaptcha_prompted"] = False
+#                 context.user_data["last_verification_check"] = now
+#                 if update.message:
+#                     await update.message.reply_text("✅ Verification successful! You can now continue exploring.")
+#                 return False
+#             except Exception as e:
+#                 logger.error(f"Failed to update verification status after detection: {e}")
+#                 return True
+#         else:
+#             # Still waiting for verification, update timestamp
+#             context.user_data["last_verification_check"] = now
+#             logger.info(f"User {user_id_str} still waiting for verification")
+#             if update.message:
+#                 await update.message.reply_text(
+#                     "🔄 Please complete the hCaptcha verification to continue exploring.\n"
+#                     "If you've already completed verification, please wait a moment and try again.",
+#                     parse_mode=ParseMode.HTML
+#                 )
+#             return True
 
-    # If this is the first time prompting for verification
-    logger.info(f"Prompting user {user_id_str} for hCaptcha verification")
-    if context.user_data:
-        context.user_data["hcaptcha_prompted"] = True
-        context.user_data["last_verification_check"] = now
+#     # If this is the first time prompting for verification
+#     logger.info(f"Prompting user {user_id_str} for hCaptcha verification")
+#     if context.user_data:
+#         context.user_data["hcaptcha_prompted"] = True
+#         context.user_data["last_verification_check"] = now
 
-    timestamp = int(now)
-    verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
+#     timestamp = int(now)
+#     verification_url = f"https://attackontitangamebot.onrender.com/hcaptcha?user_id={user_id}&ts={timestamp}"
 
-    try:
-        if update.message:
-            await update.message.reply_text(
-                "🔒 <b>Verification Required</b>\n\n"
-                + "Complete hCaptcha to continue exploring.\n"
-                + "After completing verification, use /explore again to continue.\n\n",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
-                ]),
-                parse_mode=ParseMode.HTML,
-            )
+#     try:
+#         if update.message:
+#             await update.message.reply_text(
+#                 "🔒 <b>Verification Required</b>\n\n"
+#                 + "Complete hCaptcha to continue exploring.\n"
+#                 + "After completing verification, use /explore again to continue.\n\n",
+#                 reply_markup=InlineKeyboardMarkup([
+#                     [InlineKeyboardButton("✅ Verify Now", url=verification_url)]
+#                 ]),
+#                 parse_mode=ParseMode.HTML,
+#             )
 
-        # Update player record with verification start time
-        await db.update_player(user_id_str, {
-            "hcaptcha_start_time": timestamp,
-            "hcaptcha_verified": False,  # Explicitly set to false
-            "explore_start_time": None   # Reset explore timer when verification is required
-        })
+#         # Update player record with verification start time
+#         await db.update_player(user_id_str, {
+#             "hcaptcha_start_time": timestamp,
+#             "hcaptcha_verified": False,  # Explicitly set to false
+#             "explore_start_time": None   # Reset explore timer when verification is required
+#         })
 
 
-    except Exception as e:
-        logger.error(f"Error sending verification message to user {user_id_str}: {e}")
-        if context.user_data:
-            context.user_data["hcaptcha_prompted"] = False
+#     except Exception as e:
+#         logger.error(f"Error sending verification message to user {user_id_str}: {e}")
+#         if context.user_data:
+#             context.user_data["hcaptcha_prompted"] = False
 
-    return True
+#     return True
 
 
 @maintenance_protected
@@ -587,7 +587,7 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
         if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
             # Fire-and-forget captcha spawn
             asyncio.create_task(spawn_captcha(update, context))
-        """
+        
 
         # NOTE: Verification check is now done upfront in explore()
 
@@ -653,15 +653,15 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         
         # Reset explore_start_time for unverified users to prevent immediate verification
         # Get fresh verification status
-        try:
-            fresh_player_check = await db.get_player(user_id_str)
-            player_verified = getattr(fresh_player_check, "hcaptcha_verified", False) if fresh_player_check else False
-        except Exception as e:
-            logger.error(f"Failed to get fresh verification status: {e}")
-            player_verified = False
+        # try:
+        #     fresh_player_check = await db.get_player(user_id_str)
+        #     player_verified = getattr(fresh_player_check, "hcaptcha_verified", False) if fresh_player_check else False
+        # except Exception as e:
+        #     logger.error(f"Failed to get fresh verification status: {e}")
+        #     player_verified = False
         
-        if not player_verified:
-            update_data["explore_start_time"] = time.time()
+        # if not player_verified:
+        #     update_data["explore_start_time"] = time.time()
         
         # Track explore stats (fire-and-forget, no blocking)
         asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
@@ -1184,13 +1184,13 @@ async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_T
     try:
         # Clear verification flags in context
         if context.user_data:
-            context.user_data["hcaptcha_prompted"] = False
+            # context.user_data["hcaptcha_prompted"] = False
             
         # Reset verification in database
         current_time = time.time()
         await db.update_player(user_id, {
-            "hcaptcha_verified": False,
-            "hcaptcha_start_time": None,
+            # "hcaptcha_verified": False,
+            # "hcaptcha_start_time": None,
             "explore_start_time": current_time,  # Set current time to reset the 25-minute timer
             "last_explore_time": current_time    # Update last explore time too
         })
