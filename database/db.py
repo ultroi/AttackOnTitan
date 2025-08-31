@@ -231,8 +231,7 @@ class Database:
                 raise ConnectionError("Database not initialized. Call init_db() first.")
                 
             # Use projection to only get needed fields for faster query
-                
-            # Use projection to only get needed fields for faster query
+            # For explore operations, we need minimal fields
             player_data = await self.players.find_one({"user_id": user_id}, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
                 "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
@@ -762,9 +761,11 @@ class Database:
 
             update_data["updated_at"] = datetime.now(timezone.utc)
 
+            # Use update_one with $set for better performance
             result = await self.players.update_one(
                 {"user_id": user_id},
-                {"$set": update_data}
+                {"$set": update_data},
+                upsert=False  # Don't upsert for performance
             )
 
             # Update cache if it exists

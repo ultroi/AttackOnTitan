@@ -177,16 +177,17 @@ def _is_in_battle(user_id_str: str) -> bool:
     except ImportError:
         return False
     
-async def _handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, now: float, db):
-    """Handle hCaptcha verification requirement"""
+async def _handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, now: float, db, player=None):
+    """Handle hCaptcha verification requirement - OPTIMIZED to reuse player data"""
     user_id_str = str(user_id)
 
-    # ALWAYS get fresh player data to avoid stale cache issues
-    try:
-        player = await db.get_player(user_id_str)
-    except Exception as e:
-        logger.error(f"Failed to fetch fresh player data for verification: {e}")
-        return True  # Block exploration on error
+    # Use provided player data or fetch fresh if not provided
+    if player is None:
+        try:
+            player = await db.get_player(user_id_str)
+        except Exception as e:
+            logger.error(f"Failed to fetch fresh player data for verification: {e}")
+            return True  # Block exploration on error
 
     if not player:
         logger.warning(f"Player {user_id_str} not found during verification check")
@@ -335,7 +336,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Internal error: Database not initialized.")
         return
     
-    # 1. Check if player exists and has started game
+    # 1. Check if player exists and has started game (OPTIMIZED: Single DB call)
     try:
         player = await db.get_player(user_id_str)
     except Exception as db_error:
@@ -351,7 +352,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You haven't created a player account yet! Use /start to begin.")
         return
     
-    # 2. Check character in team
+    # 2. Check character in team (reuse player data)
     try:
         character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
     except (IndexError, AttributeError) as e:
@@ -362,7 +363,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You don't have any character in your team.")
         return
     
-    # 3. Fetch character to get correct level BEFORE generating titan
+    # 3. Fetch character to get correct level BEFORE generating titan (reuse player data)
     try:
         character = await db.get_character(user_id_str, character_name)
     except Exception as db_error:
@@ -429,7 +430,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Block exploration if not verified
     if not user_verified:
-        verification_handled = await _handle_verification(update, context, user_id, now, db)
+        verification_handled = await _handle_verification(update, context, user_id, now, db, player)
         if verification_handled:
             return  
         
@@ -490,14 +491,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     asyncio.create_task(_validate_and_process(
         update, context, user_id, user_id_str, username, db, player_future, 
         titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
-        reply_markup, send_message_task, start_time, actual_player_level
+        reply_markup, send_message_task, start_time, actual_player_level, reply_text
     ))
 
 
 
 async def _validate_and_process(update, context, user_id, user_id_str, username, db, player_future, 
                                titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
-                               reply_markup, send_message_task, start_time, actual_player_level):
+                               reply_markup, send_message_task, start_time, actual_player_level, reply_text):
     """Validate player and process explore command in background"""
     try:
         # Handle database errors gracefully
