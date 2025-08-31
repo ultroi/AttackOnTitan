@@ -169,14 +169,14 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         progress_notifications.append(notification)
                     player_updated = True
         elif mission.id == 14:
-            area_explore_counts = getattr(player, "area_explore_counts", {}) or {}
+            mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
             AREAS = [
                 "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
                 "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
             ]
             completed_areas = 0
             for area in AREAS:
-                if area_explore_counts.get(area, 0) >= 500:
+                if mission_area_counts.get(area, 0) >= 500:
                     completed_areas += 1
             new_progress = min(completed_areas, mission.required_progress)
             
@@ -313,12 +313,13 @@ def format_mission_14_progress(player, max_count=500):
         "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
         "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
     ]
-    explore_counts = getattr(player, "area_explore_counts", {}) or {}
+    # Use mission-specific counts
+    mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
     lines = []
     completed_areas = 0
 
     for area in AREAS:
-        count = explore_counts.get(area, 0)
+        count = mission_area_counts.get(area, 0)
         if count >= max_count:
             status = "✅"
             completed_areas += 1

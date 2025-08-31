@@ -364,6 +364,13 @@ async def start_mission(db, player, mission_id: int):
         # Get player's current location as starting location
         starting_location = getattr(player, 'location', 'Trost')  # Default to Trost if no location
         mission_progress["starting_location"] = starting_location
+        
+    # For Mission 14, initialize area counts when mission is started
+    if mission_id == 14:
+        # Initialize mission14_area_counts if not present
+        if not hasattr(player, "mission14_area_counts"):
+            # We need to update this separately
+            await db.update_player(int(player.user_id), {"mission14_area_counts": {}})
     
     # Get current missions from database to avoid overwriting
     current_player = await db.get_player(int(player.user_id))
@@ -377,6 +384,9 @@ async def cancel_mission(db, player, mission_id: int):
     # Get current missions from database to ensure we have the latest data
     current_player = await db.get_player(int(player.user_id))
     player_missions = getattr(current_player, "missions", [])
+    
+    # Keep track of updates to apply
+    updates = {}
 
     # Find the mission in player's active missions
     for i, mission_progress in enumerate(player_missions):
@@ -388,11 +398,27 @@ async def cancel_mission(db, player, mission_id: int):
             player_missions[i]["cancelled_at"] = datetime.now(timezone.utc)
             player_missions[i]["current_progress"] = 0  # Reset progress to 0
             player_missions[i]["unique_opponents"] = []  # Reset unique opponents list
+            
+            # Reset mission-specific data
+            if mission_id == 1:
+                # Reset Scout's First March (clears starting location)
+                player_missions[i].pop("starting_location", None)
+                
+            # Handle Mission 14 special case - clear mission14_area_counts
+            if mission_id == 14 and hasattr(player, "mission14_area_counts"):
+                updates["mission14_area_counts"] = {}  # Reset mission 14 area counts
+            
+            # Mission 15 (Temporal Gambit) - reset unique opponents
+            if mission_id == 15:
+                player_missions[i]["unique_opponents"] = []
+                
+            # Include updated missions in updates
+            updates["missions"] = player_missions
 
-            # Update player in database
-            await db.update_player(int(player.user_id), {"missions": player_missions})
+            # Update player in database with all changes
+            await db.update_player(int(player.user_id), updates)
 
-            return True, f"Mission #{mission_id} has been cancelled and progress reset."
+            return True, f"Mission #{mission_id} has been cancelled and all progress reset."
 
     return False, f"No active mission with ID {mission_id} found."
 
@@ -621,9 +647,10 @@ async def process_explore_mission_progress(db, player, area=None):
                 "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
             ]
 
-            explore_counts = getattr(player, "area_explore_counts", {})
-            if not explore_counts:
-                explore_counts = {}
+            # Get explore counts specific to Mission 14
+            mission_area_counts = getattr(player, "mission14_area_counts", {})
+            if not mission_area_counts:
+                mission_area_counts = {}
 
             if area:
                 matching_area = None
@@ -633,14 +660,14 @@ async def process_explore_mission_progress(db, player, area=None):
                         break
 
                 if matching_area:
-                    # Always increment the area count
-                    old_count = explore_counts.get(matching_area, 0)
-                    explore_counts[matching_area] = old_count + 1
-                    batch_updates["area_explore_counts"] = explore_counts
+                    
+                    old_count = mission_area_counts.get(matching_area, 0)
+                    mission_area_counts[matching_area] = old_count + 1
+                    batch_updates["mission14_area_counts"] = mission_area_counts
 
                     # Calculate completed areas (areas with >= 500 explores)
                     completed_areas = sum(1 for area_name in REQUIRED_AREAS
-                                         if explore_counts.get(area_name, 0) >= 500)
+                                         if mission_area_counts.get(area_name, 0) >= 500)
                     
                     # Always update mission progress to match actual completed areas count
                     previous_progress = pm["current_progress"]
