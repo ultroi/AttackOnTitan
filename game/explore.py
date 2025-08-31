@@ -1184,6 +1184,7 @@ async def reset_verification_state(user_id: int, context: ContextTypes.DEFAULT_T
     try:
         # Clear verification flags in context
         if context.user_data:
+            pass
             # context.user_data["hcaptcha_prompted"] = False
             
         # Reset verification in database
