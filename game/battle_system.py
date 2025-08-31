@@ -1526,6 +1526,9 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
             return
             
+        # Initialize notifications list for Mission 14
+        all_notifications = []
+            
         # Update area explore counts for Mission 14 only if mission is active
         if victory and getattr(player_obj_fresh, "location", None):
             location = getattr(player_obj_fresh, "location", None)
@@ -1577,17 +1580,17 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                                     # Add notification for area completion
                                     all_notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\nMission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
                                 
-                                # Check if mission should be completed
-                                if completed_areas >= 10 and mission.get("status") != "completed":
-                                    mission["status"] = "completed"
-                                    mission["completed_at"] = datetime.now(timezone.utc)
-                                    from database.missions import MISSIONS_BY_ID, apply_mission_rewards
-                                    mission_def = MISSIONS_BY_ID.get(14)
-                                    if mission_def:
-                                        all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
-                                break
-                        
-                        # Update both mission14_area_counts and missions in database
+                            # Check if mission should be completed
+                            if completed_areas >= 10 and mission.get("status") != "completed":
+                                mission["status"] = "completed"
+                                mission["completed_at"] = datetime.now(timezone.utc)
+                                from database.missions import MISSIONS_BY_ID, apply_mission_rewards
+                                mission_def = MISSIONS_BY_ID.get(14)
+                                if mission_def:
+                                    # Apply the rewards to the player
+                                    await apply_mission_rewards(db, player_obj_fresh, mission_def)
+                                    all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
+                            break                        # Update both mission14_area_counts and missions in database
                         await db.update_player(user_id, {
                             "mission14_area_counts": mission_area_counts,
                             "missions": player_missions
@@ -1605,7 +1608,7 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         mission_results = await asyncio.gather(*mission_tasks, return_exceptions=True)
 
         # Send mission notifications
-        all_notifications = []
+        # all_notifications = []  # Commented out to preserve Mission 14 notifications
         for result in mission_results:
             if isinstance(result, list):
                 all_notifications.extend(result)
@@ -1716,6 +1719,8 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
                                 from database.missions import MISSIONS_BY_ID, apply_mission_rewards
                                 mission_def = MISSIONS_BY_ID.get(14)
                                 if mission_def:
+                                    # Apply the rewards to the player
+                                    await apply_mission_rewards(db, player_obj_fresh, mission_def)
                                     all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
                             break
                     
