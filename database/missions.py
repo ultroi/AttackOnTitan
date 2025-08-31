@@ -642,51 +642,9 @@ async def process_explore_mission_progress(db, player, area=None):
                 
         # Mission 14: Never Stop! (500 explores in each place of the map)
         if mission_id == 14:
-            REQUIRED_AREAS = [
-                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-            ]
-
-            # Get explore counts specific to Mission 14
-            mission_area_counts = getattr(player, "mission14_area_counts", {})
-            if not mission_area_counts:
-                mission_area_counts = {}
-
-            if area:
-                matching_area = None
-                for required_area in REQUIRED_AREAS:
-                    if area.lower() == required_area.lower() or required_area.lower() in area.lower():
-                        matching_area = required_area
-                        break
-
-                if matching_area:
-                    
-                    old_count = mission_area_counts.get(matching_area, 0)
-                    mission_area_counts[matching_area] = old_count + 1
-                    batch_updates["mission14_area_counts"] = mission_area_counts
-
-                    # Calculate completed areas (areas with >= 500 explores)
-                    completed_areas = sum(1 for area_name in REQUIRED_AREAS
-                                         if mission_area_counts.get(area_name, 0) >= 500)
-                    
-                    # Always update mission progress to match actual completed areas count
-                    previous_progress = pm["current_progress"]
-                    current_progress = completed_areas  # Don't limit the progress here
-
-                    # Always update progress regardless of previous value
-                    pm["current_progress"] = current_progress
-                    batch_updates["missions"] = player_missions
-
-                    # Check if this area just reached 500
-                    if mission_area_counts.get(matching_area, 0) == 500:
-                        notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
-                                           f"Mission 14 Progress: {current_progress}/{len(REQUIRED_AREAS)} areas completed")
-                        
-                    # Check if mission should be completed
-                    if current_progress >= pm["required_progress"] and pm["status"] != MISSION_STATUS_COMPLETED:
-                        pm["status"] = MISSION_STATUS_COMPLETED
-                        pm["completed_at"] = datetime.now(timezone.utc)
-                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+            # Skip Mission 14 processing here since it's handled directly in battle_system.py
+            # to avoid double counting
+            continue
     
     # Apply all batched updates in a single operation
     if batch_updates:
