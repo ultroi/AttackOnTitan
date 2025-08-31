@@ -588,8 +588,18 @@ async def process_explore_mission_progress(db, player, area=None):
         if mission_id == 9:
             # Only count if in Royal Capital area
             if area and ("royal capital" in area.lower() or "royal_capital" in area.lower()):
-                
-                pass  
+                previous_progress = pm["current_progress"]
+                current_progress = min(previous_progress + 1, pm["required_progress"])
+                if current_progress != previous_progress:
+                    pm["current_progress"] = current_progress
+                    batch_updates["missions"] = player_missions
+                    
+                    if current_progress >= pm["required_progress"]:
+                        pm["status"] = MISSION_STATUS_COMPLETED
+                        pm["completed_at"] = datetime.now(timezone.utc)
+                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                    else:
+                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")  
                 
         # Mission 11: Relentless Scout (2500 explores in a single week)
         if mission_id == 11:
@@ -625,25 +635,32 @@ async def process_explore_mission_progress(db, player, area=None):
                 if matching_area:
                     old_count = explore_counts.get(matching_area, 0)
                     explore_counts[matching_area] = old_count + 1
-                    
-                    if explore_counts[matching_area] == 500:
-                        completed_areas = sum(1 for area_name in REQUIRED_AREAS
-                                             if explore_counts.get(area_name, 0) >= 500)
-                        
+
+                    # Calculate completed areas (areas with >= 500 explores)
+                    completed_areas_before = sum(1 for area_name in REQUIRED_AREAS
+                                                if explore_counts.get(area_name, 0) >= 500)
+                    completed_areas_after = sum(1 for area_name in REQUIRED_AREAS
+                                               if explore_counts.get(area_name, 0) >= 500)
+
+                    # Update mission progress if we completed a new area
+                    if completed_areas_after > completed_areas_before:
                         previous_progress = pm["current_progress"]
-                        current_progress = min(previous_progress + 1, pm["required_progress"])
-                        pm["current_progress"] = current_progress
-                        batch_updates["missions"] = player_missions
-                        batch_updates["area_explore_counts"] = explore_counts
-                        
-                        if current_progress >= pm["required_progress"]:
-                            pm["status"] = MISSION_STATUS_COMPLETED
-                            pm["completed_at"] = datetime.now(timezone.utc)
-                            notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                        else:
-                            notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
-                                               f"Mission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
+                        current_progress = min(completed_areas_after, pm["required_progress"])
+
+                        if current_progress != previous_progress:
+                            pm["current_progress"] = current_progress
+                            batch_updates["missions"] = player_missions
+                            batch_updates["area_explore_counts"] = explore_counts
+
+                            if current_progress >= pm["required_progress"]:
+                                pm["status"] = MISSION_STATUS_COMPLETED
+                                pm["completed_at"] = datetime.now(timezone.utc)
+                                notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                            else:
+                                notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
+                                                   f"Mission 14 Progress: {current_progress}/{len(REQUIRED_AREAS)} areas completed")
                     else:
+                        # Always update area_explore_counts even if no new area completed
                         batch_updates["area_explore_counts"] = explore_counts
     
     # Apply all batched updates in a single operation

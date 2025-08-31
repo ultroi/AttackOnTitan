@@ -494,6 +494,9 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
         try:
             spam_count_doc = await spam_count_future
             if spam_count_doc:
+                # Initialize explore_spam_count dict if it doesn't exist
+                if "explore_spam_count" not in context.bot_data:
+                    context.bot_data["explore_spam_count"] = {}
                 context.bot_data["explore_spam_count"][user_id_str] = spam_count_doc.get("spam_count", 0)
         except Exception as e:
             logger.error(f"Error fetching spam count: {e}")
@@ -535,14 +538,14 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             min_level_requirement=max(1, actual_player_level - 2)
         )
         
-        # Store titan object
+        # Store titan object - fire and forget for better performance
         try:
-            store_titan_task = asyncio.create_task(db.store_titan(user_id_str, titan))
-            
+            asyncio.create_task(db.store_titan(user_id_str, titan))
+
             # Capture response time before proceeding
             response_time = (time.time() - start_time) * 1000
             logger.info(f"Full response time: {response_time:.1f}ms")
-            
+
             # Cache titan data immediately (don't wait for DB)
             context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
             
@@ -580,9 +583,6 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             # Start timeout task for titan
             timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
             user_timeout_tasks[user_id_str] = timeout_task
-            
-            # Make sure titan is stored before continuing with background tasks
-            await store_titan_task
             
             # Wait for mission task if it exists
             if mission_task:
@@ -651,10 +651,10 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
             if not existing_task.done():
                 existing_task.cancel()
         
-        # 5. Batch update all player data changes
+        # 5. Batch update all player data changes - optimize for speed
         if update_data:
-            update_task = asyncio.create_task(db.batch_update_player(user_id_str, update_data))
-            tasks.append(update_task)
+            # Use fire-and-forget for non-critical updates to improve response time
+            asyncio.create_task(db.batch_update_player(user_id_str, update_data))
         
         # Wait for all critical tasks to complete
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -776,6 +776,8 @@ async def _handle_spam_ban(user_id, update, context):
             tasks.append(notify_task)
         
         # Reset spam count immediately (in-memory operation)
+        if "explore_spam_count" not in context.bot_data:
+            context.bot_data["explore_spam_count"] = {}
         context.bot_data["explore_spam_count"][str(user_id)] = 0
         
         # Also reset in database
