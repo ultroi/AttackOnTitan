@@ -8,6 +8,9 @@ load_dotenv()
 # Global configuration
 PORT = 8080  
 DEBUG = False  
+# Flag to enable/disable captcha (temporarily disabled)
+ENABLE_CAPTCHA = False
+ENABLE_HCAPTCHA = False
 
 # Database configuration
 MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")  # Updated to match .env file

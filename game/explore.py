@@ -396,10 +396,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "You are temporarily blocked due to spamming. Please wait before using /explore again.")
         return
     
-    # 4. Check hCaptcha verification - OPTIMIZED: Use cached verification status first
+    # 4. Check hCaptcha verification - TEMPORARILY DISABLED
     now = time.time()
-    user_verified = False
+    user_verified = True  # Always set to true to bypass verification
     
+    # Comment out hCaptcha verification check for temporary disable
+    """
     # Check cached verification status first (much faster)
     if context.user_data and context.user_data.get("hcaptcha_verified", False):
         last_check = context.user_data.get("last_verification_check", 0)
@@ -432,6 +434,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         verification_handled = await _handle_verification(update, context, user_id, now, db, player)
         if verification_handled:
             return  
+    """
         
     # Generate titan instantly with correct level
     titan_variations = []
@@ -584,6 +587,7 @@ async def _validate_and_process(update, context, user_id, user_id_str, username,
         if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
             # Fire-and-forget captcha spawn
             asyncio.create_task(spawn_captcha(update, context))
+        """
 
         # NOTE: Verification check is now done upfront in explore()
 
