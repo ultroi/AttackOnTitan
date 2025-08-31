@@ -658,49 +658,8 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         update_data = {} # Initialize empty dictionary for updates
         update_data["last_explore_time"] = current_time
         
-        # 3. Update mission14_area_counts for each explore if Mission 14 is active
-        try:
-            player_missions = getattr(player, "missions", [])
-            mission14_active = False
-            for mission in player_missions:
-                if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
-                    mission14_active = True
-                    break
-                    
-            if mission14_active:
-                location = getattr(player, "location", None)
-                if location:
-                    # List of all areas for mission 14
-                    AREAS = [
-                        "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                        "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-                    ]
-                    
-                    # Find matching area
-                    matching_area = None
-                    for area in AREAS:
-                        if location.lower() == area.lower() or area.lower() in location.lower():
-                            matching_area = area
-                            break
-                            
-                    if matching_area:
-                        mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
-                        old_count = mission_area_counts.get(matching_area, 0)
-                        mission_area_counts[matching_area] = old_count + 1
-                        
-                        # Update mission14_area_counts in database
-                        update_data["mission14_area_counts"] = mission_area_counts
-                        
-                        # Check if we just hit 500 for this area
-                        if old_count < 500 and mission_area_counts[matching_area] >= 500:
-                            # Fire-and-forget notification for area completion
-                            asyncio.create_task(update.message.reply_text(
-                                f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
-                                f"Mission 14 Progress: Area completed!",
-                                parse_mode=ParseMode.MARKDOWN
-                            ))
-        except Exception as e:
-            logger.error(f"Error updating mission14_area_counts: {e}")
+        # 3. Mission 14 is now only updated in battle_system.py (victory/defeat)
+        # Removed explore-only counting to prevent farming without battles
         
         # 4. Handle travel progress asynchronously
         travel_task = asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
