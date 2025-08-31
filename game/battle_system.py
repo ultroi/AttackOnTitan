@@ -1525,6 +1525,31 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         player_obj_fresh = await db.get_player(user_id)
         if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
             return
+            
+        # Update area explore counts for Mission 14
+        if victory and getattr(player_obj_fresh, "location", None):
+            location = getattr(player_obj_fresh, "location", None)
+            if location:
+                AREAS = [
+                    "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                    "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+                ]
+                area_explore_counts = getattr(player_obj_fresh, "area_explore_counts", {}) or {}
+                
+                # Find matching area
+                matching_area = None
+                for area in AREAS:
+                    if location.lower() == area.lower() or area.lower() in location.lower():
+                        matching_area = area
+                        break
+                
+                # Update area count
+                if matching_area:
+                    old_count = area_explore_counts.get(matching_area, 0)
+                    area_explore_counts[matching_area] = old_count + 1
+                    await db.update_player(user_id, {"area_explore_counts": area_explore_counts})
+                    # Get fresh data again after updating
+                    player_obj_fresh = await db.get_player(user_id)
 
         # Process mission progress in parallel
         mission_tasks = [
@@ -1586,6 +1611,30 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         player_obj_fresh = await db.get_player(user_id)
         if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
             return
+            
+        # Update area explore counts for Mission 14 even on defeats
+        location = getattr(player_obj_fresh, "location", None)
+        if location:
+            AREAS = [
+                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+            ]
+            area_explore_counts = getattr(player_obj_fresh, "area_explore_counts", {}) or {}
+            
+            # Find matching area
+            matching_area = None
+            for area in AREAS:
+                if location.lower() == area.lower() or area.lower() in location.lower():
+                    matching_area = area
+                    break
+            
+            # Update area count
+            if matching_area:
+                old_count = area_explore_counts.get(matching_area, 0)
+                area_explore_counts[matching_area] = old_count + 1
+                await db.update_player(user_id, {"area_explore_counts": area_explore_counts})
+                # Get fresh data again after updating
+                player_obj_fresh = await db.get_player(user_id)
 
         # Process exploration mission progress
         explore_notifications = await process_explore_mission_progress(

@@ -633,25 +633,25 @@ async def process_explore_mission_progress(db, player, area=None):
                         break
 
                 if matching_area:
+                    # Always increment the area count
                     old_count = explore_counts.get(matching_area, 0)
                     explore_counts[matching_area] = old_count + 1
+                    batch_updates["area_explore_counts"] = explore_counts
 
                     # Calculate completed areas (areas with >= 500 explores)
-                    completed_areas_before = sum(1 for area_name in REQUIRED_AREAS
-                                                if explore_counts.get(area_name, 0) >= 500)
-                    completed_areas_after = sum(1 for area_name in REQUIRED_AREAS
-                                               if explore_counts.get(area_name, 0) >= 500)
+                    completed_areas = sum(1 for area_name in REQUIRED_AREAS
+                                         if explore_counts.get(area_name, 0) >= 500)
+                    
+                    # Always update mission progress to match actual completed areas count
+                    previous_progress = pm["current_progress"]
+                    current_progress = min(completed_areas, pm["required_progress"])
 
-                    # Update mission progress if we completed a new area
-                    if completed_areas_after > completed_areas_before:
-                        previous_progress = pm["current_progress"]
-                        current_progress = min(completed_areas_after, pm["required_progress"])
+                    if previous_progress != current_progress:
+                        pm["current_progress"] = current_progress
+                        batch_updates["missions"] = player_missions
 
-                        if current_progress != previous_progress:
-                            pm["current_progress"] = current_progress
-                            batch_updates["missions"] = player_missions
-                            batch_updates["area_explore_counts"] = explore_counts
-
+                        if current_progress > previous_progress:
+                            # Only show notification when progress increases
                             if current_progress >= pm["required_progress"]:
                                 pm["status"] = MISSION_STATUS_COMPLETED
                                 pm["completed_at"] = datetime.now(timezone.utc)
@@ -659,9 +659,6 @@ async def process_explore_mission_progress(db, player, area=None):
                             else:
                                 notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
                                                    f"Mission 14 Progress: {current_progress}/{len(REQUIRED_AREAS)} areas completed")
-                    else:
-                        # Always update area_explore_counts even if no new area completed
-                        batch_updates["area_explore_counts"] = explore_counts
     
     # Apply all batched updates in a single operation
     if batch_updates:

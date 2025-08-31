@@ -179,6 +179,8 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 if area_explore_counts.get(area, 0) >= 500:
                     completed_areas += 1
             new_progress = min(completed_areas, mission.required_progress)
+            
+            # Always update the mission progress to match the actual completed areas count
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
                 if progress_amount > 0:
