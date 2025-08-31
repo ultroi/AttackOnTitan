@@ -350,13 +350,22 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
     for mission_data in active_missions:
         mission = mission_data["definition"]
         progress = mission_data["progress"]
-        # For Mission 14, always show latest area_explore_counts progress in UI
+        # For Mission 14, always show latest mission14_area_counts progress in UI
         if mission.id == 14:
-            area_explore_counts = getattr(player, "area_explore_counts", {}) or {}
+            mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
             completed_areas = 0
-            for area_count in area_explore_counts.values():
-                if area_count >= 500:
+            
+            # List of all areas for mission 14
+            REQUIRED_AREAS = [
+                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+            ]
+            
+            # Count areas with at least 500 explores
+            for area in REQUIRED_AREAS:
+                if mission_area_counts.get(area, 0) >= 500:
                     completed_areas += 1
+            
             display_progress = completed_areas
             is_completed = progress["status"] == "completed" or display_progress >= progress["required_progress"]
         else:

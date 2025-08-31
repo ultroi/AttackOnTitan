@@ -1557,8 +1557,11 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                     if matching_area:
                         old_count = mission_area_counts.get(matching_area, 0)
                         mission_area_counts[matching_area] = old_count + 1
+                        
+                        # Ensure we update mission14_area_counts
                         await db.update_player(user_id, {"mission14_area_counts": mission_area_counts})
-                        # Get fresh data again after updating
+                        
+                        # Get fresh data again after updating to ensure we have the latest
                         player_obj_fresh = await db.get_player(user_id)
 
         # Process mission progress in parallel
@@ -1652,8 +1655,11 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
                 if matching_area:
                     old_count = mission_area_counts.get(matching_area, 0)
                     mission_area_counts[matching_area] = old_count + 1
+                    
+                    # Ensure we update mission14_area_counts
                     await db.update_player(user_id, {"mission14_area_counts": mission_area_counts})
-                    # Get fresh data again after updating
+                    
+                    # Get fresh data again after updating to ensure we have the latest
                     player_obj_fresh = await db.get_player(user_id)
 
         # Process exploration mission progress

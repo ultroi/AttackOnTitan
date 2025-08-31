@@ -671,21 +671,22 @@ async def process_explore_mission_progress(db, player, area=None):
                     
                     # Always update mission progress to match actual completed areas count
                     previous_progress = pm["current_progress"]
-                    current_progress = min(completed_areas, pm["required_progress"])
+                    current_progress = completed_areas  # Don't limit the progress here
 
-                    if previous_progress != current_progress:
-                        pm["current_progress"] = current_progress
-                        batch_updates["missions"] = player_missions
+                    # Always update progress regardless of previous value
+                    pm["current_progress"] = current_progress
+                    batch_updates["missions"] = player_missions
 
-                        if current_progress > previous_progress:
-                            # Only show notification when progress increases
-                            if current_progress >= pm["required_progress"]:
-                                pm["status"] = MISSION_STATUS_COMPLETED
-                                pm["completed_at"] = datetime.now(timezone.utc)
-                                notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                            else:
-                                notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
-                                                   f"Mission 14 Progress: {current_progress}/{len(REQUIRED_AREAS)} areas completed")
+                    # Check if this area just reached 500
+                    if mission_area_counts.get(matching_area, 0) == 500:
+                        notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\n"
+                                           f"Mission 14 Progress: {current_progress}/{len(REQUIRED_AREAS)} areas completed")
+                        
+                    # Check if mission should be completed
+                    if current_progress >= pm["required_progress"] and pm["status"] != MISSION_STATUS_COMPLETED:
+                        pm["status"] = MISSION_STATUS_COMPLETED
+                        pm["completed_at"] = datetime.now(timezone.utc)
+                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
     
     # Apply all batched updates in a single operation
     if batch_updates:
