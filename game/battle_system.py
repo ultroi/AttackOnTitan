@@ -10,7 +10,7 @@ from game.random_drop import get_random_drop
 import asyncio
 import random
 from utils.monitor import track_battle_end
-from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress, check_mission_item_drops, add_mission_item
+from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress, check_mission_item_drops, add_mission_item, process_titan_defeat_mission_progress
 import logging
 from datetime import datetime, timezone
 import time
@@ -1529,7 +1529,8 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         # Process mission progress in parallel
         mission_tasks = [
             process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward),
-            process_explore_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None))
+            process_explore_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None)),
+            process_titan_defeat_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None))
         ]
 
         mission_results = await asyncio.gather(*mission_tasks, return_exceptions=True)

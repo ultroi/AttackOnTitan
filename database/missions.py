@@ -130,10 +130,10 @@ MISSION_DEFINITIONS = [
     ),
     Mission(
         id=9,
-        title="Endurance Run",
-        description="Test your endurance by exploring far from safety without returning home.",
-        requirement="Complete 1000 explores without returning to home location.",
-        required_progress=1000,
+        title="Royal Capital Titan Hunt",
+        description="Prove your elite skills by defeating 20 Titans specifically in the Royal Capital area.",
+        requirement="Defeat 20 Titans while exploring in the Royal Capital.",
+        required_progress=20,
         reward_description="25,000 Marks",
         rewards={"marks": 25000},
     ),
@@ -197,7 +197,7 @@ MISSION_DEFINITIONS = [
         id=15,
         title="Temporal Gambit",
         description="Test your skills under pressure by fighting while time contracts are active.",
-        requirement="Activate 3 Time Contract Scrolls in a row, survive 5 PvP fights under their effect.",
+        requirement="Activate 3 Time Contract Scrolls in a row, survive 5 PvP fights against unique opponents under their effect.",
         required_progress=5,
         reward_description="1 Titan Crystal OR +25 Atk Permanently",
         rewards={"special_reward": "crystal_or_attack"},
@@ -300,8 +300,12 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
                 await db.update_player(player.user_id, {"missions": player_missions})
                 # Apply rewards
                 if mission_def:
-                    await apply_mission_rewards(db, player, mission_def)
-                    return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
+                    actual_reward_message = await apply_mission_rewards(db, player, mission_def)
+                    # For Mission 15, use the actual reward received
+                    if mission_id == 15 and actual_reward_message:
+                        return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {actual_reward_message}"
+                    else:
+                        return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
             exploration_mission_ids = {1, 9, 11, 14}
             if mission_id in exploration_mission_ids:
                 return None
@@ -396,6 +400,7 @@ async def apply_mission_rewards(db, player, mission):
     """Apply the rewards from a completed mission"""
     rewards = mission.rewards
     update_data = {}
+    reward_message = None  # For Mission 15 random rewards
     
     # Apply marks
     if "marks" in rewards:
@@ -450,15 +455,28 @@ async def apply_mission_rewards(db, player, mission):
     if "special_reward" in rewards:
         # These would be handled case by case
         if rewards["special_reward"] == "crystal_or_attack":
-            # For now, just give a crystal
-            if "crystal" not in update_data:
-                update_data["crystal"] = player.crystal + 1
+            if random.random() < 0.5:  # 50% chance for each
+                # Give +25 ATK permanently
+                team = getattr(player, "team", [])
+                if team:
+                    character_name = team[0].character_name if hasattr(team[0], "character_name") else team[0]
+                    character = await db.get_character(int(player.user_id), character_name)
+                    if character:
+                        stats = character.stats.dict()
+                        stats["ATK"] = stats.get("ATK", 0) + 25
+                        await db.update_character_stats(int(player.user_id), character_name, stats)
+                        reward_message = "+25 ATK Permanently (Random Reward)"
+            else:
+                # Give 1 Titan Crystal
+                if "crystal" not in update_data:
+                    update_data["crystal"] = player.crystal + 1
+                reward_message = "1 Titan Crystal (Random Reward)"
     
     # Update player in database
     if update_data:
         await db.update_player(int(player.user_id), update_data)
     
-    return True
+    return reward_message
 
 # Function to add to DB class
 async def update_character_stats(db_instance, user_id, character_name, stats):
@@ -566,18 +584,12 @@ async def process_explore_mission_progress(db, player, area=None):
                         pm["completed_at"] = datetime.now(timezone.utc)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
                 
-        # Mission 9: Endurance Run (1000 explores without returning home)
+        # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
         if mission_id == 9:
-            previous_progress = pm["current_progress"]
-            current_progress = min(previous_progress + 1, pm["required_progress"])
-            if current_progress != previous_progress:
-                pm["current_progress"] = current_progress
-                batch_updates["missions"] = player_missions
+            # Only count if in Royal Capital area
+            if area and ("royal capital" in area.lower() or "royal_capital" in area.lower()):
                 
-                if current_progress >= pm["required_progress"]:
-                    pm["status"] = MISSION_STATUS_COMPLETED
-                    pm["completed_at"] = datetime.now(timezone.utc)
-                    notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                pass  
                 
         # Mission 11: Relentless Scout (2500 explores in a single week)
         if mission_id == 11:
@@ -670,15 +682,21 @@ async def process_pvp_mission_progress(db, player, won=True, opponent_id=None):
                 if notification:
                     notifications.append(notification)
                 
-        # Mission 15: Temporal Gambit - check if Time Contract Scroll is active
+        # Mission 15: Temporal Gambit - check if Time Contract Scroll is active and track unique opponents
         if mission_id == 15:
             # Check if player has active effects from pvp_system
             active_effects = getattr(player, "active_effects", {})
             if active_effects.get("time_contract"):
-                notification = await update_mission_progress(db, player, mission_id, 1)
-                updated = True
-                if notification:
-                    notifications.append(notification)
+                # Check if opponent is already faced for this mission
+                unique_opponents = pm.get("unique_opponents", [])
+                if opponent_id not in unique_opponents:
+                    # New unique opponent, add to list and increment progress
+                    unique_opponents.append(opponent_id)
+                    pm["unique_opponents"] = unique_opponents
+                    notification = await update_mission_progress(db, player, mission_id, 1)
+                    updated = True
+                    if notification:
+                        notifications.append(notification)
     
     # If updates were made, refresh player data
     if updated:
@@ -715,6 +733,46 @@ async def process_titan_reward_mission_progress(db, player, marks_earned):
         if updated_player:
             for key, value in updated_player.__dict__.items():
                 setattr(player, key, value)
+    
+    return notifications
+
+# Function to process mission progress for Titan defeats in specific areas
+async def process_titan_defeat_mission_progress(db, player, area=None):
+    """Update mission progress related to defeating Titans in specific areas"""
+    if not area:
+        return []
+        
+    player_missions = getattr(player, "missions", [])
+    notifications = []
+    
+    for pm in player_missions:
+        if pm["status"] != MISSION_STATUS_IN_PROGRESS:
+            continue
+            
+        mission_id = pm["mission_id"]
+        mission = MISSIONS_BY_ID.get(mission_id)
+        
+        if not mission:
+            continue
+            
+        # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
+        if mission_id == 9:
+            if "royal capital" in area.lower() or "royal_capital" in area.lower():
+                previous_progress = pm["current_progress"]
+                current_progress = min(previous_progress + 1, pm["required_progress"])
+                if current_progress != previous_progress:
+                    pm["current_progress"] = current_progress
+                    
+                    # Update in database
+                    await db.update_player(int(player.user_id), {"missions": player_missions})
+                    
+                    if current_progress >= pm["required_progress"]:
+                        pm["status"] = MISSION_STATUS_COMPLETED
+                        pm["completed_at"] = datetime.now(timezone.utc)
+                        await apply_mission_rewards(db, player, mission)
+                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                    else:
+                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")
     
     return notifications
 
