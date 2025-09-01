@@ -80,7 +80,7 @@ class Database:
                 "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
                 "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
                 "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
-                "missions": 1, "mission14_area_counts": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
+                "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
                 "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
                 "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
             }).to_list(length=100)  
@@ -242,7 +242,7 @@ class Database:
                 "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
                 "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
                 "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
-                "missions": 1, "mission14_area_counts": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
+                "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
                 "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
                 "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
             })
@@ -260,6 +260,7 @@ class Database:
                         TeamMember(**member) if isinstance(member, dict) else member
                         for member in player_data["team"]
                     ]
+                
                 player = Player(**player_data)
                 
                 # Cache the player if enabled
@@ -560,6 +561,7 @@ class Database:
                         TeamMember(**member) if isinstance(member, dict) else member
                         for member in player_data["team"]
                     ]
+                
                 players.append(Player(**player_data))
             
             elapsed = (time.perf_counter() - start) * 1000

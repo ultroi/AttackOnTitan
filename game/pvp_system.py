@@ -497,7 +497,6 @@ class PvPBattleSystem:
                 damage_bonus = pvp_bonuses.get("damage_bonus", 0)
                 if damage_bonus:
                     base_damage += damage_bonus
-                    logger.debug(f"Applied PvP damage bonus: +{damage_bonus} (Mission 14 reward)")
         except Exception as e:
             logger.error(f"Error applying PvP damage bonus: {e}")
 
@@ -1085,6 +1084,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
         # Get defender's character data
         defender_player = Player(**target_player)
+        
         if not defender_player.team:
             await update.message.reply_text(f"{defender_player.name} doesn't have any characters in their team!")
             return
