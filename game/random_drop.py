@@ -12,7 +12,17 @@ def get_random_drop():
                 'image': 'https://i.ibb.co/4ZnskFNq/image.jpg',
                 'message': f'You found a cylinder of gas and received 2000 gas!'
             }
+        else:
+            # 69% chance for bottle
+            gas_amount = random.randint(200, 1500)
+            return {
+                'type': 'bottle',
+                'amount': gas_amount,
+                'image': 'https://i.ibb.co/5XhB3zhB/image.jpg',
+                'message': f'You found a bottle of gas and received {gas_amount} gas!'
+            }
     else:
+        # 30% chance for bottle
         gas_amount = random.randint(200, 1500)
         return {
             'type': 'bottle',

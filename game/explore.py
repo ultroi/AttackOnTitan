@@ -341,14 +341,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if user_explore_locks[user_id_str].locked():
         return
-        
-    # ULTRA-FAST TITAN GENERATION FIRST - move database operations to background
-    # Use cached data whenever possible to avoid DB calls before sending message
     
     # Get player level from context if available (use default 1 if not)
     actual_player_level = 1
     if context.user_data and "player_level" in context.user_data:
         actual_player_level = context.user_data.get("player_level", 1)
+    
+    
+    should_spawn_captcha = (
+        random.random() < 0.02 and 
+        context.user_data and 
+        not context.user_data.get('captcha_active', False)
+    )
+    
+    if should_spawn_captcha:
+        # Spawn captcha instead of titan
+        asyncio.create_task(spawn_captcha(update, context))
+        return 
     
     # Generate titan instantly with correct level using pre-generated pool
     titan_variations = []
@@ -583,10 +592,6 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
                             asyncio.create_task(update.message.reply_text(heal_message, parse_mode=ParseMode.MARKDOWN))
                         except Exception:
                             pass
-            
-            # Spawn captcha occasionally
-            if random.random() < 0.02 and context.user_data and not context.user_data.get('captcha_active', False):
-                asyncio.create_task(spawn_captcha(update, context))
             
             # Start timeout task for titan
             timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))

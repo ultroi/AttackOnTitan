@@ -2381,8 +2381,11 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 
             battle.battle_ended = True
             
-            # Calculate rewards
-            rewards = await battle.calculate_rewards(db)
+            # Calculate rewards (set to 0 for timeout)
+            rewards = {
+                "winner": {"xp": 0, "marks": 0, "valor": 0},
+                "loser": {"xp": 0, "marks": 0, "valor": 0}
+            }
             
             # Edit existing battle message with timeout info
             try:
@@ -2424,9 +2427,9 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 battle_outcome = (
                     f"{timeout_message}\n\n"
                     f"<blockquote><b>{winner_first_name}</b> - {winner_char_name}</blockquote>\n"
-                    f"<b>Gain: {rewards['winner']['xp']} XP, {rewards['winner']['marks']} Marks</b>\n\n"
+                    f"<b>No rewards given for timeout</b>\n\n"
                     f"<blockquote><b>{loser_first_name}</b> - {loser_char_name}</blockquote>\n"
-                    f"<b>Gain: {rewards['loser']['xp']} XP</b>"
+                    f"<b>No rewards given for timeout</b>"
                 )
                 
                 # Send the timeout message as a new message
@@ -2449,12 +2452,11 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 winner_id = defender_id
                 loser_id = challenger_id
                 
-            # Update winner statistics and rewards
+            # Update winner statistics (no win count for timeout)
             await db.players.update_one(
                 {"user_id": winner_id},
                 {
                     "$inc": {
-                        "pvp_wins": 1,
                         "xp": rewards["winner"]["xp"],
                         "marks": rewards["winner"]["marks"],
                         "total_xp": rewards["winner"]["xp"]
@@ -2462,33 +2464,17 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 }
             )
                 
-            # Update loser statistics and rewards
+            # Update loser statistics (no loss count for timeout)
             await db.players.update_one(
                 {"user_id": loser_id},
                 {
                     "$inc": {
-                        "pvp_losses": 1,
                         "xp": rewards["loser"]["xp"],
                         "marks": rewards["loser"]["marks"],
                         "total_xp": rewards["loser"]["xp"]
                     }
                 }
             )
-            
-            # Process mission progress for PvP timeout win
-            winner_player = await db.get_player(winner_id)
-            if winner_player and hasattr(winner_player, "missions"):
-                mission_notifications = await process_pvp_mission_progress(db, winner_player, won=True, opponent_id=str(loser_id))
-                if mission_notifications:
-                    for notification in mission_notifications[:1]:
-                        try:
-                            await context.bot.send_message(
-                                chat_id=int(winner_id),
-                                text=notification,
-                                parse_mode=ParseMode.MARKDOWN
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to send private mission notification to winner on timeout: {e}")
             
             # Update characters with final HP and gas - avoid duplicate parameters
             challenger_data = battle.challenger.dict()

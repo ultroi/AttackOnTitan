@@ -1493,9 +1493,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     # Handle auto drop (ho jyga) - chance for random items after battle
     try:
         if random.random() < 0.08:
-            get_random_drop()
-            
-            
+            drop = get_random_drop()
+            if drop:
+                # Add gas to player
+                current_gas = player_data.get("gas", 0)
+                new_gas = current_gas + drop['amount']
+                await db.update_player(user_id, {"gas": new_gas})
+                
+                # Send drop message
+                if chat_id:
+                    try:
+                        await send(chat_id, drop['message'], parse_mode=ParseMode.MARKDOWN)
+                    except Exception as e:
+                        logger.error(f"Error sending drop message: {e}")
+                        
     except Exception as e:
         logger.error(f"Error processing auto drop: {e}")
 
@@ -1580,17 +1591,19 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                                     # Add notification for area completion
                                     all_notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\nMission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
                                 
-                            # Check if mission should be completed
-                            if completed_areas >= 10 and mission.get("status") != "completed":
-                                mission["status"] = "completed"
-                                mission["completed_at"] = datetime.now(timezone.utc)
-                                from database.missions import MISSIONS_BY_ID, apply_mission_rewards
-                                mission_def = MISSIONS_BY_ID.get(14)
-                                if mission_def:
-                                    # Apply the rewards to the player
-                                    await apply_mission_rewards(db, player_obj_fresh, mission_def)
-                                    all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
-                            break                        # Update both mission14_area_counts and missions in database
+                                # Check if mission should be completed
+                                if completed_areas >= 10 and mission.get("status") != "completed":
+                                    mission["status"] = "completed"
+                                    mission["completed_at"] = datetime.now(timezone.utc)
+                                    from database.missions import MISSIONS_BY_ID, apply_mission_rewards
+                                    mission_def = MISSIONS_BY_ID.get(14)
+                                    if mission_def:
+                                        # Apply the rewards to the player
+                                        await apply_mission_rewards(db, player_obj_fresh, mission_def)
+                                        all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
+                                break
+                        
+                        # Update both mission14_area_counts and missions in database
                         await db.update_player(user_id, {
                             "mission14_area_counts": mission_area_counts,
                             "missions": player_missions
