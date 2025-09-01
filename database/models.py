@@ -519,8 +519,7 @@ class Player(BaseModel):
         rewards = {
             "marks": 0,
             "valor": 0,
-            "crystals": 0,
-            "unlocks": []
+            "crystals": 0
         }
     
         # Valor tier system based on level
@@ -539,52 +538,27 @@ class Player(BaseModel):
     
         # Tier 1: Onboarding Phase (1-10)
         if 1 <= new_level <= 10:
-            rewards["marks"] = random.randint(250, 500)
-        
-            if new_level == 5:
-                rewards["unlocks"].append("First Echo Trait Slot")
-            elif new_level == 8:
-                rewards["unlocks"].append("Second Weapon Slot")
+            rewards["marks"] = 200 + (new_level * 50)  # 250, 300, 350, 400, 450, 500, 550, 600, 650, 700
 
         # Tier 2: Core Progression (11-20)
         elif 11 <= new_level <= 20:
-            rewards["marks"] = random.randint(600, 1000)
-            
-            if new_level == 15:
-                rewards["unlocks"].append("First Weapon Enhancement")
-            elif new_level == 18:
-                rewards["unlocks"].append("Second Echo Trait Slot")
+            rewards["marks"] = 600 + ((new_level - 10) * 80)  # 680, 760, 840, 920, 1000, 1080, 1160, 1240, 1320, 1400
 
         # Tier 3: Customization (21-30)
         elif 21 <= new_level <= 30:
-            rewards["marks"] = random.randint(1500, 2000)
-            
-            if new_level == 22:
-                rewards["unlocks"].append("Respec Token")
-            elif new_level == 25:
-                rewards["unlocks"].append("Echo Shard Crafting")
+            rewards["marks"] = 1400 + ((new_level - 20) * 120)  # 1520, 1640, 1760, 1880, 2000, 2120, 2240, 2360, 2480, 2600
 
         # Tier 4: Prestige (31-40)
         elif 31 <= new_level <= 40:
-            rewards["marks"] = random.randint(2000, 2500)
-        
-            if new_level == 35:
-                rewards["unlocks"].append("Echo Trait Enhancement")
-            elif new_level == 40:
-                rewards["unlocks"].append("Legacy Hall")
+            rewards["marks"] = 2600 + ((new_level - 30) * 150)  # 2750, 2900, 3050, 3200, 3350, 3500, 3650, 3800, 3950, 4100
 
         # Tier 5: Apex (41+)
         else:
-            rewards["marks"] = 3000 + (min(new_level, 50) * 100)
-        
-            if new_level == 45:
-                rewards["unlocks"].append("Elite Clan Access")
-            elif new_level == 50:
-                rewards["unlocks"].append("Titan Lord Title")
+            rewards["marks"] = 4100 + ((new_level - 40) * 200)  # 4300, 4500, 4700, etc.
 
         if new_level > 50:
-            # Progressive scaling (2% increase per level beyond 50)
-            scale = 1 + (new_level - 50) * 0.02
+            # Progressive scaling (3% increase per level beyond 50 for better motivation)
+            scale = 1 + (new_level - 50) * 0.03
             rewards["marks"] = int(rewards["marks"] * scale)
             
         return rewards

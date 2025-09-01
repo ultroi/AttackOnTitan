@@ -533,10 +533,8 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             logger.warning(f"Character {character_name} not found for player {user_id_str}")
             return
         
-        # Store accurate player level in context for future use
-        if hasattr(character, 'level') and context.user_data:
-            context.user_data["player_level"] = character.level
-            actual_player_level = character.level
+        # Update daily explores
+        player.increment_daily_explores(datetime.now(timezone.utc))
         
         # Wait for titan cleanup to finish
         await cleanup_titan_future
@@ -662,9 +660,8 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         current_time = time.time()
         update_data = {} # Initialize empty dictionary for updates
         update_data["last_explore_time"] = current_time
+        update_data["daily_explores"] = player.daily_explores
         
-        # 3. Mission 14 is now only updated in battle_system.py (victory/defeat)
-        # Removed explore-only counting to prevent farming without battles
         
         # 4. Handle travel progress asynchronously
         travel_task = asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))

@@ -143,20 +143,29 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     player_updated = True
         elif mission.id == 11:
             weekly_explores = 0
-            daily_explores_data = getattr(player, "daily_explores", {})
+            daily_explores_data = getattr(player, "daily_explores", [])
             mission_start_time = None
             if progress.get("started_at"):
                 try:
                     mission_start_time = datetime.fromisoformat(progress["started_at"].replace('Z', '+00:00'))
                 except (ValueError, TypeError):
                     mission_start_time = datetime.now(timezone.utc) - timedelta(days=1)
-            if isinstance(daily_explores_data, dict) and mission_start_time:
-                for date_str, count in daily_explores_data.items():
+            if isinstance(daily_explores_data, list) and mission_start_time:
+                for daily_explore in daily_explores_data:
                     try:
-                        date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-                        if date >= mission_start_time:
-                            weekly_explores += count
-                    except (ValueError, TypeError):
+                        # Handle both dict and DailyExplores object formats
+                        if isinstance(daily_explore, dict):
+                            date_str = daily_explore.get("date")
+                            count = daily_explore.get("count", 0)
+                        else:
+                            date_str = getattr(daily_explore, "date", None)
+                            count = getattr(daily_explore, "count", 0)
+                        
+                        if date_str:
+                            date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            if date >= mission_start_time:
+                                weekly_explores += count
+                    except (ValueError, TypeError, AttributeError):
                         pass
             else:
                 weekly_explores = getattr(player, "explores", 0)

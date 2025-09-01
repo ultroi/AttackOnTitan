@@ -627,24 +627,47 @@ async def process_explore_mission_progress(db, player, area=None):
                     else:
                         notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")  
                 
-        # Mission 11: Relentless Scout (2500 explores in a single week)
         if mission_id == 11:
-            previous_progress = pm["current_progress"]
-            current_progress = min(previous_progress + 1, pm["required_progress"])
-            if current_progress != previous_progress:
-                pm["current_progress"] = current_progress
+            weekly_explores = 0
+            daily_explores_data = getattr(player, "daily_explores", [])
+            mission_start_time = pm.get("started_at")
+            if mission_start_time:
+                try:
+                    if isinstance(mission_start_time, str):
+                        mission_start_time = datetime.fromisoformat(mission_start_time.replace('Z', '+00:00'))
+                    elif isinstance(mission_start_time, datetime) and mission_start_time.tzinfo is None:
+                        mission_start_time = mission_start_time.replace(tzinfo=timezone.utc)
+                    
+                    if isinstance(daily_explores_data, list) and mission_start_time:
+                        for daily_explore in daily_explores_data:
+                            try:
+                                # Handle both dict and DailyExplores object formats
+                                if isinstance(daily_explore, dict):
+                                    date_str = daily_explore.get("date")
+                                    count = daily_explore.get("count", 0)
+                                else:
+                                    date_str = getattr(daily_explore, "date", None)
+                                    count = getattr(daily_explore, "count", 0)
+                                
+                                if date_str:
+                                    date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                    if date >= mission_start_time:
+                                        weekly_explores += count
+                            except (ValueError, TypeError, AttributeError):
+                                pass
+                except (ValueError, TypeError):
+                    pass
+            
+            # Update progress to the calculated weekly total
+            new_progress = min(weekly_explores, pm["required_progress"])
+            if pm["current_progress"] != new_progress:
+                pm["current_progress"] = new_progress
                 batch_updates["missions"] = player_missions
                 
-                if current_progress >= pm["required_progress"]:
+                if new_progress >= pm["required_progress"]:
                     pm["status"] = MISSION_STATUS_COMPLETED
                     pm["completed_at"] = datetime.now(timezone.utc)
                     notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                
-        # Mission 14: Never Stop! (500 explores in each place of the map)
-        if mission_id == 14:
-            # Skip Mission 14 processing here since it's handled directly in battle_system.py
-            # to avoid double counting
-            continue
     
     # Apply all batched updates in a single operation
     if batch_updates:
