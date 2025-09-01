@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
+import time
 
 from utils.maintenance import maintenance_protected
 from utils.ban_utils import ban_protected
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 # Page size for pagination
 MISSIONS_PER_PAGE = 5
 
+# Cooldown tracking to prevent command spam
+mission_command_cooldowns = {}
+COOLDOWN_SECONDS = 30
+
 @maintenance_protected
 @ban_protected
 async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -33,6 +38,21 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
         
     user_id = str(update.effective_user.id)
+    
+    # Check cooldown to prevent command spam
+    current_time = time.time()
+    if user_id in mission_command_cooldowns:
+        time_since_last_use = current_time - mission_command_cooldowns[user_id]
+        if time_since_last_use < COOLDOWN_SECONDS:
+            remaining_time = int(COOLDOWN_SECONDS - time_since_last_use)
+            await update.message.reply_text(
+                f"⏰ Please wait {remaining_time} seconds before using /missions again.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+    
+    # Update cooldown timestamp
+    mission_command_cooldowns[user_id] = current_time
     
     # Get DB instance
     db = context.bot_data.get("db")
@@ -117,8 +137,10 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         player_updated = True
         # --- Exploring-type missions ---
         elif mission.id == 1:
-            explores = getattr(player, "explores", 0)
-            new_progress = min(explores, mission.required_progress)
+            current_explore = getattr(player, "explore_count", 0)
+            starting_explore = progress.get("starting_explore_count", current_explore)
+            explores_since_start = max(0, current_explore - starting_explore)
+            new_progress = min(explores_since_start, mission.required_progress)
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
                 if progress_amount > 0:
@@ -127,13 +149,10 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         progress_notifications.append(notification)
                     player_updated = True
         elif mission.id == 9:
-            explores = getattr(player, "explores", 0)
-            travel_data = getattr(player, "travel", {})
-            if travel_data and not travel_data.get("in_progress", False):
-                consecutive_explores = travel_data.get("consecutive_explores", 0)
-                new_progress = min(consecutive_explores, mission.required_progress)
-            else:
-                new_progress = min(explores, mission.required_progress)
+            current_explore = getattr(player, "explore_count", 0)
+            starting_explore = progress.get("starting_explore_count", current_explore)
+            explores_since_start = max(0, current_explore - starting_explore)
+            new_progress = min(explores_since_start, mission.required_progress)
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
                 if progress_amount > 0:
@@ -142,35 +161,10 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         progress_notifications.append(notification)
                     player_updated = True
         elif mission.id == 11:
-            weekly_explores = 0
-            daily_explores_data = getattr(player, "daily_explores", [])
-            mission_start_time = None
-            if progress.get("started_at"):
-                try:
-                    mission_start_time = datetime.fromisoformat(progress["started_at"].replace('Z', '+00:00'))
-                except (ValueError, TypeError):
-                    mission_start_time = datetime.now(timezone.utc) - timedelta(days=1)
-            if isinstance(daily_explores_data, list) and mission_start_time:
-                for daily_explore in daily_explores_data:
-                    try:
-                        # Handle both dict and DailyExplores object formats
-                        if isinstance(daily_explore, dict):
-                            date_str = daily_explore.get("date")
-                            count = daily_explore.get("count", 0)
-                        else:
-                            date_str = getattr(daily_explore, "date", None)
-                            count = getattr(daily_explore, "count", 0)
-                        
-                        if date_str:
-                            # Parse date as YYYY-MM-DD format instead of ISO format
-                            date = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
-                            if date >= mission_start_time:
-                                weekly_explores += count
-                    except (ValueError, TypeError, AttributeError):
-                        pass
-            else:
-                weekly_explores = getattr(player, "explore_count", 0)
-            new_progress = min(weekly_explores, mission.required_progress)
+            current_explore = getattr(player, "explore_count", 0)
+            starting_explore = progress.get("starting_explore_count", current_explore)
+            explores_since_start = max(0, current_explore - starting_explore)
+            new_progress = min(explores_since_start, mission.required_progress)
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
                 if progress_amount > 0:

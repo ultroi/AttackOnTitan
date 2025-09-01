@@ -1589,33 +1589,9 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
                         completed_areas = sum(1 for area_name in REQUIRED_AREAS
                                              if mission_area_counts.get(area_name, 0) >= 500)
                         
-                        # Update mission progress in player missions
-                        for mission in player_missions:
-                            if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
-                                previous_progress = mission["current_progress"]
-                                mission["current_progress"] = completed_areas
-                                
-                                # Check if this area just reached 500
-                                if mission_area_counts.get(matching_area, 0) == 500:
-                                    # Add notification for area completion
-                                    all_notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\nMission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
-                                
-                                # Check if mission should be completed
-                                if completed_areas >= 10 and mission.get("status") != "completed":
-                                    mission["status"] = "completed"
-                                    mission["completed_at"] = datetime.now(timezone.utc)
-                                    from database.missions import MISSIONS_BY_ID, apply_mission_rewards
-                                    mission_def = MISSIONS_BY_ID.get(14)
-                                    if mission_def:
-                                        # Apply the rewards to the player
-                                        await apply_mission_rewards(db, player_obj_fresh, mission_def)
-                                        all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
-                                break
-                        
-                        # Update both mission14_area_counts and missions in database
+                        # Update mission14_area_counts and missions in database
                         await db.update_player(user_id, {
-                            "mission14_area_counts": mission_area_counts,
-                            "missions": player_missions
+                            "mission14_area_counts": mission_area_counts
                         })
                         
                         # Get fresh data again after updating

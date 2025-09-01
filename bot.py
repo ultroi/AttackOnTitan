@@ -1,13 +1,14 @@
 """
-Attack on Titan Bot - Test Runner
+Attack on Titan Bot - Local Test Runner
 
 This file is designed for testing the bot locally before deploying to production.
+It follows the same structure as main.py but runs in polling mode for local development.
 
 Features:
 - Loads bot token from .env file (TEST_BOT_TOKEN)
 - Uses test database to prevent changes to production data
-- Actually runs the bot with test token for real testing
-- Data safety: Uses test database
+- Runs the bot with test token for local testing
+- Supports all commands and functionality of the production bot
 
 Usage:
 1. Set TEST_BOT_TOKEN in .env file
@@ -19,6 +20,8 @@ Environment Variables:
 - TEST_BOT_TOKEN: Your test bot token
 - TEST_MODE: true/false (enables test database)
 - DEBUG: true/false (enables debug logging)
+- MONGODB_URI: MongoDB connection string
+- DB_NAME: Database name (will append "_test" in test mode)
 """
 
 import os
@@ -26,7 +29,7 @@ import logging
 import asyncio
 import signal
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler, MessageHandler, filters
@@ -35,6 +38,7 @@ from pymongo.errors import PyMongoError
 from telegram import Update as TelegramUpdate
 from database.db import Database
 from database.db_instance import get_persistent_database
+from game.map_system import show_map, MAP_IMAGE_URL
 from game.scheduler import start_scheduler
 from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
@@ -50,7 +54,6 @@ from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
 from utils.scheduled_tasks import start_scheduled_tasks
-from game.map_system import show_map
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 from game.captcha import button
 from game.pvp_system import pvp_command, pvp_callback_handler
@@ -81,12 +84,13 @@ load_dotenv()
 
 # Get environment variables
 ENV = os.getenv("ENV", "development")
-USE_POLLING = os.getenv("USE_POLLING", "true").lower() == "true"
+USE_POLLING = True  # Always use polling for local testing
 TEST_BOT_TOKEN = os.getenv("TEST_BOT_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or TEST_BOT_TOKEN
 MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME", "attackontitan")
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+DEBUG = os.getenv("DEBUG", "true").lower() == "true"  # Default to debug mode in test environment
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", TELEGRAM_TOKEN.split(":")[1] if TELEGRAM_TOKEN else "")
 
 # Test mode configuration - ensures data safety
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
@@ -109,66 +113,45 @@ class LocalMemoryDatabase:
         self.titan_timeout_tasks = {}
         # Add compatibility properties
         self.db = None
-        self.characters_collection = None
-        self.players_collection = None
-        self.titans_collection = None
-        self.equipment = None
-        self.shop_purchases = None
-        self.shop_purchases_collection = None
-        self.bank_accounts = None
-        self.groups_collection = None
-        self.stats = None
+        self.characters_collection = self.characters  # Use the dict as mock collection
+        self.characters = self.characters  # For compatibility
+        self.players_collection = self.players  # Use the dict as mock collection
+        self.titans_collection = self.titans  # Use the dict as mock collection
+        self.equipment = {}
+        self.shop_purchases = {}
+        self.shop_purchases_collection = {}
+        self.bank_accounts = {}
+        self.groups_collection = self.groups  # Use the dict as mock collection
+        self.stats = {}
         self._titan_cache = {}
-        self.bans_collection = None
+        self.bans_collection = self.bans  # Use the dict as mock collection
 
     async def init_db(self, motor_db=None):
         """Initialize the local memory database"""
         logger.info("🧪 Initializing Local Memory Database for Test Mode")
-        # Don't connect to MongoDB in test mode
         return self
 
     async def get_player(self, user_id):
-        """Get player from local memory, load from DB if not present (lazy load)"""
+        """Get player from local memory, lazy load if needed"""
         user_id_str = str(user_id)
         if user_id_str not in self.players:
-            # Lazy load from DB only once per session
-            await self.load_user_from_db(user_id_str)
+            # Try to load from persistent DB if available
+            await self._try_load_from_persistent_db(user_id_str)
         return self.players.get(user_id_str)
 
-    async def load_user_from_db(self, user_id_str):
-        """Load user data from MongoDB into memory (only once per session)"""
-        # Use the global get_persistent_database and Database
+    async def _try_load_from_persistent_db(self, user_id_str):
+        """Try to load user data from persistent DB if possible"""
         try:
             motor_db = await get_persistent_database()
-            if motor_db is None:
-                logger.warning(f"[LocalMemoryDB] Could not get DB instance for user {user_id_str}")
-                return
-            db = Database()
-            await db.init_db(motor_db)
-            # Try to get player data
-            player = await db.get_player(user_id_str)
-            if player:
-                # Convert to dict if needed
-                if hasattr(player, '__dict__'):
-                    self.players[user_id_str] = dict(player.__dict__)
-                else:
+            if motor_db:
+                db = Database()
+                await db.init_db(motor_db)
+                player = await db.get_player(user_id_str)
+                if player:
                     self.players[user_id_str] = player
-                logger.info(f"[LocalMemoryDB] Loaded player {user_id_str} from DB into memory")
-            # Load all characters for this user
-            if hasattr(db, 'get_player_characters'):
-                chars = await db.get_player_characters(user_id_str)
-                if chars:
-                    for char in chars:
-                        # Convert to dict if needed
-                        if hasattr(char, '__dict__'):
-                            char_dict = dict(char.__dict__)
-                        else:
-                            char_dict = char
-                        key = f"{user_id_str}_{char_dict['name']}"
-                        self.characters[key] = char_dict
-                    logger.info(f"[LocalMemoryDB] Loaded {len(chars)} characters for user {user_id_str} from DB into memory")
+                    logger.info(f"[LocalMemoryDB] Loaded player {user_id_str} from persistent DB")
         except Exception as e:
-            logger.error(f"[LocalMemoryDB] Error loading user {user_id_str} from DB: {e}")
+            logger.debug(f"[LocalMemoryDB] Could not load from persistent DB: {e}")
 
     async def update_player(self, user_id, update_data):
         """Update player in local memory"""
@@ -176,62 +159,48 @@ class LocalMemoryDatabase:
         if user_id_str not in self.players:
             self.players[user_id_str] = {}
 
-        # Merge update data
+        # Apply updates
         for key, value in update_data.items():
-            if key in self.players[user_id_str] and isinstance(self.players[user_id_str][key], dict) and isinstance(value, dict):
-                # Deep merge for nested dictionaries
-                self._deep_merge(self.players[user_id_str][key], value)
+            if isinstance(self.players[user_id_str].get(key), dict) and isinstance(value, dict):
+                # Merge nested dictionaries
+                if key not in self.players[user_id_str]:
+                    self.players[user_id_str][key] = {}
+                self.players[user_id_str][key].update(value)
             else:
                 self.players[user_id_str][key] = value
 
-        logger.debug(f"📝 Local DB: Updated player {user_id_str} with keys: {list(update_data.keys())}")
-
-    def _deep_merge(self, target, source):
-        """Deep merge two dictionaries"""
-        for key, value in source.items():
-            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
-                self._deep_merge(target[key], value)
-            else:
-                target[key] = value
+        return self.players[user_id_str]
 
     async def get_character(self, user_id, character_name):
         """Get character from local memory"""
         key = f"{user_id}_{character_name}"
-        char = self.characters.get(key)
-        if char:
-            logger.debug(f"📖 Local DB: Retrieved character {key}")
-        return char
+        return self.characters.get(key)
 
     async def update_character(self, character):
         """Update character in local memory"""
         key = f"{character.user_id}_{character.name}"
         self.characters[key] = character
-        logger.debug(f"📝 Local DB: Updated character {key}")
+        return character
 
     async def store_titan(self, user_id, titan):
         """Store titan in local memory"""
         key = f"{user_id}_titan"
         self.titans[key] = titan
-        logger.debug(f"📝 Local DB: Stored titan for user {user_id}")
 
     async def get_titan(self, user_id):
         """Get titan from local memory"""
         key = f"{user_id}_titan"
-        titan = self.titans.get(key)
-        if titan:
-            logger.debug(f"📖 Local DB: Retrieved titan for user {user_id}")
-        return titan
+        return self.titans.get(key)
 
     async def delete_titan(self, user_id):
         """Delete titan from local memory"""
         key = f"{user_id}_titan"
         if key in self.titans:
             del self.titans[key]
-            logger.debug(f"�️ Local DB: Deleted titan for user {user_id}")
 
     async def batch_update_player(self, user_id, update_data):
         """Batch update player in local memory"""
-        await self.update_player(user_id, update_data)
+        return await self.update_player(user_id, update_data)
 
     def get_status_message(self):
         """Get a status message showing current local database state"""
@@ -248,34 +217,29 @@ class LocalMemoryDatabase:
             f"🗑️ Use /cleardb to reset all data"
         )
 
-    # Additional methods to handle other database operations
+    # Compatibility methods
     async def find_one(self, collection, query):
         """Mock find_one for compatibility"""
         logger.debug(f"📖 Local DB: find_one called on {collection} with query: {query}")
-        # This is a simplified mock - in a real implementation you'd need to handle different collections
         return None
 
     async def update_one(self, collection, query, update_data, upsert=False):
         """Mock update_one for compatibility"""
         logger.debug(f"📝 Local DB: update_one called on {collection}")
-        # This is a simplified mock - in a real implementation you'd need to handle different collections
         return None
 
     def invalidate_titan_cache(self, user_id: str):
         """Mock invalidate_titan_cache for compatibility"""
         if user_id in self._titan_cache:
             del self._titan_cache[user_id]
-            logger.debug(f"Invalidated titan cache for user {user_id}")
         return True
 
     def invalidate_player_cache(self, user_id: str):
         """Mock invalidate_player_cache for compatibility"""
-        logger.debug(f"Mock: Invalidated player cache for user {user_id}")
         return True
 
     def invalidate_character_cache(self, user_id: str, character_name: str):
         """Mock invalidate_character_cache for compatibility"""
-        logger.debug(f"Mock: Invalidated character cache for {character_name}")
         return True
 
     def get_stats(self):
@@ -337,53 +301,65 @@ async def initialize_bot():
 
     logger.info("Initializing bot environment...")
 
-    if TEST_MODE:
-        # Use local memory database for test mode
-        logger.info("🧪 Using Local Memory Database (Test Mode)")
-        db = local_db
-        await db.init_db()
-    else:
-        # Set environment variables for database
-        if MONGODB_URI:
-            os.environ["MONGODB_URI"] = MONGODB_URI
-        os.environ["DB_NAME"] = DB_NAME
-
-        # Initialize database
-        try:
-            motor_db = await get_persistent_database()
-            if motor_db is not None:
-                db = Database()
-                await db.init_db(motor_db)
-            else:
-                logger.error("Failed to get database instance")
-                db = None
-        except Exception as e:
-            logger.error(f"Error initializing database: {e}")
-            db = None
-
-    # Initialize shop system
-    shop_system = ShopSystem()
-
-    logger.info("Bot environment initialized successfully!")
-    if TEST_MODE:
-        logger.info("🧪 Local Memory Database loaded - NO PERSISTENT STORAGE")
-        if db is not None and isinstance(db, LocalMemoryDatabase) and hasattr(db, "get_stats"):
-            try:
-                stats = db.get_stats()
-                logger.info(f"📊 Local DB Stats: Players: {stats['players']}, Characters: {stats['characters']}, Titans: {stats['titans']}")
-            except Exception as e:
-                logger.error(f"Error getting stats: {e}")
-                logger.info("📊 Local DB Stats: No statistics available")
+    try:
+        if TEST_MODE:
+            # Use local memory database for test mode
+            logger.info("🧪 Using Local Memory Database (Test Mode)")
+            db = local_db
+            await db.init_db()
         else:
-            logger.info("📊 Local DB Stats: No statistics available")
-        logger.info("💡 Use /dbstatus to check current data and /cleardb to reset")
-    else:
-        logger.info(f"Connected to database: {DB_NAME}")
-    logger.info(f"Shop system loaded with {len(shop_system.shop_items)} items")
+            # Set environment variables for database
+            if MONGODB_URI:
+                os.environ["MONGODB_URI"] = MONGODB_URI
+            os.environ["DB_NAME"] = DB_NAME
 
-# Setup bot handlers
+            # Initialize database
+            try:
+                motor_db = await get_persistent_database()
+                if motor_db is not None:
+                    db = Database()
+                    await db.init_db(motor_db)
+                    
+                    # Apply battle system fixes if needed
+                    from game.battle_fix import apply_battle_fixes
+                    fixes_applied = await apply_battle_fixes(db)
+                    if fixes_applied:
+                        logger.info("Applied battle system fixes")
+                else:
+                    logger.error("Failed to get database instance")
+                    db = None
+            except Exception as e:
+                logger.error(f"Error initializing database: {e}")
+                db = None
+
+        # Initialize shop system
+        shop_system = ShopSystem()
+
+        logger.info("Bot environment initialized successfully!")
+        if TEST_MODE:
+            logger.info("🧪 Local Memory Database loaded - NO PERSISTENT STORAGE")
+            if db is not None and isinstance(db, LocalMemoryDatabase) and hasattr(db, "get_stats"):
+                try:
+                    stats = db.get_stats()
+                    logger.info(f"📊 Local DB Stats: Players: {stats['players']}, Characters: {stats['characters']}, Titans: {stats['titans']}")
+                except Exception as e:
+                    logger.error(f"Error getting stats: {e}")
+                    logger.info("📊 Local DB Stats: No statistics available")
+            else:
+                logger.info("📊 Local DB Stats: No statistics available")
+            logger.info("💡 Use /dbstatus to check current data and /cleardb to reset")
+        else:
+            logger.info(f"Connected to database: {DB_NAME}")
+        logger.info(f"Shop system loaded with {len(shop_system.shop_items)} items")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize bot: {e}", exc_info=True)
+        return False
+
+# Register all command and callback handlers
 def setup_handlers(application):
-    """Setup all command and callback handlers"""
+    """Register all command and callback handlers"""
 
     # User commands (protected only by disable)
     application.add_handler(CommandHandler("start", disable_protected(start_character_selection)))
@@ -420,6 +396,8 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("checkgroup", check_group_record))
     application.add_handler(CommandHandler("taxstatus", tax_status_command))
     application.add_handler(CommandHandler("forcetax", force_tax_check_command))
+    
+    # Test mode only commands
     if TEST_MODE:
         application.add_handler(CommandHandler("cleardb", clear_local_db_command))
         application.add_handler(CommandHandler("dbstatus", local_db_status_command))
@@ -428,15 +406,13 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))
     application.add_handler(CommandHandler("deposit", disable_protected(handle_deposit_command)))
     application.add_handler(CommandHandler("withdraw", disable_protected(handle_withdrawal_command)))
-
+    application.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
+    
     # PVP system handlers
     application.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
-
-    # Callback handlers with patterns
-    application.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
-    application.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
-    application.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
     application.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
+
+    # Character selection and team management
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
     application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
@@ -448,6 +424,8 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
     application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+
+    # Profile and inventory
     application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
     application.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
     application.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
@@ -455,26 +433,40 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
     application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
     application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
+
+    # Character detail handlers
     application.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
     application.add_handler(CallbackQueryHandler(view_weapons_char, pattern=r"^view_weapons_"))
     application.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
     application.add_handler(CallbackQueryHandler(view_abilities, pattern=r"^view_abilities_"))
     application.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
     application.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
+
+    # Battle and travel
     application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
     application.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     application.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
     application.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
-    application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-    application.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
-    application.add_handler(CallbackQueryHandler(button_callback))  # Fallback
 
-    # Message handlers
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button))
+    # Mission handlers
+    application.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
+    application.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
+
+    # Shop and purchases
+    application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+
+    # Group membership handler
+    application.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, group_update_handler))
 
-    # Chat member handler
-    application.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
+    # Generic button handler (should be last)
+    application.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
+
+    # Fallback handler (must be absolutely last)
+    application.add_handler(CallbackQueryHandler(button_callback))
+    
+    # Text message handler
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button))
 
     logger.info("✅ All handlers registered successfully")
 
@@ -554,18 +546,71 @@ async def local_db_status_command(update: Update, context: ContextTypes.DEFAULT_
         if update.message:
             await update.message.reply_text("❌ Failed to get database status.")
 
+async def setup_error_handler(application):
+    """Set up error handler for the bot"""
+    
+    async def error_handler(update: object, context):
+        if isinstance(context.error, asyncio.CancelledError):
+            logger.warning(f"Task cancelled for update {update}")
+            return
+                
+        # Special handling for rate limiting errors
+        from telegram.error import RetryAfter
+        if isinstance(context.error, RetryAfter):
+            retry_seconds = context.error.retry_after
+            logger.warning(f"Rate limited. Retry after {retry_seconds} seconds")
+            
+            # For rate limit errors, only notify the user if possible
+            if isinstance(update, Update) and getattr(update, "effective_message", None):
+                try:
+                    if update.effective_message:
+                        await asyncio.sleep(min(retry_seconds, 5))  # Wait a bit before sending the message
+                        await update.effective_message.reply_text(
+                            f"Bot is being rate limited. Please try again in {int(retry_seconds)} seconds."
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to notify user about rate limit: {e}")
+            return
+                
+        logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
+            
+        # Prepare detailed error message
+        command = None
+        if isinstance(update, Update):
+            if hasattr(update, "message") and update.message is not None and hasattr(update.message, "text") and update.message.text:
+                command = update.message.text
+            elif hasattr(update, "callback_query") and update.callback_query is not None and hasattr(update.callback_query, "data") and update.callback_query.data:
+                command = f"Callback: {update.callback_query.data}"
+        user_id = getattr(update, "effective_user", None)
+        user_id_str = getattr(user_id, "id", "N/A") if user_id is not None else "N/A"
+        
+        error_text = (
+            f"⚠️ <b>Error Occurred</b>\n"
+            f"<b>Command:</b> <code>{command}</code>\n"
+            f"<b>User:</b> <code>{user_id_str}</code>\n"
+            f"<b>Error:</b>\n<pre>{repr(context.error)}</pre>\n"
+        )
+        
+        # In test mode, log to console
+        if TEST_MODE:
+            logger.error(f"ERROR: {error_text}")
+            if DEBUG:
+                import traceback
+                traceback.print_exc()
+
+    application.add_error_handler(error_handler)
+
 async def main():
     """Main bot runner"""
-    print("🤖 ATTACK ON TITAN BOT - TEST MODE")
+    print("🤖 ATTACK ON TITAN BOT - LOCAL TEST MODE")
     print("=" * 50)
     print(f"📋 Environment: {ENV}")
     print(f"📋 Database: {DB_NAME}")
     print(f"📋 Debug Mode: {DEBUG}")
-    print(f"📋 Using Polling: {USE_POLLING}")
     print(f"📋 Test Mode: {TEST_MODE}")
     if TEST_MODE:
         print("🧪 TEST MODE ACTIVE - Using LOCAL MEMORY DATABASE")
-        print("⚠️  NO CHANGES will be saved to any database")
+        print("⚠️  NO CHANGES will be saved to production database")
         print("💾 All data is stored in memory and lost on restart")
         print("🗑️  Use /cleardb to reset all test data")
     else:
@@ -585,17 +630,18 @@ async def main():
         return
 
     # Initialize bot environment
-    try:
-        await initialize_bot()
-    except Exception as e:
-        print(f"❌ ERROR: Failed to initialize bot environment: {e}")
-        if DEBUG:
-            import traceback
-            traceback.print_exc()
+    success = await initialize_bot()
+    if not success:
+        print("❌ ERROR: Failed to initialize bot environment")
         return
-
+    
+    global application
+    
     # Create application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    # Set up error handler
+    await setup_error_handler(application)
 
     # Setup handlers
     setup_handlers(application)
@@ -605,8 +651,8 @@ async def main():
     application.bot_data["shop_system"] = shop_system
     application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
 
-    # Start scheduler
-    start_scheduler()
+    # Start the midnight tax scheduler with bot instance
+    start_scheduler(application.bot)
 
     # Start scheduled tasks
     start_scheduled_tasks(application.bot)
@@ -621,77 +667,43 @@ async def main():
         logger.error(f"Failed to start stats scheduler: {e}")
 
     print("\n🚀 Starting bot...")
-    print("🤖 Bot is now running! Send commands to your test bot in Telegram")
+    print("🤖 Bot is now running in polling mode! Send commands to your test bot in Telegram")
     print("Press Ctrl+C to stop the bot")
 
-    # Start the bot
-    if USE_POLLING:
-        if asyncio.get_running_loop().is_running():
-            # Loop is running, start manually
-            await application.initialize()
-            await application.start()
+    # Set up signal handlers for graceful shutdown
+    stop_event = asyncio.Event()
+    def stop_bot(signum, frame):
+        print("\n⏱️ Stopping bot...")
+        stop_event.set()
+    signal.signal(signal.SIGINT, stop_bot)
+    signal.signal(signal.SIGTERM, stop_bot)
+
+    # Start the bot with polling
+    try:
+        # Initialize and start the application
+        await application.initialize()
+        await application.start()
+        
+        # Start polling for updates
+        if application.updater:
+            await application.updater.start_polling(drop_pending_updates=True)
+            print("✅ Bot is now polling for updates")
+            
+            # Wait until stop signal
+            await stop_event.wait()
+        else:
+            logger.error("Updater not initialized - cannot start polling")
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}", exc_info=True)
+    finally:
+        # Perform graceful shutdown
+        print("\n⏱️ Shutting down...")
+        if application:
             if application.updater:
-                await application.updater.start_polling()
-                # Wait for stop signal
-                stop_event = asyncio.Event()
-                def stop_bot(signum, frame):
-                    stop_event.set()
-                signal.signal(signal.SIGINT, stop_bot)
-                await stop_event.wait()
                 await application.updater.stop()
-                await application.stop()
-                await application.shutdown()
-            else:
-                logger.error("Updater not initialized - cannot start polling")
-        else:
-            try:
-                # Run polling directly instead of using application.run_polling
-                application.run_polling(close_loop=True)
-            except Exception as e:
-                logger.error(f"Failed to start polling: {e}")
-    else:
-        # Webhook mode (for production)
-        if asyncio.get_running_loop().is_running():
-            await application.initialize()
-            await application.start()
-            if application.updater:
-                webhook_url = os.getenv("WEBHOOK_URL")
-                if webhook_url:
-                    await application.updater.start_webhook(
-                        listen="0.0.0.0",
-                        port=int(os.getenv("PORT", "8080")),
-                        url_path="webhook",
-                        webhook_url=webhook_url
-                    )
-                    # Wait for stop signal
-                    stop_event = asyncio.Event()
-                    def stop_bot(signum, frame):
-                        stop_event.set()
-                    signal.signal(signal.SIGINT, stop_bot)
-                    await stop_event.wait()
-                    await application.updater.stop()
-                    await application.stop()
-                    await application.shutdown()
-                else:
-                    logger.error("WEBHOOK_URL not set - cannot start webhook")
-            else:
-                logger.error("Updater not initialized - cannot start webhook")
-        else:
-            try:
-                webhook_url = os.getenv("WEBHOOK_URL")
-                if webhook_url:
-                    # Run webhook directly instead of using await
-                    application.run_webhook(
-                        listen="0.0.0.0",
-                        port=int(os.getenv("PORT", "8080")),
-                        url_path="webhook",
-                        webhook_url=webhook_url,
-                        close_loop=True
-                    )
-                else:
-                    logger.error("WEBHOOK_URL not set - cannot run webhook")
-            except Exception as e:
-                logger.error(f"Failed to start webhook: {e}")
+            await application.stop()
+            await application.shutdown()
+        print("👋 Bot stopped")
 
 if __name__ == "__main__":
     if os.name == "nt":

@@ -8,6 +8,9 @@ from database.models import CharacterStats
 
 logger = logging.getLogger(__name__)
 
+# Mission update locks to prevent race conditions
+mission_update_locks = {}
+
 # Mission status enum-like constants
 MISSION_STATUS_NOT_STARTED = "not_started"
 MISSION_STATUS_IN_PROGRESS = "in_progress"
@@ -240,13 +243,20 @@ async def get_available_missions(db, player):
     
     available_missions = []
     for mission in MISSION_DEFINITIONS:
-        # No level requirement: show all missions
         # Check if mission already completed
         if mission.id in completed_missions:
             continue
+            
+        # Check if mission is already active
+        is_active = any(pm["mission_id"] == mission.id and pm["status"] == MISSION_STATUS_IN_PROGRESS 
+                       for pm in player_missions)
+        if is_active:
+            continue
+            
         # Check prerequisites
         if all(prereq in completed_missions for prereq in mission.prerequisite_missions):
             available_missions.append(mission)
+            
     return available_missions
 
 async def get_active_missions(db, player):
@@ -267,51 +277,72 @@ async def get_active_missions(db, player):
     return active_missions
 
 async def update_mission_progress(db, player, mission_id: int, progress_amount: int):
-    """Update progress for a specific mission"""
+    """Update progress for a specific mission with race condition protection"""
     if progress_amount <= 0:
         return None
         
-    # Get current missions from database to ensure we have the latest data
-    current_player = await db.get_player(player.user_id)
-    player_missions = getattr(current_player, "missions", [])
+    user_id = str(get_user_id(player))
+    lock_key = f"{user_id}_{mission_id}"
     
-    # Find the mission in player's active missions
-    for i, mission_progress in enumerate(player_missions):
-        if (mission_progress["mission_id"] == mission_id and 
-            mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
-            # Get mission definition
-            mission_def = MISSIONS_BY_ID.get(mission_id)
-            if not mission_def:
-                return None
-            # Update progress
-            previous_progress = mission_progress["current_progress"]
-            current_progress = min(previous_progress + progress_amount, mission_progress["required_progress"])
-            # If no change, don't update or notify
-            if current_progress == previous_progress:
-                return None
-            player_missions[i]["current_progress"] = current_progress
-            # Save progress to DB after every update
-            await db.update_player(player.user_id, {"missions": player_missions})
-            # Check if mission is completed
-            if current_progress >= mission_progress["required_progress"]:
-                # Mark mission as completed but keep it in the missions list
-                player_missions[i]["status"] = MISSION_STATUS_COMPLETED
-                player_missions[i]["completed_at"] = datetime.now(timezone.utc)
-                await db.update_player(player.user_id, {"missions": player_missions})
-                # Apply rewards
-                if mission_def:
-                    actual_reward_message = await apply_mission_rewards(db, player, mission_def)
-                    # For Mission 15, use the actual reward received
-                    if mission_id == 15 and actual_reward_message:
-                        return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {actual_reward_message}"
-                    else:
-                        return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
-            exploration_mission_ids = {1, 9, 11, 14}
-            if mission_id in exploration_mission_ids:
-                return None
-            return None
+    # Get or create lock for this user-mission combination
+    if lock_key not in mission_update_locks:
+        mission_update_locks[lock_key] = asyncio.Lock()
+    
+    async with mission_update_locks[lock_key]:
+        try:
+            # Get current missions from database to ensure we have the latest data
+            current_player = await db.get_player(player.user_id)
+            player_missions = getattr(current_player, "missions", [])
             
-    return None 
+            # Find the mission in player's active missions
+            for i, mission_progress in enumerate(player_missions):
+                if (mission_progress["mission_id"] == mission_id and 
+                    mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
+                    # Get mission definition
+                    mission_def = MISSIONS_BY_ID.get(mission_id)
+                    if not mission_def:
+                        return None
+                    # Update progress
+                    previous_progress = mission_progress["current_progress"]
+                    current_progress = min(previous_progress + progress_amount, mission_progress["required_progress"])
+                    # If no change, don't update or notify
+                    if current_progress == previous_progress:
+                        return None
+                    player_missions[i]["current_progress"] = current_progress
+                    # Save progress to DB after every update
+                    await db.update_player(player.user_id, {"missions": player_missions})
+                    # Check if mission is completed
+                    if current_progress >= mission_progress["required_progress"]:
+                        # Mark mission as completed but keep it in the missions list
+                        player_missions[i]["status"] = MISSION_STATUS_COMPLETED
+                        player_missions[i]["completed_at"] = datetime.now(timezone.utc)
+                        await db.update_player(player.user_id, {"missions": player_missions})
+                        # Apply rewards
+                        if mission_def:
+                            actual_reward_message = await apply_mission_rewards(db, player, mission_def)
+                            # For Mission 15, use the actual reward received
+                            if mission_id == 15 and actual_reward_message:
+                                return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {actual_reward_message}"
+                            else:
+                                return f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}"
+                    exploration_mission_ids = {1, 9, 11, 14}
+                    if mission_id in exploration_mission_ids:
+                        return None
+                    return None
+                    
+            return None
+        finally:
+            # Clean up old locks periodically to prevent memory leaks
+            if len(mission_update_locks) > 1000:
+                # Remove locks that haven't been used recently
+                current_time = asyncio.get_event_loop().time()
+                to_remove = []
+                for key, lock in mission_update_locks.items():
+                    # This is a simple cleanup - in production you'd want better tracking
+                    if random.random() < 0.01:  # 1% chance to clean each time
+                        to_remove.append(key)
+                for key in to_remove:
+                    del mission_update_locks[key] 
 
 async def start_mission(db, player, mission_id: int):
     """Start a mission for a player"""
@@ -411,25 +442,25 @@ async def cancel_mission(db, player, mission_id: int):
                 # Reset Scout's First March (clears starting location and starting explore count)
                 player_missions[i].pop("starting_location", None)
                 player_missions[i].pop("starting_explore_count", None)
-
+                
+            elif mission_id == 9:
+                # Reset Royal Capital Titan Hunt
+                player_missions[i].pop("starting_explore_count", None)
+                
+            elif mission_id == 11:
+                # Reset Relentless Scout
+                player_missions[i].pop("starting_explore_count", None)
+                
             elif mission_id == 14:
                 # Reset Never Stop! mission (clear mission14_area_counts)
                 updates["mission14_area_counts"] = {}
-
+                
             elif mission_id == 15:
                 # Reset Temporal Gambit (unique opponents already reset above)
                 player_missions[i]["unique_opponents"] = []
-
-            # Reset starting explore count for Mission 11 (Relentless Scout)
-            elif mission_id == 11:
-                player_missions[i].pop("starting_explore_count", None)
-
-            # Reset starting explore count for Mission 9 (Royal Capital Titan Hunt)
-            elif mission_id == 9:
-                player_missions[i].pop("starting_explore_count", None)
-
-            # Reset travel history for Mission 13 (March of the Walls)
+                
             elif mission_id == 13:
+                # Reset March of the Walls
                 updates["travel_history"] = []
 
             # Clean up any extra keys in mission progress
@@ -511,22 +542,36 @@ async def apply_mission_rewards(db, player, mission):
     if "special_reward" in rewards:
         # These would be handled case by case
         if rewards["special_reward"] == "crystal_or_attack":
-            if random.random() < 0.5:  # 50% chance for each
-                # Give +25 ATK permanently
-                team = getattr(player, "team", [])
-                if team:
-                    character_name = team[0].character_name if hasattr(team[0], "character_name") else team[0]
-                    character = await db.get_character(int(player.user_id), character_name)
-                    if character:
-                        stats = character.stats.dict()
-                        stats["ATK"] = stats.get("ATK", 0) + 25
-                        await db.update_character_stats(int(player.user_id), character_name, stats)
-                        reward_message = "+25 ATK Permanently (Random Reward)"
+            # Check if reward has already been determined for this mission
+            reward_key = f"mission_{mission.id}_reward"
+            if not hasattr(player, reward_key) or getattr(player, reward_key, None) is None:
+                if random.random() < 0.5:  # 50% chance for each
+                    # Give +25 ATK permanently
+                    team = getattr(player, "team", [])
+                    if team:
+                        character_name = team[0].character_name if hasattr(team[0], "character_name") else team[0]
+                        character = await db.get_character(int(player.user_id), character_name)
+                        if character:
+                            stats = character.stats.dict()
+                            stats["ATK"] = stats.get("ATK", 0) + 25
+                            await db.update_character_stats(int(player.user_id), character_name, stats)
+                            reward_message = "+25 ATK Permanently (Random Reward)"
+                            # Store reward choice to prevent re-rolling
+                            update_data[reward_key] = "attack"
+                else:
+                    # Give 1 Titan Crystal
+                    if "crystal" not in update_data:
+                        update_data["crystal"] = player.crystal + 1
+                    reward_message = "1 Titan Crystal (Random Reward)"
+                    # Store reward choice to prevent re-rolling
+                    update_data[reward_key] = "crystal"
             else:
-                # Give 1 Titan Crystal
-                if "crystal" not in update_data:
-                    update_data["crystal"] = player.crystal + 1
-                reward_message = "1 Titan Crystal (Random Reward)"
+                # Reward already selected, use the stored choice
+                stored_reward = getattr(player, reward_key, "crystal")
+                if stored_reward == "attack":
+                    reward_message = "+25 ATK Permanently (Random Reward)"
+                else:
+                    reward_message = "1 Titan Crystal (Random Reward)"
     
     # Update player in database
     if update_data:
@@ -552,20 +597,29 @@ async def check_mission_item_drops(player):
     active_mission_ids = set()
     player_missions = getattr(player, "missions", [])
     for mission in player_missions:
-        if mission.get("status") == "in_progress":
+        if mission.get("status") == MISSION_STATUS_IN_PROGRESS:
             active_mission_ids.add(mission.get("mission_id"))
 
     # Only allow drops for items whose missions are active
     for item_key, item_data in MISSION_ITEMS.items():
-        # Only drop if the mission is active
-        if item_data["mission_id"] in active_mission_ids:
-            if random.random() < item_data["drop_chance"]:
+        mission_id = item_data["mission_id"]
+        # Only drop if the mission is active AND not completed
+        if mission_id in active_mission_ids:
+            # Check if mission is not already completed
+            mission_completed = False
+            for mission in player_missions:
+                if (mission.get("mission_id") == mission_id and 
+                    mission.get("status") == MISSION_STATUS_COMPLETED):
+                    mission_completed = True
+                    break
+            
+            if not mission_completed and random.random() < item_data["drop_chance"]:
                 # Item dropped!
                 drops.append({
                     "key": item_key,
                     "name": item_data["name"],
                     "emoji": item_data["emoji"],
-                    "mission_id": item_data["mission_id"]
+                    "mission_id": mission_id
                 })
     return drops
 
@@ -667,24 +721,25 @@ async def process_explore_mission_progress(db, player, area=None):
             previous_area_count = mission14_area_counts[area_key].get("count", 0)
             starting_count = mission14_area_counts[area_key].get("starting_count", explore_count)
             
-            # Increment the area's explore count
-            mission14_area_counts[area_key]["count"] = previous_area_count + 1
-            
-            # Save the updated counts
-            await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
-            
-            # Check if just reached 500 in this area
-            if mission14_area_counts[area_key]["count"] == 500:
-                previous_progress = pm["current_progress"]
-                current_progress = min(previous_progress + 1, pm["required_progress"])
-                pm["current_progress"] = current_progress
-                batch_updates["missions"] = player_missions
-                notifications.append(f"✅ 500 explores completed in {area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
+            # Only increment if not already at or above 500
+            if previous_area_count < 500:
+                mission14_area_counts[area_key]["count"] = previous_area_count + 1
                 
-                if current_progress >= pm["required_progress"]:
-                    pm["status"] = MISSION_STATUS_COMPLETED
-                    pm["completed_at"] = datetime.now(timezone.utc)
-                    notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                # Save the updated counts
+                await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
+                
+                # Check if just reached 500 in this area
+                if mission14_area_counts[area_key]["count"] == 500:
+                    previous_progress = pm["current_progress"]
+                    current_progress = min(previous_progress + 1, pm["required_progress"])
+                    pm["current_progress"] = current_progress
+                    batch_updates["missions"] = player_missions
+                    notifications.append(f"✅ 500 explores completed in {area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
+                    
+                    if current_progress >= pm["required_progress"]:
+                        pm["status"] = MISSION_STATUS_COMPLETED
+                        pm["completed_at"] = datetime.now(timezone.utc)
+                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
 
         # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
         if mission_id == 9:
@@ -692,22 +747,26 @@ async def process_explore_mission_progress(db, player, area=None):
             if pm["status"] == MISSION_STATUS_COMPLETED:
                 continue
                 
-            # Only update progress for Royal Capital area - no daily explore counting
+            # Only update progress for Royal Capital area - use explore count consistently
             if area and ("royal capital" in area.lower() or "royal_capital" in area.lower()):
                 # Store starting explore count if not already stored
                 if "starting_explore_count" not in pm:
                     pm["starting_explore_count"] = getattr(player, "explore_count", 0)
                     batch_updates["missions"] = player_missions
                 
-                # Add to progress directly instead of using explore count
-                previous_progress = pm["current_progress"]
-                current_progress = min(previous_progress + 1, pm["required_progress"])
+                # Use explore count to track progress consistently
+                current_explore = getattr(player, "explore_count", 0)
+                starting_explore = pm.get("starting_explore_count", current_explore)
+                explores_since_start = max(0, current_explore - starting_explore)
                 
-                if current_progress != previous_progress:
-                    pm["current_progress"] = current_progress
+                # Update progress based on explores in Royal Capital
+                new_progress = min(explores_since_start, pm["required_progress"])
+                
+                if pm["current_progress"] != new_progress:
+                    pm["current_progress"] = new_progress
                     batch_updates["missions"] = player_missions
                     
-                    if current_progress >= pm["required_progress"]:
+                    if new_progress >= pm["required_progress"]:
                         pm["status"] = MISSION_STATUS_COMPLETED
                         pm["completed_at"] = datetime.now(timezone.utc)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
