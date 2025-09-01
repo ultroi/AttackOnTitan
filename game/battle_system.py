@@ -1494,12 +1494,27 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     try:
         if random.random() < 0.09:
             drop = get_random_drop()
-            
-            
-            
+            if drop:
+                if drop["type"] in ("bottle", "cylinder"):
+                    await db.players.update_one(
+                        {"user_id": user_id},
+                        {"$inc": {
+                        "player.gas": drop["amount"],
+                        }}
+                    )
+                    
+            # Send image + message
+            if chat_id:
+                await send(
+                    chat_id,
+                    photo=drop["image"],
+                    caption=f"🎁 <b>{drop['message']}</b>",
+                    parse_mode="HTML"
+                )
     except Exception as e:
         logger.error(f"Error processing auto drop: {e}")
-
+            
+    
     # Clear battle flags immediately
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
