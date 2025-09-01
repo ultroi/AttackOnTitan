@@ -392,8 +392,7 @@ def include_dashboard_route(app):
                     {"request": request, "user_id": user_id}
                 )
 
-    
-    if not player or not getattr(player, "hcaptcha_start_time", None):
+        if not player or not getattr(player, "hcaptcha_start_time", None):
             # This is the *first* time captcha is being prompted, set the timer
             await db["players"].update_one(
                 {"user_id": str(user_id)},
@@ -455,7 +454,7 @@ def include_dashboard_route(app):
 
         player = await db["players"].find_one({"user_id": str(user_id)})
         now = int(time.time())
-    start_time = getattr(player, "hcaptcha_start_time", now) if player else now
+        start_time = getattr(player, "hcaptcha_start_time", now) if player else now
 
         # Check timeout
         if now - start_time > HCAPTCHA_TIMEOUT:
@@ -581,27 +580,27 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
             pass
 
     first_name = (getattr(player, "first_name", None) or getattr(player, "name", None) or str(user_id_int)) if player else str(user_id_int)
-        msg = (
-            f"<b>#BanEvent</b>\n\n"
-            f"<b>Target</b> : <a href='tg://user?id={user_id_int}'>{first_name}</a>\n"
-            f"<b>Target ID</b> : <code>{user_id_int}</code>\n"
-            f"<b>By</b> : <code>system</code>\n"
-            f"<b>Reason</b> : <code>hCaptcha timeout</code>\n"
-            f"<b>Time</b> : <code>Permanent</code>"
-        )
-        try:
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={
-                        "chat_id": BAN_LOG_CHAT_ID,
-                        "text": msg,
-                        "parse_mode": "HTML",
-                        "disable_web_page_preview": True
-                    }
-                )
-        except Exception:
-            pass
+    msg = (
+        f"<b>#BanEvent</b>\n\n"
+        f"<b>Target</b> : <a href='tg://user?id={user_id_int}'>{first_name}</a>\n"
+        f"<b>Target ID</b> : <code>{user_id_int}</code>\n"
+        f"<b>By</b> : <code>system</code>\n"
+        f"<b>Reason</b> : <code>hCaptcha timeout</code>\n"
+        f"<b>Time</b> : <code>Permanent</code>"
+    )
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={
+                    "chat_id": BAN_LOG_CHAT_ID,
+                    "text": msg,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True
+                }
+            )
+    except Exception:
+        pass
 
 async def notify_user_success(user_id: str, player: Optional[dict]):
     """Notify user in Telegram about successful verification."""
