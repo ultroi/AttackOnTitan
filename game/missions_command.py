@@ -187,7 +187,14 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             completed_areas = 0
             for area in AREAS:
                 area_key = area.lower().replace(" ", "_")
-                if mission_area_counts.get(area_key, {}).get("count", 0) >= 500:
+                area_data = mission_area_counts.get(area_key, {})
+                if isinstance(area_data, dict):
+                    count = area_data.get("count", 0)
+                elif isinstance(area_data, int):
+                    count = area_data
+                else:
+                    count = 0
+                if count >= 500:
                     completed_areas += 1
             new_progress = min(completed_areas, mission.required_progress)
             
