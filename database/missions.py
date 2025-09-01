@@ -715,21 +715,20 @@ async def process_explore_mission_progress(db, player, area=None):
             # Store the starting count for this area if not already stored
             area_key = area.lower().replace(" ", "_")
             if area_key not in mission14_area_counts:
-                mission14_area_counts[area_key] = {"count": 0, "starting_count": explore_count}
+                mission14_area_counts[area_key] = 0
                 
             # Update the count for this area based on current explore_count
-            previous_area_count = mission14_area_counts[area_key].get("count", 0)
-            starting_count = mission14_area_counts[area_key].get("starting_count", explore_count)
+            previous_area_count = mission14_area_counts.get(area_key, 0)
             
             # Only increment if not already at or above 500
             if previous_area_count < 500:
-                mission14_area_counts[area_key]["count"] = previous_area_count + 1
+                mission14_area_counts[area_key] = previous_area_count + 1
                 
                 # Save the updated counts
                 await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
                 
                 # Check if just reached 500 in this area
-                if mission14_area_counts[area_key]["count"] == 500:
+                if mission14_area_counts[area_key] == 500:
                     previous_progress = pm["current_progress"]
                     current_progress = min(previous_progress + 1, pm["required_progress"])
                     pm["current_progress"] = current_progress

@@ -713,7 +713,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Only allow the battle button to be used once, and strictly reject any further callbacks with the same ID
     if callback_data != current_battle_id:
-        await query.answer("This battle button has already been used. Please explore again.", show_alert=True)
+        try:
+            await query.answer("This battle button has already been used. Please explore again.", show_alert=True)
+        except Exception:
+            pass
         return
     # Immediately delete the active battle id so it cannot be used again
     if f"active_battle_id_{user_id}" in context.bot_data:
@@ -722,7 +725,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if f"titan_battle_started_{user_id}" in context.bot_data:
         last_battle_time = context.bot_data.get(f"titan_battle_started_{user_id}", 0)
         if time.time() - last_battle_time < 180:  # Within 3 minutes
-            await query.answer("You're already in battle. Please finish your current battle first.", show_alert=True)
+            try:
+                await query.answer("You're already in battle. Please finish your current battle first.", show_alert=True)
+            except Exception:
+                pass
             return
     
     # Validate battle format
@@ -1041,7 +1047,10 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             if battle_started_key in context.bot_data:
                 del context.bot_data[battle_started_key]
                 
-            await query.answer("This battle has already ended or doesn't exist.")
+            try:
+                await query.answer("This battle has already ended or doesn't exist.")
+            except Exception:
+                pass
             return
     
     action = query.data
@@ -1054,14 +1063,23 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         if action.startswith("cooldown_"):
             ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
             cooldown = battle.ability_cooldowns.get(ability_name, 0)
-            await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
+            try:
+                await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
+            except Exception:
+                pass
             return
         elif action.startswith("lowgas_"):
             ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
             if ability_name == "basic_attack":
-                await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
+                try:
+                    await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
+                except Exception:
+                    pass
             else:
-                await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
+                try:
+                    await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
+                except Exception:
+                    pass
             return
         
         full_message = []
@@ -1663,8 +1681,8 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         )
 
         # Send mission notifications
-        if all_notifications:
-            for notification in all_notifications[:2]:
+        if explore_notifications:
+            for notification in explore_notifications[:2]:
                 try:
                     await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
                 except Exception as e:
