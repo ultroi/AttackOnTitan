@@ -1492,7 +1492,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Handle auto drop (ho jyga) - chance for random items after battle
     try:
-        if random.random() < 0.08:
+        if random.random() < 0.09:
             get_random_drop()
             
             
