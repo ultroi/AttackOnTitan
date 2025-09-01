@@ -384,7 +384,7 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         message += "━━━━━━━━━━━━━━━━━━━━━━\n"
         if is_completed:
             message += f"*{mission.id}. {mission.title}* ✅\n"
-            completed_missions.append(mission["id"])
+            completed_missions.append(mission.id)
             # For completed missions, show description with completed status
             message += f"_{mission.description} - Completed! ✅\n"
         else:
