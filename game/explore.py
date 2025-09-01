@@ -660,7 +660,22 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         current_time = time.time()
         update_data = {} # Initialize empty dictionary for updates
         update_data["last_explore_time"] = current_time
-        update_data["daily_explores"] = player.daily_explores
+        
+        # Properly handle DailyExplores objects to ensure they can be serialized
+        if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
+            daily_explores_dicts = []
+            for de in player.daily_explores:
+                if hasattr(de, "dict") and callable(getattr(de, "dict")):
+                    daily_explores_dicts.append(de.dict())
+                elif isinstance(de, dict):
+                    daily_explores_dicts.append(de)
+                else:
+                    # Fall back to attribute extraction if object but no dict method
+                    try:
+                        daily_explores_dicts.append({"date": getattr(de, "date", ""), "count": getattr(de, "count", 0)})
+                    except:
+                        logger.warning(f"Could not convert DailyExplores object to dict: {de}")
+            update_data["daily_explores"] = daily_explores_dicts
         
         
         # 4. Handle travel progress asynchronously
