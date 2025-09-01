@@ -261,6 +261,22 @@ class Database:
                         for member in player_data["team"]
                     ]
                 
+                # Convert old mission14_area_counts format to new format if needed
+                if "mission14_area_counts" in player_data and player_data["mission14_area_counts"]:
+                    old_counts = player_data["mission14_area_counts"]
+                    new_counts = {}
+                    for area, data in old_counts.items():
+                        if isinstance(data, dict):
+                            # Old format: {"count": int, "starting_count": int}
+                            new_counts[area] = data.get("count", 0)
+                        elif isinstance(data, int):
+                            # Already in new format
+                            new_counts[area] = data
+                        else:
+                            # Fallback to 0
+                            new_counts[area] = 0
+                    player_data["mission14_area_counts"] = new_counts
+                
                 player = Player(**player_data)
                 
                 # Cache the player if enabled
@@ -561,6 +577,22 @@ class Database:
                         TeamMember(**member) if isinstance(member, dict) else member
                         for member in player_data["team"]
                     ]
+                
+                # Convert old mission14_area_counts format to new format
+                if "mission14_area_counts" in player_data and player_data["mission14_area_counts"]:
+                    old_counts = player_data["mission14_area_counts"]
+                    new_counts = {}
+                    for area, data in old_counts.items():
+                        if isinstance(data, dict):
+                            # Old format: {"count": int, "starting_count": int}
+                            new_counts[area] = data.get("count", 0)
+                        elif isinstance(data, int):
+                            # Already in new format
+                            new_counts[area] = data
+                        else:
+                            # Fallback to 0
+                            new_counts[area] = 0
+                    player_data["mission14_area_counts"] = new_counts
                 
                 players.append(Player(**player_data))
             
