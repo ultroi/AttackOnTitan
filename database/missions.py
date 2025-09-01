@@ -688,8 +688,22 @@ async def process_explore_mission_progress(db, player, area=None):
     # Convert daily_explores to list of dicts if present in player before saving
     if batch_updates:
         if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
-            # Convert any DailyExplores objects to dicts
-            batch_updates["daily_explores"] = [de.dict() if hasattr(de, "dict") else de for de in player.daily_explores]
+            # Convert any DailyExplores objects to dicts with proper error handling
+            daily_explores_dicts = []
+            for de in player.daily_explores:
+                if hasattr(de, "dict") and callable(de.dict):
+                    try:
+                        daily_explores_dicts.append(de.dict())
+                    except Exception:
+                        # If dict method fails, try manual conversion
+                        daily_explores_dicts.append({
+                            "date": getattr(de, "date", ""),
+                            "count": getattr(de, "count", 0)
+                        })
+                else:
+                    # It's already a dict or another format
+                    daily_explores_dicts.append(de)
+            batch_updates["daily_explores"] = daily_explores_dicts
         await db.batch_update_player(int(player.user_id), batch_updates)
     
     return notifications

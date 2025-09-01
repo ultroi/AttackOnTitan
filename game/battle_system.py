@@ -1408,7 +1408,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.max_gas = battle.character.gas
 
         # Update player in-memory (fast)
-        player_obj = Player(**player_data)
+        # Check if player_data is already a Player object
+        if isinstance(player_data, Player):
+            player_obj = player_data
+        else:
+            # If it's a dict, create a Player object
+            player_obj = Player(**player_data)
         player_level_info = player_obj.add_xp(player_xp)
         player_obj.xp = max(0, player_obj.xp)
         player_obj.marks = max(0, player_obj.marks + rewards["marks"])

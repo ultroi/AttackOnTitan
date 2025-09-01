@@ -2310,20 +2310,42 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
         
     # Update characters with final HP and gas
     # Create a copy of the character dictionary and update the HP and gas values
-    challenger_data = battle.challenger.dict()
+    # Check if challenger is already a Character object
+    if isinstance(battle.challenger, Character):
+        challenger_data = battle.challenger.dict()
+    else:
+        # Handle case where it might be a dictionary or another object
+        challenger_data = battle.challenger.dict() if hasattr(battle.challenger, 'dict') else battle.challenger
+        
     challenger_data['current_hp'] = battle.challenger_hp  # Replace the existing current_hp
     # Safely get gas value with fallback
     challenger_gas = getattr(battle, 'challenger_gas', battle.challenger.gas if hasattr(battle.challenger, 'gas') else 0)
     challenger_data['gas'] = challenger_gas
-    await db.update_character(Character(**challenger_data))
+    
+    # Create Character object only if not already a Character
+    character_obj = battle.challenger if isinstance(battle.challenger, Character) else Character(**challenger_data)
+    character_obj.current_hp = battle.challenger_hp
+    character_obj.gas = challenger_gas
+    await db.update_character(character_obj)
     
     # Do the same for the defender
-    defender_data = battle.defender.dict()
+    # Check if defender is already a Character object
+    if isinstance(battle.defender, Character):
+        defender_data = battle.defender.dict()
+    else:
+        # Handle case where it might be a dictionary or another object
+        defender_data = battle.defender.dict() if hasattr(battle.defender, 'dict') else battle.defender
+        
     defender_data['current_hp'] = battle.defender_hp
     # Safely get gas value with fallback
     defender_gas = getattr(battle, 'defender_gas', battle.defender.gas if hasattr(battle.defender, 'gas') else 0)
     defender_data['gas'] = defender_gas
-    await db.update_character(Character(**defender_data))
+    
+    # Create Character object only if not already a Character
+    character_obj = battle.defender if isinstance(battle.defender, Character) else Character(**defender_data)
+    character_obj.current_hp = battle.defender_hp
+    character_obj.gas = defender_gas
+    await db.update_character(character_obj)
     
     # Clean up battle data
     if challenger_id in active_pvp_battles:
@@ -2486,19 +2508,41 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
             
             # Update characters with final HP and gas - avoid duplicate parameters
             try:
-                challenger_data = battle.challenger.dict()
+                # Check if challenger is already a Character object
+                if isinstance(battle.challenger, Character):
+                    challenger_data = battle.challenger.dict()
+                else:
+                    # Handle case where it might be a dictionary or another object
+                    challenger_data = battle.challenger.dict() if hasattr(battle.challenger, 'dict') else battle.challenger
+                    
                 challenger_data['current_hp'] = battle.challenger_hp
                 # Safely get gas value with fallback
                 challenger_gas = getattr(battle, 'challenger_gas', battle.challenger.gas if hasattr(battle.challenger, 'gas') else 0)
                 challenger_data['gas'] = challenger_gas
-                await db.update_character(Character(**challenger_data))
+                
+                # Create Character object only if not already a Character
+                character_obj = battle.challenger if isinstance(battle.challenger, Character) else Character(**challenger_data)
+                character_obj.current_hp = battle.challenger_hp
+                character_obj.gas = challenger_gas
+                await db.update_character(character_obj)
 
-                defender_data = battle.defender.dict()
+                # Check if defender is already a Character object
+                if isinstance(battle.defender, Character):
+                    defender_data = battle.defender.dict()
+                else:
+                    # Handle case where it might be a dictionary or another object
+                    defender_data = battle.defender.dict() if hasattr(battle.defender, 'dict') else battle.defender
+                    
                 defender_data['current_hp'] = battle.defender_hp
                 # Safely get gas value with fallback
                 defender_gas = getattr(battle, 'defender_gas', battle.defender.gas if hasattr(battle.defender, 'gas') else 0)
                 defender_data['gas'] = defender_gas
-                await db.update_character(Character(**defender_data))
+                
+                # Create Character object only if not already a Character
+                character_obj = battle.defender if isinstance(battle.defender, Character) else Character(**defender_data)
+                character_obj.current_hp = battle.defender_hp
+                character_obj.gas = defender_gas
+                await db.update_character(character_obj)
             except Exception as e:
                 logger.error(f"Error updating character data in timeout: {e}")
                 # Continue with cleanup even if character update fails         
