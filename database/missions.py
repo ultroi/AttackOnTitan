@@ -370,19 +370,19 @@ async def start_mission(db, player, mission_id: int):
         # Initialize mission14_area_counts if not present
         if not hasattr(player, "mission14_area_counts"):
             # We need to update this separately
-            await db.update_player(int(player.user_id), {"mission14_area_counts": {}})
+            await db.update_player(int(get_user_id(player)), {"mission14_area_counts": {}})
     
     # Get current missions from database to avoid overwriting
-    current_player = await db.get_player(int(player.user_id))
+    current_player = await db.get_player(int(get_user_id(player)))
     current_missions = getattr(current_player, "missions", [])
     update_fields = {"missions": current_missions + [mission_progress]}
-    await db.update_player(int(player.user_id), update_fields)
+    await db.update_player(int(get_user_id(player)), update_fields)
     return True, f"Mission '{mission.title}' started!"
 
 async def cancel_mission(db, player, mission_id: int):
     """Cancel an active mission and reset its progress"""
     # Get current missions from database to ensure we have the latest data
-    current_player = await db.get_player(int(player.user_id))
+    current_player = await db.get_player(int(get_user_id(player)))
     player_missions = getattr(current_player, "missions", [])
     
     # Keep track of updates to apply
@@ -587,46 +587,66 @@ async def process_explore_mission_progress(db, player, area=None):
     for pm in player_missions:
         if pm["status"] != MISSION_STATUS_IN_PROGRESS:
             continue
-            
+
         mission_id = pm["mission_id"]
         mission = MISSIONS_BY_ID.get(mission_id)
-        
         if not mission:
             continue
-            
+
         # Mission 1: Scout's First March (500 explores outside starting district)
         if mission_id == 1:
             starting_location = pm.get("starting_location")
             if area and starting_location and area != starting_location:
-                # Update progress without immediate DB call
                 previous_progress = pm["current_progress"]
                 current_progress = min(previous_progress + 1, pm["required_progress"])
                 if current_progress != previous_progress:
                     pm["current_progress"] = current_progress
                     batch_updates["missions"] = player_missions
-                    
                     if current_progress >= pm["required_progress"]:
                         pm["status"] = MISSION_STATUS_COMPLETED
                         pm["completed_at"] = datetime.now(timezone.utc)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                
+
+        # Mission 14: Never Stop! (500 explores in each area of the map)
+        if mission_id == 14 and area:
+            # Get or initialize mission14_area_counts
+            mission14_area_counts = getattr(player, "mission14_area_counts", {})
+            area_key = area.lower().replace(" ", "_")
+            previous_area_count = mission14_area_counts.get(area_key, 0)
+            # Only count up to 500 per area
+            if previous_area_count < 500:
+                mission14_area_counts[area_key] = previous_area_count + 1
+                await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
+                # If just reached 500 in this area, increment mission progress
+                if mission14_area_counts[area_key] == 500:
+                    previous_progress = pm["current_progress"]
+                    current_progress = min(previous_progress + 1, pm["required_progress"])
+                    pm["current_progress"] = current_progress
+                    batch_updates["missions"] = player_missions
+                    notifications.append(f"✅ 500 explores completed in {area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
+                    if current_progress >= pm["required_progress"]:
+                        pm["status"] = MISSION_STATUS_COMPLETED
+                        pm["completed_at"] = datetime.now(timezone.utc)
+                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+
         # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
         if mission_id == 9:
-            # Only count if in Royal Capital area
+            # Prevent further progress if already completed
+            if pm["status"] == MISSION_STATUS_COMPLETED:
+                continue
             if area and ("royal capital" in area.lower() or "royal_capital" in area.lower()):
                 previous_progress = pm["current_progress"]
                 current_progress = min(previous_progress + 1, pm["required_progress"])
                 if current_progress != previous_progress:
                     pm["current_progress"] = current_progress
                     batch_updates["missions"] = player_missions
-                    
                     if current_progress >= pm["required_progress"]:
                         pm["status"] = MISSION_STATUS_COMPLETED
                         pm["completed_at"] = datetime.now(timezone.utc)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
                     else:
-                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")  
-                
+                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")
+
         if mission_id == 11:
             weekly_explores = 0
             daily_explores_data = getattr(player, "daily_explores", [])
@@ -637,33 +657,30 @@ async def process_explore_mission_progress(db, player, area=None):
                         mission_start_time = datetime.fromisoformat(mission_start_time.replace('Z', '+00:00'))
                     elif isinstance(mission_start_time, datetime) and mission_start_time.tzinfo is None:
                         mission_start_time = mission_start_time.replace(tzinfo=timezone.utc)
-                    
+
                     if isinstance(daily_explores_data, list) and mission_start_time:
                         for daily_explore in daily_explores_data:
                             try:
-                                # Handle both dict and DailyExplores object formats
                                 if isinstance(daily_explore, dict):
                                     date_str = daily_explore.get("date")
                                     count = daily_explore.get("count", 0)
                                 else:
                                     date_str = getattr(daily_explore, "date", None)
                                     count = getattr(daily_explore, "count", 0)
-                                
+
                                 if date_str:
-                                    date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                                    date = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
                                     if date >= mission_start_time:
                                         weekly_explores += count
                             except (ValueError, TypeError, AttributeError):
                                 pass
                 except (ValueError, TypeError):
                     pass
-            
-            # Update progress to the calculated weekly total
+
             new_progress = min(weekly_explores, pm["required_progress"])
             if pm["current_progress"] != new_progress:
                 pm["current_progress"] = new_progress
                 batch_updates["missions"] = player_missions
-                
                 if new_progress >= pm["required_progress"]:
                     pm["status"] = MISSION_STATUS_COMPLETED
                     pm["completed_at"] = datetime.now(timezone.utc)
@@ -898,3 +915,6 @@ async def process_item_use_mission_progress(db, player, item_key):
                 setattr(player, key, value)
     
     return notifications
+
+def get_user_id(player):
+    return player["user_id"] if isinstance(player, dict) else player.user_id

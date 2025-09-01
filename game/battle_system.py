@@ -754,7 +754,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Prepare player data fetch - use cached if available
     player_data_task = None
     if not battle_cache.get("player_data"):
-        player_data_task = db.players.find_one({"user_id": user_id})
+        # Use get_player for both DB and memory
+        player_data_task = db.get_player(user_id)
     
     # Clear any existing titan cache for this user to prevent data leakage between battles
     if f"last_titan_data_{user_id}" in context.bot_data:
@@ -1327,11 +1328,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     player_data = battle_cache.get("player_data")
 
     if not player_data:
-        # Minimal query - only get essential fields
-        player_data = await db.players.find_one(
-            {"user_id": user_id},
-            {"explore_count": 1, "team": 1, "missions": 1, "location": 1, "gas": 1}
-        )
+        # Use get_player for both DB and memory
+        player_data = await db.get_player(user_id)
         if player_data:
             battle_cache["player_data"] = player_data
 

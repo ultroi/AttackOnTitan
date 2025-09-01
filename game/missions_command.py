@@ -162,13 +162,14 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                             count = getattr(daily_explore, "count", 0)
                         
                         if date_str:
-                            date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                            # Parse date as YYYY-MM-DD format instead of ISO format
+                            date = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
                             if date >= mission_start_time:
                                 weekly_explores += count
                     except (ValueError, TypeError, AttributeError):
                         pass
             else:
-                weekly_explores = getattr(player, "explores", 0)
+                weekly_explores = getattr(player, "explore_count", 0)
             new_progress = min(weekly_explores, mission.required_progress)
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
