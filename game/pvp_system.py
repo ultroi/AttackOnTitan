@@ -91,6 +91,10 @@ class PvPBattleSystem:
         self.challenger_hp: int = challenger.stats.HP
         self.defender_hp: int = defender.stats.HP
         
+        # Initialize gas values for PvP battle
+        self.challenger_gas: int = challenger.max_gas
+        self.defender_gas: int = defender.max_gas
+        
         # Determine first turn based on character speed
         challenger_speed = challenger.stats.SPD if hasattr(challenger, 'stats') and hasattr(challenger.stats, 'SPD') else 10
         defender_speed = defender.stats.SPD if hasattr(defender, 'stats') and hasattr(defender.stats, 'SPD') else 10
@@ -2308,13 +2312,17 @@ async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TY
     # Create a copy of the character dictionary and update the HP and gas values
     challenger_data = battle.challenger.dict()
     challenger_data['current_hp'] = battle.challenger_hp  # Replace the existing current_hp
-    challenger_data['gas'] = battle.challenger_gas        # Replace the existing gas
+    # Safely get gas value with fallback
+    challenger_gas = getattr(battle, 'challenger_gas', battle.challenger.gas if hasattr(battle.challenger, 'gas') else 0)
+    challenger_data['gas'] = challenger_gas
     await db.update_character(Character(**challenger_data))
     
     # Do the same for the defender
     defender_data = battle.defender.dict()
     defender_data['current_hp'] = battle.defender_hp
-    defender_data['gas'] = battle.defender_gas
+    # Safely get gas value with fallback
+    defender_gas = getattr(battle, 'defender_gas', battle.defender.gas if hasattr(battle.defender, 'gas') else 0)
+    defender_data['gas'] = defender_gas
     await db.update_character(Character(**defender_data))
     
     # Clean up battle data
@@ -2429,11 +2437,7 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
                 
                 # Format the battle outcome with blockquotes and bold text
                 battle_outcome = (
-                    f"{timeout_message}\n\n"
-                    f"<blockquote><b>{winner_first_name}</b> - {winner_char_name}</blockquote>\n"
-                    f"<b>No rewards given for timeout</b>\n\n"
-                    f"<blockquote><b>{loser_first_name}</b> - {loser_char_name}</blockquote>\n"
-                    f"<b>No rewards given for timeout</b>"
+                    f"{timeout_message}\n"
                 )
                 
                 # Send the timeout message as a new message
@@ -2481,17 +2485,23 @@ async def pvp_battle_timeout(challenger_id: str, defender_id: str, battle: PvPBa
             )
             
             # Update characters with final HP and gas - avoid duplicate parameters
-            challenger_data = battle.challenger.dict()
-            challenger_data['current_hp'] = battle.challenger_hp
-            challenger_data['gas'] = battle.challenger_gas
-            await db.update_character(Character(**challenger_data))
-                
-            defender_data = battle.defender.dict()
-            defender_data['current_hp'] = battle.defender_hp
-            defender_data['gas'] = battle.defender_gas
-            await db.update_character(Character(**defender_data))
-                
-            # Clean up battle data
+            try:
+                challenger_data = battle.challenger.dict()
+                challenger_data['current_hp'] = battle.challenger_hp
+                # Safely get gas value with fallback
+                challenger_gas = getattr(battle, 'challenger_gas', battle.challenger.gas if hasattr(battle.challenger, 'gas') else 0)
+                challenger_data['gas'] = challenger_gas
+                await db.update_character(Character(**challenger_data))
+
+                defender_data = battle.defender.dict()
+                defender_data['current_hp'] = battle.defender_hp
+                # Safely get gas value with fallback
+                defender_gas = getattr(battle, 'defender_gas', battle.defender.gas if hasattr(battle.defender, 'gas') else 0)
+                defender_data['gas'] = defender_gas
+                await db.update_character(Character(**defender_data))
+            except Exception as e:
+                logger.error(f"Error updating character data in timeout: {e}")
+                # Continue with cleanup even if character update fails         
             if challenger_id in active_pvp_battles:
                 del active_pvp_battles[challenger_id]
             if defender_id in active_pvp_battles:
