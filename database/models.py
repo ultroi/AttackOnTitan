@@ -608,19 +608,42 @@ class Player(BaseModel):
         """Get the number of explores for a specific date"""
         date_str = date.strftime('%Y-%m-%d')
         for daily in self.daily_explores:
-            if daily.date == date_str:
-                return daily.count
+            # Get date value safely
+            daily_date = None
+            if isinstance(daily, dict):
+                daily_date = daily.get('date')
+            elif hasattr(daily, 'date'):
+                daily_date = daily.date
+            
+            if daily_date == date_str:
+                # Get count safely
+                if isinstance(daily, dict):
+                    return daily.get('count', 0)
+                elif hasattr(daily, 'count'):
+                    return daily.count
         return 0
 
     def increment_daily_explores(self, date: datetime) -> int:
         """Increment the daily explores count and return the new count"""
         date_str = date.strftime('%Y-%m-%d')
         
-        # Find existing record
-        for daily in self.daily_explores:
-            if daily.date == date_str:
-                daily.count += 1
-                return daily.count
+        # Find existing record - handle both DailyExplores objects and dictionaries
+        for i, daily in enumerate(self.daily_explores):
+            # Get date value safely
+            daily_date = None
+            if isinstance(daily, dict):
+                daily_date = daily.get('date')
+            elif hasattr(daily, 'date'):
+                daily_date = daily.date
+            
+            if daily_date == date_str:
+                # Increment count safely
+                if isinstance(daily, dict):
+                    daily['count'] = daily.get('count', 0) + 1
+                    return daily['count']
+                elif hasattr(daily, 'count'):
+                    daily.count += 1
+                    return daily.count
         
         # Create new record if not found
         new_daily = DailyExplores(date=date_str, count=1)
@@ -629,7 +652,20 @@ class Player(BaseModel):
         # Clean up old records (keep only last 7 days)
         current_date = datetime.now(timezone.utc)
         cutoff_date = (current_date - timedelta(days=7)).strftime('%Y-%m-%d')
-        self.daily_explores = [d for d in self.daily_explores if d.date >= cutoff_date]
+        
+        # Filter the list while handling both object types
+        filtered_explores = []
+        for d in self.daily_explores:
+            d_date = None
+            if isinstance(d, dict):
+                d_date = d.get('date', '')
+            elif hasattr(d, 'date'):
+                d_date = d.date
+            
+            if d_date and d_date >= cutoff_date:
+                filtered_explores.append(d)
+        
+        self.daily_explores = filtered_explores
         
         return 1
 

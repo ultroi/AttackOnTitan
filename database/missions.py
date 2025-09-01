@@ -384,7 +384,7 @@ async def cancel_mission(db, player, mission_id: int):
     # Get current missions from database to ensure we have the latest data
     current_player = await db.get_player(int(get_user_id(player)))
     player_missions = getattr(current_player, "missions", [])
-    
+
     # Keep track of updates to apply
     updates = {}
 
@@ -393,25 +393,43 @@ async def cancel_mission(db, player, mission_id: int):
         if (mission_progress["mission_id"] == mission_id and
             mission_progress["status"] == MISSION_STATUS_IN_PROGRESS):
 
-            # Cancel the mission and reset progress
+            # Cancel the mission and reset ALL progress
             player_missions[i]["status"] = MISSION_STATUS_CANCELLED
             player_missions[i]["cancelled_at"] = datetime.now(timezone.utc)
             player_missions[i]["current_progress"] = 0  # Reset progress to 0
             player_missions[i]["unique_opponents"] = []  # Reset unique opponents list
-            
-            # Reset mission-specific data
+
+            # Reset mission-specific data for ALL missions to ensure complete cleanup
             if mission_id == 1:
                 # Reset Scout's First March (clears starting location)
                 player_missions[i].pop("starting_location", None)
-                
-            # Handle Mission 14 special case - clear mission14_area_counts
-            if mission_id == 14 and hasattr(player, "mission14_area_counts"):
-                updates["mission14_area_counts"] = {}  # Reset mission 14 area counts
-            
-            # Mission 15 (Temporal Gambit) - reset unique opponents
-            if mission_id == 15:
+
+            elif mission_id == 14:
+                # Reset Never Stop! mission (clear mission14_area_counts)
+                updates["mission14_area_counts"] = {}
+
+            elif mission_id == 15:
+                # Reset Temporal Gambit (unique opponents already reset above)
                 player_missions[i]["unique_opponents"] = []
+
+            # Reset daily explores data for Mission 11 (Relentless Scout)
+            elif mission_id == 11:
+                updates["daily_explores"] = []
+
+            # Reset travel history for Mission 13 (March of the Walls)
+            elif mission_id == 13:
+                updates["travel_history"] = []
+
                 
+            keys_to_remove = []
+            for key in player_missions[i].keys():
+                if key not in ["mission_id", "status", "current_progress", "required_progress",
+                              "started_at", "completed_at", "cancelled_at", "expiry_at", "unique_opponents"]:
+                    keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                player_missions[i].pop(key, None)
+
             # Include updated missions in updates
             updates["missions"] = player_missions
 

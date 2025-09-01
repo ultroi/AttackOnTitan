@@ -599,16 +599,6 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             if mission_task:
                 await mission_task
             
-            # Update mission progress for exploration immediately 
-            try:
-                from database.missions import process_explore_mission_progress
-                mission_notifications = await process_explore_mission_progress(db, player, getattr(player, 'location', None))
-                if mission_notifications and update.message:
-                    for notification in mission_notifications[:2]:  # Limit to 2 notifications
-                        asyncio.create_task(update.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN))
-            except Exception as e:
-                logger.error(f"Error processing exploration mission progress: {e}")
-
             # Launch remaining background operations in parallel
             asyncio.create_task(_handle_explore_background_optimized(
                 update, context, user_id, user_id_str, username, db,
