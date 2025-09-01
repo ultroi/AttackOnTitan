@@ -1492,24 +1492,19 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
     # Handle auto drop (ho jyga) - chance for random items after battle
     try:
-        if random.random() < 0.09:
+        if random.random() < 0.10:
             drop = get_random_drop()
-            if drop:
-                if drop["type"] in ("bottle", "cylinder"):
-                    await db.players.update_one(
-                        {"user_id": user_id},
-                        {"$inc": {"gas": drop["amount"],
-                        }}
-                    )
-                    
-                    # Send image + message
-                    if chat_id:
-                        await send(
-                            chat_id,
-                            photo=drop["image"],
-                            caption=f"🎁 <b>{drop['message']}</b>",
-                            parse_mode="HTML"
-                        )
+            await db.players.update_one(
+                {"user_id": user_id},
+                {"$inc": {"gas": drop["amount"]}}
+            )
+            if chat_id:
+                await send(
+                    chat_id,
+                    photo=drop["image"],
+                    caption=f"🎁 <b>{drop['message']}</b>",
+                    parse_mode="HTML"
+                )
     except Exception as e:
         logger.error(f"Error processing auto drop: {e}")
             
