@@ -1509,7 +1509,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                         
     except Exception as e:
         logger.error(f"Error processing auto drop: {e}")
-
+            
+    
     # Clear battle flags immediately
     if f"active_battle_id_{user_id}" in context.bot_data:
         del context.bot_data[f"active_battle_id_{user_id}"]
