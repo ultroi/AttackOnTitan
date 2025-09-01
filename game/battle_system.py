@@ -785,14 +785,27 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         player_data = battle_cache["player_data"]
     
-    # Validate player data
-    if not player_data or not player_data.get('team'):
-        await query.edit_message_text("Error: No character in your team.")
+    # Validate player data - check if it's a dictionary or Player object
+    if not player_data:
+        await query.edit_message_text("Error: Player data not found.")
         return
+        
+    # Handle both dict and Player object cases
+    if isinstance(player_data, dict):
+        if not player_data.get('team'):
+            await query.edit_message_text("Error: No character in your team.")
+            return
+        team = player_data['team']
+    else:
+        # It's a Player object
+        if not hasattr(player_data, 'team') or not player_data.team:
+            await query.edit_message_text("Error: No character in your team.")
+            return
+        team = player_data.team
     
-    # Get character name efficiently
-    team_member = player_data['team'][0]
-    character_name = team_member['character_name'] if isinstance(team_member, dict) else team_member
+    # Get character name efficiently from either dict or Player object
+    team_member = team[0]
+    character_name = team_member['character_name'] if isinstance(team_member, dict) else getattr(team_member, 'character_name', team_member)
     
     # Clear all battle-related caches BEFORE starting battle to ensure fresh data
     db.invalidate_battle_caches(user_id)
@@ -1324,8 +1337,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         return
 
     # Fast path: Get cached data or minimal fresh data
+    # Ensure context.user_data exists
+    if not hasattr(context, 'user_data') or context.user_data is None:
+        context.user_data = {}
+    
     battle_cache = context.user_data.get("battle_cache", {})
-    player_data = battle_cache.get("player_data")
+    player_data = battle_cache.get("player_data") if isinstance(battle_cache, dict) else None
 
     if not player_data:
         # Use get_player for both DB and memory
@@ -1339,7 +1356,13 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         return
 
     victory = battle.titan_hp <= 0
-    explore_count = player_data.get("explore_count", 0)
+    
+    # Handle both dict and Player object cases for explore_count
+    if isinstance(player_data, dict):
+        explore_count = player_data.get("explore_count", 0)
+    else:
+        # It's a Player object
+        explore_count = getattr(player_data, "explore_count", 0)
 
     # Pre-calculate all values to minimize processing time
     gas_consumed = max(0, battle.initial_gas - battle.gas)
@@ -1469,17 +1492,22 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     # Fast cleanup - clear caches immediately
     db.invalidate_battle_caches(user_id)
 
-    # Clear battle flags
+    # Clear battle flags - safely handle context.bot_data if it doesn't exist
     battle_flags_to_clear = [
         f"active_battle_id_{user_id}",
         f"titan_battle_started_{user_id}",
         f"last_titan_data_{user_id}"
     ]
-    for flag in battle_flags_to_clear:
-        context.bot_data.pop(flag, None)
+    
+    if hasattr(context, 'bot_data') and context.bot_data is not None:
+        for flag in battle_flags_to_clear:
+            if flag in context.bot_data:
+                context.bot_data.pop(flag, None)
 
-    # Clear cached battle data
-    context.user_data.pop("battle_cache", None)
+    # Clear cached battle data - safely handle context.user_data if it doesn't exist
+    if hasattr(context, 'user_data') and context.user_data is not None:
+        if "battle_cache" in context.user_data:
+            context.user_data.pop("battle_cache", None)
 
     cleanup_battle(user_id, "completed", battle)
 

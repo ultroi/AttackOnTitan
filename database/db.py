@@ -88,8 +88,9 @@ class Database:
             # Cache them
             current_time = time.time()
             for player_data in recent_players:
-                user_id = player_data.get("user_id")
-                if user_id:
+                # Handle data correctly - player_data is always a dictionary here since it comes from database
+                if isinstance(player_data, dict) and "user_id" in player_data:
+                    user_id = player_data["user_id"]
                     cache_key = f"player_{user_id}"
                     player = Player(**player_data)
                     PLAYER_CACHE[cache_key] = {
@@ -101,13 +102,15 @@ class Database:
             
             # Pre-warm frequently used characters
             for player_data in recent_players[:50]:  # Top 50 most recent
-                user_id = player_data.get("user_id")
-                team = player_data.get("team", [])
-                if team and user_id:
-                    for team_member in team:
-                        if isinstance(team_member, dict) and "character_name" in team_member:
-                            char_name = team_member["character_name"]
-                            await self._prewarm_character_cache(user_id, char_name)
+                # Safely access data from dictionary
+                if isinstance(player_data, dict):
+                    user_id = player_data.get("user_id")
+                    team = player_data.get("team", [])
+                    if team and user_id:
+                        for team_member in team:
+                            if isinstance(team_member, dict) and "character_name" in team_member:
+                                char_name = team_member["character_name"]
+                                await self._prewarm_character_cache(user_id, char_name)
             
             logger.info("Cache pre-warming completed")
             
