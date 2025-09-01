@@ -22,6 +22,32 @@
    ```
    The bot will run in polling mode for local development.
 
+### Testing the Bot (Safe Testing Mode)
+
+For safe testing without affecting production data:
+
+1. **Use the test bot file**:
+   ```bash
+   python bot.py
+   ```
+
+2. **Test Configuration**:
+   - The test bot automatically uses `TEST_MODE=true`
+   - Uses a separate test database (`attackontitan_test`)
+   - Loads token from `TEST_BOT_TOKEN` in `.env`
+   - Mock responses prevent real Telegram API calls
+
+3. **Test Commands**:
+   - Interactive mode: `python bot.py`
+   - Test specific command: `python bot.py /start`
+   - Test callback: `python bot.py callback:start_journey`
+   - Run all tests: `python bot.py all`
+
+4. **Data Safety**:
+   - No changes committed to production database
+   - Test database is isolated from production
+   - Sample data is copied from production for testing
+
 ### Production Deployment (Render)
 
 1. **Deploy to Render**:

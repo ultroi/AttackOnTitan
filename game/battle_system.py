@@ -1033,11 +1033,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         full_message = []
         effects = {}
         
-        # Cancel timeout if exists, but don't set to None yet
-        # as we need to properly handle the cancellation
         if battle.timeout_task and not battle.timeout_task.done():
             battle.timeout_task.cancel()
-            # Wait a small amount of time for the task to properly cancel
             await asyncio.sleep(0.1)
         
         # Mark keyboard cache as invalid since state will change
@@ -1325,39 +1322,32 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         cleanup_battle(user_id, "error", battle)
         return
 
-    # Use cached player/team info if available
-    if not hasattr(context, "user_data") or context.user_data is None:
-        context.user_data = {}
+    # Fast path: Get cached data or minimal fresh data
     battle_cache = context.user_data.get("battle_cache", {})
     player_data = battle_cache.get("player_data")
 
     if not player_data:
-        player_data = await db.players.find_one({"user_id": user_id})
-        battle_cache["player_data"] = player_data
+        # Minimal query - only get essential fields
+        player_data = await db.players.find_one(
+            {"user_id": user_id},
+            {"explore_count": 1, "team": 1, "missions": 1, "location": 1, "gas": 1}
+        )
+        if player_data:
+            battle_cache["player_data"] = player_data
 
     if not player_data:
         await query.edit_message_text("❌ Player data not found!")
         cleanup_battle(user_id, "error", battle)
         return
 
-    explore_count = player_data.get("explore_count", 0)
-    send = context.bot.send_message
-    chat_id = None
-    if query.message:
-        try:
-            # Try to get chat_id in a safe way
-            if hasattr(query.message, 'chat_id'):
-                chat_id = getattr(query.message, 'chat_id', None)
-            elif hasattr(query.message, 'chat') and query.message.chat:
-                chat_id = getattr(query.message.chat, 'id', None)
-        except (AttributeError, TypeError):
-            pass
-
-    # Pre-calculate all rewards and updates to minimize DB calls
     victory = battle.titan_hp <= 0
+    explore_count = player_data.get("explore_count", 0)
+
+    # Pre-calculate all values to minimize processing time
+    gas_consumed = max(0, battle.initial_gas - battle.gas)
 
     if victory:
-        # Calculate rewards once
+        # Calculate rewards once with minimal computation
         rewards = battle.calculate_rewards(
             titan=battle.titan,
             character=battle.character,
@@ -1365,166 +1355,133 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             explore_count=explore_count
         )
 
-        # Ensure positive XP rewards
+        # Fast XP calculations
         character_xp = max(1, rewards["xp"])
         player_xp = max(1, rewards["xp"])
 
-        # Add XP to character and player objects (in-memory operations)
+        # Update character in-memory (fast)
         char_level_info = battle.character.add_xp(character_xp)
+        battle.character.xp = max(0, battle.character.xp)
+        battle.character.current_hp = battle.character.stats.HP
+        battle.character.gas = max(0, battle.character.gas - gas_consumed)
+        battle.character.max_gas = battle.character.gas
+
+        # Update player in-memory (fast)
         player_obj = Player(**player_data)
         player_level_info = player_obj.add_xp(player_xp)
+        player_obj.xp = max(0, player_obj.xp)
+        player_obj.marks = max(0, player_obj.marks + rewards["marks"])
+        player_obj.valor = max(0, player_obj.valor + rewards["valor"])
+        player_obj.explore_count = explore_count + 1
 
-        # Validate XP values
-        if battle.character.xp < 0:
-            battle.character.xp = 0
-        if player_obj.xp < 0:
-            player_obj.xp = 0
-
-        # Prepare gas consumption
-        gas_consumed = max(0, battle.initial_gas - battle.character.gas)
-        battle.character.gas = max(0, battle.character_gas - gas_consumed)
-        battle.character.max_gas = battle.character.gas
-        battle.character.current_hp = battle.character.stats.HP  # Restore to full HP after victory
-
-        # Clear all battle-related caches immediately after victory
-        db.invalidate_battle_caches(user_id)
-        
-        # Clear player cache to avoid overwriting inventory with stale data
-        if hasattr(db, 'invalidate_player_cache'):
-            db.invalidate_player_cache(user_id)
-        
-        # Get fresh player data to prevent overwriting inventory and other resources
-        fresh_player = await db.get_player(user_id)
-        
-        # Prepare all database updates in parallel tasks
-        update_tasks = []
-
-        # Character update task - use batch update for better performance
-        character_update_data = {
-            "xp": battle.character.xp,
-            "total_xp": battle.character.total_xp,
-            "level": battle.character.level,
-            "current_hp": battle.character.current_hp,
-            "gas": battle.character.gas,
-            "max_gas": battle.character.max_gas,
-            "stats": battle.character.stats.dict() if battle.character.stats else {},
-            "updated_at": datetime.now(timezone.utc)
-        }
-        update_tasks.append(db.batch_update_character(str(battle.character.user_id), battle.character.name, character_update_data))
-
-        
-        player_update_data = {
-            "crystal": max(0, player_obj.crystal),  # Keep existing crystals, no battle rewards
-            "valor": max(0, player_obj.valor + rewards["valor"]),
-            "marks": max(0, player_obj.marks + rewards["marks"]),
-            "explore_count": getattr(fresh_player, 'explore_count', 0) + 1 if fresh_player else 1,
-            "xp": max(0, player_obj.xp),
-            "total_xp": max(0, player_obj.total_xp),
-            "level": max(1, player_obj.level),
-            "updated_at": datetime.now(timezone.utc)
-        }
-        update_tasks.append(db.batch_update_player(str(user_id), player_update_data))
-
-        # Execute all database updates in parallel
-        try:
-            await asyncio.gather(*update_tasks, return_exceptions=True)
-        except Exception as e:
-            logger.error(f"Error during parallel database updates: {e}")
-
-        # Send victory message immediately
-        reward_msg = [
+        # Send victory message immediately (fastest user feedback)
+        reward_parts = [
             f"<b>You have defeated {battle.titan.name}!</b>\n",
             f"⚡ <b>XP: +{rewards['xp']}</b>",
-            f"🪙 <b>Marks: +{rewards['marks']}</b>",
+            f"🪙 <b>Marks: +{rewards['marks']}</b>"
         ]
         if rewards['valor'] > 0:
-            reward_msg.append(f"⚔️ <b>Valor : +{rewards['valor']}</b>")
+            reward_parts.append(f"⚔️ <b>Valor: +{rewards['valor']}</b>")
 
-        await query.edit_message_text("\n".join(reward_msg), parse_mode=ParseMode.HTML)
+        await query.edit_message_text("\n".join(reward_parts), parse_mode=ParseMode.HTML)
 
-        # Process mission progress and level ups in background (non-blocking)
-        asyncio.create_task(_process_post_battle_updates(
-            db, player_obj, battle.character, user_id, chat_id, send,
-            char_level_info, player_level_info, rewards["marks"], battle, victory=True
+        # Single batch database update (much faster than multiple calls)
+        character_update_task = db.batch_update_character(
+            str(battle.character.user_id), 
+            battle.character.name, 
+            {
+                "xp": battle.character.xp,
+                "total_xp": battle.character.total_xp,
+                "level": battle.character.level,
+                "current_hp": battle.character.current_hp,
+                "gas": battle.character.gas,
+                "max_gas": battle.character.max_gas,
+                "stats": battle.character.stats.dict() if battle.character.stats else {},
+                "updated_at": datetime.now(timezone.utc)
+            }
+        )
+        
+        player_update_task = db.batch_update_player(
+            str(user_id), 
+            {
+                "marks": player_obj.marks,
+                "valor": player_obj.valor,
+                "explore_count": player_obj.explore_count,
+                "xp": player_obj.xp,
+                "total_xp": player_obj.total_xp,
+                "level": player_obj.level,
+                "updated_at": datetime.now(timezone.utc)
+            }
+        )
+
+        # Execute both updates in parallel
+        try:
+            await asyncio.gather(character_update_task, player_update_task, return_exceptions=True)
+        except Exception as e:
+            logger.error(f"Error during parallel batch updates: {e}")
+
+        # Process all background tasks in parallel (non-blocking for user)
+        asyncio.create_task(_process_post_battle_updates_fast(
+            db, player_obj, battle.character, user_id, query.message.chat_id if query.message else None,
+            context.bot.send_message, char_level_info, player_level_info, rewards["marks"], battle
         ))
 
     else:
-        # Defeat case - simplified updates
-        gas_consumed = max(0, battle.initial_gas - battle.character.gas)
-        battle.character.gas = max(0, battle.character_gas - gas_consumed)
+        # Defeat path - minimal updates
+        battle.character.gas = max(0, battle.character.gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
 
-        # Clear all battle-related caches after defeat
-        db.invalidate_battle_caches(user_id)
-        
-        # Clear player cache to avoid overwriting inventory with stale data
-        if hasattr(db, 'invalidate_player_cache'):
-            db.invalidate_player_cache(user_id)
-        
-        # Get latest player data to avoid resource overwrite issues
-        fresh_player = await db.get_player(user_id)
-        explore_count = fresh_player.get("explore_count", 0) + 1 if fresh_player else (player_data.get("explore_count", 0) + 1)
+        # Send defeat message immediately
+        await query.edit_message_text(
+            f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.titan.name}!",
+            parse_mode=ParseMode.HTML
+        )
 
-        # Parallel updates for defeat
-        defeat_updates = [
-            db.batch_update_character(str(battle.character.user_id), battle.character.name, {
+        # Single batch update for defeat
+        character_defeat_task = db.batch_update_character(
+            str(battle.character.user_id), 
+            battle.character.name, 
+            {
                 "gas": battle.character.gas,
                 "max_gas": battle.character.max_gas,
                 "current_hp": battle.character.current_hp,
                 "updated_at": datetime.now(timezone.utc)
-            }),
-            db.batch_update_player(str(user_id), {
-                "explore_count": explore_count,
+            }
+        )
+        
+        player_defeat_task = db.batch_update_player(
+            str(user_id), 
+            {
+                "explore_count": explore_count + 1,
                 "updated_at": datetime.now(timezone.utc)
-            })
-        ]
+            }
+        )
 
         try:
-            await asyncio.gather(*defeat_updates, return_exceptions=True)
+            await asyncio.gather(character_defeat_task, player_defeat_task, return_exceptions=True)
         except Exception as e:
-            logger.error(f"Error during defeat updates: {e}")
+            logger.error(f"Error during defeat batch update: {e}")
 
-        await query.edit_message_text(f"{battle.character.name} was defeated by {battle.titan.name}!")
+        # Background processing for defeat
+        asyncio.create_task(_process_defeat_updates_fast(
+            db, player_data, user_id, query.message.chat_id if query.message else None, context.bot.send_message
+        ))
 
-        # Process exploration mission progress in background
-        asyncio.create_task(_process_defeat_updates(db, player_data, user_id, chat_id, send))
+    # Fast cleanup - clear caches immediately
+    db.invalidate_battle_caches(user_id)
 
-    # Handle auto drop (ho jyga) - chance for random items after battle
-    try:
-        if random.random() < 0.08:
-            drop = get_random_drop()
-            if drop:
-                # Add gas to player
-                current_gas = player_data.get("gas", 0)
-                new_gas = current_gas + drop['amount']
-                await db.update_player(user_id, {"gas": new_gas})
-                
-                # Send drop message
-                if chat_id:
-                    try:
-                        await send(chat_id, drop['message'], parse_mode=ParseMode.MARKDOWN)
-                    except Exception as e:
-                        logger.error(f"Error sending drop message: {e}")
-                        
-    except Exception as e:
-        logger.error(f"Error processing auto drop: {e}")
-            
-    
-    # Clear battle flags immediately
-    if f"active_battle_id_{user_id}" in context.bot_data:
-        del context.bot_data[f"active_battle_id_{user_id}"]
+    # Clear battle flags
+    battle_flags_to_clear = [
+        f"active_battle_id_{user_id}",
+        f"titan_battle_started_{user_id}",
+        f"last_titan_data_{user_id}"
+    ]
+    for flag in battle_flags_to_clear:
+        context.bot_data.pop(flag, None)
 
-    if f"titan_battle_started_{user_id}" in context.bot_data:
-        del context.bot_data[f"titan_battle_started_{user_id}"]
-    
-    # Clear titan cache to prevent data leakage between battles
-    if f"last_titan_data_{user_id}" in context.bot_data:
-        del context.bot_data[f"last_titan_data_{user_id}"]
-
-    # Remove cached battle data
-    if hasattr(context, "user_data") and isinstance(context.user_data, dict):
-        context.user_data.pop("battle_cache", None)
+    # Clear cached battle data
+    context.user_data.pop("battle_cache", None)
 
     cleanup_battle(user_id, "completed", battle)
 
@@ -1840,6 +1797,163 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
 
     except Exception as e:
         logger.error(f"Error sending level up messages: {e}")
+
+async def _process_post_battle_updates_fast(db, player_obj, character, user_id, chat_id, send_func,
+                                      char_level_info, player_level_info, marks_reward, battle):
+    """Process mission progress and level up messages in background with optimizations."""
+    try:
+        # Get only essential fresh data for mission processing
+        player_obj_fresh = await db.get_player(user_id)
+        if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
+            return
+
+        # Fast mission processing - parallel execution
+        mission_tasks = [
+            process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward),
+            process_explore_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None)),
+            process_titan_defeat_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None))
+        ]
+
+        mission_results = await asyncio.gather(*mission_tasks, return_exceptions=True)
+
+        # Collect all notifications efficiently
+        all_notifications = []
+        for result in mission_results:
+            if isinstance(result, list):
+                all_notifications.extend(result)
+
+        # Send mission notifications (limit to 2 for speed)
+        if all_notifications and chat_id:
+            for notification in all_notifications[:2]:
+                try:
+                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
+                except Exception as e:
+                    logger.error(f"Error sending mission notification: {e}")
+
+        # Send level up messages immediately after mission notifications
+        await _send_level_up_messages_fast(char_level_info, player_level_info, character, player_obj, chat_id, send_func)
+
+        # Process mission item drops only for victories (optimized)
+        try:
+            mission_item_drops = await check_mission_item_drops(player_obj_fresh)
+            for item_drop in mission_item_drops[:1]:  # Limit to 1 drop for speed
+                result = await add_mission_item(db, player_obj_fresh, item_drop["key"])
+                if isinstance(result, tuple) and len(result) == 2:
+                    success, msg = result
+                    if success and msg and chat_id:
+                        try:
+                            await send_func(chat_id, msg, parse_mode=ParseMode.MARKDOWN)
+                        except Exception as e:
+                            logger.error(f"Error sending mission item notification: {e}")
+        except Exception as e:
+            logger.error(f"Error processing mission item drops: {e}")
+
+        # Track battle stats in background (fast)
+        try:
+            track_battle_end(int(user_id), character.name, "victory")
+            from game.stats_command import track_explore_stats
+            player_first_name = getattr(player_obj_fresh, "first_name", None) or getattr(player_obj_fresh, "username", None) or str(user_id)
+            await track_explore_stats(user_id, player_first_name, True)
+        except Exception as e:
+            logger.error(f"Error tracking battle stats: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in fast post-battle updates: {e}")
+
+
+async def _process_defeat_updates_fast(db, player_data, user_id, chat_id, send_func):
+    """Process updates after defeat with optimizations."""
+    try:
+        # Get minimal fresh data for defeat processing
+        player_obj_fresh = await db.get_player(user_id)
+        if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
+            return
+
+        # Process exploration mission progress only
+        explore_notifications = await process_explore_mission_progress(
+            db, player_obj_fresh, getattr(player_obj_fresh, "location", None)
+        )
+
+        # Send mission notifications (limit to 1 for speed)
+        if explore_notifications and chat_id:
+            for notification in explore_notifications[:1]:
+                try:
+                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
+                except Exception as e:
+                    logger.error(f"Error sending defeat mission notification: {e}")
+
+        # Track defeat stats (fast)
+        try:
+            from database.characters import get_character_data
+            character_data = get_character_data(player_obj_fresh.team[0].character_name if player_obj_fresh.team else "Unknown")
+            character_name = character_data.name if character_data else "Unknown"
+            track_battle_end(int(user_id), character_name, "defeat")
+
+            from game.stats_command import track_explore_stats
+            player_first_name = getattr(player_obj_fresh, "first_name", None) or getattr(player_obj_fresh, "username", None) or str(user_id)
+            await track_explore_stats(user_id, player_first_name, True)
+        except Exception as e:
+            logger.error(f"Error tracking defeat stats: {e}")
+
+    except Exception as e:
+        logger.error(f"Error in fast defeat updates: {e}")
+
+
+async def _send_level_up_messages_fast(char_level_info, player_level_info, character, player_obj, chat_id, send_func):
+    """Send level up messages efficiently with optimizations."""
+    try:
+        # Character level ups (limit to 1 for speed)
+        if char_level_info["total_level_ups"] > 0:
+            level_up = char_level_info["level_ups"][0]  # Only send first level up for speed
+            stat_lines = []
+
+            # Get stat increases
+            stat_increases = level_up.get('stat_increases', {})
+
+            if stat_increases:
+                stat_order = ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']
+                stat_emojis = {
+                    'HP': '❤️', 'ATK': '⚔️', 'DEF': '🛡️',
+                    'ACC': '🎯', 'INT': '🧠', 'SPD': '⚡'
+                }
+
+                for stat in stat_order:
+                    increase = stat_increases.get(stat, 0)
+                    if increase > 0:
+                        emoji = stat_emojis.get(stat, '')
+                        stat_lines.append(f"{emoji} {stat}: +{increase}")
+
+            msg_parts = [
+                f"🎊 <b>{character.name} leveled Up !!</b>",
+                f"<b>Level:</b> {level_up['old_level']} ➜ {level_up['new_level']}"
+            ]
+
+            if stat_lines:
+                msg_parts.append("<b>Stats:</b> " + ", ".join(stat_lines[:3]))  # Limit stats shown
+
+            if level_up.get("newly_unlocked_abilities"):
+                msg_parts.append(f"🌟 New ability: {level_up['newly_unlocked_abilities'][0]['name']}")
+
+            await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
+
+        # Player level ups (limit to 1 for speed)
+        if player_level_info["total_level_ups"] > 0:
+            lvl_up = player_level_info["level_ups"][0]  # Only send first level up
+            msg_parts = [
+                f"🎊 <b>Player Level Up!</b>",
+                f"<b>Level:</b> {lvl_up['old_level']} → {lvl_up['new_level']}"
+            ]
+
+            rewards = lvl_up.get("rewards", {})
+            if rewards.get("marks", 0) > 0:
+                msg_parts.append(f"🪙 Marks: +{rewards['marks']}")
+            if rewards.get("valor", 0) > 0:
+                msg_parts.append(f"⚔️ Valor: +{rewards['valor']}")
+
+            await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        logger.error(f"Error sending fast level up messages: {e}")
 
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle battle timeout."""
