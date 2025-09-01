@@ -263,8 +263,15 @@ class BattleSystem:
             mission_7_completed = False
             player_missions = getattr(self.player, "missions", [])
             for mission in player_missions:
-                if (mission.get("mission_id") == 7 and 
-                    mission.get("status") == "completed"):
+                # Handle both dict and object formats for missions
+                if isinstance(mission, dict):
+                    mission_id = mission.get("mission_id")
+                    mission_status = mission.get("status")
+                else:
+                    mission_id = getattr(mission, "mission_id", None)
+                    mission_status = getattr(mission, "status", None)
+                    
+                if mission_id == 7 and mission_status == "completed":
                     mission_7_completed = True
                     break
             
@@ -833,7 +840,15 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         character.current_hp = character.stats.HP
     
     # Create player object and battle system
-    player = Player(**player_data) if player_data else None
+    if player_data:
+        # Check if player_data is already a Player object
+        if isinstance(player_data, Player):
+            player = player_data
+        else:
+            # If it's a dict, create a Player object
+            player = Player(**player_data)
+    else:
+        player = None
     battle = BattleSystem(character, titan, player)
     
     # Mission 7 Emergency Heal: Apply at battle start if HP < 100
@@ -842,8 +857,15 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         mission_7_completed = False
         player_missions = getattr(player, "missions", [])
         for mission in player_missions:
-            if (mission.get("mission_id") == 7 and 
-                mission.get("status") == "completed"):
+            # Handle both dict and object formats for missions
+            if isinstance(mission, dict):
+                mission_id = mission.get("mission_id")
+                mission_status = mission.get("status")
+            else:
+                mission_id = getattr(mission, "mission_id", None)
+                mission_status = getattr(mission, "status", None)
+                
+            if mission_id == 7 and mission_status == "completed":
                 mission_7_completed = True
                 break
         
@@ -895,8 +917,6 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Join all parts at once for better performance
     battle_message = "\n".join(message_parts)
     
-    # Send a new message with the battle UI instead of editing the original message
-    # This way the original battle button becomes inactive and the battle UI appears in a new message
     chat_id = None
     if query.message:
         try:
