@@ -91,18 +91,22 @@ class PvPBattleSystem:
         self.challenger_hp: int = challenger.stats.HP
         self.defender_hp: int = defender.stats.HP
         
-        # Initialize battle state
-        self.challenger_gas: int = challenger.gas
-        self.defender_gas: int = defender.gas
+        # Determine first turn based on character speed
+        challenger_speed = challenger.stats.SPD if hasattr(challenger, 'stats') and hasattr(challenger.stats, 'SPD') else 10
+        defender_speed = defender.stats.SPD if hasattr(defender, 'stats') and hasattr(defender.stats, 'SPD') else 10
         
-        # Track initial values
-        self.initial_challenger_gas: int = challenger.gas
-        self.initial_defender_gas: int = defender.gas
-        
-        # Battle state tracking
-        self.current_turn_user_id: str = str(challenger_player.user_id)  # Challenger goes first
-        self.current_turn: str = challenger.name  # Use character name for display and identification
-        self.turn_count: int = 0
+        if challenger_speed > defender_speed:
+            # Challenger is faster, goes first
+            self.current_turn_user_id: str = str(challenger_player.user_id)
+            self.current_turn: str = challenger.name
+        elif defender_speed > challenger_speed:
+            # Defender is faster, goes first
+            self.current_turn_user_id: str = str(defender_player.user_id)
+            self.current_turn: str = defender.name
+        else:
+            # Speeds are equal, challenger goes first (or could randomize)
+            self.current_turn_user_id: str = str(challenger_player.user_id)
+            self.current_turn: str = challenger.name
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
