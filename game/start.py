@@ -518,7 +518,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             ]})
                             logger.info(f"Referral lookup result: {ref_player is not None}")
                         
-                        if ref_player and str(ref_player.get('user_id')) != user_id:
+                        if ref_player and str(getattr(ref_player, 'user_id', None)) != user_id:
                             # Calculate and log referee rewards
                             referee_rewards = {}
                             for k, v in REFERRAL_REWARDS.items():
@@ -526,12 +526,12 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 starter_rewards[k] = starter_rewards.get(k, 0) + v
                             
                             logger.info(f"Referee {user_id} gets rewards: {referee_rewards}")
-                            logger.info(f"Referrer {referred_by} (ID: {ref_player.get('user_id')}) to receive: {REFERRER_REWARDS}")
+                            logger.info(f"Referrer {referred_by} (ID: {getattr(ref_player, 'user_id', None)}) to receive: {REFERRER_REWARDS}")
                             
                             # Update referrer if db was initialized
                             if db.players is not None:
                                 # Get the referrer's user_id
-                                ref_user_id = str(ref_player.get('user_id'))
+                                ref_user_id = str(getattr(ref_player, 'user_id', None))
                                 
                                 update_result = await db.players.update_one(
                                     {"$or": [
@@ -566,7 +566,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             try:
                                 bot = context.bot if hasattr(context, 'bot') else None
                                 if bot:
-                                    ref_user_id = str(ref_player.get('user_id') or ref_player.get('_id') or "")
+                                    ref_user_id = str(getattr(ref_player, 'user_id', None) or getattr(ref_player, '_id', None) or "")
                                     if ref_user_id:
                                         ref_message = (
                                             f"🎉 <b>Referral Reward!</b>\n\n"

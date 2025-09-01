@@ -339,16 +339,16 @@ class ResourceMonitor:
                 # Safely process player information
                 for player in stats['players'][:15]:  # Show max 15 players
                     try:
-                        duration_str = f"{int(player.get('duration', 0))}s"
-                        username = player.get('username', 'Unknown')
-                        user_id = player.get('user_id', '?')
-                        action = player.get('action', 'Unknown')
+                        duration_str = f"{int(getattr(player, 'duration', 0))}s"
+                        username = getattr(player, 'username', 'Unknown')
+                        user_id = getattr(player, 'user_id', '?')
+                        action = getattr(player, 'action', 'Unknown')
                         
                         if action == "🔥 In Battle":
                             status += f"   ⚔️ <b>{username}</b> ({user_id})\n"
-                            status += f"      🗡️ {player.get('character', 'Unknown')} vs {player.get('vs_titan', 'Unknown')}\n"
-                            status += f"      ❤️ {player.get('char_hp', '?/?')} | 🛡️ {player.get('titan_hp', '?/?')} | Turn {player.get('turn', '?')}\n"
-                            status += f"      ⛽ Gas: {player.get('gas', '?')} | ⏱️ {duration_str}\n\n"
+                            status += f"      🗡️ {getattr(player, 'character', 'Unknown')} vs {getattr(player, 'vs_titan', 'Unknown')}\n"
+                            status += f"      ❤️ {getattr(player, 'char_hp', '?/?')} | 🛡️ {getattr(player, 'titan_hp', '?/?')} | Turn {getattr(player, 'turn', '?')}\n"
+                            status += f"      ⛽ Gas: {getattr(player, 'gas', '?')} | ⏱️ {duration_str}\n\n"
                         else:
                             status += f"   🔸 <b>{username}</b> ({user_id})\n"
                             status += f"      {action} | ⏱️ {duration_str}\n\n"

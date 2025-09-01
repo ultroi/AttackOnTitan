@@ -383,8 +383,8 @@ def include_dashboard_route(app):
         now = int(time.time())
 
         # Check if already verified
-        if player and player.get("hcaptcha_verified"):
-            start_time = player.get("hcaptcha_start_time")
+        if player and getattr(player, "hcaptcha_verified", False):
+            start_time = getattr(player, "hcaptcha_start_time", None)
             # Add None check before comparison
             if start_time is not None and now - start_time <= HCAPTCHA_TIMEOUT:
                 return templates.TemplateResponse(
@@ -393,7 +393,7 @@ def include_dashboard_route(app):
                 )
 
     
-        if not player or not player.get("hcaptcha_start_time"):
+    if not player or not getattr(player, "hcaptcha_start_time", None):
             # This is the *first* time captcha is being prompted, set the timer
             await db["players"].update_one(
                 {"user_id": str(user_id)},
@@ -407,7 +407,7 @@ def include_dashboard_route(app):
             )
         else:
             # Do not reset the timer if expired
-            if now - player.get("hcaptcha_start_time", 0) > HCAPTCHA_TIMEOUT:
+            if now - getattr(player, "hcaptcha_start_time", 0) > HCAPTCHA_TIMEOUT:
                 # Ban and notify user if timeout
                 await handle_verification_timeout(db, user_id, player)
                 await db["players"].update_one(
@@ -455,7 +455,7 @@ def include_dashboard_route(app):
 
         player = await db["players"].find_one({"user_id": str(user_id)})
         now = int(time.time())
-        start_time = player.get("hcaptcha_start_time", now) if player else now
+    start_time = getattr(player, "hcaptcha_start_time", now) if player else now
 
         # Check timeout
         if now - start_time > HCAPTCHA_TIMEOUT:
@@ -493,7 +493,7 @@ def include_dashboard_route(app):
         try:
             # Double check timeout before updating (race condition prevention)
             player = await db["players"].find_one({"user_id": str(user_id)})
-            start_time = player.get("hcaptcha_start_time", now) if player else now
+            start_time = getattr(player, "hcaptcha_start_time", now) if player else now
             if now - start_time > HCAPTCHA_TIMEOUT:
                 await handle_verification_timeout(db, user_id, player)
                 await db["players"].update_one(
@@ -580,7 +580,7 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
         except Exception:
             pass
 
-        first_name = (player.get("first_name") or player.get("name") or str(user_id_int)) if player else str(user_id_int)
+    first_name = (getattr(player, "first_name", None) or getattr(player, "name", None) or str(user_id_int)) if player else str(user_id_int)
         msg = (
             f"<b>#BanEvent</b>\n\n"
             f"<b>Target</b> : <a href='tg://user?id={user_id_int}'>{first_name}</a>\n"
@@ -609,7 +609,7 @@ async def notify_user_success(user_id: str, player: Optional[dict]):
     if not bot_token:
         return
 
-    user_name = player.get("name", "Explorer") if player else "Explorer"
+    user_name = getattr(player, "name", "Explorer") if player else "Explorer"
     message = (
         f"✅ <b>Verification Successful!</b>\n\n"
         f"Hello {user_name}, wait a few seconds then explore! "

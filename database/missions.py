@@ -644,8 +644,7 @@ async def process_explore_mission_progress(db, player, area=None):
                         pm["status"] = MISSION_STATUS_COMPLETED
                         pm["completed_at"] = datetime.now(timezone.utc)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                    else:
-                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")
+                    # Removed progress notification for Mission 9
 
         if mission_id == 11:
             weekly_explores = 0
@@ -686,8 +685,11 @@ async def process_explore_mission_progress(db, player, area=None):
                     pm["completed_at"] = datetime.now(timezone.utc)
                     notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
     
-    # Apply all batched updates in a single operation
+    # Convert daily_explores to list of dicts if present in player before saving
     if batch_updates:
+        if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
+            # Convert any DailyExplores objects to dicts
+            batch_updates["daily_explores"] = [de.dict() if hasattr(de, "dict") else de for de in player.daily_explores]
         await db.batch_update_player(int(player.user_id), batch_updates)
     
     return notifications
@@ -811,8 +813,7 @@ async def process_titan_defeat_mission_progress(db, player, area=None):
                         pm["completed_at"] = datetime.now(timezone.utc)
                         await apply_mission_rewards(db, player, mission)
                         notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-                    else:
-                        notifications.append(f"👹 Titan defeated in Royal Capital!\nMission 9 Progress: {current_progress}/{pm['required_progress']} Titans")
+                    # Removed progress notification for Mission 9
     
     return notifications
 

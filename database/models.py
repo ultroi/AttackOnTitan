@@ -488,22 +488,22 @@ class Player(BaseModel):
                     {"user_id": self.referred_by}
                 ]})
                 if ref_player:
-                    milestones = ref_player.get('referral_milestones', {}) or {}
+                    milestones = getattr(ref_player, 'referral_milestones', {}) or {}
                     milestone_updates = {}
                     milestone_msgs = []
                     if self.level == 20 and not milestones.get(f"ref_{self.user_id}_lv20"):
                         milestone_updates[f'referral_milestones.ref_{self.user_id}_lv20'] = True
-                        milestone_updates['valor'] = ref_player.get('valor', 0) + 50
+                        milestone_updates['valor'] = getattr(ref_player, 'valor', 0) + 50
                         milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>50 Valor</b> because your referral {self.name} reached level 20!')
                     if self.level == 50 and not milestones.get(f"ref_{self.user_id}_lv50"):
                         milestone_updates[f'referral_milestones.ref_{self.user_id}_lv50'] = True
-                        milestone_updates['crystal'] = ref_player.get('crystal', 0) + 2
+                        milestone_updates['crystal'] = getattr(ref_player, 'crystal', 0) + 2
                         milestone_msgs.append(f'🎉 <b>Referral Reward:</b> You received <b>2 Titan Crystals</b> because your referral {self.name} reached level 50!')
                     if milestone_updates:
-                        await db.players.update_one({"user_id": str(ref_player.get("user_id"))}, {"$set": milestone_updates})
+                        await db.players.update_one({"user_id": str(getattr(ref_player, "user_id", None))}, {"$set": milestone_updates})
                         bot = getattr(context, 'bot', None)
                         if bot and milestone_msgs:
-                            await bot.send_message(chat_id=str(ref_player.get("user_id")), text='\n'.join(milestone_msgs), parse_mode="HTML")
+                            await bot.send_message(chat_id=str(getattr(ref_player, "user_id", None)), text='\n'.join(milestone_msgs), parse_mode="HTML")
         
         if db is not None and context is not None:
             asyncio.create_task(_referral_levelup())
