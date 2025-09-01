@@ -1681,88 +1681,10 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
             return
             
-        # Initialize notifications list
-        all_notifications = []
-            
-        # Update area explore counts for Mission 14 even on defeats, but only if mission is active
-        location = getattr(player_obj_fresh, "location", None)
-        if location:
-            # Check if mission 14 is active
-            mission14_active = False
-            player_missions = getattr(player_obj_fresh, "missions", [])
-            for mission in player_missions:
-                if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
-                    mission14_active = True
-                    break
-                    
-            # Only update counts if mission 14 is active
-            if mission14_active:
-                AREAS = [
-                    "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                    "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-                ]
-                mission_area_counts = getattr(player_obj_fresh, "mission14_area_counts", {}) or {}
-                
-                # Find matching area
-                matching_area = None
-                for area in AREAS:
-                    if location.lower() == area.lower() or area.lower() in location.lower():
-                        matching_area = area
-                        break
-                
-                # Update area count
-                if matching_area:
-                    old_count = mission_area_counts.get(matching_area, 0)
-                    mission_area_counts[matching_area] = old_count + 1
-                    
-                    # Calculate completed areas for mission progress
-                    REQUIRED_AREAS = [
-                        "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                        "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-                    ]
-                    completed_areas = sum(1 for area_name in REQUIRED_AREAS
-                                         if mission_area_counts.get(area_name, 0) >= 500)
-                    
-                    # Update mission progress in player missions
-                    for mission in player_missions:
-                        if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
-                            previous_progress = mission["current_progress"]
-                            mission["current_progress"] = completed_areas
-                            
-                            # Check if this area just reached 500
-                            if mission_area_counts.get(matching_area, 0) == 500:
-                                # Add notification for area completion
-                                all_notifications.append(f"🗺️ Area explored: {matching_area} - 500 explores reached!\nMission 14 Progress: {completed_areas}/{len(REQUIRED_AREAS)} areas completed")
-                            
-                            # Check if mission should be completed
-                            if completed_areas >= 10 and mission.get("status") != "completed":
-                                mission["status"] = "completed"
-                                mission["completed_at"] = datetime.now(timezone.utc)
-                                from database.missions import MISSIONS_BY_ID, apply_mission_rewards
-                                mission_def = MISSIONS_BY_ID.get(14)
-                                if mission_def:
-                                    # Apply the rewards to the player
-                                    await apply_mission_rewards(db, player_obj_fresh, mission_def)
-                                    all_notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission_def.title}*\nYou've earned: {mission_def.reward_description}")
-                            break
-                    
-                    # Update both mission14_area_counts and missions in database
-                    await db.update_player(user_id, {
-                        "mission14_area_counts": mission_area_counts,
-                        "missions": player_missions
-                    })
-                    
-                    # Get fresh data again after updating
-                    player_obj_fresh = await db.get_player(user_id)
-            
         # Process exploration mission progress
         explore_notifications = await process_explore_mission_progress(
             db, player_obj_fresh, getattr(player_obj_fresh, "location", None)
         )
-
-        # Combine all notifications
-        if explore_notifications:
-            all_notifications.extend(explore_notifications)
 
         # Send mission notifications
         if all_notifications:

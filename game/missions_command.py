@@ -186,7 +186,8 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             ]
             completed_areas = 0
             for area in AREAS:
-                if mission_area_counts.get(area, 0) >= 500:
+                area_key = area.lower().replace(" ", "_")
+                if mission_area_counts.get(area_key, {}).get("count", 0) >= 500:
                     completed_areas += 1
             new_progress = min(completed_areas, mission.required_progress)
             
@@ -329,7 +330,16 @@ def format_mission_14_progress(player, max_count=500):
     completed_areas = 0
 
     for area in AREAS:
-        count = mission_area_counts.get(area, 0)
+        area_key = area.lower().replace(" ", "_")
+        area_data = mission_area_counts.get(area_key, {})
+        
+        if isinstance(area_data, dict):
+            count = area_data.get("count", 0)
+        elif isinstance(area_data, int):  # Backward compatibility
+            count = area_data
+        else:
+            count = 0
+            
         if count >= max_count:
             status = "✅"
             completed_areas += 1
@@ -373,7 +383,11 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
             
             # Count areas with at least 500 explores
             for area in REQUIRED_AREAS:
-                if mission_area_counts.get(area, 0) >= 500:
+                area_key = area.lower().replace(" ", "_")
+                area_data = mission_area_counts.get(area_key, {})
+                if isinstance(area_data, dict) and area_data.get("count", 0) >= 500:
+                    completed_areas += 1
+                elif isinstance(area_data, int) and area_data >= 500:  # Backward compatibility
                     completed_areas += 1
             
             display_progress = completed_areas
