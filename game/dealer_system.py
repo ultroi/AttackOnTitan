@@ -479,8 +479,8 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                     reply_markup=None
                 )
         elif cost_type == "crystals":
-            current_crystals = getattr(player, "crystals", 0)
-            logger.info(f"Player crystals: {current_crystals}, required: {cost_amount}")
+            current_crystals = getattr(player, "crystal", 0)
+            logger.info(f"Player crystal: {current_crystals}, required: {cost_amount}")
             if current_crystals < cost_amount:
                 resource_check_passed = False
                 await query.edit_message_caption(
@@ -519,7 +519,7 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
         elif cost_type == "valor":
             player_updates["valor"] = player.valor - cost_amount
         elif cost_type == "crystals":
-            player_updates["crystals"] = player.crystals - cost_amount
+            player_updates["crystal"] = player.crystal - cost_amount
 
         # Select outcome
         outcome = select_outcome(dealer_data["outcomes"])
@@ -534,8 +534,8 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                 current = getattr(player, "valor", 0)
                 player_updates["valor"] = current + reward_amount
             elif reward_type == "crystals":
-                current = getattr(player, "crystals", 0)
-                player_updates["crystals"] = current + reward_amount
+                current = getattr(player, "crystal", 0)
+                player_updates["crystal"] = current + reward_amount
             elif reward_type == "gas":
                 current = getattr(player, "gas", 0)
                 player_updates["gas"] = current + reward_amount
