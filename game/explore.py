@@ -423,6 +423,19 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image_embed=image_embed
     )
 
+    # Check for dealer encounter (10% chance)
+    # dealer_appeared = False
+    # try:
+    #     from game.dealer_command import explore_dealer
+    #     dealer_appeared = await explore_dealer(update, context)
+    # except Exception as e:
+    #     logger.error(f"Error checking dealer encounter: {e}")
+    #     dealer_appeared = False
+    
+    # # If dealer appeared, don't show titan
+    # if dealer_appeared:
+    #     return
+        
     # SEND RESPONSE IMMEDIATELY before any DB operations - absolute priority
     if update.message:
         try:

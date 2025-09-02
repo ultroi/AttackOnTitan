@@ -62,6 +62,8 @@ from game.pvp_system import pvp_command, pvp_callback_handler
 from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
+from game.dealer_command import dealer_command, explore_dealer
+from game.dealer_system import handle_dealer_callback
 
 # Load environment variables
 load_dotenv()
@@ -687,6 +689,10 @@ def register_handlers(app_instance):
     # PVP system handlers
     app_instance.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
     app_instance.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
+    
+    # Dealer system handlers
+    app_instance.add_handler(CommandHandler("testdealer", dealer_command))
+    app_instance.add_handler(CallbackQueryHandler(handle_dealer_callback, pattern="^dealer_"))
 
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))

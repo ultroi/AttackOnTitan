@@ -1457,10 +1457,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             drop = get_random_drop()
             if drop['type'] in ['bottle', 'cylinder']:
                 # Update player's gas
-                battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
+                player_obj.gas += drop['amount']
                 # Update database
-                await db.batch_update_character(str(battle.character.user_id), battle.character.name, {
-                    "gas": battle.character.gas,
+                await db.batch_update_player(str(user_id), {
+                    "gas": player_obj.gas,
                     "updated_at": datetime.now(timezone.utc)
                 })
                 # Send drop message
@@ -1528,10 +1528,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             drop = get_random_drop()
             if drop['type'] in ['bottle', 'cylinder']:
                 # Update player's gas
-                battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
+                player_obj.gas += drop['amount']
                 # Update database
-                await db.batch_update_character(str(battle.character.user_id), battle.character.name, {
-                    "gas": battle.character.gas,
+                await db.batch_update_player(str(user_id), {
+                    "gas": player_obj.gas,
                     "updated_at": datetime.now(timezone.utc)
                 })
                 # Send drop message
