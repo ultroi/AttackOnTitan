@@ -683,7 +683,6 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
     db = context.bot_data.get("db") or Database()
     user_id = update.effective_user.id
     player = await db.get_player(str(user_id))
-    print("DEBUG owned_characters:", player.owned_characters if player else None)
     if not player or not player.owned_characters:
         await update.message.reply_text("❌ You do not own any characters.")
         return

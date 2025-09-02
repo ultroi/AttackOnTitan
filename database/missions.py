@@ -182,7 +182,7 @@ MISSION_DEFINITIONS = [
         title="Never Stop!",
         description="Become a true master of the entire map by exploring every region thoroughly.",
         requirement="Complete 500 explores in each place of the map.",
-        required_progress=10,  # Number of areas that need to be completed
+        required_progress=10,  
         reward_description="250,000 Marks + 1 of each Utilities +50 PvP damage",
         rewards={
             "marks": 250000, 
@@ -712,9 +712,7 @@ async def process_explore_mission_progress(db, player, area=None):
             starting_explore = pm.get("starting_explore_count", 0)
             explores_since_start = max(0, current_explore - starting_explore)
             
-            # Get or initialize mission14_area_counts
-            if not hasattr(player, "mission14_area_counts") or getattr(player, "mission14_area_counts", None) is None:
-                player.mission14_area_counts = {}
+            # Get mission14_area_counts
             mission14_area_counts = player.mission14_area_counts
             
             # Define the areas for Mission 14
