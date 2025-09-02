@@ -406,7 +406,7 @@ async def start_mission(db, player, mission_id: int):
     # For Mission 14, initialize area counts when mission is started
     if mission_id == 14:
         # Initialize mission14_area_counts if not present
-        mission14_area_counts = {}
+        mission14_area_counts = getattr(player, "mission14_area_counts", {}) or {}
         # We need to update this separately
         await db.update_player(int(get_user_id(player)), {"mission14_area_counts": mission14_area_counts})
     
@@ -713,7 +713,7 @@ async def process_explore_mission_progress(db, player, area=None):
             explores_since_start = max(0, current_explore - starting_explore)
             
             # Get mission14_area_counts
-            mission14_area_counts = player.mission14_area_counts
+            mission14_area_counts = getattr(player, "mission14_area_counts", {}) or {}
             
             # Define the areas for Mission 14
             MISSION_14_AREAS = [
@@ -737,7 +737,7 @@ async def process_explore_mission_progress(db, player, area=None):
                 for mission_area in MISSION_14_AREAS:
                     mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "").replace("-", "")
                     # Check if the mission area name is fully contained in the location or vice versa
-                    if mission_area_clean in area_lower:
+                    if mission_area_clean in area_lower or area_lower in mission_area_clean:
                         matching_area = mission_area
                         break
 

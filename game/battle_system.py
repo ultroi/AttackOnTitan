@@ -883,7 +883,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             if actual_heal > 0:
                 # Update character HP in database
                 character.current_hp = battle.character_hp
-                await db.update_character(str(user_id), character)
+                await db.update_character(character)
                 emergency_heal_message = f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!\n\n"
                 battle.emergency_heal_used = True
     
@@ -1456,7 +1456,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 # Update player's gas
                 battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
                 # Update database
-                await db.update_character(str(battle.character.user_id), battle.character.name, {
+                await db.batch_update_character(str(battle.character.user_id), battle.character.name, {
                     "gas": battle.character.gas,
                     "updated_at": datetime.now(timezone.utc)
                 })
@@ -1527,7 +1527,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                 # Update player's gas
                 battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
                 # Update database
-                await db.update_character(str(battle.character.user_id), battle.character.name, {
+                await db.batch_update_character(str(battle.character.user_id), battle.character.name, {
                     "gas": battle.character.gas,
                     "updated_at": datetime.now(timezone.utc)
                 })
