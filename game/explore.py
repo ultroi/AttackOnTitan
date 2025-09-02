@@ -17,11 +17,6 @@ import asyncio
 from uuid import uuid4
 from game.stats_command import track_explore_stats
 
-# Import mission-related functions
-from database.missions import (
-    check_mission_item_drops, add_mission_item, process_explore_mission_progress
-)
-
 logger = logging.getLogger(__name__)
 
 async def _reply_error(update: Update, message: str):
@@ -590,17 +585,6 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
                             asyncio.create_task(update.message.reply_text(heal_message, parse_mode=ParseMode.MARKDOWN))
                         except Exception:
                             pass
-            
-            # Process explore mission progress for Mission 14 and others
-            try:
-                logger.info(f"[MISSION 14 DEBUG] Calling process_explore_mission_progress for player {user_id_str}, location: {location}")
-                explore_notifications = await process_explore_mission_progress(db, player, location)
-                if explore_notifications and update.message:
-                    for notification in explore_notifications:
-                        asyncio.create_task(update.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN))
-                logger.info(f"[MISSION 14 DEBUG] process_explore_mission_progress completed, notifications: {len(explore_notifications) if explore_notifications else 0}")
-            except Exception as e:
-                logger.error(f"Error processing explore mission progress: {e}")
             
             # Start timeout task for titan
             timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))

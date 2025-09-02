@@ -405,13 +405,10 @@ async def start_mission(db, player, mission_id: int):
         
     # For Mission 14, initialize area counts when mission is started
     if mission_id == 14:
-        logger.info(f"[MISSION 14 DEBUG] Starting mission 14 for player {get_user_id(player)}")
         # Initialize mission14_area_counts if not present
         mission14_area_counts = getattr(player, "mission14_area_counts", {}) or {}
-        logger.info(f"[MISSION 14 DEBUG] Initial mission14_area_counts: {mission14_area_counts}")
         # We need to update this separately
         await db.update_player(str(get_user_id(player)), {"mission14_area_counts": mission14_area_counts})
-        logger.info(f"[MISSION 14 DEBUG] Mission 14 area counts initialized")
     
     # Get current missions from database to avoid overwriting
     current_player = await db.get_player(int(get_user_id(player)))
@@ -455,11 +452,9 @@ async def cancel_mission(db, player, mission_id: int):
                 player_missions[i].pop("starting_explore_count", None)
                 
             elif mission_id == 14:
-                logger.info(f"[MISSION 14 DEBUG] Cancelling mission 14 for player {get_user_id(player)}")
                 # Reset Never Stop! mission (clear mission14_area_counts and starting_explore_count)
                 updates["mission14_area_counts"] = {}
                 player_missions[i].pop("starting_explore_count", None)
-                logger.info(f"[MISSION 14 DEBUG] Mission 14 cancelled and data reset")
                 
             elif mission_id == 15:
                 # Reset Temporal Gambit (unique opponents already reset above)
@@ -712,18 +707,15 @@ async def process_explore_mission_progress(db, player, area=None):
 
         # Mission 14: Never Stop! (500 explores in each area of the map)
         if mission_id == 14 and area:
-            logger.info(f"[MISSION 14 DEBUG] Processing explore mission progress for player {player.user_id}, area: {area}")
             # Get the current explore count
             current_explore = getattr(player, "explore_count", 0)
             starting_explore = pm.get("starting_explore_count", 0)
             explores_since_start = max(0, current_explore - starting_explore)
-            logger.info(f"[MISSION 14 DEBUG] Current explore: {current_explore}, starting: {starting_explore}, since start: {explores_since_start}")
             
             # Always fetch the latest mission14_area_counts from database to avoid cache issues
             fresh_player_data = await db.players.find_one({"user_id": str(player.user_id)}, {"mission14_area_counts": 1})
             mission14_area_counts = fresh_player_data.get("mission14_area_counts", {}) if fresh_player_data else {}
             mission14_area_counts = mission14_area_counts or {}
-            logger.info(f"[MISSION 14 DEBUG] Current mission14_area_counts: {mission14_area_counts}")
             
             # Define the areas for Mission 14
             MISSION_14_AREAS = [
@@ -751,23 +743,18 @@ async def process_explore_mission_progress(db, player, area=None):
                         matching_area = mission_area
                         break
 
-            logger.info(f"[MISSION 14 DEBUG] Area matching: input='{area}', cleaned='{area_lower}', matched='{matching_area}'")
-
             # Only count if it's a direct area match (not decision points)
             if matching_area and not area.lower().startswith("decision"):
                 area_key = matching_area.lower().replace(" ", "_")
-                logger.info(f"[MISSION 14 DEBUG] Processing area: {matching_area}, key: {area_key}")
                 
                 # Get the current count for this area
                 current_area_count = mission14_area_counts.get(area_key, 0)
-                logger.info(f"[MISSION 14 DEBUG] Current count for {area_key}: {current_area_count}")
                 
                 # Increment the count for this area based on explore count increment
                 if current_area_count < 500:
                     # Increment by 1 for each exploration (the normal case)
                     new_area_count = min(500, current_area_count + 1)
                     mission14_area_counts[area_key] = new_area_count
-                    logger.info(f"[MISSION 14 DEBUG] Updated count for {area_key}: {current_area_count} -> {new_area_count}")
                     
                     # Save the updated counts to batch updates
                     batch_updates["mission14_area_counts"] = mission14_area_counts
@@ -778,16 +765,12 @@ async def process_explore_mission_progress(db, player, area=None):
                         current_progress = min(previous_progress + 1, pm["required_progress"])
                         pm["current_progress"] = current_progress
                         batch_updates["missions"] = player_missions
-                        logger.info(f"[MISSION 14 DEBUG] Area {matching_area} completed! Progress: {previous_progress} -> {current_progress}")
                         notifications.append(f"✅ 500 explores completed in {matching_area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
                         
                         if current_progress >= pm["required_progress"]:
                             pm["status"] = MISSION_STATUS_COMPLETED
                             pm["completed_at"] = datetime.now(timezone.utc)
-                            logger.info(f"[MISSION 14 DEBUG] Mission 14 completed!")
                             notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
-            else:
-                logger.info(f"[MISSION 14 DEBUG] Area not counted: matching_area={matching_area}, is_decision={area.lower().startswith('decision')}")
 
         # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
         if mission_id == 9:
@@ -847,14 +830,7 @@ async def process_explore_mission_progress(db, player, area=None):
     
     # Apply all batched updates
     if batch_updates:
-        logger.info(f"[MISSION 14 DEBUG] Applying batch updates for player {player.user_id}: {list(batch_updates.keys())}")
-        if "mission14_area_counts" in batch_updates:
-            logger.info(f"[MISSION 14 DEBUG] Updating mission14_area_counts: {batch_updates['mission14_area_counts']}")
         success = await db.batch_update_player(str(player.user_id), batch_updates)
-        if success:
-            logger.info(f"[MISSION 14 DEBUG] Batch updates applied successfully")
-        else:
-            logger.error(f"[MISSION 14 DEBUG] Batch updates failed for player {player.user_id}")
         
         # Invalidate player cache to ensure fresh data for subsequent operations
         if hasattr(db, 'invalidate_player_cache'):

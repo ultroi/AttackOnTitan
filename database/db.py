@@ -767,7 +767,7 @@ class Database:
             result = await self.players.update_one(
                 {"user_id": str(user_id)},
                 {"$set": update_data},
-                upsert=False  # Don't upsert for performance
+                upsert=False  
             )
 
             # Update cache if it exists
