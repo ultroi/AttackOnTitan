@@ -721,20 +721,25 @@ async def process_explore_mission_progress(db, player, area=None):
                 "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
             ]
             
-            # Find matching area (case-insensitive partial match)
+            # Find matching area (case-insensitive match with improved logic)
             matching_area = None
             area_lower = area.lower().replace(" ", "").replace("_", "").replace("-", "")
 
+            # First try for exact matches
             for mission_area in MISSION_14_AREAS:
                 mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "").replace("-", "")
-                # Exact match first
                 if mission_area_clean == area_lower:
                     matching_area = mission_area
                     break
-                # Partial match
-                elif mission_area_clean in area_lower or area_lower in mission_area_clean:
-                    matching_area = mission_area
-                    break
+            
+            # If no exact match, try for partial matches
+            if not matching_area:
+                for mission_area in MISSION_14_AREAS:
+                    mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "").replace("-", "")
+                    # Check if the mission area name is fully contained in the location or vice versa
+                    if mission_area_clean in area_lower:
+                        matching_area = mission_area
+                        break
 
             # Only count if it's a direct area match (not decision points)
             if matching_area and not area.lower().startswith("decision"):
@@ -743,15 +748,17 @@ async def process_explore_mission_progress(db, player, area=None):
                 # Get the current count for this area
                 current_area_count = mission14_area_counts.get(area_key, 0)
                 
-                # Increment the count for this area (each battle in this area counts)
+                # Increment the count for this area based on explore count increment
                 if current_area_count < 500:
-                    mission14_area_counts[area_key] = current_area_count + 1
+                    # Increment by 1 for each exploration (the normal case)
+                    new_area_count = min(500, current_area_count + 1)
+                    mission14_area_counts[area_key] = new_area_count
                     
                     # Save the updated counts to batch updates
                     batch_updates["mission14_area_counts"] = mission14_area_counts
                     
                     # Check if just reached 500 in this area
-                    if mission14_area_counts[area_key] >= 500 and current_area_count < 500:
+                    if new_area_count >= 500 and current_area_count < 500:
                         previous_progress = pm["current_progress"]
                         current_progress = min(previous_progress + 1, pm["required_progress"])
                         pm["current_progress"] = current_progress
