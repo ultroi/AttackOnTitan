@@ -310,7 +310,7 @@ async def update_mission_progress(db, player, mission_id: int, progress_amount: 
                         return None
                     player_missions[i]["current_progress"] = current_progress
                     # Save progress to DB after every update
-                    await db.update_player(player.user_id, {"missions": player_missions})
+                    await db.update_player(str(player.user_id), {"missions": player_missions})
                     # Check if mission is completed
                     if current_progress >= mission_progress["required_progress"]:
                         # Mark mission as completed but keep it in the missions list
@@ -410,7 +410,7 @@ async def start_mission(db, player, mission_id: int):
         mission14_area_counts = getattr(player, "mission14_area_counts", {}) or {}
         logger.info(f"[MISSION 14 DEBUG] Initial mission14_area_counts: {mission14_area_counts}")
         # We need to update this separately
-        await db.update_player(int(get_user_id(player)), {"mission14_area_counts": mission14_area_counts})
+        await db.update_player(str(get_user_id(player)), {"mission14_area_counts": mission14_area_counts})
         logger.info(f"[MISSION 14 DEBUG] Mission 14 area counts initialized")
     
     # Get current missions from database to avoid overwriting
@@ -483,7 +483,7 @@ async def cancel_mission(db, player, mission_id: int):
             updates["missions"] = player_missions
 
             # Update player in database with all changes
-            await db.update_player(int(player.user_id), updates)
+            await db.update_player(str(player.user_id), updates)
 
             return True, f"Mission #{mission_id} has been cancelled and all progress reset."
 
@@ -581,7 +581,7 @@ async def apply_mission_rewards(db, player, mission):
     
     # Update player in database
     if update_data:
-        await db.update_player(int(player.user_id), update_data)
+        await db.update_player(str(player.user_id), update_data)
     
     return reward_message
 
@@ -642,7 +642,7 @@ async def add_mission_item(db, player, item_key):
     inventory[item_key] += 1
     
     # Update player
-    await db.update_player(int(player.user_id), {"inventory": inventory})
+    await db.update_player(str(player.user_id), {"inventory": inventory})
     
     # Check for mission progress
     item_data = MISSION_ITEMS[item_key]
@@ -850,8 +850,11 @@ async def process_explore_mission_progress(db, player, area=None):
         logger.info(f"[MISSION 14 DEBUG] Applying batch updates for player {player.user_id}: {list(batch_updates.keys())}")
         if "mission14_area_counts" in batch_updates:
             logger.info(f"[MISSION 14 DEBUG] Updating mission14_area_counts: {batch_updates['mission14_area_counts']}")
-        await db.batch_update_player(int(player.user_id), batch_updates)
-        logger.info(f"[MISSION 14 DEBUG] Batch updates applied successfully")
+        success = await db.batch_update_player(str(player.user_id), batch_updates)
+        if success:
+            logger.info(f"[MISSION 14 DEBUG] Batch updates applied successfully")
+        else:
+            logger.error(f"[MISSION 14 DEBUG] Batch updates failed for player {player.user_id}")
         
         # Invalidate player cache to ensure fresh data for subsequent operations
         if hasattr(db, 'invalidate_player_cache'):
@@ -1007,7 +1010,7 @@ async def process_travel_mission_progress(db, player, from_location, to_location
             })
             
             # Save updated travel history
-            await db.update_player(int(player.user_id), {"travel_history": travel_history})
+            await db.update_player(str(player.user_id), {"travel_history": travel_history})
             updated = True
             
             # Check if coming from outer district or if player has passed through multiple checkpoints

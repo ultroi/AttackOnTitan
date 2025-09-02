@@ -765,7 +765,7 @@ class Database:
 
             # Use update_one with $set for better performance
             result = await self.players.update_one(
-                {"user_id": user_id},
+                {"user_id": str(user_id)},
                 {"$set": update_data},
                 upsert=False  # Don't upsert for performance
             )
