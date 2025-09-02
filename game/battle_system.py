@@ -1567,53 +1567,6 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
         # Initialize notifications list for Mission 14
         all_notifications = []
             
-        # Update area explore counts for Mission 14 only if mission is active
-        if victory and getattr(player_obj_fresh, "location", None):
-            location = getattr(player_obj_fresh, "location", None)
-            if location:
-                # Check if mission 14 is active before incrementing counts
-                mission14_active = False
-                player_missions = getattr(player_obj_fresh, "missions", [])
-                for mission in player_missions:
-                    if mission.get("mission_id") == 14 and mission.get("status") == "in_progress":
-                        mission14_active = True
-                        break
-                        
-                # Only update counts if mission 14 is active
-                if mission14_active:
-                    AREAS = [
-                        "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                        "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-                    ]
-                    mission_area_counts = getattr(player_obj_fresh, "mission14_area_counts", {}) or {}
-                    
-                    # Find matching area
-                    matching_area = None
-                    for area in AREAS:
-                        if location.lower() == area.lower() or area.lower() in location.lower():
-                            matching_area = area
-                            break
-                    
-                    # Update area count
-                    if matching_area:
-                        old_count = mission_area_counts.get(matching_area, 0)
-                        mission_area_counts[matching_area] = old_count + 1
-                        
-                        # Calculate completed areas for mission progress
-                        REQUIRED_AREAS = [
-                            "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
-                            "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
-                        ]
-                        completed_areas = sum(1 for area_name in REQUIRED_AREAS
-                                             if mission_area_counts.get(area_name, 0) >= 500)
-                        
-                        # Update mission14_area_counts and missions in database
-                        await db.update_player(user_id, {
-                            "mission14_area_counts": mission_area_counts
-                        })
-                        
-                        # Get fresh data again after updating
-                        player_obj_fresh = await db.get_player(user_id)
         # Process mission progress in parallel
         mission_tasks = [
             process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward),

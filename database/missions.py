@@ -723,26 +723,21 @@ async def process_explore_mission_progress(db, player, area=None):
             
             # Find matching area (case-insensitive partial match)
             matching_area = None
-            area_lower = area.lower().replace(" ", "").replace("_", "")
-            
+            area_lower = area.lower().replace(" ", "").replace("_", "").replace("-", "")
+
             for mission_area in MISSION_14_AREAS:
-                mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "")
-                if mission_area_clean in area_lower or area_lower in mission_area_clean:
+                mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "").replace("-", "")
+                # Exact match first
+                if mission_area_clean == area_lower:
                     matching_area = mission_area
                     break
-            
-            # If no direct match, try to find the closest match
-            if not matching_area:
-                for mission_area in MISSION_14_AREAS:
-                    if mission_area.lower() in area_lower or area_lower in mission_area.lower():
-                        matching_area = mission_area
-                        break
-            
-            # If still no match, use the area as-is if it's not empty
-            if not matching_area and area.strip():
-                matching_area = area.strip()
-            
-            if matching_area:
+                # Partial match
+                elif mission_area_clean in area_lower or area_lower in mission_area_clean:
+                    matching_area = mission_area
+                    break
+
+            # Only count if it's a direct area match (not decision points)
+            if matching_area and not area.lower().startswith("decision"):
                 area_key = matching_area.lower().replace(" ", "_")
                 
                 # Get the current count for this area
@@ -752,8 +747,8 @@ async def process_explore_mission_progress(db, player, area=None):
                 if current_area_count < 500:
                     mission14_area_counts[area_key] = current_area_count + 1
                     
-                    # Save the updated counts
-                    await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
+                    # Save the updated counts to batch updates
+                    batch_updates["mission14_area_counts"] = mission14_area_counts
                     
                     # Check if just reached 500 in this area
                     if mission14_area_counts[area_key] >= 500 and current_area_count < 500:
