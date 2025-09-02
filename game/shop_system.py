@@ -158,6 +158,11 @@ class ShopSystem:
 
     async def show_shop(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, category: str = "main") -> tuple[str, InlineKeyboardMarkup]:
         """Display the shop interface."""
+        # Check if user is in active battle
+        from game.battle_system import active_battles
+        if user_id in active_battles:
+            return "⚔️ You cannot access the shop during an active battle with a titan!", None
+        
         await self._check_daily_refresh(user_id)
         db = await self._get_db(context)
         player = await db.get_player(user_id)
@@ -319,6 +324,11 @@ class ShopSystem:
             from game.pvp_system import active_pvp_battles
             if user_id in active_pvp_battles:
                 return {"success": False, "message": "⚔️ You cannot buy items during PVP battles!"}
+            
+            # Check if player is in titan battle
+            from game.battle_system import active_battles
+            if user_id in active_battles:
+                return {"success": False, "message": "⚔️ You cannot buy items during titan battles!"}
                 
             if quantity <= 0:
                 raise ValueError("Quantity must be positive")
@@ -387,6 +397,11 @@ class ShopSystem:
             from game.pvp_system import active_pvp_battles
             if user_id in active_pvp_battles:
                 return "⚔️ You cannot buy currency during PVP battles!"
+            
+            # Check if player is in titan battle
+            from game.battle_system import active_battles
+            if user_id in active_battles:
+                return "⚔️ You cannot buy currency during titan battles!"
                 
             if amount <= 0:
                 raise ValueError("Amount must be positive")
@@ -445,6 +460,11 @@ class ShopSystem:
     async def refresh_shop(self, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> str:
         """Handle manual shop refresh."""
         try:
+            # Check if player is in titan battle
+            from game.battle_system import active_battles
+            if user_id in active_battles:
+                return "⚔️ You cannot refresh the shop during titan battles!"
+            
             db = await self._get_db(context)
             player = await db.get_player(user_id)
             if not player:

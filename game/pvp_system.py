@@ -111,6 +111,7 @@ class PvPBattleSystem:
             # Speeds are equal, challenger goes first (or could randomize)
             self.current_turn_user_id: str = str(challenger_player.user_id)
             self.current_turn: str = challenger.name
+        self.turn_count = 0
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
@@ -1013,7 +1014,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Check if user is currently in a battle
     async with active_battles_lock:
         if user_id in active_battles:
-            await update.message.reply_text("You are currently in a battle with a titan. Complete it first!")
+            await update.message.reply_text("⚔️ You are currently in a titan battle! Complete it first before challenging others.")
             return
     
     # Check if user is in an active PVP battle
@@ -1617,14 +1618,25 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     async with active_battles_lock:
         if challenger_id in active_battles:
-            await safe_api_call(query.edit_message_text, f"{challenge_data['challenger_name']} is now in a battle with a titan!")
+            await safe_api_call(query.edit_message_text, f"{challenge_data['challenger_name']} is now in a titan battle!")
             del pvp_challenges[challenge_id]
             return
             
         if user_id in active_battles:
-            await safe_api_call(query.edit_message_text, "You are now in a battle with a titan!")
+            await safe_api_call(query.edit_message_text, "You are now in a titan battle!")
             del pvp_challenges[challenge_id]
             return
+    
+    # Check if either player is already in an active PVP battle
+    if challenger_id in active_pvp_battles:
+        await safe_api_call(query.edit_message_text, f"{challenge_data['challenger_name']} is already in a PVP battle!")
+        del pvp_challenges[challenge_id]
+        return
+        
+    if user_id in active_pvp_battles:
+        await safe_api_call(query.edit_message_text, "You are already in a PVP battle!")
+        del pvp_challenges[challenge_id]
+        return
     
     # Ensure both challenger_char and defender_char are Character objects
     from database.models import Character

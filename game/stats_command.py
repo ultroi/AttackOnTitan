@@ -187,6 +187,15 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("All stats have been manually reset.")
                 return
 
+    # Check if user is in active battle
+    from game.battle_system import active_battles
+    user_id_str = str(update.effective_user.id)
+    if user_id_str in active_battles:
+        first_name = update.effective_user.first_name or "Player"
+        battle_message = f"⚔️ <a href='tg://user?id={update.effective_user.id}'>{first_name}</a> is currently battling!"
+        await update.message.reply_text(battle_message, parse_mode="HTML")
+        return
+
     # /stats users: only mods can use
     if context.args and context.args[0] == "users":
         await stats_users_command(update, context)

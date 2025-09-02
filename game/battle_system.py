@@ -886,6 +886,15 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Add battle to active battles
     async with active_battles_lock:
+        # Check if user is already in a PVP battle before starting titan battle
+        try:
+            from game.pvp_system import active_pvp_battles
+            if user_id in active_pvp_battles:
+                await query.edit_message_text("⚔️ You are currently in a PVP battle! Complete it first before battling titans.")
+                return
+        except ImportError:
+            pass  
+        
         active_battles[user_id] = battle
     
     # Reset explore spam count atomically

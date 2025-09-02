@@ -175,18 +175,35 @@ def _is_in_battle(user_id_str: str) -> bool:
     """Ultra-fast check if a user is in battle - with import caching"""
     global _battle_system_cache
     
-    # Use cached active_battles if available
+    # Check regular battles
     if 'active_battles' in _battle_system_cache:
-        return user_id_str in _battle_system_cache['active_battles']
-        
-    # First-time import
-    try:
-        from game.battle_system import active_battles
-        _battle_system_cache['active_battles'] = active_battles
-        return user_id_str in active_battles
-    except ImportError:
-        _battle_system_cache['active_battles'] = {}
-        return False
+        if user_id_str in _battle_system_cache['active_battles']:
+            return True
+    else:
+        # First-time import
+        try:
+            from game.battle_system import active_battles
+            _battle_system_cache['active_battles'] = active_battles
+            if user_id_str in active_battles:
+                return True
+        except ImportError:
+            _battle_system_cache['active_battles'] = {}
+    
+    # Check PVP battles
+    if 'active_pvp_battles' in _battle_system_cache:
+        if user_id_str in _battle_system_cache['active_pvp_battles']:
+            return True
+    else:
+        # First-time import
+        try:
+            from game.pvp_system import active_pvp_battles
+            _battle_system_cache['active_pvp_battles'] = active_pvp_battles
+            if user_id_str in active_pvp_battles:
+                return True
+        except ImportError:
+            _battle_system_cache['active_pvp_battles'] = {}
+    
+    return False
     
 # async def _handle_verification(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, now: float, db, player=None):
 #     """Handle hCaptcha verification requirement - OPTIMIZED to reuse player data"""
@@ -327,7 +344,23 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Immediate battle check (fastest possible)
     if _is_in_battle(user_id_str):
-        await _reply_error(update, f"{username} is currently battling!")
+        # Determine which type of battle they're in
+        battle_type = "battle"
+        try:
+            from game.battle_system import active_battles
+            if user_id_str in active_battles:
+                battle_type = "titan battle"
+        except:
+            pass
+        
+        try:
+            from game.pvp_system import active_pvp_battles
+            if user_id_str in active_pvp_battles:
+                battle_type = "PVP battle"
+        except:
+            pass
+        
+        await _reply_error(update, f"⚔️ You are currently in a {battle_type}! Complete it first before exploring.")
         return
     
     # Fast lock check (non-blocking)
