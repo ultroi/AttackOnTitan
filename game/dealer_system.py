@@ -383,9 +383,19 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
     # Parse callback data
     # Format: dealer_[dealer_id]_[action]
     try:
-        _, dealer_id, action = query.data.split("_")
+        if not query.data.startswith("dealer_"):
+            logger.error(f"Invalid callback data format: {query.data}")
+            return
+
+        # Remove "dealer_" prefix and split the rest
+        callback_parts = query.data[7:].rsplit("_", 1)  # Split from right, max 1 split
+        if len(callback_parts) != 2:
+            logger.error(f"Failed to parse callback data: {query.data}, parts: {callback_parts}")
+            return
+
+        dealer_id, action = callback_parts
         logger.info(f"Parsed callback: dealer_id={dealer_id}, action={action}")
-    except ValueError as e:
+    except Exception as e:
         logger.error(f"Failed to parse callback data: {query.data}, error: {e}")
         return
     
