@@ -28,7 +28,7 @@ DEALER_TYPES = [
         "messages": [
             "A scouting report just came in. A supply cache has been spotted outside the walls.",
             "The coordinates point to an abandoned outpost near Wall Rose. Proceed with caution.",
-            "You've stumbled upon a hidden Scouting Legion supply cache! It's a risk to open it—you never know what a squad left behind, but the potential gains for the war effort are immense. It will cost you 20,000 Marks to secure the goods and bring them back safely. Do you gamble on the Scouts' luck?"
+            "You've stumbled upon a hidden <b>Scouting Legion</b> supply cache! It's a risk to open it—you never know what a squad left behind, but the potential gains for the war effort are immense.\n\n<blockquote>It will cost you 20,000 Marks to secure the goods and bring them back safely.</blockquote>\n\nDo you gamble on the <b>Scouts' luck</b>?"
         ],
         "buttons": ["Gamble on the Scouts' Luck", "Leave it"],
         "cost_type": "marks",
@@ -74,7 +74,7 @@ DEALER_TYPES = [
         "messages": [
             "A suspicious package has been left for you. It's from a member of the Garrison Regiment, with a note promising 'a way to make a fortune'.",
             "The instructions lead you to a secluded alleyway in the Stohess District. The air is thick with the scent of secrecy and old secrets.",
-            "You meet with a hooded figure from the Garrison. They claim to have access to a large stash of funds but need your help to get them out of the city. For a cost of 100 Valor, you can take part in their operation. Do you risk your honor for riches?"
+            "You meet with a hooded figure from the <b>Garrison</b>.\n\nThey claim to have access to a large stash of funds but need your help to get them out of the city.\n\n<blockquote>For a cost of 100 Valor, you can take part in their operation.</blockquote>\n\nDo you risk your <b>honor for riches</b>?"
         ],
         "buttons": ["Risk your Valor", "Stay true to your honor"],
         "cost_type": "valor",
@@ -120,7 +120,7 @@ DEALER_TYPES = [
         "messages": [
             "A strange, unnatural tremor rattles the ground. A voice, whispering directly into your mind, offers a meeting at a desolate location outside the walls.",
             "You arrive at a desolate, fog-shrouded gorge near Shiganshina. The air feels heavy with power, and the ground is scorched as if from a recent transformation.",
-            "A mysterious figure emerges from the fog, their eyes glowing with a faint, unnatural light. 'I can grant you the power to change the tides of war,' the voice whispers. They offer you a chance to acquire a vast supply of resources in exchange for a single Crystal. Do you accept the Titan Shifter's bargain?"
+            "A mysterious figure emerges from the fog, their eyes glowing with a faint, unnatural light. 'I can grant you the power to change the tides of war,' the voice whispers.\n\n<blockquote>They offer you a chance to acquire a vast supply of resources in exchange for a single Crystal.</blockquote>\n\nDo you accept the <b>Titan Shifter's bargain</b>?"
         ],
         "buttons": ["Accept the Titan's Bargain", "Reject the Forbidden Deal"],
         "cost_type": "crystals",
@@ -287,6 +287,38 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
         # Random selection based on spawn chances
         selected_dealer = select_dealer_type()
     
+    # Check if player has enough resources for this dealer type
+    cost_type = selected_dealer["cost_type"]
+    cost_amount = selected_dealer["cost_amount"]
+    
+    if cost_type == "marks":
+        if not hasattr(player, "marks") or player.marks < cost_amount:
+            if update.message:
+                await update.message.reply_text(
+                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Marks...</b>\n\n"
+                    f"You need {cost_amount} Marks to participate in this deal. The dealer disappears into the shadows.",
+                    parse_mode=ParseMode.HTML
+                )
+            return
+    elif cost_type == "valor":
+        if not hasattr(player, "valor") or player.valor < cost_amount:
+            if update.message:
+                await update.message.reply_text(
+                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Valor...</b>\n\n"
+                    f"You need {cost_amount} Valor to participate in this deal. The dealer disappears into the shadows.",
+                    parse_mode=ParseMode.HTML
+                )
+            return
+    elif cost_type == "crystals":
+        if not hasattr(player, "crystals") or player.crystals < cost_amount:
+            if update.message:
+                await update.message.reply_text(
+                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Crystals...</b>\n\n"
+                    f"You need {cost_amount} Crystals to participate in this deal. The dealer disappears into the shadows.",
+                    parse_mode=ParseMode.HTML
+                )
+            return
+    
     # Track active encounter
     active_dealer_encounters[user_id_str] = {
         "dealer_type": selected_dealer["id"],
@@ -417,33 +449,39 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             )
             return
         
-        # Check if player has enough resources to accept the offer
+        # Check if player has enough resources to accept the offer (double-check in case resources changed)
         cost_type = dealer_data["cost_type"]
         cost_amount = dealer_data["cost_amount"]
         
         if cost_type == "marks":
             if not hasattr(player, "marks") or player.marks < cost_amount:
                 await query.edit_message_caption(
-                    caption=f"<b>You don't have enough Marks to accept this offer. You need {cost_amount} Marks.</b>",
+                    caption=f"<b>You no longer have enough Marks to accept this offer. You need {cost_amount} Marks.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
+                if user_id_str in active_dealer_encounters:
+                    del active_dealer_encounters[user_id_str]
                 return
         elif cost_type == "valor":
             if not hasattr(player, "valor") or player.valor < cost_amount:
                 await query.edit_message_caption(
-                    caption=f"<b>You don't have enough Valor to accept this offer. You need {cost_amount} Valor.</b>",
+                    caption=f"<b>You no longer have enough Valor to accept this offer. You need {cost_amount} Valor.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
+                if user_id_str in active_dealer_encounters:
+                    del active_dealer_encounters[user_id_str]
                 return
         elif cost_type == "crystals":
             if not hasattr(player, "crystals") or player.crystals < cost_amount:
                 await query.edit_message_caption(
-                    caption=f"<b>You don't have enough Crystals to accept this offer. You need {cost_amount} Crystals.</b>",
+                    caption=f"<b>You no longer have enough Crystals to accept this offer. You need {cost_amount} Crystals.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
+                if user_id_str in active_dealer_encounters:
+                    del active_dealer_encounters[user_id_str]
                 return
         
         # Special handler for Founding Titan's Offer - not implemented yet
@@ -527,30 +565,27 @@ async def test_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Mod-only command to test dealers
     """
-    if not update.effective_user or not context.args:
-        if update.message:
-            available_dealers = ", ".join(dealer["id"] for dealer in DEALER_TYPES)
-            await update.message.reply_text(
-                f"Usage: /testdealer [dealer_type]\nAvailable dealer types: {available_dealers}"
-            )
+    if not update.effective_user:
         return
     
-    dealer_type = context.args[0].lower()
+    dealer_type = None
+    if context.args:
+        dealer_type = context.args[0].lower()
+        
+        # Check if dealer type is valid
+        valid_dealer = False
+        for dealer in DEALER_TYPES:
+            if dealer["id"] == dealer_type:
+                valid_dealer = True
+                break
+        
+        if not valid_dealer:
+            if update.message:
+                available_dealers = ", ".join(dealer["id"] for dealer in DEALER_TYPES)
+                await update.message.reply_text(
+                    f"Invalid dealer type: {dealer_type}\nAvailable dealer types: {available_dealers}"
+                )
+            return
     
-    # Check if dealer type is valid
-    valid_dealer = False
-    for dealer in DEALER_TYPES:
-        if dealer["id"] == dealer_type:
-            valid_dealer = True
-            break
-    
-    if not valid_dealer:
-        if update.message:
-            available_dealers = ", ".join(dealer["id"] for dealer in DEALER_TYPES)
-            await update.message.reply_text(
-                f"Invalid dealer type: {dealer_type}\nAvailable dealer types: {available_dealers}"
-            )
-        return
-    
-    # Show dealer
+    # Show dealer (random if no type specified, specific if type provided)
     await show_dealer(update, context, dealer_type)
