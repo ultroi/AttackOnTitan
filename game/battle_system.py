@@ -1333,10 +1333,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             except Exception as e:
                 if "message is not modified" in str(e).lower():
-                    # This should rarely happen now with our randomization
-                    # No need for additional action, the UI is already showing the correct state
+                    pass
                 elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
-                    # Don't send a new message, just log the issue - this prevents message duplication
                     logger.debug(f"Query too old or invalid, but not creating new message to avoid spam")
                 else:
                     # Just log any other errors rather than raising - keeps the UI functional
