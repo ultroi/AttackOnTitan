@@ -1449,6 +1449,24 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
         await query.edit_message_text("\n".join(reward_parts), parse_mode=ParseMode.HTML)
 
+        # Random drop system - 9% chance after victory
+        if random.random() < 0.09:  # 9% chance
+            drop = get_random_drop()
+            if drop['type'] in ['bottle', 'cylinder']:
+                # Update player's gas
+                battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
+                # Update database
+                await db.update_character(str(battle.character.user_id), battle.character.name, {
+                    "gas": battle.character.gas,
+                    "updated_at": datetime.now(timezone.utc)
+                })
+                # Send drop message
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=f"🎁 <b>Random Drop!</b>\n{drop['message']}",
+                    parse_mode=ParseMode.HTML
+                )
+
         # Single batch database update (much faster than multiple calls)
         character_update_task = db.batch_update_character(
             str(battle.character.user_id), 
@@ -1485,7 +1503,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             logger.error(f"Error during parallel batch updates: {e}")
 
         # Process all background tasks in parallel (non-blocking for user)
-        asyncio.create_task(_process_post_battle_updates_fast(
+        asyncio.create_task(_process_post_battle_updates(
             db, player_obj, battle.character, user_id, query.message.chat_id if query.message else None,
             context.bot.send_message, char_level_info, player_level_info, rewards["marks"], battle
         ))
@@ -1501,6 +1519,24 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.titan.name}!",
             parse_mode=ParseMode.HTML
         )
+
+        # Random drop system - 9% chance even after defeat
+        if random.random() < 0.09:  # 9% chance
+            drop = get_random_drop()
+            if drop['type'] in ['bottle', 'cylinder']:
+                # Update player's gas
+                battle.character.gas = min(battle.character.max_gas, battle.character.gas + drop['amount'])
+                # Update database
+                await db.update_character(str(battle.character.user_id), battle.character.name, {
+                    "gas": battle.character.gas,
+                    "updated_at": datetime.now(timezone.utc)
+                })
+                # Send drop message
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=f"🎁 <b>Random Drop!</b>\n{drop['message']}",
+                    parse_mode=ParseMode.HTML
+                )
 
         # Single batch update for defeat
         character_defeat_task = db.batch_update_character(
@@ -1528,7 +1564,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             logger.error(f"Error during defeat batch update: {e}")
 
         # Background processing for defeat
-        asyncio.create_task(_process_defeat_updates_fast(
+        asyncio.create_task(_process_defeat_updates(
             db, player_data, user_id, query.message.chat_id if query.message else None, context.bot.send_message
         ))
 
