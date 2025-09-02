@@ -82,7 +82,7 @@ class Database:
                 "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
                 "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
                 "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
-                "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
+                "double_exp_end": 1, "completed_quests": 1, "mission14_area_counts": 1, "created_at": 1, "updated_at": 1
             }).to_list(length=100)  
             
             # Cache them
@@ -233,8 +233,7 @@ class Database:
             if self.players is None:
                 raise ConnectionError("Database not initialized. Call init_db() first.")
                 
-            # Use projection to only get needed fields for faster query
-            # For explore operations, we need minimal fields
+
             player_data = await self.players.find_one({"user_id": user_id}, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
                 "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
@@ -244,7 +243,7 @@ class Database:
                 "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
                 "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
                 "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
-                "double_exp_end": 1, "completed_quests": 1, "created_at": 1, "updated_at": 1
+                "double_exp_end": 1, "completed_quests": 1, "mission14_area_counts": 1, "created_at": 1, "updated_at": 1
             })
             
             elapsed = (time.perf_counter() - start) * 1000

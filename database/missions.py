@@ -713,7 +713,9 @@ async def process_explore_mission_progress(db, player, area=None):
             explores_since_start = max(0, current_explore - starting_explore)
             
             # Get or initialize mission14_area_counts
-            mission14_area_counts = getattr(player, "mission14_area_counts", {})
+            if not hasattr(player, "mission14_area_counts") or getattr(player, "mission14_area_counts", None) is None:
+                player.mission14_area_counts = {}
+            mission14_area_counts = player.mission14_area_counts
             
             # Define the areas for Mission 14
             MISSION_14_AREAS = [
