@@ -394,7 +394,7 @@ async def start_mission(db, player, mission_id: int):
     current_explore_count = getattr(player, 'explore_count', 0)
     
     # For exploration missions, store the starting explore count
-    if mission_id in [1, 9, 11]:
+    if mission_id in [1, 9, 11, 14]:
         mission_progress["starting_explore_count"] = current_explore_count
 
     # For Mission 1, also set starting_location in mission progress
@@ -452,8 +452,9 @@ async def cancel_mission(db, player, mission_id: int):
                 player_missions[i].pop("starting_explore_count", None)
                 
             elif mission_id == 14:
-                # Reset Never Stop! mission (clear mission14_area_counts)
+                # Reset Never Stop! mission (clear mission14_area_counts and starting_explore_count)
                 updates["mission14_area_counts"] = {}
+                player_missions[i].pop("starting_explore_count", None)
                 
             elif mission_id == 15:
                 # Reset Temporal Gambit (unique opponents already reset above)
@@ -706,39 +707,66 @@ async def process_explore_mission_progress(db, player, area=None):
 
         # Mission 14: Never Stop! (500 explores in each area of the map)
         if mission_id == 14 and area:
-            # Get the total explore count from player's inventory
-            explore_count = getattr(player, "explore_count", 0)
+            # Get the current explore count
+            current_explore = getattr(player, "explore_count", 0)
+            starting_explore = pm.get("starting_explore_count", 0)
+            explores_since_start = max(0, current_explore - starting_explore)
             
             # Get or initialize mission14_area_counts
             mission14_area_counts = getattr(player, "mission14_area_counts", {})
             
-            # Store the starting count for this area if not already stored
-            area_key = area.lower().replace(" ", "_")
-            if area_key not in mission14_area_counts:
-                mission14_area_counts[area_key] = 0
-                
-            # Update the count for this area based on current explore_count
-            previous_area_count = mission14_area_counts.get(area_key, 0)
+            # Define the areas for Mission 14
+            MISSION_14_AREAS = [
+                "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
+                "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
+            ]
             
-            # Only increment if not already at or above 500
-            if previous_area_count < 500:
-                mission14_area_counts[area_key] = previous_area_count + 1
+            # Find matching area (case-insensitive partial match)
+            matching_area = None
+            area_lower = area.lower().replace(" ", "").replace("_", "")
+            
+            for mission_area in MISSION_14_AREAS:
+                mission_area_clean = mission_area.lower().replace(" ", "").replace("_", "")
+                if mission_area_clean in area_lower or area_lower in mission_area_clean:
+                    matching_area = mission_area
+                    break
+            
+            # If no direct match, try to find the closest match
+            if not matching_area:
+                for mission_area in MISSION_14_AREAS:
+                    if mission_area.lower() in area_lower or area_lower in mission_area.lower():
+                        matching_area = mission_area
+                        break
+            
+            # If still no match, use the area as-is if it's not empty
+            if not matching_area and area.strip():
+                matching_area = area.strip()
+            
+            if matching_area:
+                area_key = matching_area.lower().replace(" ", "_")
                 
-                # Save the updated counts
-                await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
+                # Get the current count for this area
+                current_area_count = mission14_area_counts.get(area_key, 0)
                 
-                # Check if just reached 500 in this area
-                if mission14_area_counts[area_key] == 500:
-                    previous_progress = pm["current_progress"]
-                    current_progress = min(previous_progress + 1, pm["required_progress"])
-                    pm["current_progress"] = current_progress
-                    batch_updates["missions"] = player_missions
-                    notifications.append(f"✅ 500 explores completed in {area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
+                # Increment the count for this area (each battle in this area counts)
+                if current_area_count < 500:
+                    mission14_area_counts[area_key] = current_area_count + 1
                     
-                    if current_progress >= pm["required_progress"]:
-                        pm["status"] = MISSION_STATUS_COMPLETED
-                        pm["completed_at"] = datetime.now(timezone.utc)
-                        notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
+                    # Save the updated counts
+                    await db.update_player(int(player.user_id), {"mission14_area_counts": mission14_area_counts})
+                    
+                    # Check if just reached 500 in this area
+                    if mission14_area_counts[area_key] >= 500 and current_area_count < 500:
+                        previous_progress = pm["current_progress"]
+                        current_progress = min(previous_progress + 1, pm["required_progress"])
+                        pm["current_progress"] = current_progress
+                        batch_updates["missions"] = player_missions
+                        notifications.append(f"✅ 500 explores completed in {matching_area}! Mission 14 Progress: {current_progress}/{pm['required_progress']} areas.")
+                        
+                        if current_progress >= pm["required_progress"]:
+                            pm["status"] = MISSION_STATUS_COMPLETED
+                            pm["completed_at"] = datetime.now(timezone.utc)
+                            notifications.append(f"🎉 *Mission Completed!* 🎉\n\n*{mission.title}*\nYou've earned: {mission.reward_description}")
 
         # Mission 9: Royal Capital Titan Hunt (Defeat 20 Titans in Royal Capital)
         if mission_id == 9:

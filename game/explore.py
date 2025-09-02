@@ -19,7 +19,7 @@ from game.stats_command import track_explore_stats
 
 # Import mission-related functions
 from database.missions import (
-    check_mission_item_drops, add_mission_item
+    check_mission_item_drops, add_mission_item, process_explore_mission_progress
 )
 
 logger = logging.getLogger(__name__)
@@ -591,6 +591,15 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
                         except Exception:
                             pass
             
+            # Process explore mission progress for Mission 14 and others
+            try:
+                explore_notifications = await process_explore_mission_progress(db, player, location)
+                if explore_notifications and update.message:
+                    for notification in explore_notifications:
+                        asyncio.create_task(update.message.reply_text(notification, parse_mode=ParseMode.MARKDOWN))
+            except Exception as e:
+                logger.error(f"Error processing explore mission progress: {e}")
+            
             # Start timeout task for titan
             timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
             user_timeout_tasks[user_id_str] = timeout_task
@@ -753,9 +762,7 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
             # Fire-and-forget update
             asyncio.create_task(db.batch_update_player(user_id_str, {"travel": updated_travel}))
     except Exception as e:
-        # Log but don't interrupt the flow
         logger.error(f"Error updating travel progress: {e}")
-        # Continue regardless of error
 
 
 async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, warning_level: int, message: str):
