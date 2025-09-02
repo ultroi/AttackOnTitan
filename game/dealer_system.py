@@ -175,8 +175,8 @@ DEALER_TYPES = [
     }
 ]
 
-# Active dealer encounters
-active_dealer_encounters = {}
+# Active dealer encounters - stored in bot_data for persistence
+# active_dealer_encounters = {}  # Removed global variable
 
 def select_dealer_type() -> dict:
     """
@@ -252,7 +252,8 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
     user_id_str = str(user_id)
     
     # Check if player is already in a dealer encounter
-    if user_id_str in active_dealer_encounters:
+    active_dealers = context.bot_data.get("active_dealer_encounters", {})
+    if user_id_str in active_dealers:
         if update.message:
             await update.message.reply_text("You are already in a dealer encounter. Finish that one first.")
         return
@@ -287,43 +288,17 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
         # Random selection based on spawn chances
         selected_dealer = select_dealer_type()
     
-    # Check if player has enough resources for this dealer type
-    cost_type = selected_dealer["cost_type"]
-    cost_amount = selected_dealer["cost_amount"]
+    # Track active encounter BEFORE showing dealer
+    if "active_dealer_encounters" not in context.bot_data:
+        context.bot_data["active_dealer_encounters"] = {}
     
-    if cost_type == "marks":
-        if not hasattr(player, "marks") or player.marks < cost_amount:
-            if update.message:
-                await update.message.reply_text(
-                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Marks...</b>\n\n"
-                    f"You need {cost_amount} Marks to participate in this deal. The dealer disappears into the shadows.",
-                    parse_mode=ParseMode.HTML
-                )
-            return
-    elif cost_type == "valor":
-        if not hasattr(player, "valor") or player.valor < cost_amount:
-            if update.message:
-                await update.message.reply_text(
-                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Valor...</b>\n\n"
-                    f"You need {cost_amount} Valor to participate in this deal. The dealer disappears into the shadows.",
-                    parse_mode=ParseMode.HTML
-                )
-            return
-    elif cost_type == "crystals":
-        if not hasattr(player, "crystals") or player.crystals < cost_amount:
-            if update.message:
-                await update.message.reply_text(
-                    f"<b>The {selected_dealer['name']} appears but notices you don't have enough Crystals...</b>\n\n"
-                    f"You need {cost_amount} Crystals to participate in this deal. The dealer disappears into the shadows.",
-                    parse_mode=ParseMode.HTML
-                )
-            return
-    
-    # Track active encounter
-    active_dealer_encounters[user_id_str] = {
+    context.bot_data["active_dealer_encounters"][user_id_str] = {
         "dealer_type": selected_dealer["id"],
         "start_time": time.time()
     }
+    
+    logger.info(f"Dealer {selected_dealer['id']} activated for user {user_id_str}")
+    logger.info(f"Active dealer encounters: {list(context.bot_data['active_dealer_encounters'].keys())}")
     
     try:
         # Send first message
@@ -373,8 +348,9 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
             )
     except Exception as e:
         logger.error(f"Error showing dealer: {e}")
-        if user_id_str in active_dealer_encounters:
-            del active_dealer_encounters[user_id_str]
+        active_dealers = context.bot_data.get("active_dealer_encounters", {})
+        if user_id_str in active_dealers:
+            del active_dealers[user_id_str]
         if update.message:
             await update.message.reply_text("An error occurred while showing the dealer. Please try again later.")
 
@@ -384,25 +360,33 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
     """
     query = update.callback_query
     if not query or not query.data or not query.from_user:
+        logger.error("Invalid callback query")
         return
-    
+
     await query.answer()
-    
+
     user_id = query.from_user.id
     user_id_str = str(user_id)
-    
-    if not user_id_str in active_dealer_encounters:
+
+    logger.info(f"Processing dealer callback for user {user_id_str}: {query.data}")
+
+    active_dealers = context.bot_data.get("active_dealer_encounters", {})
+    if user_id_str not in active_dealers:
+        logger.warning(f"User {user_id_str} not in active dealer encounters")
+        logger.warning(f"Current active dealers: {list(active_dealers.keys())}")
         await query.edit_message_caption(
-            caption="This dealer encounter has expired. Use /dealer to find another dealer.",
+            caption="This dealer encounter has expired. Use /explore to find another dealer.",
             parse_mode=ParseMode.HTML
         )
         return
-    
+
     # Parse callback data
     # Format: dealer_[dealer_id]_[action]
     try:
         _, dealer_id, action = query.data.split("_")
-    except ValueError:
+        logger.info(f"Parsed callback: dealer_id={dealer_id}, action={action}")
+    except ValueError as e:
+        logger.error(f"Failed to parse callback data: {query.data}, error: {e}")
         return
     
     # Get dealer data
@@ -417,8 +401,10 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
     
     # Handle decline action
     if action == "decline":
-        if user_id_str in active_dealer_encounters:
-            del active_dealer_encounters[user_id_str]
+        logger.info(f"User {user_id_str} declined dealer offer: {dealer_id}")
+        active_dealers = context.bot_data.get("active_dealer_encounters", {})
+        if user_id_str in active_dealers:
+            del active_dealers[user_id_str]
         
         await query.edit_message_caption(
             caption=f"<b>You decided not to take the {dealer_data['name']}'s offer. Perhaps another time.</b>",
@@ -429,85 +415,106 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
     
     # Handle accept action
     if action == "accept":
+        logger.info(f"User {user_id_str} accepted dealer offer: {dealer_id}")
+
         # Get database reference
         db = context.bot_data.get("db")
         if not db:
+            logger.error("Database not available")
             await query.edit_message_caption(
                 caption="Database not available. Please try again later.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=None
             )
             return
-        
+
         # Get player data
         player = await db.get_player(user_id_str)
         if not player:
+            logger.error(f"Player {user_id_str} not found")
             await query.edit_message_caption(
                 caption="Player data not found. Please use /start to begin your adventure.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=None
             )
             return
-        
-        # Check if player has enough resources to accept the offer (double-check in case resources changed)
+
+        logger.info(f"Player {user_id_str} data retrieved successfully")
+
+        # Check if player has enough resources to accept the offer
         cost_type = dealer_data["cost_type"]
         cost_amount = dealer_data["cost_amount"]
-        
+
+        logger.info(f"Checking resources: {cost_type} = {cost_amount}")
+
+        resource_check_passed = True
         if cost_type == "marks":
-            if not hasattr(player, "marks") or player.marks < cost_amount:
+            current_marks = getattr(player, "marks", 0)
+            logger.info(f"Player marks: {current_marks}, required: {cost_amount}")
+            if current_marks < cost_amount:
+                resource_check_passed = False
                 await query.edit_message_caption(
-                    caption=f"<b>You no longer have enough Marks to accept this offer. You need {cost_amount} Marks.</b>\n\nThe dealer disappears into the shadows.",
+                    caption=f"<b>You don't have enough Marks to accept this offer. You need {cost_amount} Marks.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
-                if user_id_str in active_dealer_encounters:
-                    del active_dealer_encounters[user_id_str]
-                return
         elif cost_type == "valor":
-            if not hasattr(player, "valor") or player.valor < cost_amount:
+            current_valor = getattr(player, "valor", 0)
+            logger.info(f"Player valor: {current_valor}, required: {cost_amount}")
+            if current_valor < cost_amount:
+                resource_check_passed = False
                 await query.edit_message_caption(
-                    caption=f"<b>You no longer have enough Valor to accept this offer. You need {cost_amount} Valor.</b>\n\nThe dealer disappears into the shadows.",
+                    caption=f"<b>You don't have enough Valor to accept this offer. You need {cost_amount} Valor.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
-                if user_id_str in active_dealer_encounters:
-                    del active_dealer_encounters[user_id_str]
-                return
         elif cost_type == "crystals":
-            if not hasattr(player, "crystals") or player.crystals < cost_amount:
+            current_crystals = getattr(player, "crystals", 0)
+            logger.info(f"Player crystals: {current_crystals}, required: {cost_amount}")
+            if current_crystals < cost_amount:
+                resource_check_passed = False
                 await query.edit_message_caption(
-                    caption=f"<b>You no longer have enough Crystals to accept this offer. You need {cost_amount} Crystals.</b>\n\nThe dealer disappears into the shadows.",
+                    caption=f"<b>You don't have enough Crystals to accept this offer. You need {cost_amount} Crystals.</b>\n\nThe dealer disappears into the shadows.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=None
                 )
-                if user_id_str in active_dealer_encounters:
-                    del active_dealer_encounters[user_id_str]
-                return
+
+        if not resource_check_passed:
+            logger.info(f"Resource check failed for user {user_id_str}")
+            active_dealers = context.bot_data.get("active_dealer_encounters", {})
+            if user_id_str in active_dealers:
+                del active_dealers[user_id_str]
+            return
         
         # Special handler for Founding Titan's Offer - not implemented yet
         if dealer_id == "founding_titan":
+            logger.info(f"Founding titan offer accepted by {user_id_str}")
             await query.edit_message_caption(
                 caption="<b>The Founding Titan's power is too great to harness just yet. This offer will be available soon.</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=None
             )
-            if user_id_str in active_dealer_encounters:
-                del active_dealer_encounters[user_id_str]
+            active_dealers = context.bot_data.get("active_dealer_encounters", {})
+            if user_id_str in active_dealers:
+                del active_dealers[user_id_str]
             return
-        
+
+        logger.info(f"Processing transaction for user {user_id_str}")
+
         # Deduct cost
         player_updates = {}
-        
+
         if cost_type == "marks":
             player_updates["marks"] = player.marks - cost_amount
         elif cost_type == "valor":
             player_updates["valor"] = player.valor - cost_amount
         elif cost_type == "crystals":
             player_updates["crystals"] = player.crystals - cost_amount
-        
+
         # Select outcome
         outcome = select_outcome(dealer_data["outcomes"])
-        
+        logger.info(f"Selected outcome for {user_id_str}: {outcome['name']}")
+
         # Apply rewards
         for reward_type, reward_amount in outcome["rewards"].items():
             if reward_type == "marks":
@@ -522,19 +529,23 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             elif reward_type == "gas":
                 current = getattr(player, "gas", 0)
                 player_updates["gas"] = current + reward_amount
-        
+
+        logger.info(f"Player updates for {user_id_str}: {player_updates}")
+
         # Update player in database
         try:
             await db.update_player(user_id_str, player_updates)
+            logger.info(f"Successfully updated player {user_id_str} in database")
         except Exception as e:
-            logger.error(f"Error updating player: {e}")
+            logger.error(f"Error updating player {user_id_str}: {e}")
             await query.edit_message_caption(
                 caption="An error occurred while processing the offer. Please try again later.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=None
             )
-            if user_id_str in active_dealer_encounters:
-                del active_dealer_encounters[user_id_str]
+            active_dealers = context.bot_data.get("active_dealer_encounters", {})
+            if user_id_str in active_dealers:
+                del active_dealers[user_id_str]
             return
         
         # Build reward message
@@ -549,6 +560,8 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             elif reward_type == "gas":
                 reward_text += f"• {reward_amount} Gas\n"
         
+        logger.info(f"Final reward text for {user_id_str}: {reward_text.strip()}")
+
         # Edit message with outcome
         await query.edit_message_caption(
             caption=f"<b>{outcome['text']}</b>\n\n<b>You received:</b>\n{reward_text}",
@@ -556,9 +569,12 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=None
         )
         
+        logger.info(f"Successfully completed dealer transaction for user {user_id_str}")
+
         # Remove from active encounters
-        if user_id_str in active_dealer_encounters:
-            del active_dealer_encounters[user_id_str]
+        active_dealers = context.bot_data.get("active_dealer_encounters", {})
+        if user_id_str in active_dealers:
+            del active_dealers[user_id_str]
 
 @mod_only
 async def test_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE):
