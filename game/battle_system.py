@@ -31,7 +31,6 @@ active_battles_lock = asyncio.Lock()
 
 class BattleSystem:
     def get_equipped_weapon(self, shop_items):
-        # Debug logging for equipped weapons
         if self.character.equipped_weapon:
             if self.character.equipped_weapon in shop_items:
                 item = shop_items[self.character.equipped_weapon]
@@ -108,7 +107,6 @@ class BattleSystem:
         """Clear all internal battle caches to free memory."""
         self.keyboard_cache = None
         self.keyboard_cache_invalid = True
-        logger.debug("Cleared internal battle caches")
 
     # ---------- Context & Effects ----------
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
@@ -778,13 +776,12 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     titan_obj = await titan_task
     if not titan_obj:
         # Use cached titan data if available or show error
-        titan_data_debug = context.bot_data.get(f"last_titan_data_{user_id}")
-        if not titan_data_debug:
+        cached_titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
+        if not cached_titan_data:
             # Minimized logging for better performance
-            logger.warning(f"[BATTLE_START] No titan found for user_id: {user_id}")
             await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
             return
-        titan_data = titan_data_debug
+        titan_data = cached_titan_data
     else:
         titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
     
@@ -1136,7 +1133,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
                         battle.character = refreshed_character
                         battle.last_character_refresh = now
                 except Exception as e:
-                    logger.debug(f"Character refresh error (non-critical): {e}")
+                    pass
             # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
@@ -1337,7 +1334,6 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             except Exception as e:
                 if "message is not modified" in str(e).lower():
                     # This should rarely happen now with our randomization
-                    logger.debug(f"Message not modified despite randomization")
                     # No need for additional action, the UI is already showing the correct state
                 elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
                     # Don't send a new message, just log the issue - this prevents message duplication

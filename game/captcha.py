@@ -162,11 +162,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # Check if captcha is already processed to prevent spam
+    if context.user_data.get('captcha_processed', False):
+        return
+
     user_answer = getattr(query, "data", None)
     correct_answer = context.user_data.get('captcha_answer', '')
     tries = context.user_data.get('captcha_tries', 3)
 
     if user_answer == correct_answer:
+        # Mark captcha as processed to prevent multiple rewards
+        context.user_data['captcha_processed'] = True
+        
         await query.answer("Correct! You're verified.")
         try:
             # Delete the original photo message
@@ -245,6 +252,7 @@ async def spawn_captcha(update, context):
         return False
     # Always use text captcha now
     context.user_data['captcha_active'] = True
+    context.user_data['captcha_processed'] = False  # Reset processed flag for new captcha
     await captcha(update, context)
     context.user_data['captcha_mode'] = 'text'
     context.user_data['verified'] = False

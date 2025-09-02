@@ -173,7 +173,9 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         progress_notifications.append(notification)
                     player_updated = True
         elif mission.id == 14:
+            logger.info(f"[MISSION 14 DEBUG] Starting progress update for player {user_id}")
             mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
+            logger.info(f"[MISSION 14 DEBUG] Current mission14_area_counts: {mission_area_counts}")
             AREAS = [
                 "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
                 "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
@@ -186,18 +188,25 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     count = area_data
                 else:
                     count = 0
+                logger.info(f"[MISSION 14 DEBUG] Area {area}: count = {count}")
                 if count >= 500:
                     completed_areas += 1
+                    logger.info(f"[MISSION 14 DEBUG] Area {area} is completed")
             new_progress = min(completed_areas, mission.required_progress)
+            logger.info(f"[MISSION 14 DEBUG] Total completed areas: {completed_areas}, new_progress: {new_progress}, current_progress: {progress['current_progress']}")
             
             # Always update the mission progress to match the actual completed areas count
             if progress["current_progress"] != new_progress:
                 progress_amount = new_progress - progress["current_progress"]
+                logger.info(f"[MISSION 14 DEBUG] Progress change: {progress_amount}, updating mission progress")
                 if progress_amount > 0:
                     notification = await update_mission_progress(db, player, mission.id, progress_amount)
                     if notification:
                         progress_notifications.append(notification)
                     player_updated = True
+                    logger.info(f"[MISSION 14 DEBUG] Mission progress updated successfully")
+            else:
+                logger.info(f"[MISSION 14 DEBUG] No progress change needed")
     # Always refresh player object after any progress update
     if player_updated:
         player = await db.get_player(user_id)
@@ -319,12 +328,14 @@ async def show_available_missions(update: Update, context: ContextTypes.DEFAULT_
 
 def format_mission_14_progress(player, max_count=500):
     """Format progress for Mission 14: 500 explores in each place of the map."""
+    logger.info(f"[MISSION 14 DEBUG] Formatting progress for player {getattr(player, 'user_id', 'unknown')}")
     AREAS = [
         "Orvud", "Krolva", "Mitras", "Royal Capital", "Utopia",
         "Karanes", "Stohess", "Trost", "Shiganshina", "Ehrmich"
     ]
     # Use mission-specific counts
     mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
+    logger.info(f"[MISSION 14 DEBUG] mission14_area_counts in format function: {mission_area_counts}")
     lines = []
     completed_areas = 0
 
@@ -336,6 +347,7 @@ def format_mission_14_progress(player, max_count=500):
             count = area_data
         else:
             count = 0
+        logger.info(f"[MISSION 14 DEBUG] Formatting area {area}: key={area_key}, count={count}")
             
         if count >= max_count:
             status = "✅"
@@ -346,6 +358,7 @@ def format_mission_14_progress(player, max_count=500):
 
     # Add summary line
     lines.append(f"\nProgress: {completed_areas}/{len(AREAS)} areas completed")
+    logger.info(f"[MISSION 14 DEBUG] Format complete: {completed_areas}/{len(AREAS)} areas completed")
     return "\n".join(lines)
 
 async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYPE, 
@@ -369,7 +382,9 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
         progress = mission_data["progress"]
         # For Mission 14, always show latest mission14_area_counts progress in UI
         if mission.id == 14:
+            logger.info(f"[MISSION 14 DEBUG] Showing active mission details for player {getattr(player, 'user_id', 'unknown')}")
             mission_area_counts = getattr(player, "mission14_area_counts", {}) or {}
+            logger.info(f"[MISSION 14 DEBUG] mission14_area_counts in show_active_missions: {mission_area_counts}")
             completed_areas = 0
             
             # List of all areas for mission 14
@@ -384,8 +399,10 @@ async def show_active_missions(update: Update, context: ContextTypes.DEFAULT_TYP
                 area_data = mission_area_counts.get(area_key, 0)
                 if isinstance(area_data, int) and area_data >= 500:
                     completed_areas += 1
+                    logger.info(f"[MISSION 14 DEBUG] Area {area} completed with {area_data} explores")
             
             display_progress = completed_areas
+            logger.info(f"[MISSION 14 DEBUG] Display progress for mission 14: {display_progress}/{progress['required_progress']}")
             is_completed = progress["status"] == "completed" or display_progress >= progress["required_progress"]
         else:
             display_progress = progress["current_progress"]
@@ -485,6 +502,7 @@ async def show_mission_detail(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Special handling for Mission 14 progress display
     if mission_id == 14:
+        logger.info(f"[MISSION 14 DEBUG] Showing mission detail for player {getattr(player, 'user_id', 'unknown')}")
         message += "*Progress:* \n"
         message += format_mission_14_progress(player) + "\n\n"
     else:
