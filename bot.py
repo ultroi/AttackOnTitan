@@ -263,8 +263,51 @@ class LocalMemoryDatabase:
         self.titan_timeout_tasks.clear()
         logger.info("🧪 Local DB: All data cleared")
 
-# Global local database instance
-local_db = LocalMemoryDatabase()
+async def check_database_health(db_instance):
+    """Check if database is healthy and responsive"""
+    try:
+        if TEST_MODE:
+            # For test mode, just check if the instance exists
+            return db_instance is not None
+        else:
+            # For production, try a simple database operation
+            if hasattr(db_instance, 'players') and db_instance.players is not None:
+                # Try to count documents (lightweight operation)
+                count = await db_instance.players.count_documents({})
+                logger.info(f"✅ Database health check passed - found {count} player documents")
+                return True
+            else:
+                logger.error("❌ Database health check failed - players collection not available")
+                return False
+    except Exception as e:
+        logger.error(f"❌ Database health check failed: {e}")
+        return False
+
+async def handle_database_error(context, error):
+    """Handle database-related errors and attempt recovery"""
+    logger.error(f"Database error detected: {error}")
+
+    # Check if it's a connection error
+    if "connection" in str(error).lower() or "timeout" in str(error).lower():
+        logger.info("🔄 Attempting database reconnection...")
+
+        # Try to reinitialize database
+        db_instance = await initialize_database()
+        if db_instance is not None:
+            global global_db
+            global_db = db_instance
+
+            # Update application bot_data if application exists
+            if application is not None:
+                application.bot_data["db"] = global_db
+                logger.info("✅ Database reconnected successfully")
+                return True
+            else:
+                logger.error("❌ Application not available for database update")
+        else:
+            logger.error("❌ Database reconnection failed")
+
+    return False
 
 
 # Validate required environment variables
@@ -296,66 +339,137 @@ app_initialized = False
 global_db = None
 
 # Initialize database and services
-async def initialize_bot():
-    global db, shop_system, application
+async def initialize_database():
+    """Initialize database and return the database instance"""
+    global global_db
 
-    logger.info("Initializing bot environment...")
+    logger.info("🔄 Initializing database connection...")
 
     try:
         if TEST_MODE:
             # Use local memory database for test mode
             logger.info("🧪 Using Local Memory Database (Test Mode)")
-            db = local_db
-            await db.init_db()
+            if global_db is None or not isinstance(global_db, LocalMemoryDatabase):
+                global_db = local_db
+                await global_db.init_db()
         else:
-            # Set environment variables for database
-            if MONGODB_URI:
-                os.environ["MONGODB_URI"] = MONGODB_URI
-            os.environ["DB_NAME"] = DB_NAME
-
-            # Initialize database
-            try:
+            # Use persistent MongoDB connection for production
+            if global_db is None:
+                logger.info("💾 Connecting to MongoDB database")
                 motor_db = await get_persistent_database()
                 if motor_db is not None:
-                    db = Database()
-                    await db.init_db(motor_db)
-                    
+                    global_db = Database()
+                    await global_db.init_db(motor_db)
+
                     # Apply battle system fixes if needed
                     from game.battle_fix import apply_battle_fixes
-                    fixes_applied = await apply_battle_fixes(db)
+                    fixes_applied = await apply_battle_fixes(global_db)
                     if fixes_applied:
                         logger.info("Applied battle system fixes")
                 else:
-                    logger.error("Failed to get database instance")
-                    db = None
-            except Exception as e:
-                logger.error(f"Error initializing database: {e}")
-                db = None
+                    logger.error("❌ Failed to get database instance")
+                    return None
 
-        # Initialize shop system
-        shop_system = ShopSystem()
-
-        logger.info("Bot environment initialized successfully!")
-        if TEST_MODE:
-            logger.info("🧪 Local Memory Database loaded - NO PERSISTENT STORAGE")
-            if db is not None and isinstance(db, LocalMemoryDatabase) and hasattr(db, "get_stats"):
-                try:
-                    stats = db.get_stats()
-                    logger.info(f"📊 Local DB Stats: Players: {stats['players']}, Characters: {stats['characters']}, Titans: {stats['titans']}")
-                except Exception as e:
-                    logger.error(f"Error getting stats: {e}")
-                    logger.info("📊 Local DB Stats: No statistics available")
+        # Verify database is working
+        if global_db is not None:
+            logger.info("✅ Database connection established successfully")
+            if TEST_MODE:
+                logger.info("🧪 Local Memory Database loaded - NO PERSISTENT STORAGE")
+                if isinstance(global_db, LocalMemoryDatabase) and hasattr(global_db, "get_stats"):
+                    try:
+                        stats = global_db.get_stats()
+                        logger.info(f"📊 Local DB Stats: Players: {stats['players']}, Characters: {stats['characters']}, Titans: {stats['titans']}")
+                    except Exception as e:
+                        logger.error(f"Error getting stats: {e}")
             else:
-                logger.info("📊 Local DB Stats: No statistics available")
-            logger.info("💡 Use /dbstatus to check current data and /cleardb to reset")
+                logger.info(f"� Connected to database: {DB_NAME}")
         else:
-            logger.info(f"Connected to database: {DB_NAME}")
-        logger.info(f"Shop system loaded with {len(shop_system.shop_items)} items")
-        
-        return True
+            logger.error("❌ Database initialization failed")
+            return None
+
+        return global_db
+
     except Exception as e:
-        logger.error(f"Failed to initialize bot: {e}", exc_info=True)
+        logger.error(f"❌ Failed to initialize database: {e}", exc_info=True)
+        return None
+
+# Initialize shop system
+async def initialize_shop_system():
+    """Initialize shop system and return the instance"""
+    try:
+        logger.info("� Initializing shop system...")
+        shop_system = ShopSystem()
+        logger.info(f"✅ Shop system loaded with {len(shop_system.shop_items)} items")
+        return shop_system
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize shop system: {e}")
+        return None
+
+async def initialize_bot():
+    """Initialize all bot components in the correct order"""
+    global application, global_db
+
+    logger.info("� Starting bot initialization...")
+
+    # Step 1: Initialize database first
+    db_instance = await initialize_database()
+    if db_instance is None:
+        logger.error("❌ Database initialization failed - cannot continue")
         return False
+    global_db = db_instance
+
+    # Step 2: Initialize shop system
+    shop_system = await initialize_shop_system()
+    if shop_system is None:
+        logger.error("❌ Shop system initialization failed - cannot continue")
+        return False
+
+    # Step 3: Create application
+    logger.info("🤖 Creating Telegram application...")
+    try:
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        logger.info("✅ Application created successfully")
+    except Exception as e:
+        logger.error(f"❌ Failed to create application: {e}")
+        return False
+
+    # Step 4: Store global data in application
+    logger.info("💾 Storing global data in application...")
+    application.bot_data["db"] = global_db
+    application.bot_data["shop_system"] = shop_system
+    application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
+
+    # Step 5: Set up error handler
+    await setup_error_handler(application)
+
+    # Step 6: Register all handlers
+    logger.info("📋 Registering command handlers...")
+    setup_handlers(application)
+
+    # Step 7: Start schedulers
+    logger.info("⏰ Starting schedulers...")
+    try:
+        # Start the midnight tax scheduler with bot instance
+        start_scheduler(application.bot)
+        logger.info("✅ Tax scheduler started")
+
+        # Start scheduled tasks
+        start_scheduled_tasks(application.bot)
+        logger.info("✅ Scheduled tasks started")
+
+        # Start stats scheduler
+        if global_db is not None:
+            await start_stats_scheduler(global_db)
+            logger.info("✅ Stats scheduler started")
+        else:
+            logger.warning("⚠️ Cannot start stats scheduler: Database not initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to start schedulers: {e}")
+        # Don't fail completely if schedulers fail
+        pass
+
+    logger.info("🎉 Bot initialization completed successfully!")
+    return True
 
 # Register all command and callback handlers
 def setup_handlers(application):
@@ -571,6 +685,14 @@ async def setup_error_handler(application):
                 except Exception as e:
                     logger.error(f"Failed to notify user about rate limit: {e}")
             return
+
+        # Handle database connection errors
+        if "connection" in str(context.error).lower() or "timeout" in str(context.error).lower():
+            recovery_success = await handle_database_error(context, context.error)
+            if recovery_success:
+                # If recovery successful, don't log as error
+                logger.info("Database error recovered successfully")
+                return
                 
         logger.error(f"Update {update} caused error {context.error}", exc_info=context.error)
             
@@ -600,8 +722,31 @@ async def setup_error_handler(application):
 
     application.add_error_handler(error_handler)
 
-async def main():
-    """Main bot runner"""
+async def database_health_monitor():
+    """Monitor database health periodically"""
+    while True:
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+
+            if not TEST_MODE and global_db is not None:
+                health_ok = await check_database_health(global_db)
+                if not health_ok:
+                    logger.warning("⚠️ Database health check failed, attempting recovery...")
+                    recovery_success = await handle_database_error(None, "Health check failed")
+                    if recovery_success:
+                        logger.info("✅ Database health restored")
+                    else:
+                        logger.error("❌ Database health recovery failed")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in database health monitor: {e}")
+            await asyncio.sleep(60)  # Wait a minute before retrying
+
+# Global instances
+local_db = LocalMemoryDatabase()
+health_monitor_task = None
+    """Main bot runner with proper initialization sequence"""
     print("🤖 ATTACK ON TITAN BOT - LOCAL TEST MODE")
     print("=" * 50)
     print(f"📋 Environment: {ENV}")
@@ -629,42 +774,22 @@ async def main():
         print("   Make sure MONGODB_URI is set in .env file")
         return
 
-    # Initialize bot environment
+    # Initialize bot with all components
     success = await initialize_bot()
     if not success:
-        print("❌ ERROR: Failed to initialize bot environment")
+        print("❌ ERROR: Failed to initialize bot")
         return
-    
-    global application
-    
-    # Create application
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    # Set up error handler
-    await setup_error_handler(application)
 
-    # Setup handlers
-    setup_handlers(application)
+    # Final database readiness check
+    if not await ensure_database_ready():
+        print("❌ ERROR: Database not ready after initialization")
+        return
 
-    # Store global data
-    application.bot_data["db"] = db
-    application.bot_data["shop_system"] = shop_system
-    application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
-
-    # Start the midnight tax scheduler with bot instance
-    start_scheduler(application.bot)
-
-    # Start scheduled tasks
-    start_scheduled_tasks(application.bot)
-
-    # Start stats scheduler
-    try:
-        if db is not None:
-            await start_stats_scheduler(db)
-        else:
-            logger.warning("Cannot start stats scheduler: Database not initialized")
-    except Exception as e:
-        logger.error(f"Failed to start stats scheduler: {e}")
+    # Start database health monitor for production mode
+    global health_monitor_task
+    if not TEST_MODE:
+        health_monitor_task = asyncio.create_task(database_health_monitor())
+        logger.info("✅ Database health monitor started")
 
     print("\n🚀 Starting bot...")
     print("🤖 Bot is now running in polling mode! Send commands to your test bot in Telegram")
@@ -683,12 +808,13 @@ async def main():
         # Initialize and start the application
         await application.initialize()
         await application.start()
-        
+        app_initialized = True
+
         # Start polling for updates
         if application.updater:
             await application.updater.start_polling(drop_pending_updates=True)
             print("✅ Bot is now polling for updates")
-            
+
             # Wait until stop signal
             await stop_event.wait()
         else:
@@ -698,6 +824,16 @@ async def main():
     finally:
         # Perform graceful shutdown
         print("\n⏱️ Shutting down...")
+        
+        # Cancel health monitor task
+        if health_monitor_task and not health_monitor_task.done():
+            health_monitor_task.cancel()
+            try:
+                await health_monitor_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("✅ Database health monitor stopped")
+        
         if application:
             if application.updater:
                 await application.updater.stop()

@@ -719,8 +719,10 @@ async def process_explore_mission_progress(db, player, area=None):
             explores_since_start = max(0, current_explore - starting_explore)
             logger.info(f"[MISSION 14 DEBUG] Current explore: {current_explore}, starting: {starting_explore}, since start: {explores_since_start}")
             
-            # Get mission14_area_counts
-            mission14_area_counts = getattr(player, "mission14_area_counts", {}) or {}
+            # Always fetch the latest mission14_area_counts from database to avoid cache issues
+            fresh_player_data = await db.players.find_one({"user_id": str(player.user_id)}, {"mission14_area_counts": 1})
+            mission14_area_counts = fresh_player_data.get("mission14_area_counts", {}) if fresh_player_data else {}
+            mission14_area_counts = mission14_area_counts or {}
             logger.info(f"[MISSION 14 DEBUG] Current mission14_area_counts: {mission14_area_counts}")
             
             # Define the areas for Mission 14
@@ -850,6 +852,10 @@ async def process_explore_mission_progress(db, player, area=None):
             logger.info(f"[MISSION 14 DEBUG] Updating mission14_area_counts: {batch_updates['mission14_area_counts']}")
         await db.batch_update_player(int(player.user_id), batch_updates)
         logger.info(f"[MISSION 14 DEBUG] Batch updates applied successfully")
+        
+        # Invalidate player cache to ensure fresh data for subsequent operations
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(str(player.user_id))
     
     return notifications
 
