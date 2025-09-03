@@ -171,43 +171,13 @@ DEALER_TYPES = [
         ],
         "buttons": ["Accept the Forbidden Offer", "Reject the Offer"],
         "cost_type": "special",
-        "cost_amount": 0,  # Special case, will be handled separately
-        "outcomes": [
-            {
-                "name": "Epic Success",
-                "chance": 0.03,
-                "text": "The Founding Titan recognizes your will. Its power surges through you, reshaping reality itself. You are granted a bounty that will change the course of the war.",
-                "rewards": {"valor": 300, "marks": 75000}
-            },
-            {
-                "name": "Valuable Discovery",
-                "chance": 0.20,
-                "text": "The will of the Founding Titan has smiled upon you. You are granted access to a massive cache of resources that will strengthen your position in the coming war.",
-                "rewards": {"valor": 225, "marks": 50000}
-            },
-            {
-                "name": "Solid Gain",
-                "chance": 0.50,
-                "text": "Your tribute is accepted, and you are given a portion of its immense power. You feel the ground shake as resources manifest before you.",
-                "rewards": {"valor": 150, "marks": 25000}
-            },
-            {
-                "name": "Break-Even Deal",
-                "chance": 0.15,
-                "text": "The will of the Titans is not swayed. You manage to escape the 'paths' with your essence intact, but nothing more.",
-                "rewards": {"crystals": 1, "valor": 45}
-            },
-            {
-                "name": "Failure",
-                "chance": 0.30,
-                "text": "The voice laughs, a sound that echoes across time. You have been tested and found wanting. The power consumes your offering, leaving you with nothing but a single, haunting thought.",
-                "rewards": {"marks": 25000, "gas": 10000}
-            }
-        ]
+        "cost_amount": 0,  
+        "outcomes": []  
     }
 ]
 
-
+# Active dealer encounters - stored in bot_data for persistence
+# active_dealer_encounters = {}  # Removed global variable
 
 def select_dealer_type() -> dict:
     """
