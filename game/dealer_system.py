@@ -15,9 +15,6 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# Common image URL for dealer encounters
-DEALER_IMAGE_URL = "https://i.ibb.co/3Yy111LY/image.jpg"
-
 # Dealer types and spawn chances
 DEALER_TYPES = [
     {
@@ -25,6 +22,7 @@ DEALER_TYPES = [
         "name": "The Scouting Legion's Gamble",
         "description": "Marks to resources",
         "spawn_chance": 0.40,
+        "image_url": "https://i.ibb.co/JNLZVBK/image.jpg",
         "messages": [
             "A scouting report just came in. A supply cache has been spotted outside the walls.",
             "The coordinates point to an abandoned outpost near Wall Rose. Proceed with caution.",
@@ -38,31 +36,31 @@ DEALER_TYPES = [
                 "name": "Epic Success",
                 "chance": 0.03,
                 "text": "By some miracle, you've found a secret stash intended for a high-priority mission. The Survey Corps will be indebted to you!",
-                "rewards": {"crystals": 2, "valor": 10}
+                "rewards": {"valor": 25, "marks": 50000}
             },
             {
                 "name": "Valuable Discovery",
                 "chance": 0.20,
                 "text": "The supplies were mostly in the form of old military payroll. A huge amount of marks for your valor!",
-                "rewards": {"marks": 50000}
+                "rewards": {"valor": 10, "marks": 10000}
             },
             {
                 "name": "Solid Gain",
                 "chance": 0.50,
                 "text": "Your squad made it back from the mission! You found a stash of valors.",
-                "rewards": {"valor": 25}
+                "rewards": {"marks": 50000}
             },
             {
                 "name": "Break-Even Deal",
                 "chance": 0.15,
                 "text": "The expedition was cut short, and you could only recover a few scraps. You break even on the mission, but gain a small amount of useful gas.",
-                "rewards": {"marks": 20000, "gas": 5000}
+                "rewards": {"marks": 25000, "gas": 5000}
             },
             {
                 "name": "Failure",
-                "chance": 0.12,
+                "chance": 0.30,
                 "text": "The expedition was a bust. You encountered an Abnormal Titan and had to retreat, leaving most of the supplies behind. You manage to recover a few remaining rations and gas canisters.",
-                "rewards": {"gas": 2000, "marks": 5000}
+                "rewards": {"marks": 5000, "gas": 2000}
             }
         ]
     },
@@ -71,6 +69,7 @@ DEALER_TYPES = [
         "name": "The Garrison's Black Market",
         "description": "Valor to resources",
         "spawn_chance": 0.30,
+        "image_url": "https://i.ibb.co/8gcBkvkT/image.jpg",
         "messages": [
             "A suspicious package has been left for you. It's from a member of the Garrison Regiment, with a note promising 'a way to make a fortune'.",
             "The instructions lead you to a secluded alleyway in the Stohess District. The air is thick with the scent of secrecy and old secrets.",
@@ -84,31 +83,31 @@ DEALER_TYPES = [
                 "name": "Epic Success",
                 "chance": 0.03,
                 "text": "The Garrison member was a true ally! They've not only made good on their word, but have given you access to a cache of high-value goods.",
-                "rewards": {"crystals": 1, "valor": 100}
+                "rewards": {"crystals": 1, "valor": 10}
             },
             {
                 "name": "Valuable Discovery",
                 "chance": 0.20,
                 "text": "The deal was a great success. The Garrison member hands you a heavy satchel full of Marks and a bonus for your help.",
-                "rewards": {"valor": 85, "marks": 20000}
+                "rewards": {"valor": 75, "marks": 10000}
             },
             {
                 "name": "Solid Gain",
                 "chance": 0.50,
                 "text": "The transaction is completed without a hitch. The Garrison member honors their side of the deal.",
-                "rewards": {"valor": 60, "marks": 15000}
+                "rewards": {"valor": 50, "marks": 10000}
             },
             {
                 "name": "Break-Even Deal",
                 "chance": 0.15,
                 "text": "The deal was less profitable than promised, but you manage to walk away without a loss.",
-                "rewards": {"valor": 50, "marks": 5000}
+                "rewards": {"valor": 30, "marks": 5000}
             },
             {
                 "name": "Failure",
-                "chance": 0.12,
+                "chance": 0.30,
                 "text": "You've been swindled. The Garrison member vanishes with most of your funds before you can react.",
-                "rewards": {"valor": 20, "marks": 5000}
+                "rewards": {"valor": 10, "marks": 2500}
             }
         ]
     },
@@ -117,6 +116,7 @@ DEALER_TYPES = [
         "name": "The Titan Shifter's Secret",
         "description": "Crystals to Valor",
         "spawn_chance": 0.20,
+        "image_url": "https://i.ibb.co/yF7mzSf1/image.jpg",
         "messages": [
             "A strange, unnatural tremor rattles the ground. A voice, whispering directly into your mind, offers a meeting at a desolate location outside the walls.",
             "You arrive at a desolate, fog-shrouded gorge near Shiganshina. The air feels heavy with power, and the ground is scorched as if from a recent transformation.",
@@ -128,7 +128,7 @@ DEALER_TYPES = [
         "outcomes": [
             {
                 "name": "Epic Success",
-                "chance": 0.05,
+                "chance": 0.03,
                 "text": "The mysterious figure smiles. Their power surges through you, infusing you with a monumental supply of resources. This is a secret that could turn the entire war.",
                 "rewards": {"valor": 300, "marks": 75000}
             },
@@ -136,13 +136,13 @@ DEALER_TYPES = [
                 "name": "Valuable Discovery",
                 "chance": 0.20,
                 "text": "The ground quakes, and a hidden fissure opens, revealing a bounty of military supplies. It seems the Titan's power has a tangible effect.",
-                "rewards": {"valor": 200, "marks": 40000}
+                "rewards": {"valor": 250, "marks": 40000}
             },
             {
                 "name": "Solid Gain",
                 "chance": 0.50,
                 "text": "The figure nods. A bounty of supplies emerges from a rock fissure. It seems the Titan's power holds some merit.",
-                "rewards": {"valor": 100, "marks": 20000}
+                "rewards": {"valor": 125, "marks": 25000}
             },
             {
                 "name": "Break-Even Deal",
@@ -152,9 +152,9 @@ DEALER_TYPES = [
             },
             {
                 "name": "Failure",
-                "chance": 0.10,
+                "chance": 0.30,
                 "text": "The figure's eyes glow with malicious intent. The ground beneath you cracks, but no supplies emerge. The voice laughs as your Crystal is consumed. 'A fool's bargain,' it whispers as the figure vanishes.",
-                "rewards": {"valor": 100}
+                "rewards": {"valor": 75}
             }
         ]
     },
@@ -163,20 +163,51 @@ DEALER_TYPES = [
         "name": "The Founding Titan's Offer",
         "description": "Ultimate Gamble",
         "spawn_chance": 0.10,
+        "image_url": "https://i.ibb.co/B5Mdmvj7/image.jpg",
         "messages": [
-            "A flash of light pierces your vision. Time itself seems to stop as you find yourself in a strange, otherworldly dimension.",
-            "Paths of light stretch out in all directions, connecting to countless points in space and time. A presence, ancient and immeasurable, draws near.",
-            "Before you stands a figure emanating pure power—the essence of the Founding Titan itself. It offers a once-in-a-lifetime gamble, the stakes higher than anything you've encountered. Will you risk everything for the chance at unimaginable power?"
+            "A voice echoes from the depths of your mind, a primordial call from the very 'paths' that connect all Eldians.",
+            "You feel an irresistible pull towards a place that exists outside of time. All around you, the ethereal sand of the Founding Titan's realm drifts endlessly.",
+            "Before you, a colossal figure of bone and sinew coalesces from the swirling sands. 'This is the moment,' a chorus of voices whispers, 'the moment you can change everything. Offer your most valuable tokens to the progenitor of all power.'\n\n<blockquote>Cost: 1 Crystal and 50 Valor</blockquote>\n\nDo you accept the Founding Titan's offer?"
         ],
-        "buttons": ["Accept the Ultimate Gamble", "Decline the Founder's Offer"],
+        "buttons": ["Accept the Forbidden Offer", "Reject the Offer"],
         "cost_type": "special",
         "cost_amount": 0,  # Special case, will be handled separately
-        "outcomes": []  # This dealer is under construction
+        "outcomes": [
+            {
+                "name": "Epic Success",
+                "chance": 0.03,
+                "text": "The Founding Titan recognizes your will. Its power surges through you, reshaping reality itself. You are granted a bounty that will change the course of the war.",
+                "rewards": {"valor": 300, "marks": 75000}
+            },
+            {
+                "name": "Valuable Discovery",
+                "chance": 0.20,
+                "text": "The will of the Founding Titan has smiled upon you. You are granted access to a massive cache of resources that will strengthen your position in the coming war.",
+                "rewards": {"valor": 225, "marks": 50000}
+            },
+            {
+                "name": "Solid Gain",
+                "chance": 0.50,
+                "text": "Your tribute is accepted, and you are given a portion of its immense power. You feel the ground shake as resources manifest before you.",
+                "rewards": {"valor": 150, "marks": 25000}
+            },
+            {
+                "name": "Break-Even Deal",
+                "chance": 0.15,
+                "text": "The will of the Titans is not swayed. You manage to escape the 'paths' with your essence intact, but nothing more.",
+                "rewards": {"crystals": 1, "valor": 45}
+            },
+            {
+                "name": "Failure",
+                "chance": 0.30,
+                "text": "The voice laughs, a sound that echoes across time. You have been tested and found wanting. The power consumes your offering, leaving you with nothing but a single, haunting thought.",
+                "rewards": {"marks": 25000, "gas": 10000}
+            }
+        ]
     }
 ]
 
-# Active dealer encounters - stored in bot_data for persistence
-# active_dealer_encounters = {}  # Removed global variable
+
 
 def select_dealer_type() -> dict:
     """
@@ -341,7 +372,7 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
             
             # Send dealer message with image
             await update.message.reply_photo(
-                photo=DEALER_IMAGE_URL,
+                photo=selected_dealer["image_url"],
                 caption=f"<b>{selected_dealer['messages'][2]}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup
@@ -496,14 +527,92 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                 del active_dealers[user_id_str]
             return
         
-        # Special handler for Founding Titan's Offer - not implemented yet
+        # Special handler for Founding Titan's Offer
         if dealer_id == "founding_titan":
             logger.info(f"Founding titan offer accepted by {user_id_str}")
+            
+            # Check for special cost: 1 Crystal and 50 Valor
+            current_crystals = getattr(player, "crystal", 0)
+            current_valor = getattr(player, "valor", 0)
+            
+            if current_crystals < 1:
+                await query.edit_message_caption(
+                    caption=f"<b>You don't have enough Crystals to accept this offer. You need 1 Crystal.</b>\n\nThe Founding Titan's presence fades away.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=None
+                )
+                active_dealers = context.bot_data.get("active_dealer_encounters", {})
+                if user_id_str in active_dealers:
+                    del active_dealers[user_id_str]
+                return
+            
+            if current_valor < 50:
+                await query.edit_message_caption(
+                    caption=f"<b>You don't have enough Valor to accept this offer. You need 50 Valor.</b>\n\nThe Founding Titan's presence fades away.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=None
+                )
+                active_dealers = context.bot_data.get("active_dealer_encounters", {})
+                if user_id_str in active_dealers:
+                    del active_dealers[user_id_str]
+                return
+            
+            # Deduct special cost
+            player_updates = {
+                "crystal": player.crystal - 1,
+                "valor": player.valor - 50
+            }
+            
+            # Select outcome
+            outcome = select_outcome(dealer_data["outcomes"])
+            logger.info(f"Selected outcome for {user_id_str}: {outcome['name']}")
+            
+            # Apply rewards
+            for reward_type, reward_amount in outcome["rewards"].items():
+                if reward_type == "marks":
+                    current = getattr(player, "marks", 0)
+                    player_updates["marks"] = current + reward_amount
+                elif reward_type == "valor":
+                    current = getattr(player, "valor", 0)
+                    player_updates["valor"] = current + reward_amount
+                elif reward_type == "crystals":
+                    current = getattr(player, "crystal", 0)
+                    player_updates["crystal"] = current + reward_amount
+            
+            # Update player in database
+            try:
+                await db.update_player(user_id_str, player_updates)
+                logger.info(f"Successfully updated player {user_id_str} in database")
+            except Exception as e:
+                logger.error(f"Error updating player {user_id_str}: {e}")
+                await query.edit_message_caption(
+                    caption="An error occurred while processing the Founding Titan's offer. Please try again later.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=None
+                )
+                active_dealers = context.bot_data.get("active_dealer_encounters", {})
+                if user_id_str in active_dealers:
+                    del active_dealers[user_id_str]
+                return
+            
+            # Build reward message
+            reward_text = ""
+            for reward_type, reward_amount in outcome["rewards"].items():
+                if reward_type == "marks":
+                    reward_text += f"• {reward_amount} Marks\n"
+                elif reward_type == "valor":
+                    reward_text += f"• {reward_amount} Valor\n"
+                elif reward_type == "crystals":
+                    reward_text += f"• {reward_amount} Crystals\n"
+            
+            # Edit message with outcome
             await query.edit_message_caption(
-                caption="<b>The Founding Titan's power is too great to harness just yet. This offer will be available soon.</b>",
+                caption=f"<b>{outcome['text']}</b>\n\n<b>You received:</b>\n{reward_text}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=None
             )
+            
+            # Remove from active encounters
             active_dealers = context.bot_data.get("active_dealer_encounters", {})
             if user_id_str in active_dealers:
                 del active_dealers[user_id_str]
