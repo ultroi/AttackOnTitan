@@ -5,7 +5,7 @@ from telegram.constants import ParseMode
 from utils.ban_utils import ban_protected
 from utils.maintenance import maintenance_protected
 from utils.mod_utils import mod_only
-from game.dealer_system import show_dealer, test_dealer
+from game.dealer_system import show_dealer
 import random
 import logging
 import time
@@ -26,19 +26,22 @@ async def explore_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # 10% chance for dealer to appear during explore
     if random.random() < 0.1:
+        # Clean up any existing titan before showing dealer
+        try:
+            from database.db import Database
+            db = context.bot_data.get("db")
+            if db:
+                existing_titan = await db.get_titan(user_id_str)
+                if existing_titan:
+                    await db.delete_titan(user_id_str)
+                    logger.info(f"Cleaned up existing titan for user {user_id_str} due to dealer encounter")
+        except Exception as e:
+            logger.error(f"Error cleaning up existing titan for dealer: {e}")
+        
         # Show dealer
         await show_dealer(update, context)
         return True  # Signal that dealer was shown
     
     return False  # No dealer was shown
 
-@mod_only
-async def dealer_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Command to test dealer appearance (mod only)
-    """
-    if not update.effective_user:
-        return
-    
-    # Show dealer
-    await show_dealer(update, context)
+

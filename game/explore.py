@@ -375,6 +375,18 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data and "player_level" in context.user_data:
         actual_player_level = context.user_data.get("player_level", 1)
     
+    # Check for dealer encounter (10% chance) - BEFORE captcha and titan generation
+    dealer_appeared = False
+    try:
+        from game.dealer_command import explore_dealer
+        dealer_appeared = await explore_dealer(update, context)
+    except Exception as e:
+        logger.error(f"Error checking dealer encounter: {e}")
+        dealer_appeared = False
+    
+    # If dealer appeared, don't show titan or captcha
+    if dealer_appeared:
+        return
     
     should_spawn_captcha = (
         random.random() < 0.02 and 
@@ -383,6 +395,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     if should_spawn_captcha:
+        # Clean up any existing dealer before spawning captcha
+        active_dealers = context.bot_data.get("active_dealer_encounters", {})
+        if user_id_str in active_dealers:
+            del active_dealers[user_id_str]
+            logger.info(f"Cleared existing dealer encounter for user {user_id_str} due to captcha")
+        
         # Spawn captcha instead of titan
         asyncio.create_task(spawn_captcha(update, context))
         return 
@@ -411,6 +429,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
 
+    # Clean up any existing dealer encounter before showing titan
+    active_dealers = context.bot_data.get("active_dealer_encounters", {})
+    if user_id_str in active_dealers:
+        del active_dealers[user_id_str]
+        logger.info(f"Cleared existing dealer encounter for user {user_id_str} due to titan encounter")
+
     # Create message components
     keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -422,19 +446,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         level=titan_level,
         image_embed=image_embed
     )
-
-    # Check for dealer encounter (10% chance)
-    # dealer_appeared = False
-    # try:
-    #     from game.dealer_command import explore_dealer
-    #     dealer_appeared = await explore_dealer(update, context)
-    # except Exception as e:
-    #     logger.error(f"Error checking dealer encounter: {e}")
-    #     dealer_appeared = False
-    
-    # # If dealer appeared, don't show titan
-    # if dealer_appeared:
-    #     return
         
     # SEND RESPONSE IMMEDIATELY before any DB operations - absolute priority
     if update.message:

@@ -286,9 +286,9 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
     # Check if player is already in a dealer encounter
     active_dealers = context.bot_data.get("active_dealer_encounters", {})
     if user_id_str in active_dealers:
-        if update.message:
-            await update.message.reply_text("You are already in a dealer encounter. Finish that one first.")
-        return
+        # Clear the existing dealer encounter instead of blocking
+        del active_dealers[user_id_str]
+        logger.info(f"Cleared existing dealer encounter for user {user_id_str} due to new explore")
     
     # Get database reference
     db = context.bot_data.get("db")
@@ -694,32 +694,4 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
         if user_id_str in active_dealers:
             del active_dealers[user_id_str]
 
-@mod_only
-async def test_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Mod-only command to test dealers
-    """
-    if not update.effective_user:
-        return
-    
-    dealer_type = None
-    if context.args:
-        dealer_type = context.args[0].lower()
-        
-        # Check if dealer type is valid
-        valid_dealer = False
-        for dealer in DEALER_TYPES:
-            if dealer["id"] == dealer_type:
-                valid_dealer = True
-                break
-        
-        if not valid_dealer:
-            if update.message:
-                available_dealers = ", ".join(dealer["id"] for dealer in DEALER_TYPES)
-                await update.message.reply_text(
-                    f"Invalid dealer type: {dealer_type}\nAvailable dealer types: {available_dealers}"
-                )
-            return
-    
-    # Show dealer (random if no type specified, specific if type provided)
-    await show_dealer(update, context, dealer_type)
+

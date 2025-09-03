@@ -691,7 +691,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
     
     # Dealer system handlers
-    app_instance.add_handler(CommandHandler("testdealer", dealer_command))
+
     app_instance.add_handler(CallbackQueryHandler(handle_dealer_callback, pattern="^dealer_"))
 
     # Character selection and team management
