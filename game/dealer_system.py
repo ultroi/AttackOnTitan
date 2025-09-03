@@ -171,8 +171,39 @@ DEALER_TYPES = [
         ],
         "buttons": ["Accept the Forbidden Offer", "Reject the Offer"],
         "cost_type": "special",
-        "cost_amount": 0,  
-        "outcomes": []  
+        "cost_amount": 0,
+        "outcomes": [
+            {
+                "name": "Epic Success",
+                "chance": 0.03,
+                "text": "The Founding Titan recognizes your will. Its power surges through you, reshaping reality itself. You are granted a bounty that will change the course of the war.",
+                "rewards": {"valor": 300, "marks": 75000}
+            },
+            {
+                "name": "Valuable Discovery",
+                "chance": 0.20,
+                "text": "The will of the Founding Titan has smiled upon you. You are granted access to a massive cache of resources that will strengthen your position in the coming war.",
+                "rewards": {"valor": 225, "marks": 50000}
+            },
+            {
+                "name": "Solid Gain",
+                "chance": 0.50,
+                "text": "Your tribute is accepted, and you are given a portion of its immense power. You feel the ground shake as resources manifest before you.",
+                "rewards": {"valor": 150, "marks": 25000}
+            },
+            {
+                "name": "Break-Even Deal",
+                "chance": 0.15,
+                "text": "The will of the Titans is not swayed. You manage to escape the 'paths' with your essence intact, but nothing more.",
+                "rewards": {"crystals": 1, "valor": 45}
+            },
+            {
+                "name": "Failure",
+                "chance": 0.30,
+                "text": "The voice laughs, a sound that echoes across time. You have been tested and found wanting. The power consumes your offering, leaving you with nothing but a single, haunting thought.",
+                "rewards": {"marks": 25000, "gas": 10000}
+            }
+        ]
     }
 ]
 
@@ -545,7 +576,7 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                 elif reward_type == "valor":
                     current = getattr(player, "valor", 0)
                     player_updates["valor"] = current + reward_amount
-                elif reward_type == "crystals":
+                elif reward_type == "crystal":
                     current = getattr(player, "crystal", 0)
                     player_updates["crystal"] = current + reward_amount
             
@@ -572,8 +603,8 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                     reward_text += f"• {reward_amount} Marks\n"
                 elif reward_type == "valor":
                     reward_text += f"• {reward_amount} Valor\n"
-                elif reward_type == "crystals":
-                    reward_text += f"• {reward_amount} Crystals\n"
+                elif reward_type == "crystal":
+                    reward_text += f"• {reward_amount} Crystal\n"
             
             # Edit message with outcome
             await query.edit_message_caption(
@@ -586,9 +617,7 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             active_dealers = context.bot_data.get("active_dealer_encounters", {})
             if user_id_str in active_dealers:
                 del active_dealers[user_id_str]
-            return
-
-        logger.info(f"Processing transaction for user {user_id_str}")
+            return        logger.info(f"Processing transaction for user {user_id_str}")
 
         # Deduct cost
         player_updates = {}
@@ -612,7 +641,7 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
             elif reward_type == "valor":
                 current = getattr(player, "valor", 0)
                 player_updates["valor"] = current + reward_amount
-            elif reward_type == "crystals":
+            elif reward_type == "crystal":
                 current = getattr(player, "crystal", 0)
                 player_updates["crystal"] = current + reward_amount
             elif reward_type == "gas":
@@ -644,8 +673,8 @@ async def handle_dealer_callback(update: Update, context: ContextTypes.DEFAULT_T
                 reward_text += f"• {reward_amount} Marks\n"
             elif reward_type == "valor":
                 reward_text += f"• {reward_amount} Valor\n"
-            elif reward_type == "crystals":
-                reward_text += f"• {reward_amount} Crystals\n"
+            elif reward_type == "crystal":
+                reward_text += f"• {reward_amount} Crystal\n"
             elif reward_type == "gas":
                 reward_text += f"• {reward_amount} Gas\n"
         
