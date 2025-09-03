@@ -164,13 +164,13 @@ DEALER_TYPES = [
         "description": "Ultimate Gamble",
         "spawn_chance": 0.10,
         "messages": [
-            "A flash of light pierces your vision. Time itself seems to stop as you find yourself in a strange, otherworldly dimension.",
-            "Paths of light stretch out in all directions, connecting to countless points in space and time. A presence, ancient and immeasurable, draws near.",
-            "Before you stands a figure emanating pure power—the essence of the Founding Titan itself. It offers a once-in-a-lifetime gamble, the stakes higher than anything you've encountered. Will you risk everything for the chance at unimaginable power?"
+            "A voices echoes from the depths of your mind, a primordial call from the very 'paths' that connect all eldians",
+            "You feel an irresistible pull towards a place that exists outside of time. All around you, the ethereal sand of the Founding Titna's realm drifts endlessly.",
+            "Before yoou, a colossal figure of bone and sinew coalesces fromthe swirling sands.'This is the moment.' a chorus of voices whispers, 'the moment you can change everything.\n\n<blockquote> Offer you most valuable tokens to the progenitor of all.\n Cost : 1 Crystal and 50 valor</blockquote>\n\n Do you accept the <b>Founding Titan's offer</b>?"
         ],
         "buttons": ["Accept the Ultimate Gamble", "Decline the Founder's Offer"],
         "cost_type": "special",
-        "cost_amount": 0,  # Special case, will be handled separately
+        "cost_amount": 2,  # Special case, will be handled separately
         "outcomes": []  # This dealer is under construction
     }
 ]
