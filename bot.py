@@ -71,7 +71,8 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, referral_info,
-    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities
+    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
+    show_characters
 )
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from database.models import Character, Player
@@ -488,7 +489,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("status", disable_protected(profile)))
     application.add_handler(CommandHandler("buy", disable_protected(buy_command)))
     application.add_handler(CommandHandler("referral", disable_protected(referral_info)))
-    application.add_handler(CommandHandler("char", disable_protected(char_detail)))
+    application.add_handler(CommandHandler("chars", disable_protected(show_characters)))
     application.add_handler(CommandHandler("give", disable_protected(give_command)))
     application.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
     application.add_handler(CommandHandler("stats", disable_protected(stats_command)))
@@ -841,28 +842,28 @@ health_monitor_task = None
             await application.shutdown()
         print("👋 Bot stopped")
 
-if __name__ == "__main__":
-    if os.name == "nt":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# if __name__ == "__main__":
+#     if os.name == "nt":
+#         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        if "cannot run the event loop" in str(e).lower():
-            # Loop is running, run main in the existing loop
-            loop = asyncio.get_running_loop()
-            loop.create_task(main())
-            # To keep the script running
-            def stop_loop(signum, frame):
-                loop.stop()
-            signal.signal(signal.SIGINT, stop_loop)
-            try:
-                loop.run_forever()
-            except KeyboardInterrupt:
-                print("\n👋 Bot stopped by user")
-        else:
-            raise
-    except KeyboardInterrupt:
-        print("\n👋 Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Bot error: {e}", exc_info=True)
+#     try:
+#         asyncio.run(main())
+#     except RuntimeError as e:
+#         if "cannot run the event loop" in str(e).lower():
+#             # Loop is running, run main in the existing loop
+#             loop = asyncio.get_running_loop()
+#             loop.create_task(main())
+#             # To keep the script running
+#             def stop_loop(signum, frame):
+#                 loop.stop()
+#             signal.signal(signal.SIGINT, stop_loop)
+#             try:
+#                 loop.run_forever()
+#             except KeyboardInterrupt:
+#                 print("\n👋 Bot stopped by user")
+#         else:
+#             raise
+#     except KeyboardInterrupt:
+#         print("\n👋 Bot stopped by user")
+#     except Exception as e:
+#         logger.error(f"Bot error: {e}", exc_info=True)

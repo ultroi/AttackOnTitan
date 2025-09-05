@@ -34,31 +34,31 @@ DEALER_TYPES = [
         "outcomes": [
             {
                 "name": "Epic Success",
-                "chance": 0.03,
+                "chance": 0.01,
                 "text": "By some miracle, you've found a secret stash intended for a high-priority mission. The Survey Corps will be indebted to you!",
-                "rewards": {"valor": 25, "marks": 50000}
+                "rewards": {"valor": 5, "marks": 50000}
             },
             {
                 "name": "Valuable Discovery",
-                "chance": 0.20,
+                "chance": 0.04,
                 "text": "The supplies were mostly in the form of old military payroll. A huge amount of marks for your valor!",
-                "rewards": {"valor": 10, "marks": 10000}
+                "rewards": {"valor": 1, "marks": 25000}
             },
             {
                 "name": "Solid Gain",
-                "chance": 0.50,
-                "text": "Your squad made it back from the mission! You found a stash of valors.",
-                "rewards": {"marks": 50000}
+                "chance": 0.35,
+                "text": "Your squad made it back from the mission! You found a stash of marks.",
+                "rewards": {"marks": 20000}
             },
             {
                 "name": "Break-Even Deal",
-                "chance": 0.15,
-                "text": "The expedition was cut short, and you could only recover a few scraps. You break even on the mission, but gain a small amount of useful gas.",
-                "rewards": {"marks": 25000, "gas": 5000}
+                "chance": 0.10,
+                "text": "The expedition was cut short, and you could only recover a few scraps. You gain some marks.",
+                "rewards": {"marks": 50000}
             },
             {
                 "name": "Failure",
-                "chance": 0.30,
+                "chance": 0.50,
                 "text": "The expedition was a bust. You encountered an Abnormal Titan and had to retreat, leaving most of the supplies behind. You manage to recover a few remaining rations and gas canisters.",
                 "rewards": {"marks": 5000, "gas": 2000}
             }
@@ -77,35 +77,35 @@ DEALER_TYPES = [
         ],
         "buttons": ["Risk your Valor", "Stay true to your honor"],
         "cost_type": "valor",
-        "cost_amount": 100,
+        "cost_amount": 50,
         "outcomes": [
             {
                 "name": "Epic Success",
-                "chance": 0.03,
+                "chance": 0.005,
                 "text": "The Garrison member was a true ally! They've not only made good on their word, but have given you access to a cache of high-value goods.",
-                "rewards": {"crystals": 1, "valor": 10}
+                "rewards": {"crystals": 1, "marks": 10000}
             },
             {
                 "name": "Valuable Discovery",
-                "chance": 0.20,
+                "chance": 0.085,
                 "text": "The deal was a great success. The Garrison member hands you a heavy satchel full of Marks and a bonus for your help.",
                 "rewards": {"valor": 75, "marks": 10000}
             },
             {
                 "name": "Solid Gain",
-                "chance": 0.50,
+                "chance": 0.30,
                 "text": "The transaction is completed without a hitch. The Garrison member honors their side of the deal.",
                 "rewards": {"valor": 50, "marks": 10000}
             },
             {
                 "name": "Break-Even Deal",
-                "chance": 0.15,
-                "text": "The deal was less profitable than promised, but you manage to walk away without a loss.",
-                "rewards": {"valor": 30, "marks": 5000}
+                "chance": 0.11,
+                "text": "The deal was less profitable than promised, but you manage to walk away with some gains.",
+                "rewards": {"valor": 60, "marks": 5000}
             },
             {
                 "name": "Failure",
-                "chance": 0.30,
+                "chance": 0.50,
                 "text": "You've been swindled. The Garrison member vanishes with most of your funds before you can react.",
                 "rewards": {"valor": 10, "marks": 2500}
             }
@@ -128,33 +128,33 @@ DEALER_TYPES = [
         "outcomes": [
             {
                 "name": "Epic Success",
-                "chance": 0.03,
+                "chance": 0.015,
                 "text": "The mysterious figure smiles. Their power surges through you, infusing you with a monumental supply of resources. This is a secret that could turn the entire war.",
-                "rewards": {"valor": 300, "marks": 75000}
+                "rewards": {"valor": 250, "marks": 75000}
             },
             {
                 "name": "Valuable Discovery",
-                "chance": 0.20,
+                "chance": 0.10,
                 "text": "The ground quakes, and a hidden fissure opens, revealing a bounty of military supplies. It seems the Titan's power has a tangible effect.",
-                "rewards": {"valor": 250, "marks": 40000}
-            },
-            {
-                "name": "Solid Gain",
-                "chance": 0.50,
-                "text": "The figure nods. A bounty of supplies emerges from a rock fissure. It seems the Titan's power holds some merit.",
-                "rewards": {"valor": 125, "marks": 25000}
-            },
-            {
-                "name": "Break-Even Deal",
-                "chance": 0.15,
-                "text": "The figure frowns. The exchange is stable, but nothing more. You feel an ancient power test your will, but it retreats, leaving you with what you started.",
                 "rewards": {"crystals": 1}
             },
             {
+                "name": "Solid Gain",
+                "chance": 0.35,
+                "text": "The figure nods. A bounty of supplies emerges from a rock fissure. It seems the Titan's power holds some merit.",
+                "rewards": {"valor": 150, "marks": 25000}
+            },
+            {
+                "name": "Break-Even Deal",
+                "chance": 0.085,
+                "text": "The figure frowns. The exchange is stable, but nothing more. You feel an ancient power test your will, but it retreats, leaving you with what you started.",
+                "rewards": {"valor": 200, "marks": 50000}
+            },
+            {
                 "name": "Failure",
-                "chance": 0.30,
+                "chance": 0.45,
                 "text": "The figure's eyes glow with malicious intent. The ground beneath you cracks, but no supplies emerge. The voice laughs as your Crystal is consumed. 'A fool's bargain,' it whispers as the figure vanishes.",
-                "rewards": {"valor": 75}
+                "rewards": {"valor": 100}
             }
         ]
     },
@@ -175,31 +175,31 @@ DEALER_TYPES = [
         "outcomes": [
             {
                 "name": "Epic Success",
-                "chance": 0.03,
+                "chance": 0.005,
                 "text": "The Founding Titan recognizes your will. Its power surges through you, reshaping reality itself. You are granted a bounty that will change the course of the war.",
-                "rewards": {"valor": 300, "marks": 75000}
+                "rewards": {"crystals": 1, "valor": 350, "marks": 75000}
             },
             {
                 "name": "Valuable Discovery",
-                "chance": 0.20,
+                "chance": 0.125,
                 "text": "The will of the Founding Titan has smiled upon you. You are granted access to a massive cache of resources that will strengthen your position in the coming war.",
-                "rewards": {"valor": 225, "marks": 50000}
+                "rewards": {"crystals": 1, "valor": 50}
             },
             {
                 "name": "Solid Gain",
-                "chance": 0.50,
+                "chance": 0.32,
                 "text": "Your tribute is accepted, and you are given a portion of its immense power. You feel the ground shake as resources manifest before you.",
-                "rewards": {"valor": 150, "marks": 25000}
+                "rewards": {"crystals": 1, "valor": 200, "marks": 25000}
             },
             {
                 "name": "Break-Even Deal",
-                "chance": 0.15,
+                "chance": 0.08,
                 "text": "The will of the Titans is not swayed. You manage to escape the 'paths' with your essence intact, but nothing more.",
-                "rewards": {"crystals": 1, "valor": 45}
+                "rewards": {"crystals": 1, "valor": 275, "marks": 50000}
             },
             {
                 "name": "Failure",
-                "chance": 0.30,
+                "chance": 0.45,
                 "text": "The voice laughs, a sound that echoes across time. You have been tested and found wanting. The power consumes your offering, leaving you with nothing but a single, haunting thought.",
                 "rewards": {"marks": 25000, "gas": 10000}
             }

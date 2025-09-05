@@ -39,7 +39,13 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif update.callback_query:
             await update.callback_query.answer("⚔️ You cannot access your inventory during an active battle with a titan!", show_alert=True)
         return
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        if update.message:
+            await update.message.reply_text("❌ Database not initialized. Please try again later.")
+        elif update.callback_query:
+            await update.callback_query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
     
     # Force fresh player data fetch to prevent stale data issues after battles
     if hasattr(db, 'invalidate_player_cache'):
@@ -119,7 +125,10 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(query.from_user.id) != user_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
     # --- Optimization: Only fetch player once, use in-memory team for UI updates ---
     player = context.user_data.get('cached_player')
     if not player:
@@ -257,8 +266,10 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(query.from_user.id)
-    db = context.bot_data.get("db") or Database()
-    await db.init_db()  # Ensure DB is initialized before use
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
     team = context.user_data.get("team", [])
     if not team:
         await query.answer("⚠️ Add members first!")
@@ -288,7 +299,10 @@ async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     user_id = str(update.effective_user.id)
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await update.message.reply_text("❌ Database not initialized. Please try again later.")
+        return
     player = await db.get_player(user_id)
     if not player or not player.team:
         await update.message.reply_text("You have not created a team yet.")
@@ -321,7 +335,10 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(query.from_user.id) != user_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
     
     # Always invalidate player cache before showing inventory
     # This ensures we get fresh data and don't use stale cached data
@@ -561,7 +578,7 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = context.bot_data.get("db") or Database()
     # First, initialize DB if needed
     if db.players is None:
-        await db.init_db()
+        logger.warning("Database not properly initialized, players collection is None")
     
     if db.players is not None:
         player_doc = await db.players.find_one({"user_id": user_id})
@@ -651,7 +668,16 @@ def _create_abilities_text(character, char_data) -> str:
     for ability_type in ["active", "passive", "ultimate"]:
         type_title = ability_type.capitalize()
         abilities = getattr(char_data, f"{ability_type}_abilities")
-        unlocked_abilities = [ability for ability in abilities if character.unlocked_abilities.get(ability.name, False)]
+        unlocked_abilities = []
+        
+        for ability in abilities:
+            # Check if ability is unlocked either by the character's unlocked_abilities dict or by level
+            is_unlocked = (
+                character.unlocked_abilities.get(ability.name, False) or
+                character.level >= getattr(ability, 'level_required', 1)
+            )
+            if is_unlocked:
+                unlocked_abilities.append(ability)
         
         if unlocked_abilities:
             abilities_text += f"<b>📌 {type_title} Abilities:</b>\n"
@@ -680,7 +706,13 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
     if query and str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        if update.callback_query:
+            await update.callback_query.edit_message_text("❌ Database not initialized. Please try again later.")
+        elif update.message:
+            await update.message.reply_text("❌ Database not initialized. Please try again later.")
+        return
     user_id = update.effective_user.id
     player = await db.get_player(str(user_id))
     if not player or not player.owned_characters:
@@ -732,7 +764,7 @@ async def char_detail(update: Update, context: ContextTypes.DEFAULT_TYPE, *, cha
                 else:
                     await update.callback_query.edit_message_text(text="❌ No matching character found. Please check the name.", reply_markup=None)
             return
-    character = await db.get_character(user_id, matched_name)
+    character = await db.get_character(str(user_id), matched_name)
     if not character:
         if update.message:
             await update.message.reply_text(f"❌ Character {matched_name} not found.")
@@ -802,9 +834,6 @@ async def char_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if context.user_data is None:
             context.user_data = {}
         context.user_data['owner_id'] = owner_id
-    if query and str(query.from_user.id) != owner_id:
-        await query.answer("You are not authorized to view this.", show_alert=True)
-        return
     char_name = None
     if query and hasattr(query, 'data') and query.data.startswith("char_detail_"):
         char_name = query.data.replace("char_detail_", "").replace("_", " ")
@@ -834,7 +863,11 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.user_data['last_abilities_click'] = now
     
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
+    
     player = await db.get_player(user_id)
     if not player:
         await query.edit_message_text("❌ You have no player account.")
@@ -891,9 +924,12 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if char_name is None:
         char_name = query.data.replace("view_weapons_", "").replace("_", " ")
     logger.info(f"[view_weapons_char] user_id: {user_id}, char_name: {char_name}")
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.answer("❌ Database not initialized. Please try again later.", show_alert=True)
+        return
     player = await db.get_player(user_id)
-    character = await db.get_character(int(user_id), char_name)
+    character = await db.get_character(str(user_id), char_name)
     logger.info(f"[view_weapons_char] player: {player is not None}, character: {character is not None}")
     if not player or not character:
         logger.warning(f"[view_weapons_char] Player or character not found for user_id={user_id}, char_name={char_name}")
@@ -1013,8 +1049,11 @@ async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
         char_name = " ".join(parts[:-1])
         weapon_key = parts[-1]
     logger.info(f"[equip_weapon] user_id: {user_id}, char_name: {char_name}, weapon_key: {weapon_key}")
-    db = context.bot_data.get("db") or Database()
-    character = await db.get_character(int(user_id), char_name)
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.answer("❌ Database not initialized. Please try again later.", show_alert=True)
+        return
+    character = await db.get_character(str(user_id), char_name)
     logger.info(f"[equip_weapon] character found: {character is not None}")
     if not character:
         logger.warning(f"[equip_weapon] Character not found for user_id={user_id}, char_name={char_name}")
@@ -1043,8 +1082,6 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     owner_id = context.user_data.get('owner_id') if context.user_data else None
     if not owner_id and query:
         owner_id = str(query.from_user.id)
-        if context.user_data is None:
-            context.user_data = {}
         context.user_data['owner_id'] = owner_id
     if not query or str(query.from_user.id) != owner_id:
         if query:
@@ -1053,11 +1090,14 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = str(query.from_user.id)
     char_name = query.data.replace("fill_gas_", "").replace("_", " ")
-    db = context.bot_data.get("db") or Database()
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.answer("❌ Database not initialized. Please try again later.", show_alert=True)
+        return
     try:
         db.invalidate_character_cache(user_id, char_name)
         player = await db.get_player(user_id)
-        character = await db.get_character(int(user_id), char_name)
+        character = await db.get_character(str(user_id), char_name)
         if not player or not character:
             await query.answer("❌ Character or Player not found.", show_alert=True)
             return
@@ -1072,13 +1112,13 @@ async def fill_gas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         gas_to_fill = min(gas_needed, player.gas)
         try:
             player.gas -= gas_to_fill
-            await db.update_player(int(user_id), {"gas": player.gas})
+            await db.update_player(str(user_id), {"gas": player.gas})
             character.gas += gas_to_fill
             await db.update_character(character)
             db.invalidate_character_cache(user_id, char_name)
         except Exception:
             try:
-                await db.update_player(int(user_id), {"gas": player.gas + gas_to_fill})
+                await db.update_player(str(user_id), {"gas": player.gas + gas_to_fill})
                 await query.answer("❌ Gas filling failed. Your gas has been refunded.", show_alert=True)
                 return
             except:
@@ -1151,4 +1191,49 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     except Exception as e:
         logger.error(f"Error closing profile: {e}")
+
+@maintenance_protected
+@ban_protected
+async def show_characters(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Display all unlocked characters in formatted list"""
+    if context.user_data is None:
+        context.user_data = {}
+    user_id = str(update.effective_user.id)
+    
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await update.message.reply_text("❌ Database not initialized. Please try again later.")
+        return
+    
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        return
+    
+    owned_characters = player.owned_characters or []
+    if not owned_characters:
+        await update.message.reply_text("🎭 You have no unlocked characters yet.\nComplete missions to unlock more!")
+        return
+    
+    # Build formatted character list
+    text = "🎭 <b>Your Unlocked Characters</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for i, char_name in enumerate(owned_characters, 1):
+        char_data = get_character_data(char_name)
+        if char_data:
+            role = char_data.role or "Unknown"
+            archetype = char_data.archetype or "Unknown"
+            text += f"👤 <b>{i}. {escape(char_name)}</b>\n"
+            text += f"   └ <i>{escape(role)}</i>\n"
+            text += f"   └ <i>{escape(archetype)}</i>\n\n"
+        else:
+            text += f"👤 <b>{i}. {escape(char_name)}</b>\n"
+            text += f"   └ <i>Character data not found</i>\n\n"
+    
+    text += f"📊 <b>Total:</b> {len(owned_characters)} characters\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    text += "<i>Use /char &lt;name&gt; for detailed info</i>"
+    
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 

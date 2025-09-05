@@ -44,7 +44,8 @@ from game.profile_system import (
     profile, char_detail,
     show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
     show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, referral_info,
-    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities
+    fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
+    show_characters
 )
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from utils.fastapi_dashboard import include_dashboard_route
@@ -654,9 +655,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("status", disable_protected(profile)))
     app_instance.add_handler(CommandHandler("buy", disable_protected(buy_command)))
     app_instance.add_handler(CommandHandler("referral", disable_protected(referral_info)))
-    app_instance.add_handler(CommandHandler("char", disable_protected(char_detail)))
+    app_instance.add_handler(CommandHandler("chars", disable_protected(show_characters)))
     app_instance.add_handler(CommandHandler("give", disable_protected(give_command)))
     app_instance.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
+    app_instance.add_handler(CommandHandler("remove", disable_protected(add_resource_command)))
     app_instance.add_handler(CommandHandler("stats", disable_protected(stats_command)))
     app_instance.add_handler(CommandHandler("missions", disable_protected(missions_command)))
     app_instance.add_handler(CommandHandler("resetmission", disable_protected(reset_mission_command)))

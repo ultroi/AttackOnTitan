@@ -63,10 +63,10 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         
         # Try exact match first
-        character = await db.get_character(target_user_id_int, char_name)
+        character = await db.get_character(str(target_user_id_int), char_name)
         # If not found, try case-insensitive and partial search
         if not character:
-            player_chars = await db.get_player_characters(target_user_id_int)
+            player_chars = await db.get_player_characters(str(target_user_id_int))
             match = None
             # 1. Try case-insensitive full match
             for c in player_chars:
@@ -139,10 +139,162 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 logger.error(f"Failed to send character level down log: {e}")
         return
 
+    # --- Custom: /add char <char_name> [user_id] ---
+    if len(args) >= 2 and args[0].lower() == "char" and args[1].lower() != "level":
+        char_name = args[1]
+        # Determine user id
+        target_user_id = None
+        if len(args) >= 3:
+            target_user_id = args[2]
+        elif message:
+            reply_to = getattr(message, "reply_to_message", None)
+            if reply_to is not None:
+                from_user = getattr(reply_to, "from_user", None)
+                if from_user is not None and hasattr(from_user, "id"):
+                    target_user_id = from_user.id
+        if not target_user_id:
+            target_user_id = user_id
+        try:
+            target_user_id_int = int(target_user_id)
+        except (TypeError, ValueError):
+            if message:
+                await message.reply_text("Invalid user ID.")
+            return
+        db = context.bot_data.get("db")
+        if not isinstance(db, Database):
+            if message:
+                await message.reply_text("Database not initialized.")
+            return
+        
+        # Check if player exists
+        player = await db.get_player(str(target_user_id_int))
+        if not player:
+            if message:
+                await message.reply_text("Target user not found.")
+            return
+        
+        # Check if character already exists
+        existing_char = await db.get_character(str(target_user_id_int), char_name)
+        if existing_char:
+            if message:
+                await message.reply_text(f"Character '{char_name}' already exists for user {target_user_id_int}.")
+            return
+        
+        # Check if character type is valid
+        from database.characters import get_character_data
+        char_data = get_character_data(char_name)
+        if not char_data:
+            if message:
+                await message.reply_text(f"Character type '{char_name}' not found. Available characters: Hitch Dreyse, Mina Carolina, Daz")
+            return
+        
+        # Create the character
+        try:
+            character = await db.create_character(
+                user_id=str(target_user_id_int),
+                name=char_name,
+                character_type=char_name,
+                current_hp=char_data.base_stats.HP
+            )
+            if message:
+                await message.reply_text(f"Character '{char_name}' added to user {target_user_id_int}'s collection!")
+            
+            # Log the character addition
+            admin_name = user.first_name or "Admin"
+            log_msg = (
+                f"<b>#CharacterAdded</b>\n\n"
+                f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+                f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+                f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+                f"<b>Character</b>: <code>{char_name}</code>\n"
+                f"<b>Action</b>: <code>Added to collection</code>"
+            )
+            try:
+                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Failed to send character addition log: {e}")
+        except Exception as e:
+            logger.error(f"Failed to create character: {e}")
+            if message:
+                await message.reply_text("Failed to add character. Please try again.")
+        return
+
+    # --- Custom: /remove char <char_name> [user_id] ---
+    if len(args) >= 2 and args[0].lower() == "char":
+        char_name = args[1]
+        # Determine user id
+        target_user_id = None
+        if len(args) >= 3:
+            target_user_id = args[2]
+        elif message:
+            reply_to = getattr(message, "reply_to_message", None)
+            if reply_to is not None:
+                from_user = getattr(reply_to, "from_user", None)
+                if from_user is not None and hasattr(from_user, "id"):
+                    target_user_id = from_user.id
+        if not target_user_id:
+            target_user_id = user_id
+        try:
+            target_user_id_int = int(target_user_id)
+        except (TypeError, ValueError):
+            if message:
+                await message.reply_text("Invalid user ID.")
+            return
+        db = context.bot_data.get("db")
+        if not isinstance(db, Database):
+            if message:
+                await message.reply_text("Database not initialized.")
+            return
+        
+        # Check if player exists
+        player = await db.get_player(str(target_user_id_int))
+        if not player:
+            if message:
+                await message.reply_text("Target user not found.")
+            return
+        
+        # Check if character exists
+        existing_char = await db.get_character(str(target_user_id_int), char_name)
+        if not existing_char:
+            if message:
+                await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
+            return
+        
+        # Remove character from player's owned_characters list
+        player.remove_character(char_name)
+        await db.update_player(str(target_user_id_int), {"owned_characters": player.owned_characters})
+        
+        # Delete the character document from database
+        if db.characters is None:
+            logger.error("Characters collection not initialized")
+            if message:
+                await message.reply_text("Database not initialized properly.")
+            return
+        await db.characters.delete_one({"user_id": str(target_user_id_int), "name": char_name})
+        
+        if message:
+            await message.reply_text(f"Character '{char_name}' removed from user {target_user_id_int}'s collection!")
+        
+        # Log the character removal
+        admin_name = user.first_name or "Admin"
+        log_msg = (
+            f"<b>#CharacterRemoved</b>\n\n"
+            f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
+            f"<b>Admin ID</b>: <code>{user_id}</code>\n"
+            f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
+            f"<b>Character</b>: <code>{char_name}</code>\n"
+            f"<b>Action</b>: <code>Removed from collection</code>"
+        )
+        try:
+            await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.error(f"Failed to send character removal log: {e}")
+        return
+
     # --- Default: player resource/level add ---
     if len(args) < 2:
         if message:
-            await message.reply_text("Usage: /add <gems|crystal|gas|valor|level> <amount> [user_id]")
+            await message.reply_text("Usage: /add <gems|crystal|gas|valor|level> <amount> [user_id]\nOr: /add char <char_name> [user_id]\nOr: /add char level <char_name> <level_number> [user_id]")
         return
     resource = args[0].lower()
     amount = args[1]
@@ -168,7 +320,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     if resource not in ["marks", "crystal", "gas", "valor", "level"]:
         if message:
-            await message.reply_text("Resource must be one of: gems, crystal, gas, valor, level.")
+            await message.reply_text("Resource must be one of: marks, crystal, gas, valor, level.")
         return
     db = context.bot_data.get("db")
     if not isinstance(db, Database):
@@ -209,7 +361,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             while player.level < target_level:
                 level_up_data = player.level_up()
                 level_ups.append(level_up_data)
-            await db.update_player(target_user_id_int, player.dict())
+            await db.update_player(str(target_user_id_int), player.dict())
             if message:
                 await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
             
@@ -233,7 +385,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             old_level = player.level
             # Simple approach - just set the level directly
             player.level = max(1, target_level)  # Ensure level doesn't go below 1
-            await db.update_player(target_user_id_int, {"level": player.level})
+            await db.update_player(str(target_user_id_int), {"level": player.level})
             if message:
                 await message.reply_text(f"User {target_user_id_int} level set to {player.level}.")
             
@@ -251,7 +403,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             except Exception as e:
                 logger.error(f"Failed to send player level down log: {e}")
             return
-    await db.update_player(target_user_id_int, update_data)
+    await db.update_player(str(target_user_id_int), update_data)
     
     # Log the resource change
     admin_name = user.first_name or "Admin"

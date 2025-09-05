@@ -24,9 +24,8 @@ async def explore_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_id_str = str(user_id)
     
-    # 10% chance for dealer to appear during explore
-    if random.random() < 0.1:
-        # Clean up any existing titan before showing dealer
+    # 2% chance for dealer to appear during explore
+    if random.random() < 0.02:
         try:
             from database.db import Database
             db = context.bot_data.get("db")
