@@ -723,7 +723,6 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(view_weapons_char, pattern=r"^view_weapons_"))
     app_instance.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
     app_instance.add_handler(CallbackQueryHandler(view_abilities, pattern=r"^view_abilities_"))
-
     app_instance.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
 

@@ -635,7 +635,7 @@ class Database:
             # Cache miss or expired
             CACHE_STATS["misses"] += 1
             
-            # Use projection for faster reads - include only essential fields for explore
+            # Try exact match first
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
@@ -643,6 +643,16 @@ class Database:
                 "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
                 "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
             })
+            
+            # If not found, try case-insensitive match
+            if not character_data:
+                character_data = await self.characters.find_one({
+                    "user_id": str(user_id),
+                    "name": {"$regex": f"^{character_name}$", "$options": "i"}
+                }, {
+                    "user_id": 1, "name": 1, "character_type": 1, "current_hp": 1, "level": 1,
+                    "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
+                })
             
             if character_data:
                 character = Character(**character_data)

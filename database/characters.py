@@ -1295,13 +1295,23 @@ CHARACTER_IMAGES = {
 # ======================
 
 def get_character_data(character_name: str) -> Optional[CharacterData]:
-    """Safe character data retrieval"""
+    """Safe character data retrieval with case-insensitive matching"""
     if not character_name or not str(character_name).strip():
         return None
+    
+    # Try exact match first
     character = CHARACTERS.get(character_name)
-    if not character:
-        logger.warning(f"Character data not found for: {character_name}")
-    return character
+    if character:
+        return character
+    
+    # Try case-insensitive matching
+    character_name_lower = character_name.lower()
+    for name, char_data in CHARACTERS.items():
+        if name.lower() == character_name_lower:
+            return char_data
+    
+    logger.warning(f"Character data not found for: {character_name}")
+    return None
 
 def add_new_character(character_data: Dict) -> None:
     """Safe method to add new characters"""

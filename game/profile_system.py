@@ -662,10 +662,12 @@ def _create_char_profile_text(character, char_data) -> str:
 
 
 
-def _create_abilities_text(character, char_data) -> str:
+def _create_abilities_text(character, char_data, category=None) -> str:
     abilities_text = f"<b>{escape(character.name)}'s Abilities</b>\n\n"
     
-    for ability_type in ["active", "passive", "ultimate"]:
+    ability_types = ["active", "passive", "ultimate"] if category is None else [category]
+    
+    for ability_type in ability_types:
         type_title = ability_type.capitalize()
         abilities = getattr(char_data, f"{ability_type}_abilities")
         unlocked_abilities = []
@@ -853,7 +855,17 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    char_name = query.data.replace("view_abilities_", "").replace("_", " ")
+    
+    # Parse callback data to extract char_name and category
+    data = query.data.replace("view_abilities_", "")
+    if "_" in data:
+        parts = data.split("_", 1)
+        char_name = parts[0].replace("_", " ")
+        category = parts[1] if len(parts) > 1 else None
+    else:
+        char_name = data.replace("_", " ")
+        category = None
+    
     user_id = str(query.from_user.id)
     
     # Anti-spam check
@@ -883,8 +895,16 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Character data not found.")
         return
         
-    abilities_text = _create_abilities_text(character, char_data)
-    keyboard = [[InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")]]
+    abilities_text = _create_abilities_text(character, char_data, category)
+    
+    # Create keyboard with category buttons
+    keyboard = [
+        [InlineKeyboardButton("Active", callback_data=f"view_abilities_{character.name.replace(' ', '_')}_active"),
+         InlineKeyboardButton("Passive", callback_data=f"view_abilities_{character.name.replace(' ', '_')}_passive"),
+         InlineKeyboardButton("Ultimate", callback_data=f"view_abilities_{character.name.replace(' ', '_')}_ultimate")],
+        [InlineKeyboardButton("All Abilities", callback_data=f"view_abilities_{character.name.replace(' ', '_')}")],
+        [InlineKeyboardButton("Back", callback_data=f"char_detail_{character.name.replace(' ', '_')}")]
+    ]
     
     # Update the message
     try:
