@@ -656,6 +656,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("buy", disable_protected(buy_command)))
     app_instance.add_handler(CommandHandler("referral", disable_protected(referral_info)))
     app_instance.add_handler(CommandHandler("chars", disable_protected(show_characters)))
+    app_instance.add_handler(CommandHandler("char", disable_protected(char_detail)))
     app_instance.add_handler(CommandHandler("give", disable_protected(give_command)))
     app_instance.add_handler(CommandHandler("add", disable_protected(add_resource_command)))
     app_instance.add_handler(CommandHandler("remove", disable_protected(add_resource_command)))

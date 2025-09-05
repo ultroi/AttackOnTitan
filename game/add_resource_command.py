@@ -175,29 +175,61 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         
         # Check if character already exists
         existing_char = await db.get_character(str(target_user_id_int), char_name)
+        if not existing_char:
+            player_chars = await db.get_player_characters(str(target_user_id_int))
+            match = None
+            # 1. Try case-insensitive full match
+            for c in player_chars:
+                if c.name.lower() == char_name.lower():
+                    match = c
+                    break
+            # 2. If still not found, try case-insensitive partial (substring) match
+            if not match:
+                for c in player_chars:
+                    if char_name.lower() in c.name.lower():
+                        match = c
+                        break
+            existing_char = match
         if existing_char:
             if message:
                 await message.reply_text(f"Character '{char_name}' already exists for user {target_user_id_int}.")
             return
         
         # Check if character type is valid
-        from database.characters import get_character_data
+        from database.characters import get_character_data, CHARACTERS
         char_data = get_character_data(char_name)
+        matched_char_name = None
+        
+        # If exact match fails, try case-insensitive matching
+        if not char_data:
+            for existing_name in CHARACTERS.keys():
+                if existing_name.lower() == char_name.lower():
+                    matched_char_name = existing_name
+                    char_data = CHARACTERS[existing_name]
+                    break
+                elif char_name.lower() in existing_name.lower():
+                    matched_char_name = existing_name
+                    char_data = CHARACTERS[existing_name]
+                    break
+        
         if not char_data:
             if message:
                 await message.reply_text(f"Character type '{char_name}' not found. Available characters: Hitch Dreyse, Mina Carolina, Daz")
             return
         
+        # Use the matched character name if found, otherwise use original
+        final_char_name = matched_char_name if matched_char_name else char_name
+        
         # Create the character
         try:
             character = await db.create_character(
                 user_id=str(target_user_id_int),
-                name=char_name,
-                character_type=char_name,
+                name=final_char_name,
+                character_type=final_char_name,
                 current_hp=char_data.base_stats.HP
             )
             if message:
-                await message.reply_text(f"Character '{char_name}' added to user {target_user_id_int}'s collection!")
+                await message.reply_text(f"Character '{final_char_name}' added to user {target_user_id_int}'s collection!")
             
             # Log the character addition
             admin_name = user.first_name or "Admin"
@@ -206,7 +238,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
                 f"<b>Admin ID</b>: <code>{user_id}</code>\n"
                 f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
-                f"<b>Character</b>: <code>{char_name}</code>\n"
+                f"<b>Character</b>: <code>{final_char_name}</code>\n"
                 f"<b>Action</b>: <code>Added to collection</code>"
             )
             try:
@@ -256,12 +288,27 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         # Check if character exists
         existing_char = await db.get_character(str(target_user_id_int), char_name)
         if not existing_char:
+            player_chars = await db.get_player_characters(str(target_user_id_int))
+            match = None
+            # 1. Try case-insensitive full match
+            for c in player_chars:
+                if c.name.lower() == char_name.lower():
+                    match = c
+                    break
+            # 2. If still not found, try case-insensitive partial (substring) match
+            if not match:
+                for c in player_chars:
+                    if char_name.lower() in c.name.lower():
+                        match = c
+                        break
+            existing_char = match
+        if not existing_char:
             if message:
                 await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
             return
         
         # Remove character from player's owned_characters list
-        player.remove_character(char_name)
+        player.remove_character(existing_char.name)
         await db.update_player(str(target_user_id_int), {"owned_characters": player.owned_characters})
         
         # Delete the character document from database
@@ -270,10 +317,10 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             if message:
                 await message.reply_text("Database not initialized properly.")
             return
-        await db.characters.delete_one({"user_id": str(target_user_id_int), "name": char_name})
+        await db.characters.delete_one({"user_id": str(target_user_id_int), "name": existing_char.name})
         
         if message:
-            await message.reply_text(f"Character '{char_name}' removed from user {target_user_id_int}'s collection!")
+            await message.reply_text(f"Character '{existing_char.name}' removed from user {target_user_id_int}'s collection!")
         
         # Log the character removal
         admin_name = user.first_name or "Admin"
@@ -282,7 +329,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             f"<b>Admin</b>: <a href=\"tg://user?id={user_id}\">{admin_name}</a>\n"
             f"<b>Admin ID</b>: <code>{user_id}</code>\n"
             f"<b>Target User</b>: <code>{target_user_id_int}</code>\n"
-            f"<b>Character</b>: <code>{char_name}</code>\n"
+            f"<b>Character</b>: <code>{existing_char.name}</code>\n"
             f"<b>Action</b>: <code>Removed from collection</code>"
         )
         try:
