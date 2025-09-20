@@ -1,6 +1,5 @@
 import logging
 from database.db_instance import get_database
-fro
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from dotenv import load_dotenv
 import os
@@ -18,8 +17,8 @@ async def initialize_database() -> None:
     try:
         
         # Get the database instance
-        db: AsyncIOMotorDatabase = get_database()
-        if not db:
+        db = await get_database()
+        if db is None:
             raise ValueError("Database instance is not available")
         # Check if the database is connected
         if not db.client:
@@ -35,6 +34,7 @@ async def initialize_database() -> None:
         await db.titans.create_index([("name", 1), ("level", 1)], unique=True, background=True)
         await db.titans.create_index("spawn_areas", background=True)
         await db.equipment.create_index("name", unique=True, background=True)
+        await db.characters.create_index([("user_id", 1), ("name", 1)], unique=True, background=True)
         logger.info("Created database indexes")
 
         # Drop existing validation rules first (if they exist)
