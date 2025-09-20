@@ -649,6 +649,11 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def _create_char_profile_text(character, char_data) -> str:
     """Generates the character profile text."""
+    # Ensure stats is a CharacterStats object
+    if isinstance(character.stats, dict):
+        from database.models import CharacterStats
+        character.stats = CharacterStats(**character.stats)
+    
     profile_text = (
         f"<b>{escape(character.name)}</b>\n"
         f"<b>Level:</b> {character.level}\n"

@@ -1,29 +1,3 @@
-"""
-Attack on Titan Bot - Local Test Runner
-
-This file is designed for testing the bot locally before deploying to production.
-It follows the same structure as main.py but runs in polling mode for local development.
-
-Features:
-- Loads bot token from .env file (TEST_BOT_TOKEN)
-- Uses test database to prevent changes to production data
-- Runs the bot with test token for local testing
-- Supports all commands and functionality of the production bot
-
-Usage:
-1. Set TEST_BOT_TOKEN in .env file
-2. Set TEST_MODE=true in .env (default: true)
-3. Run: python bot.py
-4. Bot will start and respond to commands in Telegram
-
-Environment Variables:
-- TEST_BOT_TOKEN: Your test bot token
-- TEST_MODE: true/false (enables test database)
-- DEBUG: true/false (enables debug logging)
-- MONGODB_URI: MongoDB connection string
-- DB_NAME: Database name (will append "_test" in test mode)
-"""
-
 import os
 import logging
 import asyncio
