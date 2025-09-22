@@ -1064,6 +1064,44 @@ class LocalMemoryDatabase:
             if str(user_id) in self._players_dict:
                 if character_name not in self._players_dict[str(user_id)].owned_characters:
                     self._players_dict[str(user_id)].owned_characters.append(character_name)
+                    
+                    # Auto-add to team if there's space
+                    player = self._players_dict[str(user_id)]
+                    if player.active_team == "team1":
+                        current_team = player.team1
+                        team_field = "team1"
+                    else:
+                        current_team = player.team2
+                        team_field = "team2"
+                    
+                    team_members = [m.character_name for m in current_team] if current_team else []
+                    
+                    if len(team_members) < 3 and character_name not in team_members:
+                        used_positions = {m.position for m in current_team} if current_team else set()
+                        next_pos = min(set([1, 2, 3]) - used_positions)
+                        new_member = TeamMember(character_name=character_name, position=next_pos)
+                        
+                        if current_team:
+                            current_team.append(new_member)
+                        else:
+                            current_team = [new_member]
+                        
+                        # Update the player's team in local memory
+                        if team_field == "team1":
+                            player.team1 = current_team
+                        else:
+                            player.team2 = current_team
+                        
+                        # Also update in persistent database if available
+                        try:
+                            motor_db = await get_persistent_database()
+                            if motor_db is not None:
+                                db = Database()
+                                await db.init_db(motor_db)
+                                await db.update_player(str(user_id), {team_field: [m.dict() for m in current_team]})
+                        except Exception as db_e:
+                            logger.warning(f"Failed to update team in persistent database: {db_e}")
+                
                 return True
             return False
         except Exception as e:

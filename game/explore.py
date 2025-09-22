@@ -166,6 +166,47 @@ async def cleanup_user_timeout_tasks():
         logger.info(f"Cleaned up {len(to_remove)} completed timeout tasks")
 
 
+async def _handle_dealer_result(dealer_task: asyncio.Task, send_message_task: asyncio.Task, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id_str: str):
+    """Handle the result of the background dealer check.
+    If a dealer appeared, remove the previously sent titan message and cancel its timeout.
+    """
+    try:
+        result = await dealer_task
+        # If the dealer check returned truthy (dealer appeared), try to delete the titan message
+        if result:
+            try:
+                sent_message = None
+                try:
+                    sent_message = await send_message_task
+                except Exception:
+                    # send_message_task may already be done or failed; attempt to fetch via context if possible
+                    sent_message = None
+
+                # Cancel any pending titan timeout
+                if user_id_str in user_timeout_tasks:
+                    t = user_timeout_tasks[user_id_str]
+                    try:
+                        t.cancel()
+                    except Exception:
+                        pass
+
+                # Delete or edit the titan message to inform the user dealer appeared
+                if sent_message:
+                    try:
+                        await sent_message.delete()
+                    except Exception:
+                        try:
+                            await sent_message.edit_text("A dealer appeared and interrupted the titan encounter.")
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.error(f"Error cleaning up titan message after dealer appeared: {e}")
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        logger.error(f"Error in _handle_dealer_result: {e}")
+
+
 
 # Cache for battle system import to avoid repeated imports
 _battle_system_cache = {}
@@ -375,18 +416,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data and "player_level" in context.user_data:
         actual_player_level = context.user_data.get("player_level", 1)
     
-    # Check for dealer encounter (10% chance) - BEFORE captcha and titan generation
-    dealer_appeared = False
+    # Check for dealer encounter (10% chance) - run in background to avoid blocking initial reply
+    dealer_check_task = None
     try:
         from game.dealer_command import explore_dealer
-        dealer_appeared = await explore_dealer(update, context)
+        # Start dealer check in background; it may send its own message if a dealer appears
+        dealer_check_task = asyncio.create_task(explore_dealer(update, context))
     except Exception as e:
-        logger.error(f"Error checking dealer encounter: {e}")
-        dealer_appeared = False
-    
-    # If dealer appeared, don't show titan or captcha
-    if dealer_appeared:
-        return
+        logger.error(f"Error scheduling dealer encounter check: {e}")
+        dealer_check_task = None
     
     should_spawn_captcha = (
         random.random() < 0.02 and 
@@ -459,6 +497,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     disable_web_page_preview=False
                 )
             )
+            # If we started a dealer check, handle its result without blocking the initial response.
+            if dealer_check_task:
+                asyncio.create_task(_handle_dealer_result(dealer_check_task, send_message_task, update, context, user_id_str))
             # Record response time immediately
             response_time = (time.time() - start_time) * 1000
             if response_time > 100:
