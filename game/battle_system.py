@@ -1778,7 +1778,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         
         asyncio.create_task(_process_post_battle_updates(
             db, player_obj, participating_chars, participating_level_infos_only, user_id, query.message.chat_id if query.message else None,
-            context.bot.send_message, rewards["marks"], battle
+            context.bot.send_message, rewards["marks"], battle, victory=True, player_level_info=player_level_info
         ))
 
     else:
@@ -1865,7 +1865,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
 
 async def _process_post_battle_updates(db, player_obj, participating_characters, participating_level_infos, user_id, chat_id, send_func,
-                                      marks_reward, battle, victory=False):
+                                      marks_reward, battle, victory=False, player_level_info=None):
     """Process mission progress and level up messages in background."""
     try:
         # Get fresh player data for mission processing
@@ -1916,7 +1916,7 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
 
         # Send level up messages for all participating characters
         for i, (character, level_info) in enumerate(zip(participating_characters, participating_level_infos)):
-            await _send_level_up_messages(level_info, None, character, player_obj if i == 0 else None, chat_id, send_func)
+            await _send_level_up_messages(level_info, player_level_info if i == 0 else None, character, player_obj if i == 0 else None, chat_id, send_func)
 
         # Track battle stats in background
         try:
