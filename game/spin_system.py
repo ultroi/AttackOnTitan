@@ -312,12 +312,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         
         # Add redeem buttons based on available medals
         if medals >= 10:
-            keyboard.append([InlineKeyboardButton("🔄 10 Medals → 500 Gas", callback_data="redeem_gas")])
-        if medals >= 25:
-            keyboard.append([InlineKeyboardButton("🔄 25 Medals → 1 RDO", callback_data="redeem_rdo")])
+            keyboard.append([InlineKeyboardButton("10 Medals → 500 Gas", callback_data="redeem_gas")])
+        # if medals >= 25:
+        #     keyboard.append([InlineKeyboardButton("25 Medals → 1 RDO", callback_data="redeem_rdo")])
         if medals >= 50:
-            keyboard.append([InlineKeyboardButton("🔄 50 Medals → Ultra-Rare Fragment", callback_data="redeem_fragment")])
-        
+            keyboard.append([InlineKeyboardButton("50 Medals → Ultra-Rare Fragment", callback_data="redeem_fragment")])
+
         # Always show back button
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="spin_menu")])
 
@@ -528,7 +528,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if reward["amount"] > 1:
             text += f" x{reward['amount']}"
         if reward["duplicate"]:
-            text += f" (Duplicate! +{reward['valor_refund']}💎)"
+            text += f" (Duplicate! +{reward['valor_refund']}⚔️)"
         text += "\n"
 
     if total_medals > 0:
@@ -537,7 +537,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if streak_bonus:
         text += f"\n🎯 <b>Streak Bonus:</b> +2⚔️ Valor"
 
-    text += f"\n\n💎 <b>Remaining Valor:</b> {player.valor}"
+    text += f"\n\n⚔️ <b>Remaining Valor:</b> {player.valor}"
 
     keyboard = [
         [InlineKeyboardButton("🔙 Back", callback_data="spin_menu"),
