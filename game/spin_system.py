@@ -46,8 +46,8 @@ RARITY_WEIGHTS = {
 }
 
 SPIN_COSTS = {
-    "single": 5,  # 5 Valor per spin
-    "multi": 45,  # 45 Valor for 10 spins
+    "single": 5, 
+    "multi": 45,  
 }
 
 class SpinSystem:
@@ -156,7 +156,9 @@ class SpinSystem:
                     reward_info["valor_refund"] = 10
                 player.valor += reward_info["valor_refund"]
             else:
+                # Add character to owned list AND create character data
                 player.owned_characters.append(item_key)
+                # Note: Character data creation will be handled after spin processing
 
         return reward_info
 
@@ -222,8 +224,7 @@ async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}⚔️)", callback_data="spin_single"),
          InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}⚔️)", callback_data="spin_multi")],
         [InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds"),
-         InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")],
-        [InlineKeyboardButton("❌ Close", callback_data="spin_close")]
+         InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")]
     ]
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -248,11 +249,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     spin_system = context.bot_data.get("spin_system", SpinSystem())
 
-    if data == "spin_close":
-        await query.edit_message_text("Spin menu closed.")
-        return
-
-    elif data == "spin_odds":
+    if data == "spin_odds":
         text = "🎰 <b>Spin Info</b>\n"
         text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
@@ -404,6 +401,16 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 "owned_characters": player.owned_characters,
                 "updated_at": datetime.now(timezone.utc)
             })
+
+            # Create character data
+            try:
+                success = await db.add_new_character_to_player(user_id, awarded_item)
+                if success:
+                    logger.info(f"Created character data for {awarded_item} from fragments for user {user_id}")
+                else:
+                    logger.warning(f"Failed to create character data for {awarded_item} from fragments for user {user_id}")
+            except Exception as e:
+                logger.error(f"Error creating character {awarded_item} from fragments for user {user_id}: {e}")
             
             item_name = SPIN_ITEMS[awarded_item]["name"]
             await query.answer(f"🎉 Congratulations! You collected 50 fragments and received: {item_name}!", show_alert=True)
@@ -446,102 +453,212 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}⚔️)", callback_data="spin_single"),
              InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}⚔️)", callback_data="spin_multi")],
             [InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds"),
-             InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")],
-            [InlineKeyboardButton("❌ Close", callback_data="spin_close")]
+             InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")]
         ]
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         return
 
-    # Handle actual spins
-    num_spins = 1 if data == "spin_single" else 10
-    cost = spin_system.get_spin_cost(num_spins)
+    elif data.startswith("spin_again_"):
+        # Anti-spam protection for spin again buttons
+        now = datetime.now(timezone.utc).timestamp()
+        last_spin_action = context.user_data.get('last_spin_action_time', 0)
+        if now - last_spin_action < 2:  # 3 second cooldown between spin actions
+            await query.answer("⏳ Please wait a second before spinning again!", show_alert=True)
+            return
+        context.user_data['last_spin_action_time'] = now
+        
+        # Handle spin again with stored type
+        try:
+            num_spins = int(data.split("_")[-1])
+        except:
+            num_spins = context.user_data.get('last_spin_type', 1)
+        
+        # Check if player has enough valor
+        cost = spin_system.get_spin_cost(num_spins)
+        if player.valor < cost:
+            insufficient_text = "🎰 <b>Spin System</b>\n"
+            insufficient_text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            insufficient_text += f"❌ <b>Insufficient Valor!</b>\n\n"
+            insufficient_text += f"💰 <b>Cost:</b> {cost} Valor\n"
+            insufficient_text += f"⚔️ <b>Your Valor:</b> {player.valor}\n\n"
+            insufficient_text += "<i>Get more Valor to spin!</i>"
 
-    if player.valor < cost:
-        await query.answer(f"❌ Not enough Valor! Need {cost}, you have {player.valor}", show_alert=True)
-        return
+            keyboard = [
+                [InlineKeyboardButton("🎰 Spin Again", callback_data=f"spin_again_{num_spins}"),
+                 InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds")],
+                [InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")]
+            ]
 
-    # Deduct cost
-    player.valor -= cost
+            await query.edit_message_text(insufficient_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+            return
+        
+        # Store last spin type and proceed with spin
+        context.user_data['last_spin_type'] = num_spins
+        # Fall through to spin handling with num_spins set
 
-    # Track community spins
-    if user_id not in spin_system.spin_counts:
-        spin_system.spin_counts[user_id] = 0
-    spin_system.spin_counts[user_id] += num_spins
+    if data in ["spin_single", "spin_multi"] or data.startswith("spin_again_"):
+        if not data.startswith("spin_again_"):
+            # Anti-spam protection for initial spin buttons only
+            now = datetime.now(timezone.utc).timestamp()
+            last_spin_action = context.user_data.get('last_spin_action_time', 0)
+            if now - last_spin_action < 3:  # 3 second cooldown between spin actions
+                await query.answer("⏳ Please wait before spinning again!", show_alert=True)
+                return
+            context.user_data['last_spin_action_time'] = now
+            
+            # Handle actual spins
+            num_spins = 1 if data == "spin_single" else 10
+            # Store last spin type for "Spin Again"
+            context.user_data['last_spin_type'] = num_spins
+        
+        cost = spin_system.get_spin_cost(num_spins)
 
-    # Get pity counter
-    pity_counter = getattr(player, 'spin_pity_counter', 0)
+        if player.valor < cost:
+            # Edit the message to show insufficient amount
+            insufficient_text = "🎰 <b>Spin System</b>\n"
+            insufficient_text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            insufficient_text += f"❌ <b>Insufficient Valor!</b>\n\n"
+            insufficient_text += f"💰 <b>Cost:</b> {cost} Valor\n"
+            insufficient_text += f"⚔️ <b>Your Valor:</b> {player.valor}\n\n"
+            insufficient_text += "<i>Get more Valor to spin!</i>"
 
-    rewards = []
-    total_medals = 0
+            keyboard = [
+                [InlineKeyboardButton("🎰 Spin Again", callback_data=f"spin_again_{num_spins}"),
+                 InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds")],
+                [InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")]
+            ]
 
-    for _ in range(num_spins):
-        item_key = spin_system.get_random_item(pity_counter)
-        reward = spin_system.process_spin_reward(player, item_key)
-        rewards.append(reward)
+            await query.edit_message_text(insufficient_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+            return
 
-        # Award spin medals (1 per spin)
-        total_medals += 1
+        # Show spinning animation
+        animation_text = "🎰 <b>Spinning the wheel...</b>\n\n"
+        animation_text += "🔄 " + "⚪⚪⚪⚪⚪\n"
+        animation_text += "   🎯\n\n"
+        animation_text += "<i>Please wait...</i>"
+        
+        # Send animation message
+        animation_msg = await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text=animation_text,
+            parse_mode=ParseMode.HTML
+        )
 
-        # Update pity counter
-        if reward["rarity"] == "ultra_rare":
-            pity_counter = 0
-        else:
-            pity_counter += 1
+        # Deduct cost
+        player.valor -= cost
 
-    # Update player data
-    player.spin_pity_counter = pity_counter
-    if not hasattr(player, 'spin_medals'):
-        player.spin_medals = 0
-    player.spin_medals += total_medals
+        # Track community spins
+        if user_id not in spin_system.spin_counts:
+            spin_system.spin_counts[user_id] = 0
+        spin_system.spin_counts[user_id] += num_spins
 
-    # Check spin streak bonus
-    streak_bonus = spin_system.check_spin_streak_bonus(player)
-    if streak_bonus:
-        player.valor += 2  # 2 free Valor for 20 spin streak
+        # Get pity counter
+        pity_counter = getattr(player, 'spin_pity_counter', 0)
 
-    # Save player
-    await db.update_player(user_id, {
-        "valor": player.valor,
-        "gas": player.gas,
-        "marks": player.marks,
-        "inventory": player.inventory,
-        "owned_characters": player.owned_characters,
-        "spin_pity_counter": pity_counter,
-        "spin_medals": player.spin_medals,
-        "updated_at": datetime.now(timezone.utc)
-    })
+        rewards = []
+        total_medals = 0
 
-    # Format results
-    text = f"🎰 <b>Spin Results ({num_spins} spins)</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        for _ in range(num_spins):
+            item_key = spin_system.get_random_item(pity_counter)
+            reward = spin_system.process_spin_reward(player, item_key)
+            rewards.append(reward)
 
-    for i, reward in enumerate(rewards, 1):
-        rarity_emoji = {
-            "common": "⚪",
-            "uncommon": "🟢",
-            "rare": "🟣",
-            "ultra_rare": "🟡"
-        }.get(reward["rarity"], "⚪")
+            # Award spin medals (1 per spin)
+            total_medals += 1
 
-        text += f"{i}. {rarity_emoji} <b>{reward['item_name']}</b>"
-        if reward["amount"] > 1:
-            text += f" x{reward['amount']}"
-        if reward["duplicate"]:
-            text += f" (Duplicate! +{reward['valor_refund']}⚔️)"
+            # Update pity counter
+            if reward["rarity"] == "ultra_rare":
+                pity_counter = 0
+            else:
+                pity_counter += 1
+
+        # Update player data
+        player.spin_pity_counter = pity_counter
+        if not hasattr(player, 'spin_medals'):
+            player.spin_medals = 0
+        player.spin_medals += total_medals
+
+        # Check spin streak bonus
+        streak_bonus = spin_system.check_spin_streak_bonus(player)
+        if streak_bonus:
+            player.valor += 2  # 2 free Valor for 20 spin streak
+
+        # Save player
+        await db.update_player(user_id, {
+            "valor": player.valor,
+            "gas": player.gas,
+            "marks": player.marks,
+            "inventory": player.inventory,
+            "owned_characters": player.owned_characters,
+            "spin_pity_counter": pity_counter,
+            "spin_medals": player.spin_medals,
+            "updated_at": datetime.now(timezone.utc)
+        })
+
+        # Create character data for any new characters won
+        new_characters_won = [reward for reward in rewards if reward["type"] == "character" and not reward["duplicate"]]
+        for reward in new_characters_won:
+            try:
+                # Create the character data in database
+                success = await db.add_new_character_to_player(user_id, reward["item_key"])
+                if success:
+                    logger.info(f"Created character data for {reward['item_key']} for user {user_id}")
+                else:
+                    logger.warning(f"Failed to create character data for {reward['item_key']} for user {user_id}")
+            except Exception as e:
+                logger.error(f"Error creating character {reward['item_key']} for user {user_id}: {e}")
+
+        # Delete animation message
+        try:
+            await animation_msg.delete()
+        except:
+            pass
+
+        # Format results
+        text = f"🎰 <b>Spin Results ({num_spins} spins)</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        # Show rewards prominently at top
+        reward_summary = []
+        for reward in rewards:
+            rarity_emoji = {
+                "common": "⚪",
+                "uncommon": "🟢", 
+                "rare": "🟣",
+                "ultra_rare": "🟡"
+            }.get(reward["rarity"], "⚪")
+            
+            reward_text = f"{rarity_emoji} {reward['item_name']}"
+            if reward["amount"] > 1:
+                reward_text += f" x{reward['amount']}"
+            if reward["duplicate"]:
+                reward_text += f" (+{reward['valor_refund']}⚔️)"
+            reward_summary.append(reward_text)
+
+        text += "<b>Rewards Obtained:</b>\n"
+        for i, reward_text in enumerate(reward_summary, 1):
+            text += f"{i}. {reward_text}\n"
         text += "\n"
 
-    if total_medals > 0:
-        text += f"\n🎖️ <b>Spin Medals Earned:</b> +{total_medals}"
+        if total_medals > 0:
+            text += f"🎖️ <b>Spin Medals Earned:</b> +{total_medals}\n"
 
-    if streak_bonus:
-        text += f"\n🎯 <b>Streak Bonus:</b> +2⚔️ Valor"
+        if streak_bonus:
+            text += f"🎯 <b>Streak Bonus:</b> +2⚔️ Valor\n"
 
-    text += f"\n\n⚔️ <b>Remaining Valor:</b> {player.valor}"
+        text += f"\n⚔️ <b>Remaining Valor:</b> {player.valor}"
 
-    keyboard = [
-        [InlineKeyboardButton("🔙 Back", callback_data="spin_menu"),
-         InlineKeyboardButton("❌ Close", callback_data="spin_close")]
-    ]
+        keyboard = [
+            [InlineKeyboardButton("🎰 Spin Again", callback_data=f"spin_again_{num_spins}"),
+             InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds")],
+            [InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")]
+        ]
 
-    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        # Send new message with results
+        await context.bot.send_message(
+            chat_id=query.from_user.id,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )

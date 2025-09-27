@@ -1957,6 +1957,7 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
     application.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
     application.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
+    application.add_handler(CallbackQueryHandler(view_miscellaneous, pattern="^view_miscellaneous$"))
     application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
     application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
 

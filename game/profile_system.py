@@ -13,6 +13,7 @@ from typing import Optional
 import logging
 import re
 from game.battle_system import active_battles
+from game.spin_system import SPIN_ITEMS
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +367,20 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     military = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "military"]
     utilities = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "utility"]
     echo_shards = inv.get("echo_shard", 0)
-    miscellaneous = [k for k in inv if k != "echo_shard" and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type not in ["weapon", "gear", "military", "utility"]]
+    miscellaneous = []
+    for k in inv:
+        if k == "echo_shard":
+            continue
+        item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+        spin_item = SPIN_ITEMS.get(k)
+        if item:
+            item_type = getattr(item, 'type', None)
+        elif spin_item:
+            item_type = spin_item.get("type")
+        else:
+            continue
+        if item_type not in ["weapon", "gear", "military", "utility"]:
+            miscellaneous.append(k)
     inv_text = (
         "🧳 <b>Your Inventory:</b>\n"
         f"- Weapons: <b>{len(weapons)}</b>\n"
@@ -611,10 +625,19 @@ async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for k, v in inv.items():
         if k != "echo_shard":
             item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
-            if item and getattr(item, 'type', None) not in ["weapon", "gear", "military", "utility"]:
-                miscellaneous.append((k, v))
-    text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
-    text += "\n\n<b>Usage:</b> /use <item_name> [amount]"
+            spin_item = SPIN_ITEMS.get(k)
+            if item:
+                item_type = getattr(item, 'type', None)
+                item_name = getattr(item, 'name', k)
+            elif spin_item:
+                item_type = spin_item.get("type")
+                item_name = spin_item.get("name", k)
+            else:
+                continue  # unknown item
+            if item_type not in ["weapon", "gear", "military", "utility"]:
+                miscellaneous.append((k, item_name, v))
+    text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- {name} x{v}" for k, name, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
+    text += "\n\n<b>Usage:</b> /use &lt;item_name&gt; [amount]"
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 

@@ -76,41 +76,49 @@ class PvPBattleSystem:
     Manages a battle between two player characters, handling turns, abilities, and battle logic.
     """
     def __init__(self, 
-                 challenger: Character, 
-                 defender: Character, 
+                 challenger_team: List[Character], 
+                 defender_team: List[Character], 
                  challenger_player: Player, 
                  defender_player: Player,
                  challenge_id: str):
-        self.challenger = challenger
-        self.defender = defender
+        self.challenger_team = challenger_team
+        self.defender_team = defender_team
         self.challenger_player = challenger_player
         self.defender_player = defender_player
         self.challenge_id = challenge_id
         
+        # Track current active character indices (start with first character)
+        self.challenger_current_index: int = 0
+        self.defender_current_index: int = 0
+        
+        # Get current active characters
+        self.challenger = challenger_team[0] if challenger_team else None
+        self.defender = defender_team[0] if defender_team else None
+        
         # Reset HP to full for fair PVP battles
-        self.challenger_hp: int = challenger.stats.HP
-        self.defender_hp: int = defender.stats.HP
+        self.challenger_hp: int = self.challenger.stats.HP if self.challenger else 0
+        self.defender_hp: int = self.defender.stats.HP if self.defender else 0
         
         # Initialize gas values for PvP battle
-        self.challenger_gas: int = challenger.max_gas
-        self.defender_gas: int = defender.max_gas
+        self.challenger_gas: int = self.challenger.max_gas if self.challenger else 0
+        self.defender_gas: int = self.defender.max_gas if self.defender else 0
         
         # Determine first turn based on character speed
-        challenger_speed = challenger.stats.SPD if hasattr(challenger, 'stats') and hasattr(challenger.stats, 'SPD') else 10
-        defender_speed = defender.stats.SPD if hasattr(defender, 'stats') and hasattr(defender.stats, 'SPD') else 10
+        challenger_speed = self.challenger.stats.SPD if self.challenger and hasattr(self.challenger, 'stats') and hasattr(self.challenger.stats, 'SPD') else 10
+        defender_speed = self.defender.stats.SPD if self.defender and hasattr(self.defender, 'stats') and hasattr(self.defender.stats, 'SPD') else 10
         
         if challenger_speed > defender_speed:
             # Challenger is faster, goes first
             self.current_turn_user_id: str = str(challenger_player.user_id)
-            self.current_turn: str = challenger.name
+            self.current_turn: str = self.challenger.name if self.challenger else ""
         elif defender_speed > challenger_speed:
             # Defender is faster, goes first
             self.current_turn_user_id: str = str(defender_player.user_id)
-            self.current_turn: str = defender.name
+            self.current_turn: str = self.defender.name if self.defender else ""
         else:
             # Speeds are equal, challenger goes first (or could randomize)
             self.current_turn_user_id: str = str(challenger_player.user_id)
-            self.current_turn: str = challenger.name
+            self.current_turn: str = self.challenger.name if self.challenger else ""
         self.turn_count = 0
         self.battle_ended: bool = False
         self.timeout_task: Optional[asyncio.Task] = None
@@ -118,21 +126,27 @@ class PvPBattleSystem:
         self.winner: Optional[str] = None
         self.winner_char: Optional[Character] = None
         
-        # Ability cooldowns for both characters - ensure clean ability names
-        self.challenger_cooldowns: Dict[str, int] = {
-            ability.name.strip().lstrip('_'): 0 for ability in (
-                (challenger.active_abilities or []) +
-                (challenger.passive_abilities or []) +
-                (challenger.ultimate_abilities or [])
-            )
-        }
-        self.defender_cooldowns: Dict[str, int] = {
-            ability.name.strip().lstrip('_'): 0 for ability in (
-                (defender.active_abilities or []) +
-                (defender.passive_abilities or []) +
-                (defender.ultimate_abilities or [])
-            )
-        }
+        # Ability cooldowns for both teams - ensure clean ability names
+        self.challenger_cooldowns: Dict[str, int] = {}
+        self.defender_cooldowns: Dict[str, int] = {}
+        
+        if self.challenger:
+            self.challenger_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (self.challenger.active_abilities or []) +
+                    (self.challenger.passive_abilities or []) +
+                    (self.challenger.ultimate_abilities or [])
+                )
+            }
+        
+        if self.defender:
+            self.defender_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (self.defender.active_abilities or []) +
+                    (self.defender.passive_abilities or []) +
+                    (self.defender.ultimate_abilities or [])
+                )
+            }
         
         # Buffs and debuffs
         self.challenger_buffs: Dict[str, Any] = {}
@@ -390,15 +404,11 @@ class PvPBattleSystem:
         # Apply cooldown - use the cleaned ability name
         cooldowns[cleaned_ability_name] = ability.cooldown or 1
         
-        # Check if battle has ended
-        if self.challenger_hp <= 0 or self.defender_hp <= 0:
-            self.battle_ended = True
-            if self.challenger_hp <= 0:
-                self.winner = self.defender.name
-                self.winner_char = self.defender
-            elif self.defender_hp <= 0:
-                self.winner = self.challenger.name
-                self.winner_char = self.challenger
+        # Check for character death and switch if possible
+        switched = self.switch_character_on_death()
+        if switched:
+            message += f"\n🔄 Character switched due to defeat!"
+        
         return message, effects
         
     async def use_basic_attack(self, context: ContextTypes.DEFAULT_TYPE) -> Tuple[str, Dict]:
@@ -542,15 +552,10 @@ class PvPBattleSystem:
         message = f"⚔️ {current_char.name} attacks with {weapon_name}, dealing {total_damage} damage!"
         effects["damage"] = total_damage
 
-        # Check if battle has ended
-        if self.challenger_hp <= 0 or self.defender_hp <= 0:
-            self.battle_ended = True
-            if self.challenger_hp <= 0:
-                self.winner = self.defender.name
-                self.winner_char = self.defender
-            else:
-                self.winner = self.challenger.name
-                self.winner_char = self.challenger
+        # Check for character death and switch if possible
+        switched = self.switch_character_on_death()
+        if switched:
+            message += f"\n🔄 Character switched due to defeat!"
 
         return message, effects
         
@@ -578,13 +583,184 @@ class PvPBattleSystem:
         self.battle_ended = True
         return message
         
-    def switch_character(self) -> str:
-        """Not implemented in base PvP - could be expanded in future versions"""
-        if self.switches_remaining <= 0:
-            return f"No more character switches allowed in this battle."
+    def switch_character_on_death(self) -> bool:
+        """
+        Switch to the next available character when current character dies.
+        Returns True if successfully switched, False if no characters available.
+        """
+        switched = False
+        
+        # Check challenger character
+        if self.challenger_hp <= 0 and self.challenger_current_index < len(self.challenger_team) - 1:
+            # Try to switch to next character
+            self.challenger_current_index += 1
+            new_char = self.challenger_team[self.challenger_current_index]
+            self.challenger = new_char
+            self.challenger_hp = new_char.stats.HP
+            self.challenger_gas = new_char.max_gas
             
+            # Reset cooldowns for new character
+            self.challenger_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (new_char.active_abilities or []) +
+                    (new_char.passive_abilities or []) +
+                    (new_char.ultimate_abilities or [])
+                )
+            }
+            
+            # Clear buffs and debuffs for new character
+            self.challenger_buffs.clear()
+            self.challenger_debuffs.clear()
+            self.challenger_active_items.clear()
+            self.challenger_used_item = False
+            
+            switched = True
+            logger.info(f"Challenger switched to character: {new_char.name}")
+        
+        # Check defender character
+        if self.defender_hp <= 0 and self.defender_current_index < len(self.defender_team) - 1:
+            # Try to switch to next character
+            self.defender_current_index += 1
+            new_char = self.defender_team[self.defender_current_index]
+            self.defender = new_char
+            self.defender_hp = new_char.stats.HP
+            self.defender_gas = new_char.max_gas
+            
+            # Reset cooldowns for new character
+            self.defender_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (new_char.active_abilities or []) +
+                    (new_char.passive_abilities or []) +
+                    (new_char.ultimate_abilities or [])
+                )
+            }
+            
+            # Clear buffs and debuffs for new character
+            self.defender_buffs.clear()
+            self.defender_debuffs.clear()
+            self.defender_active_items.clear()
+            self.defender_used_item = False
+            
+            switched = True
+            logger.info(f"Defender switched to character: {new_char.name}")
+        
+        # Check if battle should end (no more characters available)
+        challenger_has_characters = self.challenger_current_index < len(self.challenger_team) - 1 or self.challenger_hp > 0
+        defender_has_characters = self.defender_current_index < len(self.defender_team) - 1 or self.defender_hp > 0
+        
+        if not challenger_has_characters or not defender_has_characters:
+            self.battle_ended = True
+            if not challenger_has_characters:
+                self.winner = self.defender.name
+                self.winner_char = self.defender
+            elif not defender_has_characters:
+                self.winner = self.challenger.name
+                self.winner_char = self.challenger
+        
+        # Update turn order based on current characters' SPD after switch
+        if switched and not self.battle_ended:
+            self._update_turn_order()
+        
+        return switched
+    
+    def manual_switch_character(self, target_index: int) -> str:
+        """
+        Manually switch to a specific character in the team.
+        Returns success message or error message.
+        """
+        if self.switches_remaining <= 0:
+            return "No more character switches allowed in this battle."
+        
+        # Determine which player is switching
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            team = self.challenger_team
+            current_index = self.challenger_current_index
+            player_name = self.challenger_player.name
+        else:
+            team = self.defender_team
+            current_index = self.defender_current_index
+            player_name = self.defender_player.name
+        
+        # Validate target index
+        if target_index < 0 or target_index >= len(team):
+            return "Invalid character position."
+        
+        if target_index == current_index:
+            return "That's your current character."
+        
+        # Check if target character is still alive (not defeated)
+        if target_index <= current_index:
+            return "Cannot switch to a defeated character."
+        
+        # Perform the switch
+        old_char = team[current_index]
+        new_char = team[target_index]
+        
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            self.challenger_current_index = target_index
+            self.challenger = new_char
+            self.challenger_hp = new_char.stats.HP
+            self.challenger_gas = new_char.max_gas
+            
+            # Reset cooldowns for new character
+            self.challenger_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (new_char.active_abilities or []) +
+                    (new_char.passive_abilities or []) +
+                    (new_char.ultimate_abilities or [])
+                )
+            }
+            
+            # Clear buffs and debuffs for new character
+            self.challenger_buffs.clear()
+            self.challenger_debuffs.clear()
+            self.challenger_active_items.clear()
+            self.challenger_used_item = False
+        else:
+            self.defender_current_index = target_index
+            self.defender = new_char
+            self.defender_hp = new_char.stats.HP
+            self.defender_gas = new_char.max_gas
+            
+            # Reset cooldowns for new character
+            self.defender_cooldowns = {
+                ability.name.strip().lstrip('_'): 0 for ability in (
+                    (new_char.active_abilities or []) +
+                    (new_char.passive_abilities or []) +
+                    (new_char.ultimate_abilities or [])
+                )
+            }
+            
+            # Clear buffs and debuffs for new character
+            self.defender_buffs.clear()
+            self.defender_debuffs.clear()
+            self.defender_active_items.clear()
+            self.defender_used_item = False
+        
         self.switches_remaining -= 1
-        return f"Character switch feature is not implemented yet. Switches remaining: {self.switches_remaining}"
+        
+        # Update turn order based on current characters' SPD after switch
+        self._update_turn_order()
+        
+        return f"🔄 {player_name} switched from {old_char.name} to {new_char.name}! (Switches left: {self.switches_remaining})"
+    
+    def _update_turn_order(self) -> None:
+        """Update turn order based on current active characters' SPD."""
+        challenger_speed = self.challenger.stats.SPD if self.challenger and hasattr(self.challenger, 'stats') and hasattr(self.challenger.stats, 'SPD') else 10
+        defender_speed = self.defender.stats.SPD if self.defender and hasattr(self.defender, 'stats') and hasattr(self.defender.stats, 'SPD') else 10
+        
+        if challenger_speed > defender_speed:
+            # Challenger is faster, goes first
+            self.current_turn_user_id = str(self.challenger_player.user_id)
+            self.current_turn = self.challenger.name
+        elif defender_speed > challenger_speed:
+            # Defender is faster, goes first
+            self.current_turn_user_id = str(self.defender_player.user_id)
+            self.current_turn = self.defender.name
+        else:
+            # Speeds are equal, challenger goes first (or could randomize)
+            self.current_turn_user_id = str(self.challenger_player.user_id)
+            self.current_turn = self.challenger.name
         
     async def use_item(self, item_key: str, context: ContextTypes.DEFAULT_TYPE) -> Tuple[str, Dict]:
         """
@@ -995,11 +1171,32 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
         player_id = battle.defender.user_id
     
     # Add switch and surrender buttons (without item button for now)
-    # Remove switch button if not implemented, or show disabled
-    switch_surrender_row = [InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender")]
+    # Check if player has multiple characters available for switching
+    current_team = battle.challenger_team if battle.current_turn_user_id == str(battle.challenger_player.user_id) else battle.defender_team
+    current_index = battle.challenger_current_index if battle.current_turn_user_id == str(battle.challenger_player.user_id) else battle.defender_current_index
+    
+    # Add switch buttons if there are characters available to switch to
+    available_switches = []
+    for i in range(current_index + 1, len(current_team)):
+        if i < len(current_team):  # Make sure index is valid
+            char = current_team[i]
+            available_switches.append(InlineKeyboardButton(f"🔄 {char.name}", callback_data=f"pvp_switch_{i}"))
+    
+    # Create the bottom row with switches, items, and surrender
+    bottom_row = []
+    if available_switches:
+        # Add switch buttons (limit to 2 to avoid overcrowding)
+        bottom_row.extend(available_switches[:2])
+    
+    # Add item button if not used this turn
     if not used_item:
-        switch_surrender_row.insert(0, InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items"))
-    keyboard.append(switch_surrender_row)
+        bottom_row.append(InlineKeyboardButton("🎒 Use Item", callback_data="pvp_show_items"))
+    
+    # Always add surrender button
+    bottom_row.append(InlineKeyboardButton("🏳️ Surrender", callback_data="pvp_surrender"))
+    
+    if bottom_row:
+        keyboard.append(bottom_row)
     
     return keyboard
 
@@ -1117,8 +1314,6 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "defender_id": target_id,
             "challenger_name": challenger_player.name,
             "defender_name": defender_player.name,
-            "challenger_char": challenger_char,
-            "defender_char": defender_char,
             "challenger_player": challenger_player,
             "defender_player": defender_player,
             "timestamp": datetime.now(timezone.utc),
@@ -1572,6 +1767,9 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             await handle_pvp_surrender(update, context)
         elif callback_data == "pvp_switch":
             await safe_api_call(query.answer, "Switching characters is not implemented yet.", show_alert=True)
+        elif callback_data.startswith("pvp_switch_"):
+            target_index = int(callback_data[11:])  # Extract target index from "pvp_switch_1"
+            await handle_pvp_manual_switch(update, context, target_index)
         elif callback_data == "pvp_show_items":
             await handle_pvp_show_items(update, context)
         elif callback_data.startswith("pvp_use_item_"):
@@ -1638,22 +1836,89 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         del pvp_challenges[challenge_id]
         return
     
-    # Ensure both challenger_char and defender_char are Character objects
-    from database.models import Character
-    challenger_char = challenge_data["challenger_char"]
-    defender_char = challenge_data["defender_char"]
-    # Convert dicts to Character if needed
-    if isinstance(challenger_char, dict):
-        challenger_char = Character(**challenger_char)
-    if isinstance(defender_char, dict):
-        defender_char = Character(**defender_char)
-    # Update challenge_data to ensure consistency
-    challenge_data["challenger_char"] = challenger_char
-    challenge_data["defender_char"] = defender_char
-    # Create PvP battle instance
+    # Get full team lists for both players
+    challenger_team = []
+    defender_team = []
+    
+    # Get challenger's full team
+    challenger_player = challenge_data["challenger_player"]
+    if hasattr(challenger_player, 'team') and challenger_player.team:
+        for team_member in challenger_player.team:
+            if hasattr(team_member, 'character_name'):
+                char_name = team_member.character_name
+            elif isinstance(team_member, dict):
+                char_name = team_member.get("character_name")
+            else:
+                char_name = team_member
+            
+            try:
+                char = await db.get_character(challenger_id, char_name)
+                if char:
+                    challenger_team.append(char)
+            except Exception as e:
+                logger.error(f"Error getting challenger character {char_name}: {e}")
+    
+    # Get defender's full team
+    defender_player = challenge_data["defender_player"]
+    if hasattr(defender_player, 'team') and defender_player.team:
+        for team_member in defender_player.team:
+            if hasattr(team_member, 'character_name'):
+                char_name = team_member.character_name
+            elif isinstance(team_member, dict):
+                char_name = team_member.get("character_name")
+            else:
+                char_name = team_member
+            
+            try:
+                char = await db.get_character(user_id, char_name)
+                if char:
+                    defender_team.append(char)
+            except Exception as e:
+                logger.error(f"Error getting defender character {char_name}: {e}")
+    
+    # Ensure at least one character per team
+    if not challenger_team:
+        # Get the first character as fallback
+        if hasattr(challenger_player, 'team') and challenger_player.team:
+            if hasattr(challenger_player.team[0], 'character_name'):
+                char_name = challenger_player.team[0].character_name
+            elif isinstance(challenger_player.team[0], dict):
+                char_name = challenger_player.team[0].get("character_name")
+            else:
+                char_name = challenger_player.team[0]
+            try:
+                char = await db.get_character(challenger_id, char_name)
+                if char:
+                    challenger_team = [char]
+            except Exception as e:
+                logger.error(f"Error getting fallback challenger character {char_name}: {e}")
+    
+    if not defender_team:
+        # Get the first character as fallback
+        if hasattr(defender_player, 'team') and defender_player.team:
+            if hasattr(defender_player.team[0], 'character_name'):
+                char_name = defender_player.team[0].character_name
+            elif isinstance(defender_player.team[0], dict):
+                char_name = defender_player.team[0].get("character_name")
+            else:
+                char_name = defender_player.team[0]
+            try:
+                char = await db.get_character(user_id, char_name)
+                if char:
+                    defender_team = [char]
+            except Exception as e:
+                logger.error(f"Error getting fallback defender character {char_name}: {e}")
+    
+    # If still no teams, we can't proceed
+    if not challenger_team or not defender_team:
+        await safe_api_call(query.edit_message_text, "Error: Could not load team data for battle.")
+        del pvp_challenges[challenge_id]
+        return
+    
+    # Create PvP battle instance with full teams
     battle = PvPBattleSystem(
-        challenger=challenger_char,
-        defender=defender_char,
+        challenger_team=challenger_team,
+        defender_team=defender_team,
         challenger_player=challenge_data["challenger_player"],
         defender_player=challenge_data["defender_player"],
         challenge_id=challenge_id
@@ -2174,6 +2439,95 @@ async def handle_pvp_switch(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Handle switch (placeholder for future implementation)
     message = battle.switch_character()
     await safe_api_call(query.answer, message, show_alert=True)
+
+
+async def handle_pvp_manual_switch(update: Update, context: ContextTypes.DEFAULT_TYPE, target_index: int) -> None:
+    """Handle manual character switch in PVP."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Check if user is in a PVP battle
+    if user_id not in active_pvp_battles:
+        await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
+        return
+        
+    battle = active_pvp_battles[user_id]
+    
+    # Check if it's user's turn
+    if user_id != battle.current_turn_user_id:
+        await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        return
+    
+    if battle.timeout_task:
+        battle.timeout_task.cancel()
+        battle.timeout_task = None
+    
+    # Perform the manual switch
+    message = battle.manual_switch_character(target_index)
+    
+    if battle.battle_ended:
+        await handle_pvp_battle_end(update, context, battle, message)
+        return
+    
+    # Switch turn after manual switch (switching counts as a full turn)
+    battle.switch_turn()
+    
+    # Update battle display
+    status = battle.get_battle_status()
+    keyboard = await generate_pvp_ability_keyboard(battle, context)
+    
+    try:
+        # Create a more clear display showing player names with their characters
+        challenger_player_name = battle.challenger_player.name
+        defender_player_name = battle.defender_player.name
+        
+        # Get first names for display
+        challenger_first_name = challenger_player_name.split()[0] if challenger_player_name else "Player 1"
+        defender_first_name = defender_player_name.split()[0] if defender_player_name else "Player 2"
+        
+        # Add the "«" symbol to indicate whose turn it is
+        challenger_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.challenger_player.user_id) else ""
+        defender_turn_indicator = " « Turn" if battle.current_turn_user_id == str(battle.defender_player.user_id) else ""
+        
+        # Format battle message with player's first name instead of character name
+        battle_message = message
+        
+        # Replace character name with player's first name in the message
+        if battle.current_turn_user_id == str(battle.challenger_player.user_id):
+            battle_message = battle_message.replace(battle.defender.name, defender_first_name)
+        else:
+            battle_message = battle_message.replace(battle.challenger.name, challenger_first_name)
+        
+        await safe_api_call(
+            query.edit_message_text,
+            text=(
+                f"<b>⚔️ PVP BATTLE ⚔️</b>\n\n"
+                f"<code>{battle_message}</code>\n\n"
+                f"<blockquote><b>| {challenger_player_name}  |</b>{challenger_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.challenger.name}</b>\n"
+                f"<b>HP:</b> {status['challenger_bar']} {status['challenger_hp']}/{battle.challenger.stats.HP}\n"
+                f"<b>Gas: {status['challenger_gas']}/{battle.challenger.max_gas}</b></blockquote>\n\n"
+                f"<blockquote><b>| {defender_player_name}  |</b>{defender_turn_indicator}</blockquote>\n"
+                f"<blockquote><b>{battle.defender.name}</b>\n"
+                f"<b>HP:</b> {status['defender_bar']} {status['defender_hp']}/{battle.defender.stats.HP}\n"
+                f"<b>Gas: {status['defender_gas']}/{battle.defender.max_gas}</b></blockquote>\n\n"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Store the current message ID for timeout handling
+        battle.current_message_id = query.message.message_id
+    except Exception as e:
+        logger.error(f"Failed to update battle message after manual switch: {e}")
+    
+    # Set timeout task
+    battle.timeout_task = asyncio.create_task(
+        pvp_battle_timeout(battle.challenger.user_id, battle.defender.user_id, battle, context, query.message.chat_id)
+    )
 
 
 async def handle_pvp_battle_end(update: Update, context: ContextTypes.DEFAULT_TYPE, battle: PvPBattleSystem, message: str) -> None:

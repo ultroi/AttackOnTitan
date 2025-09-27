@@ -1125,7 +1125,7 @@ class Database:
             existing_char = await self.get_character(str(user_id), character_name)
             if existing_char:
                 return False
-            await self.create_character(str(user_id), character_name, character_name, current_hp=getattr(char_data.base_stats, "current_hp", 100))
+            await self.create_character(str(user_id), character_name, character_name, current_hp=char_data.base_stats.HP)
             return True
         except Exception as e:
             logger.error(f"Failed to add new character to player: {e}")
