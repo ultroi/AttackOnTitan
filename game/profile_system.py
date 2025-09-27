@@ -185,7 +185,7 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         InlineKeyboardButton("💾 Save", callback_data="save_team")
     ])
     keyboard.append([
-        InlineKeyboardButton("Back", callback_data="show_profile")
+        InlineKeyboardButton("Back", callback_data="back_from_manage_team")
     ])
     await query.edit_message_text(
         team_text,
@@ -295,6 +295,15 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
 
+async def back_from_manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
+    # Clear unsaved team changes
+    if "team" in context.user_data:
+        del context.user_data["team"]
+    # Call the profile function
+    await profile(update, context)
+
 async def show_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
@@ -357,12 +366,14 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     military = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "military"]
     utilities = [k for k in inv if (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type == "utility"]
     echo_shards = inv.get("echo_shard", 0)
+    miscellaneous = [k for k in inv if k != "echo_shard" and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)) and (shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)).type not in ["weapon", "gear", "military", "utility"]]
     inv_text = (
         "🧳 <b>Your Inventory:</b>\n"
         f"- Weapons: <b>{len(weapons)}</b>\n"
         f"- Gear: <b>{len(gear)}</b>\n"
         f"- Military: <b>{len(military)}</b>\n"
         f"- Utilities: <b>{len(utilities)}</b>\n"
+        f"- Miscellaneous: <b>{len(miscellaneous)}</b>\n"
         f"- Echo Shards: <b>{echo_shards}</b>\n\n"
         "<i>View details:</i>"
     )
@@ -371,8 +382,9 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("View Gear", callback_data="view_gear")],
         [InlineKeyboardButton("View Military", callback_data="view_military"),
          InlineKeyboardButton("View Utilities", callback_data="view_utilities")],
-        [InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards"),
-         InlineKeyboardButton("Back", callback_data="show_profile")]
+        [InlineKeyboardButton("View Miscellaneous", callback_data="view_miscellaneous"),
+         InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards")],
+        [InlineKeyboardButton("Back", callback_data="show_profile")]
     ]
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     try:
@@ -564,6 +576,45 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inv = getattr(player, 'inventory', {}) or {}
     echo_shards = inv.get("echo_shard", 0)
     text = f"<b>Echo Shards:</b>\n- {echo_shards}"
+    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+
+async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data is None:
+        context.user_data = {}
+    query = getattr(update, 'callback_query', None)
+    owner_id = context.user_data.get('owner_id')
+    if not query or str(query.from_user.id) != owner_id:
+        if query:
+            await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    user_id = str(getattr(query.from_user, 'id', ''))
+    # --- Anti-spam: ignore if called again within 1.5s ---
+    now = datetime.now(timezone.utc).timestamp()
+    last = context.user_data.get('last_view_miscellaneous', 0)
+    if now - last < 1.5:
+        return
+    context.user_data['last_view_miscellaneous'] = now
+    # --- Privacy: Only allow owner to access ---
+    if str(query.from_user.id) != user_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    db = context.bot_data.get("db") or Database()
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+    shop_system = context.bot_data["shop_system"] if hasattr(context, "bot_data") and "shop_system" in context.bot_data else ShopSystem()
+    inv = getattr(player, 'inventory', {}) or {}
+    miscellaneous = []
+    for k, v in inv.items():
+        if k != "echo_shard":
+            item = shop_system.shop_items.get(k) or shop_system.hidden_items.get(k)
+            if item and getattr(item, 'type', None) not in ["weapon", "gear", "military", "utility"]:
+                miscellaneous.append((k, v))
+    text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
+    text += "\n\n<b>Usage:</b> /use <item_name> [amount]"
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 

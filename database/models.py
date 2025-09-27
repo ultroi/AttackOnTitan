@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 import random
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field
 from database.characters import CharacterData, get_character_data, AbilityEffect
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -50,7 +50,7 @@ class Character(BaseModel):
     level: int = 1
     xp: int = 0
     total_xp: int = 0
-    stats: CharacterStats = Field(default_factory=CharacterStats)
+    stats: Union[CharacterStats, Dict[str, Any]] = Field(default_factory=CharacterStats)
     gas: int = 5000
     max_gas: int = 5000 
     equipped_weapon: Optional[str] = None  
@@ -62,6 +62,15 @@ class Character(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __init__(self, **data):
+        # Convert stats dict to CharacterStats if needed, or handle CharacterStats objects from different modules
+        if 'stats' in data:
+            stats_value = data['stats']
+            if isinstance(stats_value, dict):
+                data['stats'] = CharacterStats(**stats_value)
+            elif hasattr(stats_value, '__dict__') and hasattr(stats_value, 'ATK'):  # It's a CharacterStats-like object
+                # Convert to dict first, then to our CharacterStats
+                stats_dict = {k: getattr(stats_value, k, 0) for k in ['ATK', 'DEF', 'ACC', 'INT', 'SPD', 'HP']}
+                data['stats'] = CharacterStats(**stats_dict)
         super().__init__(**data)
         # Initialize max HP and current HP based on character_type
         if hasattr(self, 'character_type') and self.character_type:
@@ -428,6 +437,16 @@ class Player(BaseModel):
     hcaptcha_start_time: Optional[float] = None
     explore_start_time: Optional[float] = None
     last_explore_time: Optional[float] = None
+    
+    # Spin System
+    spin_pity_counter: int = 0
+    spin_medals: int = 0
+    last_spin_time: Optional[datetime] = None
+    
+    # Active Buffs
+    double_gas_injector_uses: int = 0  # Remaining uses for half gas cost
+    mark_surge_token_uses: int = 0     # Remaining titan kills for double marks
+    frenzy_elixir_uses: int = 0        # Remaining explorations for triple XP
     
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

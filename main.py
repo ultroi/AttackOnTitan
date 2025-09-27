@@ -42,8 +42,8 @@ from game.start import (
 from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, referral_info,
+    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
+    show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, view_miscellaneous, referral_info,
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
 )
@@ -64,6 +64,12 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
+
+# Spin System
+from game.spin_system import spin_command, spin_callback_handler
+
+# Item Usage
+from game.item_usage import use_command
 
 # Load environment variables
 load_dotenv()
@@ -254,6 +260,11 @@ async def initialize_application():
         application.bot_data["shop_system"] = shop_system
         # Initialize shop_items including both regular and hidden items
         application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
+        
+        # Initialize spin system
+        from game.spin_system import SpinSystem
+        application.bot_data["spin_system"] = SpinSystem()
+        
         register_handlers(application)
 
         
@@ -696,6 +707,13 @@ def register_handlers(app_instance):
 
     app_instance.add_handler(CallbackQueryHandler(handle_dealer_callback, pattern="^dealer_"))
 
+    # Spin system handlers
+    app_instance.add_handler(CommandHandler("spin", disable_protected(spin_command)))
+    app_instance.add_handler(CallbackQueryHandler(spin_callback_handler, pattern="^spin_"))
+    
+    # Item usage handlers
+    app_instance.add_handler(CommandHandler("use", disable_protected(use_command)))
+
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
@@ -708,6 +726,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     app_instance.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
     app_instance.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+    app_instance.add_handler(CallbackQueryHandler(back_from_manage_team, pattern="^back_from_manage_team$"))
 
     # Profile and inventory
     app_instance.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
@@ -716,6 +735,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
     app_instance.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
     app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
+    app_instance.add_handler(CallbackQueryHandler(view_miscellaneous, pattern="^view_miscellaneous$"))
     app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
 
     # Character detail handlers (new)

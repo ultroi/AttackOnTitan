@@ -591,7 +591,7 @@ class Database:
                 level=1,
                 xp=0,
                 total_xp=0,
-                stats=CharacterStats(**stats_dict), 
+                stats=stats_dict, 
                 gas=5000,
                 max_gas=5000,
                 active_abilities=[],

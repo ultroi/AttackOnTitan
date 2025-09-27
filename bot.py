@@ -43,11 +43,12 @@ from game.start import (
 from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team,
-    show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, referral_info,
+    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
+    show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, view_miscellaneous, referral_info,
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
 )
+from game.spin_system import spin_command, spin_callback_handler
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from database.models import Character, Player
 from pymongo import UpdateOne
@@ -605,7 +606,7 @@ class LocalMemoryDatabase:
                 level=1,
                 xp=0,
                 total_xp=0,
-                stats=CharacterStats(**stats_dict), 
+                stats=stats_dict,
                 gas=5000,
                 max_gas=5000,
                 active_abilities=[],
@@ -1067,12 +1068,7 @@ class LocalMemoryDatabase:
                     
                     # Auto-add to team if there's space
                     player = self._players_dict[str(user_id)]
-                    if player.active_team == "team1":
-                        current_team = player.team1
-                        team_field = "team1"
-                    else:
-                        current_team = player.team2
-                        team_field = "team2"
+                    current_team = player.team
                     
                     team_members = [m.character_name for m in current_team] if current_team else []
                     
@@ -1087,10 +1083,7 @@ class LocalMemoryDatabase:
                             current_team = [new_member]
                         
                         # Update the player's team in local memory
-                        if team_field == "team1":
-                            player.team1 = current_team
-                        else:
-                            player.team2 = current_team
+                        player.team = current_team
                         
                         # Also update in persistent database if available
                         try:
@@ -1098,7 +1091,7 @@ class LocalMemoryDatabase:
                             if motor_db is not None:
                                 db = Database()
                                 await db.init_db(motor_db)
-                                await db.update_player(str(user_id), {team_field: [m.dict() for m in current_team]})
+                                await db.update_player(str(user_id), {"team": [m.dict() for m in current_team]})
                         except Exception as db_e:
                             logger.warning(f"Failed to update team in persistent database: {db_e}")
                 
@@ -1941,6 +1934,9 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
     application.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
 
+    application.add_handler(CommandHandler("spin", disable_protected(spin_command)))
+    application.add_handler(CallbackQueryHandler(spin_callback_handler, pattern="^spin_"))
+
     # Character selection and team management
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
@@ -1953,6 +1949,7 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))
     application.add_handler(CallbackQueryHandler(clear_team, pattern="^clear_team$"))
+    application.add_handler(CallbackQueryHandler(back_from_manage_team, pattern="^back_from_manage_team$"))
 
     # Profile and inventory
     application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))

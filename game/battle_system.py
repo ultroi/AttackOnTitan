@@ -74,7 +74,15 @@ class BattleSystem:
             "dodge_count": 0,
             "fear_counter": 0,
             "focused_turns": 0,
-            "ally_died": False
+            "ally_died": False,
+            # Floch Forster tracking
+            "demagogue_stacks": 0,
+            "ally_death_count": 0,
+            "flochs_last_standing": False,
+            # Commander Pixis tracking
+            "pixis_buffs_distributed": False,
+            "pixis_buff_targets": [],
+            "pixis_buff_values": {}
         }
         # Add emergency heal usage flag
         self.emergency_heal_used: bool = False
@@ -86,6 +94,8 @@ class BattleSystem:
         self.battle_ended: bool = False
         self.initial_gas: int = character.gas  # Store initial gas at battle start
         self.last_character_refresh: float = time.time()  # Add timestamp for character refresh tracking
+        # Track participating characters for XP distribution
+        self.participating_characters: set = {character.name}  # Start with the initial character
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -352,8 +362,13 @@ class BattleSystem:
                     self.apply_effect(effect)
                     message = effect.message or f"{ability_name} used successfully!"
                     
+                    # Apply Double Gas Injector buff (half gas cost)
+                    actual_gas_cost = gas_cost
+                    if self.player and hasattr(self.player, 'double_gas_injector_uses') and self.player.double_gas_injector_uses > 0:
+                        actual_gas_cost = gas_cost // 2
+                    
                     # Deduct gas after successful ability use
-                    self.gas -= gas_cost
+                    self.gas -= actual_gas_cost
                     
                     # Show INT contribution in ability message if damage was enhanced
                     if int_damage_bonus > 0:
@@ -495,8 +510,16 @@ class BattleSystem:
         # XP: 150-200 random, same for player and character, but ensure it's always positive
         xp = max(1, random.randint(100, 180))
         
+        # Apply Frenzy Elixir buff (triple XP)
+        if player and hasattr(player, 'frenzy_elixir_uses') and player.frenzy_elixir_uses > 0:
+            xp *= 3
+        
         # Marks: fixed per battle (current system, no difficulty bonus)
         marks = max(1, random.randint(70, 100) + (titan.level * 2))
+        
+        # Apply Mark Surge Token buff (double marks)
+        if player and hasattr(player, 'mark_surge_token_uses') and player.mark_surge_token_uses > 0:
+            marks *= 2
         
         # Valor: spawn chance instead of crystal
         valor = 0
@@ -679,8 +702,19 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
         else:
             keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (out of gas)"), callback_data="lowgas_basic_attack")])
     
-    # Add run button
-    keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
+    # Add run and switch buttons in the same row
+    run_switch_row = [InlineKeyboardButton("🏃 Run", callback_data="action_run")]
+    if battle.player and hasattr(battle.player, 'team') and battle.player.team:
+        # Count available characters to switch to (excluding current character)
+        current_name = battle.character.name
+        available_chars = []
+        for team_member in battle.player.team:
+            char_name = team_member.character_name if hasattr(team_member, 'character_name') else str(team_member)
+            if char_name != current_name:
+                available_chars.append(char_name)
+        if len(available_chars) > 0:
+            run_switch_row.append(InlineKeyboardButton("Switch", callback_data="action_switch"))
+    keyboard.append(run_switch_row)
     
     # Cache the keyboard for future use
     battle.keyboard_cache = keyboard
@@ -983,6 +1017,26 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
     
     user_id = str(update.effective_user.id)
     
+    def obfuscate_text(text):
+        if not text:
+            return text
+            
+        chars = []
+        # Start with the first character without a zero-width space
+        chars.append(text[0])
+        
+        # Add zero-width spaces between characters, but not at the beginning
+        for char in text[1:-1]:
+            chars.append('\u200B')
+            chars.append(char)
+            
+        # Add the last character without a zero-width space
+        if len(text) > 1:
+            chars.append('\u200B')
+            chars.append(text[-1])
+            
+        return ''.join(chars)
+    
     # Immediately answer the callback to prevent Telegram timeout
     try:
         # Answer the callback query immediately without any notification to prevent query timeouts
@@ -1122,6 +1176,151 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
         
+        elif action == "action_switch":
+            # Handle switch character action
+            if not battle.player or not hasattr(battle.player, 'team') or not battle.player.team or len(battle.player.team) <= 1:
+                try:
+                    await query.answer("You don't have multiple characters to switch to!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            # Create character selection keyboard
+            switch_keyboard = []
+            current_character_name = battle.character.name
+            
+            index = 0
+            for team_member in battle.player.team:
+                character_name = team_member['character_name'] if isinstance(team_member, dict) else getattr(team_member, 'character_name', team_member)
+                if character_name != current_character_name:
+                    switch_keyboard.append([InlineKeyboardButton(
+                        f"{index + 1}",
+                        callback_data=f"switch_to_{index}"
+                    )])
+                    index += 1
+            
+            # Add back button
+            switch_keyboard.append([InlineKeyboardButton("⬅ Back", callback_data="switch_back")])
+            
+            reply_markup = InlineKeyboardMarkup(switch_keyboard)
+            
+            # Show character selection
+            status = battle.get_battle_status()
+            switch_message = (
+                f"<b>Select a character to switch to:</b>"
+            )
+            
+            try:
+                await query.edit_message_text(
+                    switch_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.error(f"Error showing switch menu: {e}")
+            return
+        
+        elif action.startswith("switch_to_"):
+            # Handle character switch
+            try:
+                index = int(action[10:])  # Remove "switch_to_" prefix
+            except ValueError:
+                try:
+                    await query.answer("Invalid action!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            # Validate that the player has multiple characters
+            if not battle.player or not hasattr(battle.player, 'team') or not battle.player.team or len(battle.player.team) <= 1:
+                try:
+                    await query.answer("Invalid switch request!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            # Get available characters (excluding current)
+            current_character_name = battle.character.name
+            available_chars = []
+            for team_member in battle.player.team:
+                character_name = team_member['character_name'] if isinstance(team_member, dict) else getattr(team_member, 'character_name', team_member)
+                if character_name != current_character_name:
+                    available_chars.append(character_name)
+            
+            # Validate index
+            if index < 0 or index >= len(available_chars):
+                try:
+                    await query.answer("Invalid character selection!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            target_character_name = available_chars[index]
+            
+            # Get database reference
+            db = context.bot_data.get("db")
+            if not db:
+                try:
+                    await query.answer("Database error!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            # Load the target character
+            try:
+                target_character = await db.get_character(user_id, target_character_name)
+                if not target_character:
+                    try:
+                        await query.answer("Character not found!", show_alert=True)
+                    except Exception:
+                        pass
+                    return
+            except Exception as e:
+                logger.error(f"Error loading character {target_character_name}: {e}")
+                try:
+                    await query.answer("Error loading character!", show_alert=True)
+                except Exception:
+                    pass
+                return
+            
+            # Track the original character as having participated
+            if not hasattr(battle, 'participating_characters'):
+                battle.participating_characters = set()
+            battle.participating_characters.add(battle.character.name)
+            battle.participating_characters.add(target_character.name)
+            
+            # Switch to the new character
+            old_character_name = battle.character.name
+            battle.character = target_character
+            battle.character_hp = target_character.current_hp
+            battle.gas = target_character.gas
+            battle.character_gas = target_character.max_gas
+            battle.max_gas = target_character.max_gas
+            
+            # Reinitialize ability cooldowns for the new character
+            from database.characters import get_character_data
+            character_data = get_character_data(target_character.character_type)
+            if character_data:
+                battle.ability_cooldowns = {
+                    ability.name: 0 for ability in (
+                        (character_data.active_abilities or []) +
+                        (character_data.passive_abilities or []) +
+                        (character_data.ultimate_abilities or [])
+                    )
+                }
+            
+            # Apply passives for the new character
+            battle.apply_passives("battle_start")
+            
+            # Mark keyboard cache as invalid
+            battle.keyboard_cache_invalid = True
+            
+            full_message.append(f"🔄 Switched from {old_character_name} to {target_character_name}!")
+            
+        elif action == "switch_back":
+            # Just regenerate the normal battle keyboard (no special action needed)
+            pass
+        
         elif action == "action_basic_attack":
             # Immediately answer the callback to prevent Telegram timeout
             try:
@@ -1146,7 +1345,12 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
             # Process enhanced attack with full character stats integration
             weapon = battle.get_equipped_weapon(shop_items)
             if battle.gas >= 20:
-                battle.gas -= 20  
+                # Apply Double Gas Injector buff (half gas cost)
+                gas_cost = 20
+                if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
+                    gas_cost = 10
+                
+                battle.gas -= gas_cost
                 battle.character_gas = battle.gas
                 
                 if weapon and hasattr(weapon, 'attributes') and isinstance(weapon.attributes, dict):
@@ -1417,12 +1621,29 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             explore_count=explore_count
         )
 
-        # Fast XP calculations
-        character_xp = max(1, rewards["xp"])
+        # Fast XP calculations - distribute equally among participating characters
+        total_participating = len(battle.participating_characters)
+        base_xp_per_character = max(1, rewards["xp"] // total_participating)
         player_xp = max(1, rewards["xp"])
 
-        # Update character in-memory (fast)
-        char_level_info = battle.character.add_xp(character_xp)
+        # Update all participating characters with XP
+        participating_level_infos = []
+        for char_name in battle.participating_characters:
+            if char_name == battle.character.name:
+                # Current character gets updated in-memory
+                char_level_info = battle.character.add_xp(base_xp_per_character)
+                participating_level_infos.append((battle.character, char_level_info))
+            else:
+                # Load and update other participating characters
+                try:
+                    other_char = await db.get_character(user_id, char_name)
+                    if other_char:
+                        other_level_info = other_char.add_xp(base_xp_per_character)
+                        participating_level_infos.append((other_char, other_level_info))
+                except Exception as e:
+                    logger.error(f"Error updating XP for participating character {char_name}: {e}")
+
+        # Update current character in-memory (fast)
         battle.character.xp = max(0, battle.character.xp)
         battle.character.current_hp = battle.character.stats.HP
         battle.character.gas = max(0, battle.character.gas - gas_consumed)
@@ -1440,6 +1661,18 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         player_obj.marks = max(0, player_obj.marks + rewards["marks"])
         player_obj.valor = max(0, player_obj.valor + rewards["valor"])
         player_obj.explore_count = explore_count + 1
+        
+        # Decrement buff counters after battle victory
+        buff_updates = {}
+        if hasattr(player_obj, 'double_gas_injector_uses') and player_obj.double_gas_injector_uses > 0:
+            player_obj.double_gas_injector_uses -= 1
+            buff_updates["double_gas_injector_uses"] = player_obj.double_gas_injector_uses
+        if hasattr(player_obj, 'mark_surge_token_uses') and player_obj.mark_surge_token_uses > 0:
+            player_obj.mark_surge_token_uses -= 1
+            buff_updates["mark_surge_token_uses"] = player_obj.mark_surge_token_uses
+        if hasattr(player_obj, 'frenzy_elixir_uses') and player_obj.frenzy_elixir_uses > 0:
+            player_obj.frenzy_elixir_uses -= 1
+            buff_updates["frenzy_elixir_uses"] = player_obj.frenzy_elixir_uses
 
         # Send victory message immediately (fastest user feedback)
         reward_parts = [
@@ -1470,21 +1703,54 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
                     parse_mode=ParseMode.HTML
                 )
 
-        # Single batch database update (much faster than multiple calls)
-        character_update_task = db.batch_update_character(
-            str(battle.character.user_id), 
-            battle.character.name, 
+        # Single batch database update for all participating characters (much faster than multiple calls)
+        character_update_tasks = []
+        for char, level_info in participating_level_infos:
+            if char.name == battle.character.name:
+                # Current character - update with gas consumption
+                char.gas = max(0, char.gas - gas_consumed)
+                char.max_gas = char.gas
+                char.current_hp = char.stats.HP
+            else:
+                # Other participating characters - just update XP
+                char.gas = max(0, char.gas)  # Ensure gas doesn't go negative
+                char.max_gas = char.gas
+                char.current_hp = min(char.current_hp, char.stats.HP)  # Don't heal other characters
+            
+            character_update_tasks.append(db.batch_update_character(
+                str(battle.character.user_id), 
+                char.name, 
+                {
+                    "xp": char.xp,
+                    "total_xp": char.total_xp,
+                    "level": char.level,
+                    "current_hp": char.current_hp,
+                    "gas": char.gas,
+                    "max_gas": char.max_gas,
+                    "stats": char.stats.dict() if char.stats else {},
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            ))
+        
+        player_update_task = db.batch_update_player(
+            str(user_id), 
             {
-                "xp": battle.character.xp,
-                "total_xp": battle.character.total_xp,
-                "level": battle.character.level,
-                "current_hp": battle.character.current_hp,
-                "gas": battle.character.gas,
-                "max_gas": battle.character.max_gas,
-                "stats": battle.character.stats.dict() if battle.character.stats else {},
-                "updated_at": datetime.now(timezone.utc)
+                "marks": player_obj.marks,
+                "valor": player_obj.valor,
+                "explore_count": player_obj.explore_count,
+                "xp": player_obj.xp,
+                "total_xp": player_obj.total_xp,
+                "level": player_obj.level,
+                "updated_at": datetime.now(timezone.utc),
+                **buff_updates  # Include buff counter updates
             }
         )
+
+        # Execute all character updates in parallel
+        try:
+            await asyncio.gather(*character_update_tasks, return_exceptions=True)
+        except Exception as e:
+            logger.error(f"Error during parallel character batch updates: {e}")
         
         player_update_task = db.batch_update_player(
             str(user_id), 
@@ -1499,16 +1765,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             }
         )
 
-        # Execute both updates in parallel
+        # Execute player update
         try:
-            await asyncio.gather(character_update_task, player_update_task, return_exceptions=True)
+            await player_update_task
         except Exception as e:
-            logger.error(f"Error during parallel batch updates: {e}")
+            logger.error(f"Error during player batch update: {e}")
 
         # Process all background tasks in parallel (non-blocking for user)
+        # Pass all participating characters for level up messages
+        participating_chars = [char for char, _ in participating_level_infos]
+        participating_level_infos_only = [level_info for _, level_info in participating_level_infos]
+        
         asyncio.create_task(_process_post_battle_updates(
-            db, player_obj, battle.character, user_id, query.message.chat_id if query.message else None,
-            context.bot.send_message, char_level_info, player_level_info, rewards["marks"], battle
+            db, player_obj, participating_chars, participating_level_infos_only, user_id, query.message.chat_id if query.message else None,
+            context.bot.send_message, rewards["marks"], battle
         ))
 
     else:
@@ -1594,8 +1864,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     cleanup_battle(user_id, "completed", battle)
 
 
-async def _process_post_battle_updates(db, player_obj, character, user_id, chat_id, send_func,
-                                      char_level_info, player_level_info, marks_reward, battle, victory=False):
+async def _process_post_battle_updates(db, player_obj, participating_characters, participating_level_infos, user_id, chat_id, send_func,
+                                      marks_reward, battle, victory=False):
     """Process mission progress and level up messages in background."""
     try:
         # Get fresh player data for mission processing
@@ -1644,12 +1914,14 @@ async def _process_post_battle_updates(db, player_obj, character, user_id, chat_
             except Exception as e:
                 logger.error(f"Error processing mission item drops: {e}")
 
-        # Send level up messages immediately after mission notifications
-        await _send_level_up_messages(char_level_info, player_level_info, character, player_obj, chat_id, send_func)
+        # Send level up messages for all participating characters
+        for i, (character, level_info) in enumerate(zip(participating_characters, participating_level_infos)):
+            await _send_level_up_messages(level_info, None, character, player_obj if i == 0 else None, chat_id, send_func)
 
         # Track battle stats in background
         try:
-            track_battle_end(int(user_id), character.name, "victory")
+            # Track for the main character
+            track_battle_end(int(user_id), participating_characters[0].name, "victory")
             from game.stats_command import track_explore_stats
             player_first_name = getattr(player_obj_fresh, "first_name", None) or getattr(player_obj_fresh, "username", None) or str(user_id)
             await track_explore_stats(user_id, player_first_name, True)
@@ -1701,7 +1973,7 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
     """Send level up messages efficiently."""
     try:
         # Character level ups
-        if char_level_info["total_level_ups"] > 0:
+        if char_level_info and char_level_info["total_level_ups"] > 0:
             for level_up in char_level_info["level_ups"]:
                 stat_lines = []
 
@@ -1739,7 +2011,7 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
                 await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
 
         # Player level ups
-        if player_level_info["total_level_ups"] > 0:
+        if player_level_info and player_level_info["total_level_ups"] > 0:
             for lvl_up in player_level_info["level_ups"]:
                 msg_parts = [
                     f"PLAYER LEVEL UP! ",
@@ -1770,15 +2042,34 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                     logger.error("Database not initialized")
                 else:
                     try:
-                        await db.characters.update_one(
-                            {"user_id": user_id, "name": battle.character.name},
-                            {"$set": {
-                                "current_hp": battle.character_hp,
-                                "gas": battle.character_gas,
-                                "max_gas": battle.character.max_gas,
-                                "ability_cooldowns": battle.ability_cooldowns
-                            }}
-                        )
+                        # Save all participating characters' states
+                        for char_name in battle.participating_characters:
+                            try:
+                                if char_name == battle.character.name:
+                                    # Current character
+                                    await db.characters.update_one(
+                                        {"user_id": user_id, "name": char_name},
+                                        {"$set": {
+                                            "current_hp": battle.character_hp,
+                                            "gas": battle.character_gas,
+                                            "max_gas": battle.character.max_gas,
+                                            "ability_cooldowns": battle.ability_cooldowns
+                                        }}
+                                    )
+                                else:
+                                    # Other participating characters - just save their current state
+                                    other_char = await db.get_character(user_id, char_name)
+                                    if other_char:
+                                        await db.characters.update_one(
+                                            {"user_id": user_id, "name": char_name},
+                                            {"$set": {
+                                                "current_hp": other_char.current_hp,
+                                                "gas": other_char.gas,
+                                                "max_gas": other_char.max_gas
+                                            }}
+                                        )
+                            except Exception as char_error:
+                                logger.error(f"Failed to save character {char_name} state on timeout: {char_error}")
                     except Exception as e:
                         logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
                     try:

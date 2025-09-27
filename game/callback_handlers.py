@@ -173,6 +173,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "lowgas_": lambda data: handle_battle_action(update, context),
             "battle_": lambda data: handle_battle_start(update, context),
             "location_": lambda data: create_character(update, context),
+            "switch_to_": lambda data: handle_battle_action(update, context),
+            "switch_back": lambda data: handle_battle_action(update, context),
         }
         # Handle callback based on prefix
         for prefix, handler in handlers.items():

@@ -5,6 +5,7 @@ from utils.mod_utils import is_mod
 from database.db import Database
 from config import TRANSACTION_LOG_CHANNEL
 from telegram.constants import ParseMode
+from database.models import TeamMember
 import logging
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 await message.reply_text("Invalid user ID.")
             return
         db = context.bot_data.get("db")
-        if not isinstance(db, Database):
+        if db is None or not hasattr(db, 'get_player'):
             if message:
                 await message.reply_text("Database not initialized.")
             return
@@ -161,7 +162,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 await message.reply_text("Invalid user ID.")
             return
         db = context.bot_data.get("db")
-        if not isinstance(db, Database):
+        if db is None or not hasattr(db, 'get_player'):
             if message:
                 await message.reply_text("Database not initialized.")
             return
@@ -228,6 +229,14 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 character_type=final_char_name,
                 current_hp=char_data.base_stats.HP
             )
+            
+            # Add to player's team if not already present
+            player = await db.get_player(str(target_user_id_int))
+            if player and not any(tm.character_name == final_char_name for tm in player.team):
+                position = len(player.team) + 1
+                player.team.append(TeamMember(character_name=final_char_name, position=position))
+                await db.update_player(str(target_user_id_int), {"team": [tm.dict() for tm in player.team]})
+            
             if message:
                 await message.reply_text(f"Character '{final_char_name}' added to user {target_user_id_int}'s collection!")
             
@@ -273,7 +282,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 await message.reply_text("Invalid user ID.")
             return
         db = context.bot_data.get("db")
-        if not isinstance(db, Database):
+        if db is None or not hasattr(db, 'get_player'):
             if message:
                 await message.reply_text("Database not initialized.")
             return
@@ -370,7 +379,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             await message.reply_text("Resource must be one of: marks, crystal, gas, valor, level.")
         return
     db = context.bot_data.get("db")
-    if not isinstance(db, Database):
+    if db is None or not hasattr(db, 'get_player'):
         if message:
             await message.reply_text("Database not initialized.")
         return

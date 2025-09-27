@@ -1066,6 +1066,206 @@ def flicker_instinct_effect(ctx: BattleContext) -> AbilityEffect:
         debuffs=debuffs
     )
 
+# Floch Forster effect functions
+def demagogues_aura_effect(ctx: BattleContext) -> AbilityEffect:
+    """Passive: Tracks ally deaths and applies stacking buffs"""
+    if isinstance(ctx, dict):
+        demagogue_stacks = ctx.get("demagogue_stacks", 0)
+        ally_death_count = ctx.get("ally_death_count", 0)
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        demagogue_stacks = getattr(ctx, "demagogue_stacks", 0)
+        ally_death_count = getattr(ctx, "ally_death_count", 0)
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    # Calculate buffs based on stacks
+    buffs = {}
+    if demagogue_stacks > 0:
+        # +20% ATK, +5% Crit, +10% SPD per stack
+        buffs["ATK"] = 1.0 + (demagogue_stacks * 0.2)
+        buffs["crit_rate"] = 1.0 + (demagogue_stacks * 0.05)
+        buffs["SPD"] = 1.0 + (demagogue_stacks * 0.1)
+        
+        # After 3 stacks, become "Unhinged" - lose 20% DEF but gain extra move
+        if demagogue_stacks >= 3:
+            buffs["DEF"] = 0.8  # -20% DEF
+            buffs["extra_move"] = 1.0  # Extra move each turn
+            message = f"Demagogue's Aura: Unhinged! {demagogue_stacks} stacks - +{int((demagogue_stacks * 0.2)*100)}% ATK, +{int((demagogue_stacks * 0.05)*100)}% Crit, +{int((demagogue_stacks * 0.1)*100)}% SPD, -20% DEF, extra move per turn"
+        else:
+            message = f"Demagogue's Aura: {demagogue_stacks} stacks - +{int((demagogue_stacks * 0.2)*100)}% ATK, +{int((demagogue_stacks * 0.05)*100)}% Crit, +{int((demagogue_stacks * 0.1)*100)}% SPD"
+    else:
+        message = "Demagogue's Aura: No stacks yet"
+    
+    return create_effect(message=message, buffs=buffs)
+
+def scapegoat_rally_effect(ctx: BattleContext) -> AbilityEffect:
+    """Passive: Activates when Floch is last standing"""
+    if isinstance(ctx, dict):
+        flochs_last_standing = ctx.get("flochs_last_standing", False)
+        ally_death_count = ctx.get("ally_death_count", 0)
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        flochs_last_standing = getattr(ctx, "flochs_last_standing", False)
+        ally_death_count = getattr(ctx, "ally_death_count", 0)
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    buffs = {}
+    if flochs_last_standing:
+        # Buffs based on death count
+        if ally_death_count >= 3:
+            buffs["full_cooldown_reset"] = 1.0  # Reset all cooldowns
+            buffs["hp_regen"] = 0.1  # 10% HP regen over 3 turns
+            message = "Scapegoat Rally: Last standing with 3+ deaths! Full cooldown reset and 10% HP regen over 3 turns"
+        elif ally_death_count >= 2:
+            buffs["damage_multiplier"] = 1.25  # +25% damage
+            message = "Scapegoat Rally: Last standing with 2 deaths! +25% damage"
+        elif ally_death_count >= 1:
+            buffs["SPD"] = 1.1  # +10% speed
+            message = "Scapegoat Rally: Last standing with 1 death! +10% speed"
+        else:
+            message = "Scapegoat Rally: Last standing but no deaths tracked"
+    else:
+        message = "Scapegoat Rally: Waiting to be last standing"
+    
+    return create_effect(message=message, buffs=buffs)
+
+def riot_spark_effect(ctx: BattleContext) -> AbilityEffect:
+    """Active: Damage all enemies, chance for Disarray"""
+    if isinstance(ctx, dict):
+        base_damage = ctx.get("base_damage", 0)
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        base_damage = ctx.base_damage
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    damage = 200  # Fixed damage
+    message = "Riot Spark: All enemies take 200 damage"
+    
+    debuffs = {}
+    if random.random() < 0.5:  # 50% chance
+        debuffs["disarray"] = 1  # Causes random attacks on allies for 1 turn
+        message += ", Disarray induced!"
+    
+    # Terrain check would need map system integration
+    # For now, assume random chance for increased radius
+    if random.random() < 0.3:  # 30% chance for rooftops
+        damage = int(damage * 1.5)
+        message += " (Roof terrain: +50% radius damage)"
+    
+    return create_effect(
+        message=message,
+        damage=damage,
+        debuffs=debuffs
+    )
+
+def execute_traitor_effect(ctx: BattleContext) -> AbilityEffect:
+    """Active: Target low HP enemy for execution"""
+    if isinstance(ctx, dict):
+        base_damage = ctx.get("base_damage", 0)
+        target_hp_percent = ctx.get("target_hp_percent", 1.0)
+        character_max_hp = ctx.get("character_max_hp", 100)
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        base_damage = ctx.base_damage
+        target_hp_percent = ctx.target_hp_percent
+        character_max_hp = ctx.character_max_hp
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    if target_hp_percent < 0.3:  # <30% HP
+        if random.random() < 0.7:  # 70% success rate (assuming)
+            buffs = {"DEF": 1.1}  # +10% DEF for allies
+            message = "Execute Traitor: Success! All allies gain +10% DEF for 2 turns"
+            return create_effect(message=message, buffs=buffs)
+        else:
+            damage = int(character_max_hp * 0.1)  # 10% HP loss
+            debuffs = {"taunt": 1}  # Increases chance to be targeted
+            message = "Execute Traitor: Failed! Floch loses 10% HP and is taunted"
+            return create_effect(message=message, damage=damage, debuffs=debuffs)
+    else:
+        message = "Execute Traitor: Target HP too high (>30%)"
+        return create_effect(message=message)
+
+def last_bastion_of_war_effect(ctx: BattleContext) -> AbilityEffect:
+    """Ultimate: 3-turn buffed state"""
+    buffs = {
+        "immune_stun": 1,
+        "immune_slow": 1,
+        "immune_confusion": 1,
+        "immune_bleed": 1,
+        "SPD": 2.0,  # Double speed
+        "ATK": 2.0,  # Double attack
+        "iron_conviction": 3  # 3-turn duration
+    }
+    message = "Last Bastion of War: Iron Conviction activated! Immune to stun/slow/confusion/bleed, double speed and attack for 3 turns"
+    
+    # After 3 turns, would apply stun and def=0, but that's handled separately
+    return create_effect(message=message, buffs=buffs)
+
+# Commander Pixis effect functions
+def warlord_command_effect(ctx: BattleContext) -> AbilityEffect:
+    """Passive: Battle start buffs"""
+    if isinstance(ctx, dict):
+        pixis_buffs_distributed = ctx.get("pixis_buffs_distributed", 0)
+        pixis_buff_targets = ctx.get("pixis_buff_targets", [])
+        pixis_buff_values = ctx.get("pixis_buff_values", {})
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        pixis_buffs_distributed = getattr(ctx, "pixis_buffs_distributed", 0)
+        pixis_buff_targets = getattr(ctx, "pixis_buff_targets", [])
+        pixis_buff_values = getattr(ctx, "pixis_buff_values", {})
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    # Apply buffs to tracked targets
+    buffs = {}
+    if pixis_buff_targets and pixis_buff_values:
+        # This would apply the specific buffs to the designated targets
+        # For now, return the general buff effect
+        buffs.update(pixis_buff_values)
+        message = f"Warlord Command: Distributed buffs to {len(pixis_buff_targets)} teammates"
+    else:
+        # Default battle start buffs
+        buffs = {
+            "DEF": 1.2,  # +20% DEF
+            "SPD": 1.15  # +15% SPD
+        }
+        message = "Warlord Command: Distributed buffs to 2 teammates (+20% DEF, +15% SPD)"
+    
+    return create_effect(message=message, buffs=buffs)
+
+def crisis_order_effect(ctx: BattleContext) -> AbilityEffect:
+    """Active: Rescue low HP ally"""
+    if isinstance(ctx, dict):
+        target_hp_percent = ctx.get("target_hp_percent", 1.0)
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        target_hp_percent = ctx.target_hp_percent
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    if target_hp_percent < 0.2:  # <20% HP
+        buffs = {
+            "block_hit": 1,  # Block 1 hit
+            "shield": 2,  # Shield for 2 turns
+            "transfer_buff": 1  # Transfer one buff
+        }
+        message = "Crisis Order: Teleported to rescue! Blocked 1 hit, shielded for 2 turns, transferred buff"
+        return create_effect(message=message, buffs=buffs)
+    else:
+        message = "Crisis Order: Ally HP not low enough (<20%)"
+        return create_effect(message=message)
+
+def chain_of_command_effect(ctx: BattleContext) -> AbilityEffect:
+    """Ultimate: Reset all actives, then exhaust"""
+    buffs = {
+        "reset_cooldowns": 1,  # All actives off cooldown
+        "multi_cast": 1  # Can use once in same turn
+    }
+    debuffs = {
+        "mental_exhaustion": 3  # Cannot use actives/passives for 3 turns
+    }
+    message = "Chain of Command: All teammate actives off cooldown and can be used once this turn! Pixis exhausted for 3 turns"
+    
+    return create_effect(message=message, buffs=buffs, debuffs=debuffs)
+
 # ======================
 # CHARACTER DEFINITIONS
 # ======================
@@ -1280,6 +1480,108 @@ CHARACTERS: Dict[str, CharacterData] = {
                 "effect_function": flicker_instinct_effect
             }
         ]
+    ),
+    "Floch Forster": create_character(
+        name="Floch Forster",
+        quote="The walls are gone. The world is cruel. But I'll survive... no matter the cost.",
+        role="Yeagerist Faction Leader",
+        archetype="Aggressive Support / Rally Specialist",
+        core_trait="Fanaticism → Unhinged Power",
+        base_stats={"HP": 700, "ATK": 15, "DEF": 10, "ACC": 12, "INT": 11, "SPD": 14},
+        passive_abilities=[
+            {
+                "name": "Demagogue's Aura",
+                "description": "Each time an ally falls, Floch gains +20% Attack, +5% Crit, +10% Speed. After 3 stacks, Floch becomes 'Unhinged' — loses 20% defense permanently but gains an extra move each turn.",
+                "type": "passive",
+                "gas_cost": 0,
+                "is_unlocked": True,
+                "effect_function": demagogues_aura_effect
+            },
+            {
+                "name": "Scapegoat Rally",
+                "description": "If Floch is the last one standing, he gets a final buff based on how many died: 1 death = +10% Speed, 2 deaths = +25% Damage, 3+ deaths = Full cooldown reset and 10% HP regen over 3 turns",
+                "type": "passive",
+                "gas_cost": 0,
+                "level_required": 25,
+                "effect_function": scapegoat_rally_effect
+            }
+        ],
+        active_abilities=[
+            {
+                "name": "Riot Spark",
+                "description": "Floch throws a flare grenade into enemy lines: All enemies take 200 damage. 50% chance to induce 'Disarray' (target randomly attacks his allies for 1 turn). If cast on terrain like rooftops, spread radius increases by 50%.",
+                "type": "active",
+                "gas_cost": 120,
+                "cooldown": 3,
+                "level_required": 50,
+                "base_damage": 200,
+                "effect_function": riot_spark_effect
+            },
+            {
+                "name": "Execute Traitor",
+                "description": "Targets a low-HP (<30%) enemy for public execution: If it succeeds, all allies gain +10% DEF (stat boost across the board for 2 turns). If it fails, Floch loses 10% HP but taunts enemy team (increases chance he'll be targeted).",
+                "type": "active",
+                "gas_cost": 100,
+                "cooldown": 4,
+                "level_required": 75,
+                "base_damage": 0,
+                "effect_function": execute_traitor_effect
+            }
+        ],
+        ultimate_abilities=[
+            {
+                "name": "Last Bastion of War",
+                "description": "Floch enters a 3-turn buffed state: 'Iron Conviction' makes him immune to stun, slow, confusion, and bleed. During this phase, he has double speed and attack on every strike. Once phase ends, Floch is stunned for 1 turn and his defense drops to 0 for 2 more. (Success rate: 49%)",
+                "type": "ultimate",
+                "gas_cost": 400,
+                "cooldown": 1,
+                "level_required": 125,
+                "base_damage": 0,
+                "effect_function": last_bastion_of_war_effect
+            }
+        ]
+    ),
+    "Commander Pixis": create_character(
+        name="Commander Pixis",
+        quote="In war, the old must make way for the young. But wisdom... wisdom endures.",
+        role="Garrison Commander",
+        archetype="Strategic Commander / Team Buffer",
+        core_trait="Authority → Sacrifice",
+        base_stats={"HP": 750, "ATK": 12, "DEF": 14, "ACC": 11, "INT": 15, "SPD": 10},
+        passive_abilities=[
+            {
+                "name": "Warlord Command",
+                "description": "At battle start, Pixis distributes random buffs to 2 teammates: +20% Defense, +15% Speed. If any of them die, Pixis's 'Tactical Flex' triggers: redistributes lost buff to remaining team at +50% Attack.",
+                "type": "passive",
+                "gas_cost": 0,
+                "is_unlocked": True,
+                "effect_function": warlord_command_effect
+            }
+        ],
+        active_abilities=[
+            {
+                "name": "Crisis Order",
+                "description": "If ally HP drops below 20%, Pixis can instantly teleport to their rescue and: Block 1 hit, Shield them for 2 turns, Transfer one of his own buffs to that ally.",
+                "type": "active",
+                "gas_cost": 150,
+                "cooldown": 2,
+                "level_required": 50,
+                "base_damage": 0,
+                "effect_function": crisis_order_effect
+            }
+        ],
+        ultimate_abilities=[
+            {
+                "name": "Chain of Command: Final Salute",
+                "description": "Pixis issues a once-per-battle 'Command Overload' — all actives of all teammates come off cooldown and can be used once in the same turn (multi-cast). After this, Pixis cannot use any actives or passives for 3 turns, reflecting 'Mental Exhaustion.' If Pixis dies during exhaustion, all allies receive 10% HP and a 'Revenant Surge' stat boost.",
+                "type": "ultimate",
+                "gas_cost": 500,
+                "cooldown": 1,
+                "level_required": 125,
+                "base_damage": 0,
+                "effect_function": chain_of_command_effect
+            }
+        ]
     )
 }
 
@@ -1287,7 +1589,9 @@ CHARACTERS: Dict[str, CharacterData] = {
 CHARACTER_IMAGES = {
     "Hitch Dreyse": "https://i.ibb.co/BM7pq4z/image.jpg",
     "Mina Carolina": "https://i.ibb.co/wZN4Zwvd/image.jpg",
-    "Daz": "https://i.ibb.co/B5sPkmZJ/image.jpg"
+    "Daz": "https://i.ibb.co/B5sPkmZJ/image.jpg",
+    "Floch Forster": "https://i.ibb.co/LL1NcP6/image.jpg",  
+    "Commander Pixis": "https://i.ibb.co/r2kBwSt5/image.jpg"
 }
 
 # ======================

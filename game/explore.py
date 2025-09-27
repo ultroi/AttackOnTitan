@@ -20,12 +20,10 @@ from game.stats_command import track_explore_stats
 logger = logging.getLogger(__name__)
 
 async def _reply_error(update: Update, message: str):
-    """Helper function to send error messages"""
     if update.message:
         await update.message.reply_text(message)
 
 def get_titan_difficulty_by_level(level: int) -> str:
-    """Get titan difficulty based on level ranges"""
     if level <= 50:
         return "Easy"
     elif level <= 100:
@@ -96,7 +94,6 @@ BATTLE_BUTTON_TEXT = "⚔️ Battle"
 
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
-    """Fast string formatting for titan messages - optimized for speed"""
     return (
         f"<code>-------------------------</code>\n"
         f"📍 <b>{name} Lvl ({level})</b>\n"
@@ -105,7 +102,6 @@ def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     )
 
 def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> dict:
-    """Generate a cached titan for the given level with varied images and names - Single category"""
     # Get titan data from single category
     difficulty_data = ENHANCED_CACHED_TITANS["All"]
 
@@ -153,7 +149,6 @@ def _generate_cached_titan(player_level: int, difficulty: str, user_id: int) -> 
 
 
 async def cleanup_user_timeout_tasks():
-    """Clean up completed timeout tasks to prevent memory leaks"""
     to_remove = []
     for user_id_str, task in user_timeout_tasks.items():
         if task.done():
@@ -166,54 +161,10 @@ async def cleanup_user_timeout_tasks():
         logger.info(f"Cleaned up {len(to_remove)} completed timeout tasks")
 
 
-async def _handle_dealer_result(dealer_task: asyncio.Task, send_message_task: asyncio.Task, update: Update, context: ContextTypes.DEFAULT_TYPE, user_id_str: str):
-    """Handle the result of the background dealer check.
-    If a dealer appeared, remove the previously sent titan message and cancel its timeout.
-    """
-    try:
-        result = await dealer_task
-        # If the dealer check returned truthy (dealer appeared), try to delete the titan message
-        if result:
-            try:
-                sent_message = None
-                try:
-                    sent_message = await send_message_task
-                except Exception:
-                    # send_message_task may already be done or failed; attempt to fetch via context if possible
-                    sent_message = None
-
-                # Cancel any pending titan timeout
-                if user_id_str in user_timeout_tasks:
-                    t = user_timeout_tasks[user_id_str]
-                    try:
-                        t.cancel()
-                    except Exception:
-                        pass
-
-                # Delete or edit the titan message to inform the user dealer appeared
-                if sent_message:
-                    try:
-                        await sent_message.delete()
-                    except Exception:
-                        try:
-                            await sent_message.edit_text("A dealer appeared and interrupted the titan encounter.")
-                        except Exception:
-                            pass
-            except Exception as e:
-                logger.error(f"Error cleaning up titan message after dealer appeared: {e}")
-    except asyncio.CancelledError:
-        return
-    except Exception as e:
-        logger.error(f"Error in _handle_dealer_result: {e}")
-
-
-
-# Cache for battle system import to avoid repeated imports
 _battle_system_cache = {}
 
-# Ultra-optimized helper function to check if a user is in battle
+# optimized helper function to check if a user is in battle
 def _is_in_battle(user_id_str: str) -> bool:
-    """Ultra-fast check if a user is in battle - with import caching"""
     global _battle_system_cache
     
     # Check regular battles
@@ -221,7 +172,6 @@ def _is_in_battle(user_id_str: str) -> bool:
         if user_id_str in _battle_system_cache['active_battles']:
             return True
     else:
-        # First-time import
         try:
             from game.battle_system import active_battles
             _battle_system_cache['active_battles'] = active_battles
@@ -230,12 +180,10 @@ def _is_in_battle(user_id_str: str) -> bool:
         except ImportError:
             _battle_system_cache['active_battles'] = {}
     
-    # Check PVP battles
     if 'active_pvp_battles' in _battle_system_cache:
         if user_id_str in _battle_system_cache['active_pvp_battles']:
             return True
     else:
-        # First-time import
         try:
             from game.pvp_system import active_pvp_battles
             _battle_system_cache['active_pvp_battles'] = active_pvp_battles
@@ -367,7 +315,6 @@ def _is_in_battle(user_id_str: str) -> bool:
 @maintenance_protected
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ultra-optimized explore command targeting <100ms response time"""
     
     start_time = time.time()
     
@@ -385,7 +332,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Immediate battle check (fastest possible)
     if _is_in_battle(user_id_str):
-        # Determine which type of battle they're in
         battle_type = "battle"
         try:
             from game.battle_system import active_battles
@@ -416,16 +362,34 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data and "player_level" in context.user_data:
         actual_player_level = context.user_data.get("player_level", 1)
     
-    # Check for dealer encounter (10% chance) - run in background to avoid blocking initial reply
-    dealer_check_task = None
+    # IMPORTANT: Check if user has started the game BEFORE any encounters
+    db = context.bot_data.get("db")
+    if not db:
+        await _reply_error(update, "Database not available. Please try again later.")
+        return
+    
+    try:
+        player_check = await db.get_player(user_id_str)
+        if not player_check:
+            await _reply_error(update, "You need to start the game first! Use /start to begin your adventure.")
+            return
+    except Exception as e:
+        logger.error(f"Error checking player existence for {user_id_str}: {e}")
+        await _reply_error(update, "Unable to verify player data. Please try again.")
+        return
+    
+    # Check for dealer encounter (2% chance) - synchronous to prevent showing both
+    dealer_appeared = False
     try:
         from game.dealer_command import explore_dealer
-        # Start dealer check in background; it may send its own message if a dealer appears
-        dealer_check_task = asyncio.create_task(explore_dealer(update, context))
+        dealer_appeared = await explore_dealer(update, context)
     except Exception as e:
         logger.error(f"Error scheduling dealer encounter check: {e}")
-        dealer_check_task = None
     
+    if dealer_appeared:
+        return  # Only dealer appears, no titan
+    
+    # Check for captcha (2% chance)
     should_spawn_captcha = (
         random.random() < 0.02 and 
         context.user_data and 
@@ -497,9 +461,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     disable_web_page_preview=False
                 )
             )
-            # If we started a dealer check, handle its result without blocking the initial response.
-            if dealer_check_task:
-                asyncio.create_task(_handle_dealer_result(dealer_check_task, send_message_task, update, context, user_id_str))
             # Record response time immediately
             response_time = (time.time() - start_time) * 1000
             if response_time > 100:
@@ -513,21 +474,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     # Get database reference for quick validation
-    db = context.bot_data.get("db")
-    if not db:
-        await _reply_error(update, "Database not available. Please try again later.")
-        return
+    # Note: DB reference already obtained above
     
-    # Quick validation: Check if user has started the game
-    try:
-        player_check = await db.get_player(user_id_str)
-        if not player_check:
-            await _reply_error(update, "You need to start the game first! Use /start to begin your adventure.")
-            return
-    except Exception as e:
-        logger.error(f"Error checking player existence for {user_id_str}: {e}")
-        await _reply_error(update, "Unable to verify player data. Please try again.")
-        return
+    # Quick validation: Player existence already checked above, so proceed
     
     asyncio.create_task(_validate_and_process_optimized(
         update, context, user_id, user_id_str, username, db,
@@ -544,7 +493,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _validate_and_process_optimized(update, context, user_id, user_id_str, username, db,
                                titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
                                send_message_task, start_time, actual_player_level, reply_text):
-    """Ultra-optimized background processing for explore command"""
     
     # Before anything else, store sent time for benchmarking
     send_time = time.time() - start_time
@@ -706,7 +654,7 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
 
 
 async def _cleanup_existing_titan(user_id_str, db):
-    """Clean up existing titan for a user without blocking"""
+    
     try:
         existing_titan = await db.get_titan(user_id_str)
         if existing_titan:
@@ -730,7 +678,7 @@ async def _cleanup_existing_titan(user_id_str, db):
 
 
 async def _handle_explore_background_optimized(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
-    """Ultra-optimized background processing for explore command - runs after titan is sent"""
+    
     try:
         # Start all operations in parallel for maximum speed
         tasks = []
@@ -741,7 +689,7 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         
         # 2. Update last explore time and cancel previous timeout - batched operation
         current_time = time.time()
-        update_data = {} # Initialize empty dictionary for updates
+        update_data = {}
         update_data["last_explore_time"] = current_time
         
         # Properly handle DailyExplores objects to ensure they can be serialized
@@ -753,7 +701,6 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
                 elif isinstance(de, dict):
                     daily_explores_dicts.append(de)
                 else:
-                    # Fall back to attribute extraction if object but no dict method
                     try:
                         daily_explores_dicts.append({"date": getattr(de, "date", ""), "count": getattr(de, "count", 0)})
                     except:
@@ -773,7 +720,6 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         
         # 5. Batch update all player data changes - optimize for speed
         if update_data:
-            # Use fire-and-forget for non-critical updates to improve response time
             asyncio.create_task(db.batch_update_player(user_id_str, update_data))
         
         # Wait for all critical tasks to complete
@@ -787,7 +733,7 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
         logger.error(f"Error in _handle_explore_background_optimized: {e}", exc_info=True)
 
 async def _handle_travel_progress(update, context, user_id_str, db, player):
-    """Ultra-optimized travel progress handler - fully non-blocking"""
+    
     # Fast path: check if travel is in progress or player in battle
     travel = getattr(player, "travel", {})
     
@@ -850,7 +796,7 @@ async def _handle_travel_progress(update, context, user_id_str, db, player):
 
 
 async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, warning_level: int, message: str):
-    """Send spam warning message to user in background"""
+    
     try:
         # Get bot instance
         bot = context.bot
@@ -871,7 +817,7 @@ async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, w
 
 
 async def _handle_spam_ban(user_id, update, context):
-    """Handle spam banning in background - optimized for async"""
+    
     try:
         db = context.bot_data.get("db")
         if not db:
@@ -949,7 +895,7 @@ async def _handle_spam_ban(user_id, update, context):
 
 # Keep existing timeout and other helper functions...
 async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
-    """Ultra-optimized titan encounter timeout for <100ms explore response"""
+    
     user_id_str = str(user_id)
     try:
         # Record the start time to check if new explore commands happened during the timeout
@@ -1008,7 +954,7 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
 
 
 async def _handle_timeout_spam_detection(user_id, user_id_str, context, db):
-    """Handle spam detection and counting separately"""
+    
     try:
         # Initialize spam count tracking if needed
         if "explore_spam_count" not in context.bot_data:
@@ -1061,7 +1007,7 @@ async def _handle_timeout_spam_detection(user_id, user_id_str, context, db):
 
 
 async def _handle_timeout_titan_cleanup(user_id, user_id_str, context, db, sent_message):
-    """Handle titan cleanup and message update separately"""
+    
     try:
         battle_id_key = f"active_battle_id_{user_id}"
         current_battle_id = context.bot_data.get(battle_id_key)
@@ -1090,7 +1036,7 @@ async def _handle_timeout_titan_cleanup(user_id, user_id_str, context, db, sent_
 
 
 async def check_spam_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Check spam count for a user (moderator only)"""
+    
     if not update.effective_user:
         return
     
@@ -1141,7 +1087,7 @@ async def check_spam_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Failed to check spam count: {e}")
         if update.message:
             await update.message.reply_text("❌ Failed to check spam count.")
-    """Reset spam count for a user (moderator only)"""
+    
     if not update.effective_user:
         return
     
@@ -1181,7 +1127,7 @@ async def check_spam_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reset_user_spam_count(user_id: int, context: ContextTypes.DEFAULT_TYPE):
-    """Reset spam count for a user"""
+    
     user_id_str = str(user_id)
     db = context.bot_data.get("db")
     if not db:
@@ -1247,7 +1193,7 @@ async def reset_verify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @maintenance_protected
 @ban_protected
 async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle the /open command to show the keyboard for exploring."""
+    
     
     if not update.effective_chat or update.effective_chat.type != "private":
         if update.message:
@@ -1275,7 +1221,7 @@ async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Close the persistent keyboard menu."""
+    
     if update.message:
         await update.message.reply_text(
             "Closing keyboard...",
