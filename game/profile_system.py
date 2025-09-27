@@ -933,22 +933,34 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db = context.bot_data.get("db")
     if not db or not hasattr(db, 'players') or db.players is None:
-        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption("❌ Database not initialized. Please try again later.")
+        else:
+            await query.edit_message_text("❌ Database not initialized. Please try again later.")
         return
     
     player = await db.get_player(user_id)
     if not player:
-        await query.edit_message_text("❌ You have no player account.")
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption("❌ You have no player account.")
+        else:
+            await query.edit_message_text("❌ You have no player account.")
         return
         
     character = await db.get_character(int(user_id), char_name)
     if not character:
-        await query.edit_message_text(f"❌ Character {char_name} not found.")
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption(f"❌ Character {char_name} not found.")
+        else:
+            await query.edit_message_text(f"❌ Character {char_name} not found.")
         return
         
     char_data = get_character_data(character.name)
     if not char_data:
-        await query.edit_message_text("❌ Character data not found.")
+        if getattr(query.message, "photo", None):
+            await query.edit_message_caption("❌ Character data not found.")
+        else:
+            await query.edit_message_text("❌ Character data not found.")
         return
         
     abilities_text = _create_abilities_text(character, char_data, category)
@@ -1255,16 +1267,7 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer("Profile closed.")
     try:
-        if getattr(query.message, "photo", None):
-            await query.edit_message_caption(
-                caption="Profile closed.",
-                reply_markup=None
-            )
-        else:
-            await query.edit_message_text(
-                text="Profile closed.",
-                reply_markup=None
-            )
+        await query.message.delete()
     except Exception as e:
         logger.error(f"Error closing profile: {e}")
 

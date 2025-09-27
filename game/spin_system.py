@@ -210,12 +210,12 @@ async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"• 1 Spin: {single_cost} Valor\n"
     text += f"• 10 Spins: {multi_cost} Valor\n\n"
 
-    text += f"💎 <b>Your Valor:</b> {player.valor}\n\n"
+    text += f"⚔️ <b>Your Valor:</b> {player.valor}\n\n"
     text += "<i>Choose how many spins:</i>"
 
     keyboard = [
-        [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}💎)", callback_data="spin_single"),
-         InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}💎)", callback_data="spin_multi")],
+        [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}⚔️)", callback_data="spin_single"),
+         InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}⚔️)", callback_data="spin_multi")],
         [InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds"),
          InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")],
         [InlineKeyboardButton("❌ Close", callback_data="spin_close")]
@@ -434,12 +434,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         text += f"• 1 Spin: {single_cost} Valor\n"
         text += f"• 10 Spins: {multi_cost} Valor\n\n"
 
-        text += f"💎 <b>Your Valor:</b> {player.valor}\n\n"
+        text += f"⚔️  <b>Your Valor:</b> {player.valor}\n\n"
         text += "<i>Choose how many spins:</i>"
 
         keyboard = [
-            [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}💎)", callback_data="spin_single"),
-             InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}💎)", callback_data="spin_multi")],
+            [InlineKeyboardButton(f"🎰 1 Spin ({single_cost}⚔️)", callback_data="spin_single"),
+             InlineKeyboardButton(f"🎰 10 Spins ({multi_cost}⚔️)", callback_data="spin_multi")],
             [InlineKeyboardButton("📊 Spin Info", callback_data="spin_odds"),
              InlineKeyboardButton("🏆 Spin Medals", callback_data="spin_medals")],
             [InlineKeyboardButton("❌ Close", callback_data="spin_close")]
@@ -530,7 +530,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         text += f"\n🎖️ <b>Spin Medals Earned:</b> +{total_medals}"
 
     if streak_bonus:
-        text += f"\n🎯 <b>Streak Bonus:</b> +2💎 Valor"
+        text += f"\n🎯 <b>Streak Bonus:</b> +2⚔️ Valor"
 
     text += f"\n\n💎 <b>Remaining Valor:</b> {player.valor}"
 
