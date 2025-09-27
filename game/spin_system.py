@@ -29,13 +29,13 @@ SPIN_ITEMS = {
 
     # Rare Items (9%)
     # "rdo": {"name": "Regiment Dispatch Order (RDO)", "rarity": "rare", "amount": 1, "type": "item"},  # Temporarily disabled
-    "daz": {"name": "Daz", "rarity": "rare", "amount": 1, "type": "character"},
-    "hitch_dreyse": {"name": "Hitch Dreyse", "rarity": "rare", "amount": 1, "type": "character"},
-    "mina_carolina": {"name": "Mina Carolina", "rarity": "rare", "amount": 1, "type": "character"},
+    "Daz": {"name": "Daz", "rarity": "rare", "amount": 1, "type": "character"},
+    "Hitch Dreyse": {"name": "Hitch Dreyse", "rarity": "rare", "amount": 1, "type": "character"},
+    "Mina Carolina": {"name": "Mina Carolina", "rarity": "rare", "amount": 1, "type": "character"},
 
     # Ultra-Rare Items (2%)
-    "floch_forster": {"name": "Floch Forster", "rarity": "ultra_rare", "amount": 1, "type": "character"},
-    "commander_pixis": {"name": "Commander Pixis", "rarity": "ultra_rare", "amount": 1, "type": "character"},
+    "Floch Forster": {"name": "Floch Forster", "rarity": "ultra_rare", "amount": 1, "type": "character"},
+    "Commander Pixis": {"name": "Commander Pixis", "rarity": "ultra_rare", "amount": 1, "type": "character"},
 }
 
 RARITY_WEIGHTS = {
