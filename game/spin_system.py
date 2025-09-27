@@ -28,7 +28,7 @@ SPIN_ITEMS = {
     "titan_biology_manual": {"name": "Titan Biology Manual", "rarity": "uncommon", "amount": 1, "type": "item"},
 
     # Rare Items (9%)
-    "rdo": {"name": "Regiment Dispatch Order (RDO)", "rarity": "rare", "amount": 1, "type": "item"},
+    # "rdo": {"name": "Regiment Dispatch Order (RDO)", "rarity": "rare", "amount": 1, "type": "item"},  # Temporarily disabled
     "daz": {"name": "Daz", "rarity": "rare", "amount": 1, "type": "character"},
     "hitch_dreyse": {"name": "Hitch Dreyse", "rarity": "rare", "amount": 1, "type": "character"},
     "mina_carolina": {"name": "Mina Carolina", "rarity": "rare", "amount": 1, "type": "character"},
@@ -39,10 +39,10 @@ SPIN_ITEMS = {
 }
 
 RARITY_WEIGHTS = {
-    "common": 70,
+    "common": 75,
     "uncommon": 19,
-    "rare": 9,
-    "ultra_rare": 2,
+    "rare": 2,
+    "ultra_rare": 1,
 }
 
 SPIN_COSTS = {
@@ -304,7 +304,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             text += f"🟡 <b>Ultra-Rare Fragments:</b> {fragments}/50\n"
         text += "\n💰 <b>Redeem Options:</b>\n"
         text += "• 10 Medals = 500 Gas\n"
-        text += "• 25 Medals = 1 RDO\n"
+        text += "• 25 Medals = 1 RDO (Coming Soon)\n"
         text += "• 50 Medals = 1/50 Ultra-Rare Fragment\n\n"
         text += "<i>Select an option to redeem:</i>"
 
