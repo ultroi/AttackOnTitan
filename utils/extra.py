@@ -226,30 +226,66 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No message to broadcast.")
             return
 
-        # Get all users and groups
+        # Run broadcast in background to avoid blocking other commands
+        import asyncio
+        asyncio.create_task(run_broadcast(context, broadcast_message, user_id, update))
+
+    except Exception as e:
+        logger.error(f"Error in broadcast_command: {e}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+
+async def run_broadcast(context, broadcast_message, user_id, update):
+    """Run the actual broadcast process in background with batching"""
+    try:
+        db = context.bot_data.get("db")
+        if not db:
+            await update.message.reply_text("Database unavailable.")
+            return
+
+        # Get all players from database
+        all_players_cursor = db.players.find({})
+        user_ids = []
+        async for player_doc in all_players_cursor:
+            if 'user_id' in player_doc:
+                user_ids.append(str(player_doc['user_id']))
+
+        # Get all groups from database
+        all_groups_cursor = db.groups.find({})
+        group_ids = []
+        async for group_doc in all_groups_cursor:
+            if '_id' in group_doc:
+                group_ids.append(str(group_doc['_id']))
+
+        # Remove duplicates to prevent spam
+        user_ids = list(set(user_ids))
+        group_ids = list(set(group_ids))
+
+        total_users = len(user_ids)
+        total_groups = len(group_ids)
+        total_targets = total_users + total_groups
+
+        logger.info(f"Broadcasting to {total_users} users and {total_groups} groups")
+
+        # Send immediate confirmation
+        await update.message.reply_text(
+            f"📢 <b>Broadcast Started!</b>\n\n"
+            f"🎯 <b>Targets:</b> {total_users} users, {total_groups} groups\n"
+            f"⏱️ <b>Status:</b> Processing in background...\n\n"
+            f"<i>You can continue using other commands.</i>",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Process in smaller batches to avoid overwhelming the bot
+        batch_size = 10  # Process 10 at a time
         users_broadcasted = 0
         groups_broadcasted = 0
         errors = 0
 
-        try:
-            # Get all players from database
-            all_players_cursor = db.players.find({})
-            user_ids = []
-            async for player_doc in all_players_cursor:
-                if 'user_id' in player_doc:
-                    user_ids.append(str(player_doc['user_id']))
-
-            # Get all groups from database
-            all_groups_cursor = db.groups.find({})
-            group_ids = []
-            async for group_doc in all_groups_cursor:
-                if '_id' in group_doc:
-                    group_ids.append(group_doc['_id'])
-
-            logger.info(f"Broadcasting to {len(user_ids)} users and {len(group_ids)} groups")
-
-            # Send to users
-            for uid in user_ids:
+        # Process users in batches
+        for i in range(0, len(user_ids), batch_size):
+            batch = user_ids[i:i + batch_size]
+            for uid in batch:
                 try:
                     await context.bot.forward_message(
                         chat_id=uid,
@@ -257,16 +293,17 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         message_id=broadcast_message.message_id
                     )
                     users_broadcasted += 1
-
-                    # Small delay to avoid rate limits
-                    await asyncio.sleep(0.05)
-
                 except Exception as e:
                     errors += 1
                     logger.warning(f"Failed to broadcast to user {uid}: {e}")
 
-            # Send to groups
-            for gid in group_ids:
+            # Longer delay between batches
+            await asyncio.sleep(1.0)  # 1 second between batches
+
+        # Process groups in batches
+        for i in range(0, len(group_ids), batch_size):
+            batch = group_ids[i:i + batch_size]
+            for gid in batch:
                 try:
                     await context.bot.forward_message(
                         chat_id=gid,
@@ -274,50 +311,45 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         message_id=broadcast_message.message_id
                     )
                     groups_broadcasted += 1
-
-                    # Small delay to avoid rate limits
-                    await asyncio.sleep(0.05)
-
                 except Exception as e:
                     errors += 1
                     logger.warning(f"Failed to broadcast to group {gid}: {e}")
 
-            # Send success report
-            report = (
-                f"📢 <b>Broadcast Complete</b>\n\n"
-                f"✅ <b>Users:</b> {users_broadcasted}\n"
-                f"✅ <b>Groups:</b> {groups_broadcasted}\n"
-                f"❌ <b>Errors:</b> {errors}\n"
-                f"📊 <b>Total:</b> {users_broadcasted + groups_broadcasted}"
+            # Longer delay between batches
+            await asyncio.sleep(1.0)  # 1 second between batches
+
+        # Send completion report
+        report = (
+            f"📢 <b>Broadcast Complete!</b>\n\n"
+            f"✅ <b>Users:</b> {users_broadcasted}/{total_users}\n"
+            f"✅ <b>Groups:</b> {groups_broadcasted}/{total_groups}\n"
+            f"❌ <b>Errors:</b> {errors}\n"
+            f"📊 <b>Total:</b> {users_broadcasted + groups_broadcasted}/{total_targets}"
+        )
+
+        await update.message.reply_text(report, parse_mode=ParseMode.HTML)
+
+        # Log the broadcast
+        log_msg = (
+            f"📢 <b>Broadcast Completed</b>\n\n"
+            f"<b>By:</b> <code>{user_id}</code>\n"
+            f"<b>Users:</b> {users_broadcasted}/{total_users}\n"
+            f"<b>Groups:</b> {groups_broadcasted}/{total_groups}\n"
+            f"<b>Errors:</b> {errors}"
+        )
+
+        # Send to log channel if available
+        try:
+            await context.bot.send_message(
+                chat_id=-1002873117075, 
+                text=log_msg,
+                parse_mode=ParseMode.HTML
             )
-
-            await update.message.reply_text(report, parse_mode=ParseMode.HTML)
-
-            # Log the broadcast
-            log_msg = (
-                f"📢 <b>Broadcast Sent</b>\n\n"
-                f"<b>By:</b> <code>{user_id}</code>\n"
-                f"<b>Users:</b> {users_broadcasted}\n"
-                f"<b>Groups:</b> {groups_broadcasted}\n"
-                f"<b>Errors:</b> {errors}"
-            )
-
-            # Send to log channel if available
-            try:
-                await context.bot.send_message(
-                    chat_id=-1002873117075,  # LOG_CHANNEL_ID
-                    text=log_msg,
-                    parse_mode=ParseMode.HTML
-                )
-            except:
-                pass
-
-        except Exception as e:
-            logger.error(f"Broadcast failed: {e}")
-            await update.message.reply_text(f"❌ Broadcast failed: {str(e)}")
+        except:
+            pass
 
     except Exception as e:
-        logger.error(f"Error in broadcast_command: {e}")
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+        logger.error(f"Broadcast failed: {e}")
+        await update.message.reply_text(f"❌ Broadcast failed: {str(e)}")
 
 
