@@ -1904,6 +1904,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("char", auto_load_user_data(disable_protected(char_detail))))
     application.add_handler(CommandHandler("give", auto_load_user_data(disable_protected(give_command))))
     application.add_handler(CommandHandler("add", auto_load_user_data(disable_protected(add_resource_command))))
+    application.add_handler(CommandHandler("remove", auto_load_user_data(disable_protected(add_resource_command))))
     application.add_handler(CommandHandler("stats", auto_load_user_data(disable_protected(stats_command))))
     application.add_handler(CommandHandler("missions", auto_load_user_data(disable_protected(missions_command))))
     application.add_handler(CommandHandler("resetmission", auto_load_user_data(disable_protected(reset_mission_command))))
