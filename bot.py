@@ -48,6 +48,7 @@ from game.profile_system import (
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
 )
+from game.item_usage import use_command
 from game.spin_system import spin_command, spin_callback_handler
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
 from database.models import Character, Player
@@ -1936,6 +1937,8 @@ def setup_handlers(application):
 
     application.add_handler(CommandHandler("spin", disable_protected(spin_command)))
     application.add_handler(CallbackQueryHandler(spin_callback_handler, pattern="^spin_"))
+
+    application.add_handler(CommandHandler("use", disable_protected(use_command)))
 
     # Character selection and team management
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))

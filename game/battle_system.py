@@ -644,11 +644,15 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
                 continue
                 
             gas_cost = ability.gas_cost or 0
+            # Apply Double Gas Injector buff for keyboard display
+            effective_gas_cost = gas_cost
+            if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
+                effective_gas_cost = gas_cost // 2
             ability_display_name = ability.name
             cooldown = battle.ability_cooldowns.get(ability.name, 0)
             
             # Optimized button creation - fewer conditionals
-            if cooldown == 0 and battle.gas >= gas_cost:
+            if cooldown == 0 and battle.gas >= effective_gas_cost:
                 keyboard.append([InlineKeyboardButton(
                     obfuscate_text(f"{prefix} {ability_display_name}"),
                     callback_data=f"ability_{ability.name}"
@@ -683,7 +687,11 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     weapon = battle.get_equipped_weapon(shop_items)
     
     # Add attack button based on gas
-    if battle.gas >= 20:
+    attack_gas_cost = 20
+    if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
+        attack_gas_cost = 10
+    
+    if battle.gas >= attack_gas_cost:
         if weapon:
             # Get the appropriate emoji based on item type
             item_type = getattr(weapon, 'type', 'weapon')
@@ -1752,19 +1760,6 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         except Exception as e:
             logger.error(f"Error during parallel character batch updates: {e}")
         
-        player_update_task = db.batch_update_player(
-            str(user_id), 
-            {
-                "marks": player_obj.marks,
-                "valor": player_obj.valor,
-                "explore_count": player_obj.explore_count,
-                "xp": player_obj.xp,
-                "total_xp": player_obj.total_xp,
-                "level": player_obj.level,
-                "updated_at": datetime.now(timezone.utc)
-            }
-        )
-
         # Execute player update
         try:
             await player_update_task
@@ -1786,6 +1781,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.gas = max(0, battle.character.gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
+
+        # Decrement exploration-based buff counters after defeat (double_gas_injector and frenzy_elixir)
+        buff_updates = {}
+        if isinstance(player_data, Player):
+            player_obj = player_data
+        else:
+            player_obj = Player(**player_data)
+        
+        if hasattr(player_obj, 'double_gas_injector_uses') and player_obj.double_gas_injector_uses > 0:
+            player_obj.double_gas_injector_uses -= 1
+            buff_updates["double_gas_injector_uses"] = player_obj.double_gas_injector_uses
+        if hasattr(player_obj, 'frenzy_elixir_uses') and player_obj.frenzy_elixir_uses > 0:
+            player_obj.frenzy_elixir_uses -= 1
+            buff_updates["frenzy_elixir_uses"] = player_obj.frenzy_elixir_uses
 
         # Send defeat message immediately
         await query.edit_message_text(
@@ -1827,7 +1836,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             str(user_id), 
             {
                 "explore_count": explore_count + 1,
-                "updated_at": datetime.now(timezone.utc)
+                "updated_at": datetime.now(timezone.utc),
+                **buff_updates  # Include buff counter updates
             }
         )
 

@@ -389,6 +389,7 @@ class Player(BaseModel):
     valor: int = 0
     crystal: int = 0
     gas: int = 1000
+    max_gas: int = 10000  # Level 1 limit
     
     # Location and travel
     location: str = ""
@@ -464,20 +465,21 @@ class Player(BaseModel):
         else:
             return 90000 + (self.level * 1000)
 
+    @property
+    def gas_limit(self) -> int:
+        """Calculate gas limit based on player level"""
+        return 10000 + ((self.level - 1) * 250)
+
     def add_xp(self, amount: int) -> Dict[str, Any]:
         """Add XP and return level up information."""
-        # Ensure we never add negative XP that would result in negative total XP
         if amount < 0 and abs(amount) > self.xp:
-            # Clamp negative XP to current XP value to prevent going below 0
             amount = -self.xp
         
         self.xp += amount
         
-        # Double-check to ensure XP is never negative
         if self.xp < 0:
             self.xp = 0
             
-        # Only add to total_xp if amount is positive
         if amount > 0:
             self.total_xp += amount
     
@@ -504,6 +506,11 @@ class Player(BaseModel):
         self.marks += rewards["marks"]
         self.valor += rewards["valor"]
         # Removed crystal rewards from level up
+        
+        # Cap gas at new limit if it exceeds it
+        gas_limit = self.gas_limit
+        if self.gas > gas_limit:
+            self.gas = gas_limit
         
         # Only run if db and context are provided (for async update)
         import asyncio

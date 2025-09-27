@@ -636,8 +636,8 @@ async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 continue  # unknown item
             if item_type not in ["weapon", "gear", "military", "utility"]:
                 miscellaneous.append((k, item_name, v))
-    text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- {name} x{v}" for k, name, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
-    text += "\n\n<b>Usage:</b> /use &lt;item_name&gt; [amount]"
+    text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- <code>{k}</code> ({name}) x{v}" for k, name, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
+    text += "\n\n<b>Usage:</b> /use &lt;item_name&gt; [amount]\n<i>Copy the item name in code format above</i>"
     keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
@@ -1322,19 +1322,9 @@ async def show_characters(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     for i, char_name in enumerate(owned_characters, 1):
-        char_data = get_character_data(char_name)
-        if char_data:
-            role = char_data.role or "Unknown"
-            archetype = char_data.archetype or "Unknown"
-            text += f"👤 <b>{i}. {escape(char_name)}</b>\n"
-            text += f"   └ <i>{escape(role)}</i>\n"
-            text += f"   └ <i>{escape(archetype)}</i>\n\n"
-        else:
-            text += f"👤 <b>{i}. {escape(char_name)}</b>\n"
-            text += f"   └ <i>Character data not found</i>\n\n"
+        text += f"{i}. {escape(char_name)}\n"
     
-    text += f"📊 <b>Total:</b> {len(owned_characters)} characters\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    text += "\n"
     text += "<i>Use /char &lt;name&gt; for detailed info</i>"
     
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)

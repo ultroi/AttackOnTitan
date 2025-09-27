@@ -129,7 +129,10 @@ class SpinSystem:
 
         if item["type"] == "resource":
             if item_key == "gas":
-                player.gas += item["amount"]
+                gas_limit = player.gas_limit
+                gas_to_add = min(item["amount"], gas_limit - player.gas)
+                player.gas += gas_to_add
+                # Excess gas beyond limit is wasted
             elif item_key == "marks":
                 player.marks += item["amount"]
 
@@ -531,6 +534,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
             await query.edit_message_text(insufficient_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
             return
+
+        # Delete old spin message first
+        try:
+            await query.message.delete()
+        except:
+            pass
 
         # Show spinning animation
         animation_text = "🎰 <b>Spinning the wheel...</b>\n\n"

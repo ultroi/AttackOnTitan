@@ -17,8 +17,11 @@ async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
 
     if not context.args or len(context.args) < 1:
+        usable_items = ["`double_gas_injector`", "`mark_surge_token`", "`frenzy_elixir`"]
         await update.message.reply_text(
-            "<b>Usage:</b> /use <item_name> [amount]",
+            "<b>Usage:</b> /use &lt;item_name&gt; [amount]\n\n"
+            "<b>Usable items:</b>\n" + "\n".join(usable_items) + "\n\n"
+            "<i>Check your inventory with /inv to see available items</i>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -48,8 +51,35 @@ async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check if item exists in inventory
     inventory = getattr(player, 'inventory', {}) or {}
-    if item_name not in inventory or inventory[item_name] < amount:
-        await update.message.reply_text(f"❌ You don't have enough {item_name}! You have {inventory.get(item_name, 0)}.")
+    
+    # Define usable items
+    usable_items = ["double_gas_injector", "mark_surge_token", "frenzy_elixir"]
+    
+    if item_name not in inventory:
+        available_items = [f"`{k}`" for k in inventory.keys() if k != "echo_shard"]
+        if available_items:
+            await update.message.reply_text(
+                f"❌ You don't have '{item_name}' in your inventory!\n\n"
+                f"<b>Your items:</b>\n" + "\n".join(available_items) + "\n\n"
+                f"<b>Usable items:</b> {', '.join(f'`{item}`' for item in usable_items)}",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text("❌ You have no items in your inventory!")
+        return
+    
+    if inventory[item_name] < amount:
+        await update.message.reply_text(f"❌ You don't have enough '{item_name}'! You have {inventory[item_name]}, but need {amount}.")
+        return
+    
+    # Check if item is actually usable
+    if item_name not in usable_items:
+        await update.message.reply_text(
+            f"❌ '{item_name}' is not a usable item!\n\n"
+            f"<b>Usable items:</b>\n" + "\n".join(f"`{item}`" for item in usable_items) + "\n\n"
+            f"<i>This item may be a collectible or not yet implemented for use.</i>",
+            parse_mode=ParseMode.HTML
+        )
         return
 
     # Check for active buffs (only one of each type can be active at a time)
@@ -76,10 +106,6 @@ async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Activate buff
         player.frenzy_elixir_uses = 3  # 3 explorations
         message = f"✅ <b>Frenzy Elixir activated!</b>\nNext 3 explorations will give triple XP!"
-
-    else:
-        await update.message.reply_text(f"❌ Unknown item: {item_name}")
-        return
 
     # Remove item from inventory
     inventory[item_name] -= amount
