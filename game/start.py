@@ -170,7 +170,9 @@ async def show_character_selection(update: Update, context: ContextTypes.DEFAULT
         logger.error("show_character_selection called with no query")
         return
     await query.answer()
-    keyboard = [[InlineKeyboardButton(char_name, callback_data=f"select_{char_name}")] for char_name in CHARACTERS]
+    # Only show Mina Carolina, Hitch Dreyse, and Daz
+    available_characters = ["Mina Carolina", "Hitch Dreyse", "Daz"]
+    keyboard = [[InlineKeyboardButton(char_name, callback_data=f"select_{char_name}")] for char_name in available_characters]
     reply_markup = InlineKeyboardMarkup(keyboard)
     selection_text = (
         "Choose your character:\n\n"
