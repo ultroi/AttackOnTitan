@@ -9,6 +9,10 @@ from utils.maintenance import maintenance_protected
 
 logger = logging.getLogger(__name__)
 
+# Global broadcast lock to prevent multiple broadcasts
+broadcast_lock = asyncio.Lock()
+broadcast_active = False
+
 @ban_protected
 @maintenance_protected
 async def buy_command(update: Update, context):
@@ -165,7 +169,30 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @maintenance_protected
 @ban_protected
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def broadcast_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check broadcast status"""
+    global broadcast_active
+
+    if not update.effective_user:
+        return
+
+    user_id = update.effective_user.id
+
+    # Check if user is owner
+    from utils.owners import get_owner_ids
+    owner_ids = get_owner_ids()
+
+    db = context.bot_data.get("db")
+    player = await db.get_player(str(user_id)) if db else None
+    is_owner = (user_id in owner_ids or
+               (player and getattr(player, 'level', 0) >= 100))
+
+    if not is_owner:
+        await update.message.reply_text("❌ You don't have permission to check broadcast status.")
+        return
+
+    status = "🟢 Active" if broadcast_active else "🔴 Inactive"
+    await update.message.reply_text(f"📢 <b>Broadcast Status:</b> {status}", parse_mode=ParseMode.HTML)
     """Handle the /broadcast command to send messages to all users and groups."""
     if not update.effective_user:
         return
@@ -180,9 +207,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not db:
             await update.message.reply_text("Database unavailable.")
             return
-
-        # Check if user is owner (you might have an owners list or check user level/role)
-        # For now, let's check if user_id is in a predefined list or has high level
+        
         from utils.owners import get_owner_ids
         owner_ids = get_owner_ids()
 
@@ -226,6 +251,12 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No message to broadcast.")
             return
 
+        # Check if broadcast is already running
+        global broadcast_active
+        if broadcast_active:
+            await update.message.reply_text("❌ A broadcast is already running. Please wait for it to complete.")
+            return
+
         # Run broadcast in background to avoid blocking other commands
         import asyncio
         asyncio.create_task(run_broadcast(context, broadcast_message, user_id, update))
@@ -237,7 +268,33 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def run_broadcast(context, broadcast_message, user_id, update):
     """Run the actual broadcast process in background with batching"""
-    try:
+    global broadcast_active, broadcast_lock
+
+    async with broadcast_lock:
+        broadcast_active = True
+        try:
+            # Add timeout to prevent hanging
+            await asyncio.wait_for(
+                run_broadcast_internal(context, broadcast_message, user_id, update),
+                timeout=300.0  # 5 minutes timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("Broadcast timed out after 5 minutes")
+            try:
+                await update.message.reply_text("❌ Broadcast timed out after 5 minutes.")
+            except:
+                pass
+        except Exception as e:
+            logger.error(f"Broadcast failed: {e}")
+            try:
+                await update.message.reply_text(f"❌ Broadcast failed: {str(e)}")
+            except:
+                pass  # Ignore errors in error reporting
+        finally:
+            broadcast_active = False
+
+
+async def run_broadcast_internal(context, broadcast_message, user_id, update):
         db = context.bot_data.get("db")
         if not db:
             await update.message.reply_text("Database unavailable.")
@@ -347,9 +404,5 @@ async def run_broadcast(context, broadcast_message, user_id, update):
             )
         except:
             pass
-
-    except Exception as e:
-        logger.error(f"Broadcast failed: {e}")
-        await update.message.reply_text(f"❌ Broadcast failed: {str(e)}")
 
 
