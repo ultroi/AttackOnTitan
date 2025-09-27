@@ -163,3 +163,161 @@ async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
 
 
+@maintenance_protected
+@ban_protected
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle the /broadcast command to send messages to all users and groups."""
+    if not update.effective_user:
+        return
+
+    user_id = update.effective_user.id
+
+    # Check if user is owner (you can modify this check based on your owner system)
+    # For now, let's assume owners are hardcoded or checked via database
+    try:
+        # Get database
+        db = context.bot_data.get("db")
+        if not db:
+            await update.message.reply_text("Database unavailable.")
+            return
+
+        # Check if user is owner (you might have an owners list or check user level/role)
+        # For now, let's check if user_id is in a predefined list or has high level
+        from utils.owners import get_owner_ids
+        owner_ids = get_owner_ids()
+
+        # Alternative: check if user has high level or specific role
+        player = await db.get_player(str(user_id))
+        is_owner = (user_id in owner_ids or
+                   (player and getattr(player, 'level', 0) >= 100))  # High level users
+
+        if not is_owner:
+            await update.message.reply_text("❌ You don't have permission to use broadcast.")
+            return
+
+        # Check if command has arguments or is a reply
+        if not context.args and not (update.message.reply_to_message):
+            help_text = (
+                "📢 <b>Broadcast Command</b>\n\n"
+                "Usage:\n"
+                "• Reply to a message: /broadcast\n"
+                "• With text: /broadcast &lt;message&gt;\n\n"
+                "This will forward the message to all users and groups where the bot is present."
+            )
+            await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
+            return
+
+        # Get the message to broadcast
+        broadcast_message = None
+        if update.message.reply_to_message:
+            # Use the replied message
+            broadcast_message = update.message.reply_to_message
+        elif context.args:
+            # Create a new message with the text
+            broadcast_text = " ".join(context.args)
+            # Send the text as a message from the bot
+            broadcast_message = await context.bot.send_message(
+                chat_id=user_id,
+                text=broadcast_text,
+                parse_mode=ParseMode.HTML
+            )
+
+        if not broadcast_message:
+            await update.message.reply_text("❌ No message to broadcast.")
+            return
+
+        # Get all users and groups
+        users_broadcasted = 0
+        groups_broadcasted = 0
+        errors = 0
+
+        try:
+            # Get all players from database
+            all_players_cursor = db.players.find({})
+            user_ids = []
+            async for player_doc in all_players_cursor:
+                if 'user_id' in player_doc:
+                    user_ids.append(str(player_doc['user_id']))
+
+            # Get all groups from database
+            all_groups_cursor = db.groups.find({})
+            group_ids = []
+            async for group_doc in all_groups_cursor:
+                if '_id' in group_doc:
+                    group_ids.append(group_doc['_id'])
+
+            logger.info(f"Broadcasting to {len(user_ids)} users and {len(group_ids)} groups")
+
+            # Send to users
+            for uid in user_ids:
+                try:
+                    await context.bot.forward_message(
+                        chat_id=uid,
+                        from_chat_id=broadcast_message.chat_id,
+                        message_id=broadcast_message.message_id
+                    )
+                    users_broadcasted += 1
+
+                    # Small delay to avoid rate limits
+                    await asyncio.sleep(0.05)
+
+                except Exception as e:
+                    errors += 1
+                    logger.warning(f"Failed to broadcast to user {uid}: {e}")
+
+            # Send to groups
+            for gid in group_ids:
+                try:
+                    await context.bot.forward_message(
+                        chat_id=gid,
+                        from_chat_id=broadcast_message.chat_id,
+                        message_id=broadcast_message.message_id
+                    )
+                    groups_broadcasted += 1
+
+                    # Small delay to avoid rate limits
+                    await asyncio.sleep(0.05)
+
+                except Exception as e:
+                    errors += 1
+                    logger.warning(f"Failed to broadcast to group {gid}: {e}")
+
+            # Send success report
+            report = (
+                f"📢 <b>Broadcast Complete</b>\n\n"
+                f"✅ <b>Users:</b> {users_broadcasted}\n"
+                f"✅ <b>Groups:</b> {groups_broadcasted}\n"
+                f"❌ <b>Errors:</b> {errors}\n"
+                f"📊 <b>Total:</b> {users_broadcasted + groups_broadcasted}"
+            )
+
+            await update.message.reply_text(report, parse_mode=ParseMode.HTML)
+
+            # Log the broadcast
+            log_msg = (
+                f"📢 <b>Broadcast Sent</b>\n\n"
+                f"<b>By:</b> <code>{user_id}</code>\n"
+                f"<b>Users:</b> {users_broadcasted}\n"
+                f"<b>Groups:</b> {groups_broadcasted}\n"
+                f"<b>Errors:</b> {errors}"
+            )
+
+            # Send to log channel if available
+            try:
+                await context.bot.send_message(
+                    chat_id=-1002873117075,  # LOG_CHANNEL_ID
+                    text=log_msg,
+                    parse_mode=ParseMode.HTML
+                )
+            except:
+                pass
+
+        except Exception as e:
+            logger.error(f"Broadcast failed: {e}")
+            await update.message.reply_text(f"❌ Broadcast failed: {str(e)}")
+
+    except Exception as e:
+        logger.error(f"Error in broadcast_command: {e}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+
