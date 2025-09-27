@@ -168,6 +168,11 @@ class SpinSystem:
 
 async def spin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /spin command"""
+    # Only allow in private chats
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("🎰 Spin commands can only be used in private messages!")
+        return
+        
     if context.user_data is None:
         context.user_data = {}
     user_id = str(update.effective_user.id)
