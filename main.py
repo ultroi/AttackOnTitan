@@ -51,7 +51,7 @@ from game.bank_command import handle_bank_command, handle_deposit_command, handl
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
-from utils.extra import buy_command, give_command, broadcast_command
+from utils.extra import buy_command, give_command, broadcast_command, broadcast_status_command
 from game.explore import explore, close_keyboard, reset_verify, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
@@ -693,6 +693,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
     app_instance.add_handler(CommandHandler("broadcast", broadcast_command))
+    app_instance.add_handler(CommandHandler("broadcast_status", broadcast_status_command))
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))

@@ -193,7 +193,14 @@ async def broadcast_status_command(update: Update, context: ContextTypes.DEFAULT
 
     status = "🟢 Active" if broadcast_active else "🔴 Inactive"
     await update.message.reply_text(f"📢 <b>Broadcast Status:</b> {status}", parse_mode=ParseMode.HTML)
+
+
+@maintenance_protected
+@ban_protected
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /broadcast command to send messages to all users and groups."""
+    global broadcast_active
+    
     if not update.effective_user:
         return
 
@@ -252,7 +259,6 @@ async def broadcast_status_command(update: Update, context: ContextTypes.DEFAULT
             return
 
         # Check if broadcast is already running
-        global broadcast_active
         if broadcast_active:
             await update.message.reply_text("❌ A broadcast is already running. Please wait for it to complete.")
             return
