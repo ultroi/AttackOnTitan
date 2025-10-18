@@ -17,10 +17,6 @@ import time
 
 logger = logging.getLogger(__name__)
 
-# =========================
-# GLOBALS & UTILITIES
-# =========================
-
 # Global dictionary to track active battles
 active_battles: Dict[str, 'BattleSystem'] = {}
 active_battles_lock = asyncio.Lock()
@@ -34,7 +30,6 @@ class BattleSystem:
         if self.character.equipped_weapon:
             if self.character.equipped_weapon in shop_items:
                 item = shop_items[self.character.equipped_weapon]
-                # Allow using gear and military items as weapons
                 if hasattr(item, 'type') and item.type in ["weapon", "gear", "military"] and hasattr(item, 'attributes'):
                     return item
             else:
@@ -47,13 +42,12 @@ class BattleSystem:
         self.character = character
         self.titan = titan
         self.player = player
-        # Initialize battle state
         self.character_hp: int = character.current_hp
         self.titan_hp: int = titan.max_hp
         self.gas: int = character.gas
-        self.character_gas: int = character.max_gas  # Max gas for display and checks
-        self.max_gas: int = character.max_gas  # Use character's actual max_gas without capping
-        self.character.max_gas = self.max_gas  # Sync with character
+        self.character_gas: int = character.max_gas  
+        self.max_gas: int = character.max_gas  
+        self.character.max_gas = self.max_gas  
         self.character.stats = character.stats or CharacterStats(HP=650, ATK=25, DEF=10, SPD=10, ACC=10, INT=10)
         self.ability_cooldowns: Dict[str, int] = {
             ability.name: 0 for ability in (
@@ -63,10 +57,9 @@ class BattleSystem:
             )
         }
         self.buffs: Dict[str, Any] = {}
-        self.debuffs: Dict[str, int] = {}  # Character debuffs
-        self.titan_debuffs: Dict[str, int] = {}  # Titan debuffs
+        self.debuffs: Dict[str, int] = {}  
+        self.titan_debuffs: Dict[str, int] = {}
         self.turn: int = 0
-        # Add keyboard cache for performance optimization
         self.keyboard_cache: Any = None
         self.keyboard_cache_invalid = True
         self.trigger_states: Dict[str, Any] = {
@@ -75,27 +68,22 @@ class BattleSystem:
             "fear_counter": 0,
             "focused_turns": 0,
             "ally_died": False,
-            # Floch Forster tracking
             "demagogue_stacks": 0,
             "ally_death_count": 0,
             "flochs_last_standing": False,
-            # Commander Pixis tracking
             "pixis_buffs_distributed": False,
             "pixis_buff_targets": [],
             "pixis_buff_values": {}
         }
-        # Add emergency heal usage flag
         self.emergency_heal_used: bool = False
-        # Auto-unlock abilities based on current level
         self.character._check_ability_unlocks()
         self.apply_passives("battle_start")
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
         self.battle_ended: bool = False
-        self.initial_gas: int = character.gas  # Store initial gas at battle start
-        self.last_character_refresh: float = time.time()  # Add timestamp for character refresh tracking
-        # Track participating characters for XP distribution
-        self.participating_characters: set = {character.name}  # Start with the initial character
+        self.initial_gas: int = character.gas  
+        self.last_character_refresh: float = time.time()  
+        self.participating_characters: set = {character.name}  
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -142,7 +130,6 @@ class BattleSystem:
             "character_level": self.character.level,
             "target_is_self": False,
             "titan_difficulty": self.titan.difficulty,
-            # ...existing code...
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
@@ -190,7 +177,7 @@ class BattleSystem:
             if attack_type == "pierce":
                 self.titan_debuffs["bleed"] = 3
             elif attack_type == "slash":
-                self.titan_debuffs["damage_reduction"] = 1  # Use int instead of float
+                self.titan_debuffs["damage_reduction"] = 1  
         if effect.buffs:
             self.buffs.update(effect.buffs)
         if effect.debuffs:
@@ -215,14 +202,11 @@ class BattleSystem:
             self.titan_debuffs["delay"] -= 1
             return 0, f"{self.titan.name} is delayed and cannot attack this turn!"
         if self.buffs.get("dodge", 0) > 0 or self.trigger_states["dodge_count"] > 0:
-            # Process dodge from Golden Hour Reflex
             if self.buffs.get("dodge", 0) > 0:
-                # Remove dodge after use (one-time dodge)
                 del self.buffs["dodge"]
             else:
                 self.trigger_states["dodge_count"] = max(0, self.trigger_states["dodge_count"] - 1)
             
-            # Apply any passive abilities triggered by dodge
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
         
@@ -233,11 +217,11 @@ class BattleSystem:
         special_messages = []
 
         # Character DEF reduces damage more significantly
-        def_reduction = min(0.8, self.character.stats.DEF / 300)  # Max 80% reduction at 240 DEF
+        def_reduction = min(0.8, self.character.stats.DEF / 300)  
         damage = int(base_damage * (1 - def_reduction))
         
         # SPD affects dodge chance
-        spd_dodge_chance = min(0.25, self.character.stats.SPD / 400)  # Max 25% dodge at 100 SPD
+        spd_dodge_chance = min(0.25, self.character.stats.SPD / 400)  
         if random.random() < spd_dodge_chance:
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack with lightning speed!\n" + "\n".join(messages)
@@ -271,7 +255,6 @@ class BattleSystem:
             mission_7_completed = False
             player_missions = getattr(self.player, "missions", [])
             for mission in player_missions:
-                # Handle both dict and object formats for missions
                 if isinstance(mission, dict):
                     mission_id = mission.get("mission_id")
                     mission_status = mission.get("status")
@@ -299,8 +282,6 @@ class BattleSystem:
 
     # ---------- Ability Usage ----------
     def use_ability(self, ability_name: str) -> Tuple[int, str, Dict, bool]:
-        """Use a character ability with gas cost and apply its effect."""
-        # Invalidate keyboard cache since ability usage changes state
         self.keyboard_cache_invalid = True
         
         # Initialize with default values for speed
@@ -308,11 +289,9 @@ class BattleSystem:
         message = ""
         effects = {"items_dropped": [], "target_switched": False, "bleed_applied": False}
         
-        # Fast-fail checks for critical dependencies
         if not self.character or not self.character.stats:
             return damage, "Error: Character stats not available", effects, False
             
-        # Get character data with early return for failures
         character_data = get_character_data(self.character.character_type)
         if not character_data:
             return damage, "Error: Character abilities not found", effects, False
@@ -346,10 +325,8 @@ class BattleSystem:
         if self.gas < gas_cost:
             return damage, f"out of gas refill it by /char {self.character.name}", effects, True
         
-        # Build context with enhanced INT-based damage calculation
         ctx = self.build_context("ability_use", ability)
         
-        # Enhance ability damage with INT stat
         int_damage_bonus = 0
         if ability.base_damage and ability.base_damage > 0:
             int_damage_bonus = int(ability.base_damage * (self.character.stats.INT / 200))  # Max +50% at 100 INT
@@ -367,14 +344,11 @@ class BattleSystem:
                     if self.player and hasattr(self.player, 'double_gas_injector_uses') and self.player.double_gas_injector_uses > 0:
                         actual_gas_cost = gas_cost // 2
                     
-                    # Deduct gas after successful ability use
                     self.gas -= actual_gas_cost
                     
-                    # Show INT contribution in ability message if damage was enhanced
                     if int_damage_bonus > 0:
                         pass
                     
-                    # Optimized effects extraction with defaults
                     effects = {
                         "items_dropped": getattr(effect, 'items_dropped', []),
                         "target_switched": getattr(effect, 'target_switched', False),
@@ -410,8 +384,6 @@ class BattleSystem:
 
     # ---------- Turn & Status Updates ----------
     def update_cooldowns(self) -> None:
-        """Update ability cooldowns, buffs, debuffs, and apply periodic effects (burn, bleed, etc)."""
-        # Mark keyboard cache as invalid since state will change
         self.keyboard_cache_invalid = True
         
         # Fast loop for cooldowns (minimize lookups)
@@ -427,16 +399,13 @@ class BattleSystem:
                 if self.titan_debuffs[debuff] <= 0:
                     to_remove.append(debuff)
         
-        # Batch delete operations for better performance
         for debuff in to_remove:
             del self.titan_debuffs[debuff]
-                    
-        # Process special buffs that need to be tracked
+
         if "reflex_counter" in self.buffs:
             self.buffs["reflex_counter"] -= 1
             if self.buffs["reflex_counter"] <= 0:
                 del self.buffs["reflex_counter"]
-                # Remove crit_rate buff when reflex_counter expires
                 if "crit_rate" in self.buffs:
                     del self.buffs["crit_rate"]
                     
@@ -470,7 +439,6 @@ class BattleSystem:
 
     def get_battle_status(self) -> Dict:
         """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
-        # Fast path calculations - avoid unnecessary divisions and operations
         character_max_hp = self.character.stats.HP
         titan_max_hp = self.titan.max_hp
         
@@ -484,7 +452,6 @@ class BattleSystem:
         character_bar = "█" * char_bar_filled + "▒" * (10 - char_bar_filled)
         titan_bar = "█" * titan_bar_filled + "▒" * (10 - titan_bar_filled)
         
-        # Build status message efficiently with array join (faster than string concatenation)
         status_parts = [f"Turn: {self.turn + 1}", f"Difficulty: {self.titan.difficulty}"]
         
         # Add character stats display
@@ -492,10 +459,8 @@ class BattleSystem:
             status_parts.append(f"⚔️ ATK: {self.character.stats.ATK} | 🛡️ DEF: {self.character.stats.DEF}")
             status_parts.append(f"🎯 ACC: {self.character.stats.ACC} | 🧠 INT: {self.character.stats.INT} | ⚡ SPD: {self.character.stats.SPD}")
         
-        # Join all parts at once - more efficient than incremental additions
         status_message = "\n".join(status_parts)
         
-        # Return optimized dictionary with integer casting done once
         return {
             "character_hp": int(self.character_hp),
             "titan_hp": int(self.titan_hp),
@@ -507,29 +472,24 @@ class BattleSystem:
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
         """Calculate rewards for defeating the titan (XP, marks, valor) - simplified, no difficulty system."""
-        # XP: 150-200 random, same for player and character, but ensure it's always positive
         xp = max(1, random.randint(100, 180))
         
-        # Apply Frenzy Elixir buff (triple XP)
         if player and hasattr(player, 'frenzy_elixir_uses') and player.frenzy_elixir_uses > 0:
             xp *= 3
         
-        # Marks: fixed per battle (current system, no difficulty bonus)
         marks = max(1, random.randint(70, 100) + (titan.level * 2))
         
-        # Apply Mark Surge Token buff (double marks)
         if player and hasattr(player, 'mark_surge_token_uses') and player.mark_surge_token_uses > 0:
             marks *= 2
         
-        # Valor: spawn chance instead of crystal
         valor = 0
-        if random.random() < 0.0001:  # 1% chance for valor spawn
+        if random.random() < 0.0001: 
             valor = 1
             
         return {
             "xp": xp,
             "marks": marks,
-            "crystal": 0,  # Removed crystal rewards
+            "crystal": 0,  
             "valor": valor,
         }
 
@@ -548,7 +508,6 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
     """Clean up battle state and resources, remove from active battles."""
     user_id = str(user_id)
     
-    # Skip cleanup for timeout_cancelled as this is a normal part of the battle flow
     if result == "timeout_cancelled":
         return
         
@@ -562,7 +521,6 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
                 except (ImportError, AttributeError):
                     pass
                 try:
-                    # Mark battle as ended before disposal
                     battle_instance.battle_ended = True
                     battle_instance.dispose()
                 except Exception as e:
@@ -578,14 +536,12 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
 
 
 async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
-    """Generate keyboard buttons for valid abilities and actions. Optimized for performance."""
-    # Use cached keyboard if valid (fast path)
+    
     if not battle.keyboard_cache_invalid and battle.keyboard_cache:
         return battle.keyboard_cache
 
     keyboard = []
     
-    # Get character data with fast path for invalid data
     character_data = get_character_data(battle.character.character_type)
     if not character_data:
         logger.warning(f"No character data found for {battle.character.character_type}")
@@ -594,10 +550,8 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
         battle.keyboard_cache_invalid = False
         return keyboard
     
-    # Get shop items once
     shop_items = context.bot_data.get("shop_items") or {}
     
-    # Prefetch common ability attributes for faster access
     prefixes = {
         "active": "⚔️",
         "passive": " ",
@@ -614,7 +568,7 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
             if ability_type == "passive" and not getattr(ability, 'show_as_button', False):
                 continue
 
-            if battle.character.level >= ability.unlock_level:
+            if battle.character.level >= ability.level_required:
                 cooldown = battle.ability_cooldowns.get(ability.name, 0)
                 gas_cost = ability.gas_cost or 20
                 
