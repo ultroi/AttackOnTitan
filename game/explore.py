@@ -368,21 +368,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Database not available. Please try again later.")
         return
     
-    # Check for dealer encounter (2% chance) - synchronous to prevent showing both
-    dealer_appeared = False
-    try:
-        from game.dealer_command import explore_dealer
-        dealer_appeared = await explore_dealer(update, context)
-    except Exception as e:
-        logger.error(f"Error scheduling dealer encounter check: {e}")
     
-    if dealer_appeared:
-        return  # Only dealer appears, no titan
-    
+    if random.random() < 0.02:
+        asyncio.create_task(handle_dealer_encounter(update, context))
+
     # Check for captcha (2% chance)
     should_spawn_captcha = (
-        random.random() < 0.02 and 
-        context.user_data and 
+        random.random() < 0.02 and
+        context.user_data and
         not context.user_data.get('captcha_active', False)
     )
     

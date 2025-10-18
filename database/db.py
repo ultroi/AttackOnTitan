@@ -787,6 +787,11 @@ class Database:
                     cached_player = PLAYER_CACHE[cache_key]["player"]
                     for key, value in update_data.items():
                         if hasattr(cached_player, key):
+                            # Special handling for list-based fields to prevent incorrect type conversion
+                            if key == 'daily_explores' and not isinstance(value, list):
+                                # If the update is not a list, it's likely incorrect; re-fetch to be safe
+                                self.invalidate_player_cache(user_id)
+                                continue
                             setattr(cached_player, key, value)
                     PLAYER_CACHE[cache_key]["timestamp"] = time.time()
 
