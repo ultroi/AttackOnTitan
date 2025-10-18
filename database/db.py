@@ -252,6 +252,11 @@ class Database:
             # Create a Player object
             player = None
             if player_data:
+                # Sanitize daily_explores field to prevent validation errors from corrupt data
+                if 'daily_explores' in player_data and not isinstance(player_data['daily_explores'], list):
+                    logger.warning(f"Corrupted daily_explores found for user {user_id}. Resetting to [].")
+                    player_data['daily_explores'] = []
+
                 # Convert team members to proper TeamMember objects if present
                 if "team" in player_data and player_data["team"]:
                     from database.models import TeamMember
