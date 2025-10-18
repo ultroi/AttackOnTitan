@@ -228,8 +228,12 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
     context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
     await db.store_titan(user_id_str, titan)
     
+    # Create timeout task and store it in BOTH places for compatibility
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
     user_timeout_tasks[user_id_str] = timeout_task
+    # Also store in bot_data so battle_system can cancel it
+    context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
+    
     await _handle_background_tasks(update, context, user_id_str, db, player)
     logger.info(f"Total explore processing for user {user_id_str}: {(time.time() - start_time) * 1000:.1f}ms")
 
@@ -355,8 +359,13 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.error(f"Error in titan_encounter_timeout for user {user_id_str}: {e}", exc_info=True)
     finally:
+        # Clean up from both storage locations
         if user_id_str in user_timeout_tasks:
             del user_timeout_tasks[user_id_str]
+        # Also remove from bot_data
+        timeout_key = f"titan_timeout_{user_id_str}"
+        if timeout_key in context.bot_data:
+            del context.bot_data[timeout_key]
 
 async def _handle_timeout_spam_detection(user_id, user_id_str, context, db):
     """Increments spam count and issues warnings or bans if necessary."""

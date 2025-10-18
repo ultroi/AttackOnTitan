@@ -221,8 +221,11 @@ async def unban_user(update: Update, context: CallbackContext):
             if update.effective_message is not None:
                 await update.effective_message.reply_text("Database unavailable. Please try again later.")
             return
-        await db[BAN_COLLECTION].delete_one({"user_id": target_id})
-    except Exception:
+        # Convert to string for consistency with how we store bans
+        await db[BAN_COLLECTION].delete_one({"user_id": str(target_id)})
+        logger.info(f"✅ Unbanned user {target_id}")
+    except Exception as e:
+        logger.error(f"Error unbanning user {target_id}: {e}")
         if update.effective_message is not None:
             await update.effective_message.reply_text("Error accessing database. Please try again later.")
         return
@@ -250,12 +253,13 @@ async def is_banned(user_id: int) -> bool:
         db = await get_database()
         if db is None:
             return False
-        ban_doc = await db[BAN_COLLECTION].find_one({"user_id": user_id})
+        # Convert to string for consistency
+        ban_doc = await db[BAN_COLLECTION].find_one({"user_id": str(user_id)})
         if not ban_doc:
             return False
         expiry = ban_doc.get("expiry")
         if expiry and expiry < int(time.time()):
-            await db[BAN_COLLECTION].delete_one({"user_id": user_id})
+            await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
             return False
         return True
     except Exception:
