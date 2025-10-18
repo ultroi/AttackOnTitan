@@ -80,6 +80,10 @@ class Player(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    def increment_daily_explores(self, timestamp: datetime):
+        """Adds a record of a daily explore."""
+        self.daily_explores.append({"timestamp": timestamp})
+
 class Titan(BaseModel):
     name: str
     level: int
