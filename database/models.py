@@ -4,11 +4,11 @@ from datetime import datetime, timezone
 import random
 
 class CharacterStats(BaseModel):
-    HP: int
-    attack: int
-    agility: int
-    luck: int
-    precision: int
+    HP: int = 0
+    attack: int = 0
+    agility: int = 0
+    luck: int = 0
+    precision: int = 0
 
 class Character(BaseModel):
     user_id: str
