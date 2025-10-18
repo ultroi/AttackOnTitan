@@ -14,17 +14,17 @@ class Character(BaseModel):
     user_id: str
     name: str
     character_type: str
-    current_hp: int
-    level: int
-    xp: int
-    total_xp: int
-    stats: CharacterStats
-    gas: int
-    max_gas: int
-    active_abilities: List[Dict] = []
-    passive_abilities: List[Dict] = []
-    ultimate_abilities: List[Dict] = []
-    unlocked_abilities: Dict[str, bool] = {}
+    current_hp: int = 0
+    level: int = 1
+    xp: int = 0
+    total_xp: int = 0
+    stats: CharacterStats = Field(default_factory=CharacterStats)
+    gas: int = 0
+    max_gas: int = 100
+    active_abilities: List[Dict] = Field(default_factory=list)
+    passive_abilities: List[Dict] = Field(default_factory=list)
+    ultimate_abilities: List[Dict] = Field(default_factory=list)
+    unlocked_abilities: Dict[str, bool] = Field(default_factory=dict)
     equipped_weapon: Optional[str] = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -40,24 +40,24 @@ class Player(BaseModel):
     user_id: str
     username: str
     name: str
-    level: int
-    xp: int
-    total_xp: int
-    gas: int
-    valor: int
-    crystal: int
-    marks: int
-    explore_count: int
-    owned_characters: List[str] = []
-    team: List[TeamMember] = []
-    referral_code: str
+    level: int = 1
+    xp: int = 0
+    total_xp: int = 0
+    gas: int = 100
+    valor: int = 0
+    crystal: int = 0
+    marks: int = 0
+    explore_count: int = 0
+    owned_characters: List[str] = Field(default_factory=list)
+    team: List[TeamMember] = Field(default_factory=list)
+    referral_code: str = ""
     referred_by: Optional[str] = None
     referral_count: int = 0
-    referral_milestones: Dict[str, bool] = {}
+    referral_milestones: Dict[str, bool] = Field(default_factory=dict)
     location: str = "Trost District"
     travel: Optional[Dict] = None
-    daily_explores: List[Dict] = []
-    unlocked_areas: List[str] = ["Trost District"]
+    daily_explores: List[Dict] = Field(default_factory=list)
+    unlocked_areas: List[str] = Field(default_factory=lambda: ["Trost District"])
     shop_refresh_date: Optional[datetime] = None
     shop_refresh_count: int = 0
     hcaptcha_verified: bool = False
@@ -69,14 +69,14 @@ class Player(BaseModel):
     pvp_wins: int = 0
     pvp_losses: int = 0
     battle_rating: int = 1000
-    pvp_matches: List[Dict] = []
-    tax_history: List[Dict] = []
+    pvp_matches: List[Dict] = Field(default_factory=list)
+    tax_history: List[Dict] = Field(default_factory=list)
     guild_id: Optional[str] = None
     daily_streak: int = 0
     last_daily_claim: Optional[datetime] = None
     double_exp_end: Optional[datetime] = None
-    completed_quests: List[str] = []
-    mission14_area_counts: Dict[str, int] = {}
+    completed_quests: List[str] = Field(default_factory=list)
+    mission14_area_counts: Dict[str, int] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
