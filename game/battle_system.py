@@ -638,40 +638,42 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     # Immediately answer callback to improve user experience
-    await query.answer()
+    try:
+        await query.answer()
+    except Exception:
+        pass
     
     # Quick validation of battle ID
     callback_data = query.data
     user_id = str(update.effective_user.id)
-    current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
     
-    # Only allow the battle button to be used once, and strictly reject any further callbacks with the same ID
-    if callback_data != current_battle_id:
-        try:
-            await query.answer("This battle button has already been used. Please explore again.", show_alert=True)
-        except Exception:
-            pass
-        return
-    # Immediately delete the active battle id so it cannot be used again
-    if f"active_battle_id_{user_id}" in context.bot_data:
-        del context.bot_data[f"active_battle_id_{user_id}"]
-    # Also check if this user has already started a battle with this titan
-    if f"titan_battle_started_{user_id}" in context.bot_data:
-        last_battle_time = context.bot_data.get(f"titan_battle_started_{user_id}", 0)
-        if time.time() - last_battle_time < 180:  # Within 3 minutes
+    # Check if user is already in battle
+    async with active_battles_lock:
+        if user_id in active_battles:
             try:
-                await query.answer("You're already in battle. Please finish your current battle first.", show_alert=True)
+                await query.answer("You're already in a battle! Finish it first.", show_alert=True)
             except Exception:
                 pass
             return
+    
+    current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
+    
+    # Validate that this is the correct battle ID
+    if callback_data != current_battle_id:
+        try:
+            await query.answer("This battle button has expired. Please /explore again.", show_alert=True)
+        except Exception:
+            pass
+        logger.info(f"Battle ID mismatch for user {user_id}: {callback_data} != {current_battle_id}")
+        return
+    
+    # Immediately invalidate the battle ID to prevent duplicate use
+    context.bot_data[f"active_battle_id_{user_id}"] = f"used_{current_battle_id}_{time.time()}"
     
     # Validate battle format
     if not callback_data or not callback_data.startswith("battle_"):
         await query.edit_message_text("Invalid battle request.")
         return
-        
-    # Immediately invalidate the battle ID to prevent duplicate use
-    context.bot_data[f"active_battle_id_{user_id}"] = f"used_{current_battle_id}"
     
     # Cancel any pending titan timeouts
     titan_timeout_key = f"titan_timeout_{user_id}"
@@ -916,18 +918,35 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_id = str(update.effective_user.id)
 
-    # Simplified anti-spam protection
+    # Enhanced duplicate prevention - track both action time AND callback ID
     action_time_key = f"battle_action_time_{user_id}"
     last_action_time = context.bot_data.get(action_time_key, 0)
     current_time = time.time()
 
-    if current_time - last_action_time < 0.4:  # 400ms cooldown
+    # Stricter anti-spam: prevent actions within 500ms
+    if current_time - last_action_time < 0.5:  # 500ms cooldown
         try:
-            await query.answer()
+            await query.answer("Please wait before performing another action...", show_alert=False)
         except Exception:
             pass
         return
+    
+    # Track callback ID to prevent duplicate processing of same callback
+    callback_id = query.id
+    last_callback_key = f"last_battle_callback_{user_id}"
+    last_callback_id = context.bot_data.get(last_callback_key)
+    
+    if last_callback_id == callback_id:
+        logger.info(f"Duplicate callback {callback_id} detected for user {user_id}, ignoring")
+        try:
+            await query.answer("Action already processed", show_alert=False)
+        except Exception:
+            pass
+        return
+    
+    # Update tracking
     context.bot_data[action_time_key] = current_time
+    context.bot_data[last_callback_key] = callback_id
     
     try:
         await query.answer()

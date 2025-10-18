@@ -374,17 +374,25 @@ async def _handle_timeout_spam_detection(user_id, user_id_str, context, db):
         logger.error(f"Error in spam detection for user {user_id_str}: {e}")
 
 async def _handle_timeout_titan_cleanup(user_id_str, context, db, sent_message):
-    """Cleans up the titan from the database and edits the message."""
     try:
+        # Clean up titan data
         if await db.get_titan(user_id_str):
             await db.delete_titan(user_id_str)
-            if sent_message:
-                from game.safe_edit import safe_edit_message_text
-                await safe_edit_message_text(
-                    sent_message,
-                    "⏰ Titan encounter expired! Use /explore to find another.",
-                    parse_mode=ParseMode.HTML
-                )
+        
+        # Clean up battle ID to prevent stale battle buttons
+        battle_id_key = f"active_battle_id_{user_id_str}"
+        if battle_id_key in context.bot_data:
+            del context.bot_data[battle_id_key]
+            logger.info(f"Cleaned up expired battle ID for user {user_id_str}")
+        
+        # Update message if available
+        if sent_message:
+            from game.safe_edit import safe_edit_message_text
+            await safe_edit_message_text(
+                sent_message,
+                "⏰ Titan encounter expired! Use /explore to find another.",
+                parse_mode=ParseMode.HTML
+            )
     except Exception as e:
         logger.error(f"Error in titan cleanup for user {user_id_str}: {e}")
 
