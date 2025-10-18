@@ -88,6 +88,10 @@ class Database:
             # Cache them
             current_time = time.time()
             for player_data in recent_players:
+                # Sanitize data before creating Player object
+                if 'daily_explores' in player_data and not isinstance(player_data.get('daily_explores'), list):
+                    player_data['daily_explores'] = []
+
                 # Handle data correctly - player_data is always a dictionary here since it comes from database
                 if isinstance(player_data, dict) and "user_id" in player_data:
                     user_id = player_data["user_id"]

@@ -578,46 +578,24 @@ def cleanup_battle(user_id: str, result: str = "ended", battle: Optional['Battle
 
 
 async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> List[List[InlineKeyboardButton]]:
-    """Generate keyboard buttons for valid abilities and actions."""
+    """Generate keyboard buttons for valid abilities and actions. Optimized for performance."""
     # Use cached keyboard if valid (fast path)
     if not battle.keyboard_cache_invalid and battle.keyboard_cache:
         return battle.keyboard_cache
-    
+
     keyboard = []
-    def obfuscate_text(text):
-        if not text:
-            return text
-            
-        chars = []
-        # Start with the first character without a zero-width space
-        chars.append(text[0])
-        
-        # Add zero-width spaces between characters, but not at the beginning
-        for char in text[1:-1]:
-            chars.append('\u200B')
-            chars.append(char)
-            
-        # Add the last character without a zero-width space
-        if len(text) > 1:
-            chars.append('\u200B')
-            chars.append(text[-1])
-            
-        return ''.join(chars)
-        
+    
     # Get character data with fast path for invalid data
     character_data = get_character_data(battle.character.character_type)
     if not character_data:
         logger.warning(f"No character data found for {battle.character.character_type}")
-        keyboard.append([InlineKeyboardButton(obfuscate_text("🏃 Run"), callback_data="action_run")])
+        keyboard.append([InlineKeyboardButton("🏃 Run", callback_data="action_run")])
         battle.keyboard_cache = keyboard
         battle.keyboard_cache_invalid = False
         return keyboard
     
     # Get shop items once
     shop_items = context.bot_data.get("shop_items") or {}
-    equipped_weapon = getattr(battle.character, 'equipped_weapon', None)
-    
-    
     
     # Prefetch common ability attributes for faster access
     prefixes = {
@@ -626,63 +604,34 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
         "ultimate": "✨"
     }
     
-    # Fast ability button creation
+    # Fast ability button creation in a single loop
+    ability_buttons = []
     for ability_type in ["active", "passive", "ultimate"]:
         abilities = getattr(character_data, f"{ability_type}_abilities", [])
         prefix = prefixes[ability_type]
         
         for ability in abilities:
-            # Quick filtering
-            if not ability or not ability.name:
+            if ability_type == "passive" and not getattr(ability, 'show_as_button', False):
                 continue
+
+            if battle.character.level >= ability.unlock_level:
+                cooldown = battle.ability_cooldowns.get(ability.name, 0)
+                gas_cost = ability.gas_cost or 20
                 
-            if battle.character.level < ability.level_required:
-                continue
+                if cooldown > 0:
+                    button_text = f"{prefix} {ability.name} ({cooldown}t)"
+                    callback_data = f"cooldown_{ability.name}"
+                elif battle.gas < gas_cost:
+                    button_text = f"{prefix} {ability.name} (Low Gas)"
+                    callback_data = f"lowgas_{ability.name}"
+                else:
+                    button_text = f"{prefix} {ability.name}"
+                    callback_data = f"ability_{ability.name}"
                 
-            is_unlocked = ability.is_unlocked or battle.character.unlocked_abilities.get(ability.name, False)
-            if not is_unlocked or ability.disabled_against_titans:
-                continue
-                
-            gas_cost = ability.gas_cost or 0
-            # Apply Double Gas Injector buff for keyboard display
-            effective_gas_cost = gas_cost
-            if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
-                effective_gas_cost = gas_cost // 2
-            ability_display_name = ability.name
-            cooldown = battle.ability_cooldowns.get(ability.name, 0)
-            
-            # Optimized button creation - fewer conditionals
-            if cooldown == 0 and battle.gas >= effective_gas_cost:
-                keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"{prefix} {ability_display_name}"),
-                    callback_data=f"ability_{ability.name}"
-                )])
-            elif cooldown > 0:
-                keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"⏳ {prefix} {ability_display_name} (CD: {cooldown})"),
-                    callback_data=f"cooldown_{ability.name}"
-                )])
-            elif gas_cost > 0:  # Implies battle.gas < gas_cost from earlier condition
-                keyboard.append([InlineKeyboardButton(
-                    obfuscate_text(f"⛽ {prefix} {ability_display_name} (out of gas)"),
-                    callback_data=f"lowgas_{ability.name}"
-                )])
+                ability_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
     
-    # Only refresh character from DB if really needed - check if too long since last refresh
-    now = time.time()
-    last_refresh = getattr(battle, 'last_character_refresh', 0)
-    if now - last_refresh > 60:  # Only refresh once per minute max
-        db = context.bot_data.get("db") or Database()
-        refreshed_character = None
-        try:
-            if hasattr(battle.character, 'user_id') and hasattr(battle.character, 'name'):
-                refreshed_character = await db.get_character(str(battle.character.user_id), battle.character.name)
-        except Exception:
-            pass
-        if refreshed_character:
-            battle.character = refreshed_character
-            battle.last_character_refresh = now
-    
+    keyboard.extend(ability_buttons)
+
     # Get weapon info
     weapon = battle.get_equipped_weapon(shop_items)
     
@@ -691,37 +640,28 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
         attack_gas_cost = 10
     
+    attack_row = []
     if battle.gas >= attack_gas_cost:
+        attack_text = "🗡️ Attack"
         if weapon:
-            # Get the appropriate emoji based on item type
-            item_type = getattr(weapon, 'type', 'weapon')
-            item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-            button_text = f"{item_emoji} {weapon.name}"
-            keyboard.append([InlineKeyboardButton(obfuscate_text(button_text), callback_data="action_basic_attack")])
-        else:
-            keyboard.append([InlineKeyboardButton(obfuscate_text("⚔️ Basic Attack"), callback_data="action_basic_attack")])
+            attack_text = f"🗡️ Attack ({weapon.get('name', 'Weapon')})"
+        attack_row.append(InlineKeyboardButton(attack_text, callback_data="action_basic_attack"))
     else:
+        attack_text = "🗡️ Attack (No Gas)"
         if weapon:
-            # Get the appropriate emoji based on item type
-            item_type = getattr(weapon, 'type', 'weapon')
-            item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-            button_text = f"⛽ {item_emoji} {weapon.name} (out of gas)"
-            keyboard.append([InlineKeyboardButton(obfuscate_text(button_text), callback_data="lowgas_basic_attack")])
-        else:
-            keyboard.append([InlineKeyboardButton(obfuscate_text("⛽ Basic Attack (out of gas)"), callback_data="lowgas_basic_attack")])
+            attack_text = f"🗡️ Attack ({weapon.get('name', 'Weapon')}) (No Gas)"
+        attack_row.append(InlineKeyboardButton(attack_text, callback_data="lowgas_attack"))
     
+    if attack_row:
+        keyboard.append(attack_row)
+
     # Add run and switch buttons in the same row
     run_switch_row = [InlineKeyboardButton("🏃 Run", callback_data="action_run")]
-    if battle.player and hasattr(battle.player, 'team') and battle.player.team:
-        # Count available characters to switch to (excluding current character)
+    if battle.player and hasattr(battle.player, 'team') and battle.player.team and len(battle.player.team) > 1:
         current_name = battle.character.name
-        available_chars = []
-        for team_member in battle.player.team:
-            char_name = team_member.character_name if hasattr(team_member, 'character_name') else str(team_member)
-            if char_name != current_name:
-                available_chars.append(char_name)
-        if len(available_chars) > 0:
-            run_switch_row.append(InlineKeyboardButton("Switch", callback_data="action_switch"))
+        if any(team_member.character_name != current_name for team_member in battle.player.team):
+            run_switch_row.append(InlineKeyboardButton("🔄 Switch", callback_data="action_switch"))
+            
     keyboard.append(run_switch_row)
     
     # Cache the keyboard for future use
@@ -1015,1098 +955,261 @@ async def _track_battle_start(user_id, effective_user, battle):
         pass  # Silently fail for performance
 
 async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle battle actions with titan response."""
-    # Start timing for performance monitoring
-    start_time = time.time()
-    
+    """Handle battle actions with titan response. Optimized for performance and clarity."""
     query = update.callback_query
     if not query or not update.effective_user:
         return
-    
+
     user_id = str(update.effective_user.id)
-    
-    def obfuscate_text(text):
-        if not text:
-            return text
-            
-        chars = []
-        # Start with the first character without a zero-width space
-        chars.append(text[0])
-        
-        # Add zero-width spaces between characters, but not at the beginning
-        for char in text[1:-1]:
-            chars.append('\u200B')
-            chars.append(char)
-            
-        # Add the last character without a zero-width space
-        if len(text) > 1:
-            chars.append('\u200B')
-            chars.append(text[-1])
-            
-        return ''.join(chars)
-    
-    # Immediately answer the callback to prevent Telegram timeout
-    try:
-        # Answer the callback query immediately without any notification to prevent query timeouts
-        await query.answer()
-    except Exception:
-        pass  # Ignore errors in answering - might be already answered
-    
-    # Anti-spam protection - enhanced with more aggressive throttling
+
+    # Simplified anti-spam protection
     action_time_key = f"battle_action_time_{user_id}"
     last_action_time = context.bot_data.get(action_time_key, 0)
     current_time = time.time()
 
-    # Rate limit to prevent spamming (400ms cooldown between actions - slightly higher)
-    if current_time - last_action_time < 0.3:
-        # Silent handling of spam - just ignore the action without any message
+    if current_time - last_action_time < 0.4:  # 400ms cooldown
+        try:
+            await query.answer()
+        except Exception:
+            pass
         return
-    
-    # Initialize anti-spam counter system if needed
-    if "spam_counters" not in context.bot_data:
-        context.bot_data["spam_counters"] = {}
-        
-    # Initialize or get user's spam counter
-    if user_id not in context.bot_data["spam_counters"]:
-        context.bot_data["spam_counters"][user_id] = {"count": 0, "last_reset": current_time}
-    
-    # Reset counter if it's been more than 3 seconds since last reset
-    if current_time - context.bot_data["spam_counters"][user_id]["last_reset"] > 3:
-        context.bot_data["spam_counters"][user_id] = {"count": 0, "last_reset": current_time}
-    
-    # Increment spam counter
-    context.bot_data["spam_counters"][user_id]["count"] += 1
-    
-    # If user has triggered more than 4 actions in 3 seconds, add a longer cooldown (reduced from 5)
-    if context.bot_data["spam_counters"][user_id]["count"] > 4:
-        # Add a progressively longer cooldown based on how much they're spamming
-        excess_count = context.bot_data["spam_counters"][user_id]["count"] - 4
-        extra_delay = min(6, excess_count * 0.7)  # Max 6 second additional delay, more aggressive
-        
-        # Set the last action time to enforce this cooldown silently
-        context.bot_data[action_time_key] = current_time + extra_delay
-        return
-    
-    # Update last action time
     context.bot_data[action_time_key] = current_time
     
-    # Create per-user action lock to prevent concurrent actions from same user
-    action_lock_key = f"battle_action_lock_{user_id}"
-    action_lock = context.bot_data.get(action_lock_key)
-    
-    if action_lock is None:
-        # Create a new lock if none exists
-        action_lock = asyncio.Lock()
-        context.bot_data[action_lock_key] = action_lock
-    
-    # Try to acquire the lock, but don't wait if already locked (prevent spam)
-    if action_lock.locked():
-        # Silent handling of concurrent requests - just ignore without messages
-        return
-        
-    # Get battle with lock, using fast path for common errors
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
     async with active_battles_lock:
         battle = active_battles.get(user_id)
         if not battle or battle.battle_ended:
-            # Clear any stale battle flags to prevent issues with future battles
-            battle_id_key = f"active_battle_id_{user_id}"
-            battle_started_key = f"titan_battle_started_{user_id}"
-            
-            if battle_started_key in context.bot_data:
-                del context.bot_data[battle_started_key]
-                
             try:
-                await query.answer("This battle has already ended or doesn't exist.")
+                # Use a more generic message that doesn't require editing the original
+                await query.answer("This battle has already ended.", show_alert=True)
             except Exception:
                 pass
             return
-    
-    action = query.data
-    if not action:
-        return
-        
-    # Use a try/finally block to ensure lock is released
-    try:
-        # Fast path handlers for cooldown and low gas notifications
-        if action.startswith("cooldown_"):
-            ability_name = action[9:]  # Extract ability name from cooldown_AbilityName
-            cooldown = battle.ability_cooldowns.get(ability_name, 0)
-            try:
-                await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
-            except Exception:
-                pass
-            return
-        elif action.startswith("lowgas_"):
-            ability_name = action[7:]  # Extract ability name from lowgas_AbilityName
-            if ability_name == "basic_attack":
-                try:
-                    await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
-                except Exception:
-                    pass
-            else:
-                try:
-                    await query.answer(f"out of gas refill it by /char {battle.character.name}", show_alert=True)
-                except Exception:
-                    pass
-            return
-        
-        full_message = []
-        effects = {}
-        
-        if battle.timeout_task and not battle.timeout_task.done():
-            battle.timeout_task.cancel()
-            await asyncio.sleep(0.1)
-        
-        # Mark keyboard cache as invalid since state will change
-        battle.keyboard_cache_invalid = True
-        
-        # Handle different action types
-        if action == "action_run":
-            # Handle run action (fast path)
-            if random.random() < 0.7:  # Successful escape
-                await query.edit_message_text(
-                    f"🏃💨 {battle.character.name} successfully escaped from the battle!\n\n"
-                    f"You live to fight another day. Use /explore to find another titan."
-                )
-                cleanup_battle(user_id, "escaped")
-                # Remove active battle id and battle started flag so user can explore again
-                if f"active_battle_id_{user_id}" in context.bot_data:
-                    del context.bot_data[f"active_battle_id_{user_id}"]
-                if f"titan_battle_started_{user_id}" in context.bot_data:
-                    del context.bot_data[f"titan_battle_started_{user_id}"]
-                # Clear titan cache to prevent data leakage
-                if f"last_titan_data_{user_id}" in context.bot_data:
-                    del context.bot_data[f"last_titan_data_{user_id}"]
-                # Remove cached battle data
-                if hasattr(context, "user_data") and isinstance(context.user_data, dict):
-                    context.user_data.pop("battle_cache", None)
-                return
-            else:
-                full_message.append(f"❌ {battle.character.name} failed to escape! The titan blocks your path!")
-        
-        elif action == "action_switch":
-            # Handle switch character action
-            if not battle.player or not hasattr(battle.player, 'team') or not battle.player.team or len(battle.player.team) <= 1:
-                try:
-                    await query.answer("You don't have multiple characters to switch to!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            # Create character selection keyboard
-            switch_keyboard = []
-            current_character_name = battle.character.name
-            
-            index = 0
-            for team_member in battle.player.team:
-                character_name = team_member['character_name'] if isinstance(team_member, dict) else getattr(team_member, 'character_name', team_member)
-                if character_name != current_character_name:
-                    switch_keyboard.append([InlineKeyboardButton(
-                        f"{index + 1}",
-                        callback_data=f"switch_to_{index}"
-                    )])
-                    index += 1
-            
-            # Add back button
-            switch_keyboard.append([InlineKeyboardButton("⬅ Back", callback_data="switch_back")])
-            
-            reply_markup = InlineKeyboardMarkup(switch_keyboard)
-            
-            # Show character selection
-            status = battle.get_battle_status()
-            switch_message = (
-                f"<b>Select a character to switch to:</b>"
-            )
-            
-            try:
-                await query.edit_message_text(
-                    switch_message,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                logger.error(f"Error showing switch menu: {e}")
-            return
-        
-        elif action.startswith("switch_to_"):
-            # Handle character switch
-            try:
-                index = int(action[10:])  # Remove "switch_to_" prefix
-            except ValueError:
-                try:
-                    await query.answer("Invalid action!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            # Validate that the player has multiple characters
-            if not battle.player or not hasattr(battle.player, 'team') or not battle.player.team or len(battle.player.team) <= 1:
-                try:
-                    await query.answer("Invalid switch request!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            # Get available characters (excluding current)
-            current_character_name = battle.character.name
-            available_chars = []
-            for team_member in battle.player.team:
-                character_name = team_member['character_name'] if isinstance(team_member, dict) else getattr(team_member, 'character_name', team_member)
-                if character_name != current_character_name:
-                    available_chars.append(character_name)
-            
-            # Validate index
-            if index < 0 or index >= len(available_chars):
-                try:
-                    await query.answer("Invalid character selection!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            target_character_name = available_chars[index]
-            
-            # Get database reference
-            db = context.bot_data.get("db")
-            if not db:
-                try:
-                    await query.answer("Database error!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            # Load the target character
-            try:
-                target_character = await db.get_character(user_id, target_character_name)
-                if not target_character:
-                    try:
-                        await query.answer("Character not found!", show_alert=True)
-                    except Exception:
-                        pass
-                    return
-            except Exception as e:
-                logger.error(f"Error loading character {target_character_name}: {e}")
-                try:
-                    await query.answer("Error loading character!", show_alert=True)
-                except Exception:
-                    pass
-                return
-            
-            # Track the original character as having participated
-            if not hasattr(battle, 'participating_characters'):
-                battle.participating_characters = set()
-            battle.participating_characters.add(battle.character.name)
-            battle.participating_characters.add(target_character.name)
-            
-            # Switch to the new character
-            old_character_name = battle.character.name
-            battle.character = target_character
-            battle.character_hp = target_character.current_hp
-            battle.gas = target_character.gas
-            battle.character_gas = target_character.max_gas
-            battle.max_gas = target_character.max_gas
-            
-            # Reinitialize ability cooldowns for the new character
-            from database.characters import get_character_data
-            character_data = get_character_data(target_character.character_type)
-            if character_data:
-                battle.ability_cooldowns = {
-                    ability.name: 0 for ability in (
-                        (character_data.active_abilities or []) +
-                        (character_data.passive_abilities or []) +
-                        (character_data.ultimate_abilities or [])
-                    )
-                }
-            
-            # Apply passives for the new character
-            battle.apply_passives("battle_start")
-            
-            # Mark keyboard cache as invalid
-            battle.keyboard_cache_invalid = True
-            
-            full_message.append(f"🔄 Switched from {old_character_name} to {target_character_name}!")
-            
-        elif action == "switch_back":
-            # Just regenerate the normal battle keyboard (no special action needed)
-            pass
-        
-        elif action == "action_basic_attack":
-            # Immediately answer the callback to prevent Telegram timeout
-            try:
-                await query.answer()
-            except Exception:
-                pass
-            # Optimize basic attack with less DB access
-            shop_items = context.bot_data.get("shop_items") or {}
-            
-            # Only refresh character if needed (use a timestamp to limit refreshes)
-            now = time.time()
-            last_refresh = getattr(battle, 'last_character_refresh', 0)
-            if now - last_refresh > 60:  # Refresh only every 60 seconds max
-                db = context.bot_data.get("db") or Database()
-                try:
-                    refreshed_character = await db.get_character(str(battle.character.user_id), battle.character.name)
-                    if refreshed_character:
-                        battle.character = refreshed_character
-                        battle.last_character_refresh = now
-                except Exception as e:
-                    pass
-            # Process enhanced attack with full character stats integration
-            weapon = battle.get_equipped_weapon(shop_items)
-            if battle.gas >= 20:
-                # Apply Double Gas Injector buff (half gas cost)
-                gas_cost = 20
-                if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
-                    gas_cost = 10
-                
-                battle.gas -= gas_cost
-                battle.character_gas = battle.gas
-                
-                if weapon and hasattr(weapon, 'attributes') and isinstance(weapon.attributes, dict):
-                    # Enhanced weapon attack calculation with all stats
-                    weapon_damage_min = int(weapon.attributes.get("damage_min", 10))
-                    weapon_damage_max = int(weapon.attributes.get("damage_max", 20))
-                    
-                    # Base weapon damage
-                    base_weapon_damage = random.randint(weapon_damage_min, weapon_damage_max)
-                    
-                    # Character ATK stat bonus (scales with weapon damage)
-                    atk_bonus = int(base_weapon_damage * (battle.character.stats.ATK / 100))
-                    
-                    # ACC affects critical hit chance and hit chance
-                    acc_crit_chance = min(0.4, battle.character.stats.ACC / 250)  # Max 40% crit at 100 ACC
-                    is_critical = random.random() < acc_crit_chance
-                    
-                    # SPD affects attack speed (multiple hits chance)
-                    spd_multi_hit_chance = min(0.2, battle.character.stats.SPD / 500)  # Max 20% multi-hit at 100 SPD
-                    
-                    # INT affects damage multiplier for special weapons
-                    int_multiplier = 1.0
-                    if weapon.attributes.get("accuracy"):  # Precision weapons benefit from INT
-                        int_multiplier += (battle.character.stats.INT / 200)  # Max +50% at 100 INT
-                    
-                    # Calculate total damage
-                    total_damage = int((base_weapon_damage + atk_bonus) * int_multiplier)
-                    
-                    if is_critical:
-                        total_damage = int(total_damage * 1.5)  # 50% crit damage
-                        crit_text = " (CRITICAL HIT!)"
-                    else:
-                        crit_text = ""
-                    
-                    # Apply multi-hit chance
-                    if random.random() < spd_multi_hit_chance:
-                        multi_damage = random.randint(int(total_damage * 0.3), int(total_damage * 0.6))
-                        total_damage += multi_damage
-                        multi_text = f" + {multi_damage} multi-hit"
-                    else:
-                        multi_text = ""
-                    
-                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                    
-                    item_type = getattr(weapon, 'type', 'weapon')
-                    # Add item type emoji based on the type
-                    item_emoji = "⚔️" if item_type == "weapon" else "🛡️" if item_type == "gear" else "🏛️" if item_type == "military" else "⚔️"
-                    
-                    # Show stat contributions in attack message
-                    full_message.append(f"{item_emoji} {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage{crit_text}{multi_text}!")
-                else:
-                    # Enhanced basic attack calculation with all stats
-                    base_damage = max(10, battle.character.stats.ATK + random.randint(15, 25))
-                    
-                    # ACC affects critical hit chance
-                    acc_crit_chance = min(0.3, battle.character.stats.ACC / 300)  # Max 30% crit at 90 ACC
-                    is_critical = random.random() < acc_crit_chance
-                    
-                    # SPD affects attack speed bonus
-                    spd_damage_bonus = int(battle.character.stats.SPD / 10)  # +1 damage per 10 SPD
-                    
-                    # INT affects basic attack effectiveness
-                    int_damage_bonus = int(battle.character.stats.INT / 15)  # +1 damage per 15 INT
-                    
-                    total_damage = base_damage + spd_damage_bonus + int_damage_bonus
-                    
-                    if is_critical:
-                        total_damage = int(total_damage * 1.4)  # 40% crit damage for basic attacks
-                        crit_text = " (CRITICAL HIT!)"
-                    else:
-                        crit_text = ""
-                    
-                    battle.titan_hp = max(0, battle.titan_hp - total_damage)
-                    
-                    # Show stat contributions
-                    full_message.append(f"⚔️ {battle.character.name} attacks with basic strike, dealing {total_damage} damage{crit_text}!")
-            else:
-                # Not enough gas case - end battle immediately
-                message = f"out of gas refill it by /char {battle.character.name}"
-                battle.battle_ended = True
-                await query.edit_message_text(message, parse_mode=ParseMode.HTML)
-                cleanup_battle(user_id, "out_of_gas")
-                return
-        
-        elif action.startswith("ability_"):
-            # Handle ability use with optimized function
-            damage, message, effects, battle_end = battle.use_ability(action[8:])
-            battle.character_gas = battle.gas
-            full_message.append(message)
-            
-            # Process effects concisely
-            if effects.get("items_dropped"):
-                full_message.append(f"Dropped item: {', '.join(effects['items_dropped'])}")
-            if effects.get("target_switched"):
-                full_message.append("Titan switched targets!")
-            if effects.get("bleed_applied"):
-                full_message.append("Titan is bleeding!")
-            
-            # If battle should end due to out of gas, end it immediately
-            if battle_end:
-                battle.battle_ended = True
-                await query.edit_message_text(message, parse_mode=ParseMode.HTML)
-                cleanup_battle(user_id, "out_of_gas")
-                return
-        
-        # Check for battle end conditions - titan defeated
-        if battle.titan_hp <= 0:
-            battle.battle_ended = True
-            await handle_battle_end(query, battle, user_id, context)
-            return
-        
-        # Process titan's turn if character still alive
-        if battle.character_hp > 0:
-            titan_damage, titan_message = battle.titan_attack()
-            full_message.append(titan_message)
-        
-        # Update battle state
-        battle.turn += 1
-        battle.update_cooldowns()
-        
-        # Verify database access for next steps
-        db = context.bot_data.get("db")
-        if not db:
-            logger.error("Database not initialized")
-            await query.edit_message_text("Internal error: Database not initialized.")
-            return
-        
-        # Check for battle end conditions - character defeated or titan defeated
-        if battle.character_hp <= 0 or battle.titan_hp <= 0:
-            battle.battle_ended = True
-            await handle_battle_end(query, battle, user_id, context)
-            return
-        
-        # Generate keyboard and prepare UI (using cache when possible)
-        keyboard = await generate_ability_keyboard(battle, context)
-        
-        # Fast validation with simplified logic
-        if not keyboard or not isinstance(keyboard, list):
-            keyboard = [[InlineKeyboardButton("🏃 Run", callback_data="action_run")]]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Get battle status once
-        status = battle.get_battle_status()
-        
-        message_parts = [
-            "<b>⚔️ BATTLE ⚔️</b>\n",
-            "\n".join(full_message),
-            "", 
-            f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
-            f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
-            f"{status['titan_bar']}",
-            "",  
-            f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
-            f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
-            f"{status['character_bar']}",
-            f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
-        ]
-        
-        battle_message = "\n".join(message_parts)
-    
-        # Edit message with all content at once - safely
-        try:
-            from game.safe_edit import safe_edit_message_text
-            if random.random() < 0.1:  # Only randomize 10% of the time
-                random_pos = random.randint(0, len(battle_message)-1)
-                modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
-            else:
-                modified_message = battle_message
-            
-            # Always try to edit the message, never send a new one - this fixes the button spam issue
-            try:
-                await safe_edit_message_text(
-                    query.message,  # type: ignore
-                    modified_message,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
-            except (TypeError, AttributeError):
-                # If message type is not compatible, skip editing
-                pass
-        except ImportError:
-            # Fallback to direct edit
-            try:
-                
-                random_pos = random.randint(0, len(battle_message)-1)
-                modified_message = battle_message[:random_pos] + '\u200B' + battle_message[random_pos:]
-                
-                await query.edit_message_text(
-                    text=modified_message,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                if "message is not modified" in str(e).lower():
-                    pass
-                elif "query is too old" in str(e).lower() or "query id is invalid" in str(e).lower():
-                    logger.debug(f"Query too old or invalid, but not creating new message to avoid spam")
-                else:
-                    # Just log any other errors rather than raising - keeps the UI functional
-                    logger.error(f"Error editing message: {e}")
-        except Exception as e:
-            # Handle any other exceptions during message editing
-            logger.error(f"Unexpected error during battle message update: {e}")
-            # Continue with battle flow even if message update fails
-        finally:
-            pass
-        # Create new timeout task and assign it to battle
-        battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
-        
-        
-    finally:
-        pass
 
-async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the end of a battle, updating gas and rewards with optimized performance."""
-    user_id = str(user_id)
-    battle.battle_ended = True
-
-    # Cancel timeout immediately
+    # Cancel the previous timeout task
     if battle.timeout_task and not battle.timeout_task.done():
         battle.timeout_task.cancel()
 
-    db = context.bot_data.get("db")
-    if not db:
-        logger.error("Database not initialized")
-        await query.edit_message_text("❌ Database error!")
-        cleanup_battle(user_id, "error", battle)
+    battle.keyboard_cache_invalid = True
+    full_message = []
+    action = query.data
+
+    # --- Action Dispatcher ---
+    if action == "action_run":
+        ended, message = await _handle_run_action(battle, user_id, context)
+        full_message.append(message)
+        if ended:
+            await query.edit_message_text(message)
+            return
+    elif action == "action_switch":
+        await _handle_switch_action(query, battle, context)
+        return 
+    elif action.startswith("switch_to_"):
+        message = await _handle_do_switch(action, battle, user_id, context)
+        full_message.append(message)
+    elif action == "switch_back":
+        # This action will just fall through to regenerating the UI
+        pass
+    elif action == "action_basic_attack":
+        ended, message = await _handle_basic_attack(battle, context)
+        full_message.append(message)
+        if ended:
+            await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+            cleanup_battle(user_id, "out_of_gas", battle)
+            return
+    elif action.startswith("ability_"):
+        ended, message = await _handle_ability_action(action, battle)
+        full_message.append(message)
+        if ended:
+            await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+            cleanup_battle(user_id, "out_of_gas", battle)
+            return
+    elif action.startswith("cooldown_") or action.startswith("lowgas_"):
+        # Provide feedback for non-usable actions without processing a turn
+        try:
+            if action.startswith("cooldown_"):
+                ability_name = action.split('_', 1)[1]
+                cooldown = battle.ability_cooldowns.get(ability_name, 0)
+                await query.answer(f"{ability_name} is on cooldown for {cooldown} more turns!", show_alert=True)
+            else:
+                await query.answer(f"Not enough gas! Refill with /char {battle.character.name}", show_alert=True)
+        except Exception:
+            pass
+        # We don't process a turn, just show an alert. The UI doesn't need a full redraw.
+        # We must restart the timeout, however.
+        battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
         return
 
-    # Fast path: Get cached data or minimal fresh data
-    # Ensure context.user_data exists
-    if not hasattr(context, 'user_data') or context.user_data is None:
-        context.user_data = {}
-    
-    battle_cache = context.user_data.get("battle_cache", {})
-    player_data = battle_cache.get("player_data") if isinstance(battle_cache, dict) else None
-
-    if not player_data:
-        # Use get_player for both DB and memory
-        player_data = await db.get_player(user_id)
-        if player_data:
-            battle_cache["player_data"] = player_data
-
-    if not player_data:
-        await query.edit_message_text("❌ Player data not found!")
-        cleanup_battle(user_id, "error", battle)
+    # --- Main Battle Flow ---
+    if battle.titan_hp <= 0:
+        await handle_battle_end(query, battle, user_id, context)
         return
 
-    victory = battle.titan_hp <= 0
-    
-    # Handle both dict and Player object cases for explore_count
-    if isinstance(player_data, dict):
-        explore_count = player_data.get("explore_count", 0)
-    else:
-        # It's a Player object
-        explore_count = getattr(player_data, "explore_count", 0)
+    # Titan's turn only if an action other than just viewing cooldowns was taken
+    if not (action.startswith("cooldown_") or action.startswith("lowgas_")):
+        if battle.character_hp > 0:
+            _, titan_message = battle.titan_attack()
+            full_message.append(titan_message)
 
-    # Pre-calculate all values to minimize processing time
-    gas_consumed = max(0, battle.initial_gas - battle.gas)
+        battle.turn += 1
+        battle.update_cooldowns()
 
-    if victory:
-        # Calculate rewards once with minimal computation
-        rewards = battle.calculate_rewards(
-            titan=battle.titan,
-            character=battle.character,
-            player=battle.player,
-            explore_count=explore_count
-        )
+    if battle.character_hp <= 0:
+        await handle_battle_end(query, battle, user_id, context)
+        return
 
-        # Fast XP calculations - distribute equally among participating characters
-        total_participating = len(battle.participating_characters)
-        base_xp_per_character = max(1, rewards["xp"] // total_participating)
-        player_xp = max(1, rewards["xp"])
+    await _update_battle_ui(query, battle, context, full_message)
 
-        # Update all participating characters with XP
-        participating_level_infos = []
-        for char_name in battle.participating_characters:
-            if char_name == battle.character.name:
-                # Current character gets updated in-memory
-                char_level_info = battle.character.add_xp(base_xp_per_character)
-                participating_level_infos.append((battle.character, char_level_info))
-            else:
-                # Load and update other participating characters
-                try:
-                    other_char = await db.get_character(user_id, char_name)
-                    if other_char:
-                        other_level_info = other_char.add_xp(base_xp_per_character)
-                        participating_level_infos.append((other_char, other_level_info))
-                except Exception as e:
-                    logger.error(f"Error updating XP for participating character {char_name}: {e}")
+async def _update_battle_ui(query, battle, context, full_message):
+    """Helper to generate and send the updated battle UI."""
+    keyboard = await generate_ability_keyboard(battle, context)
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    status = battle.get_battle_status()
 
-        # Update current character in-memory (fast)
-        battle.character.xp = max(0, battle.character.xp)
-        battle.character.current_hp = battle.character.stats.HP
-        battle.character.gas = max(0, battle.character.gas - gas_consumed)
-        battle.character.max_gas = battle.character.gas
+    message_parts = [
+        "<b>⚔️ BATTLE ⚔️</b>\n",
+        "\n".join(filter(None, full_message)),
+        "",
+        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>",
+        f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>",
+        f"{status['titan_bar']}",
+        "",
+        f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
+        f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
+        f"{status['character_bar']}",
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>",
+        f"Turn: {battle.turn}" # Visible turn counter
+    ]
+    battle_message = "\n".join(message_parts)
 
-        # Update player in-memory (fast)
-        # Check if player_data is already a Player object
-        if isinstance(player_data, Player):
-            player_obj = player_data
-        else:
-            # If it's a dict, create a Player object
-            player_obj = Player(**player_data)
-        player_level_info = player_obj.add_xp(player_xp)
-        player_obj.xp = max(0, player_obj.xp)
-        player_obj.marks = max(0, player_obj.marks + rewards["marks"])
-        player_obj.valor = max(0, player_obj.valor + rewards["valor"])
-        player_obj.explore_count = explore_count + 1
-        
-        # Decrement buff counters after battle victory
-        buff_updates = {}
-        if hasattr(player_obj, 'double_gas_injector_uses') and player_obj.double_gas_injector_uses > 0:
-            player_obj.double_gas_injector_uses -= 1
-            buff_updates["double_gas_injector_uses"] = player_obj.double_gas_injector_uses
-        if hasattr(player_obj, 'mark_surge_token_uses') and player_obj.mark_surge_token_uses > 0:
-            player_obj.mark_surge_token_uses -= 1
-            buff_updates["mark_surge_token_uses"] = player_obj.mark_surge_token_uses
-        if hasattr(player_obj, 'frenzy_elixir_uses') and player_obj.frenzy_elixir_uses > 0:
-            player_obj.frenzy_elixir_uses -= 1
-            buff_updates["frenzy_elixir_uses"] = player_obj.frenzy_elixir_uses
-
-        # Send victory message immediately (fastest user feedback)
-        reward_parts = [
-            f"<b>You have defeated {battle.titan.name}!</b>\n",
-            f"⚡ <b>XP: +{rewards['xp']}</b>",
-            f"🪙 <b>Marks: +{rewards['marks']}</b>"
-        ]
-        if rewards['valor'] > 0:
-            reward_parts.append(f"⚔️ <b>Valor: +{rewards['valor']}</b>")
-
-        await query.edit_message_text("\n".join(reward_parts), parse_mode=ParseMode.HTML)
-
-        # Random drop system - 9% chance after victory
-        if random.random() < 0.09:  # 9% chance
-            drop = get_random_drop()
-            if drop['type'] in ['bottle', 'cylinder']:
-                # Update player's gas
-                player_obj.gas += drop['amount']
-                # Update database
-                await db.batch_update_player(str(user_id), {
-                    "gas": player_obj.gas,
-                    "updated_at": datetime.now(timezone.utc)
-                })
-                # Send drop message
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=f"🎁 <b>Random Drop!</b>\n{drop['message']}",
-                    parse_mode=ParseMode.HTML
-                )
-
-        # Single batch database update for all participating characters (much faster than multiple calls)
-        character_update_tasks = []
-        for char, level_info in participating_level_infos:
-            if char.name == battle.character.name:
-                # Current character - update with gas consumption
-                char.gas = max(0, char.gas - gas_consumed)
-                char.max_gas = char.gas
-                char.current_hp = char.stats.HP
-            else:
-                # Other participating characters - just update XP
-                char.gas = max(0, char.gas)  # Ensure gas doesn't go negative
-                char.max_gas = char.gas
-                char.current_hp = min(char.current_hp, char.stats.HP)  # Don't heal other characters
-            
-            character_update_tasks.append(db.batch_update_character(
-                str(battle.character.user_id), 
-                char.name, 
-                {
-                    "xp": char.xp,
-                    "total_xp": char.total_xp,
-                    "level": char.level,
-                    "current_hp": char.current_hp,
-                    "gas": char.gas,
-                    "max_gas": char.max_gas,
-                    "stats": char.stats.dict() if char.stats else {},
-                    "updated_at": datetime.now(timezone.utc)
-                }
-            ))
-        
-        player_update_task = db.batch_update_player(
-            str(user_id), 
-            {
-                "marks": player_obj.marks,
-                "valor": player_obj.valor,
-                "explore_count": player_obj.explore_count,
-                "xp": player_obj.xp,
-                "total_xp": player_obj.total_xp,
-                "level": player_obj.level,
-                "updated_at": datetime.now(timezone.utc),
-                **buff_updates  # Include buff counter updates
-            }
-        )
-
-        # Execute all character updates in parallel
-        try:
-            await asyncio.gather(*character_update_tasks, return_exceptions=True)
-        except Exception as e:
-            logger.error(f"Error during parallel character batch updates: {e}")
-        
-        # Execute player update
-        try:
-            await player_update_task
-        except Exception as e:
-            logger.error(f"Error during player batch update: {e}")
-
-        # Process all background tasks in parallel (non-blocking for user)
-        # Pass all participating characters for level up messages
-        participating_chars = [char for char, _ in participating_level_infos]
-        participating_level_infos_only = [level_info for _, level_info in participating_level_infos]
-        
-        asyncio.create_task(_process_post_battle_updates(
-            db, player_obj, participating_chars, participating_level_infos_only, user_id, query.message.chat_id if query.message else None,
-            context.bot.send_message, rewards["marks"], battle, victory=True, player_level_info=player_level_info
-        ))
-
-    else:
-        # Defeat path - minimal updates
-        battle.character.gas = max(0, battle.character.gas - gas_consumed)
-        battle.character.max_gas = battle.character.gas
-        battle.character.current_hp = 0
-
-        # Decrement exploration-based buff counters after defeat (double_gas_injector and frenzy_elixir)
-        buff_updates = {}
-        if isinstance(player_data, Player):
-            player_obj = player_data
-        else:
-            player_obj = Player(**player_data)
-        
-        if hasattr(player_obj, 'double_gas_injector_uses') and player_obj.double_gas_injector_uses > 0:
-            player_obj.double_gas_injector_uses -= 1
-            buff_updates["double_gas_injector_uses"] = player_obj.double_gas_injector_uses
-        if hasattr(player_obj, 'frenzy_elixir_uses') and player_obj.frenzy_elixir_uses > 0:
-            player_obj.frenzy_elixir_uses -= 1
-            buff_updates["frenzy_elixir_uses"] = player_obj.frenzy_elixir_uses
-
-        # Send defeat message immediately
+    try:
         await query.edit_message_text(
-            f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.titan.name}!",
+            text=battle_message,
+            reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
+    except Exception as e:
+        if "message is not modified" not in str(e).lower():
+            logger.warning(f"Failed to edit battle message: {e}")
 
-        # Random drop system - 9% chance even after defeat
-        if random.random() < 0.09:  # 9% chance
-            drop = get_random_drop()
-            if drop['type'] in ['bottle', 'cylinder']:
-                # Update player's gas
-                player_obj.gas += drop['amount']
-                # Update database
-                await db.batch_update_player(str(user_id), {
-                    "gas": player_obj.gas,
-                    "updated_at": datetime.now(timezone.utc)
-                })
-                # Send drop message
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=f"🎁 <b>Random Drop!</b>\n{drop['message']}",
-                    parse_mode=ParseMode.HTML
-                )
+    # Start a new timeout task
+    battle.timeout_task = asyncio.create_task(battle_timeout(str(query.from_user.id), query, battle, context))
 
-        # Single batch update for defeat
-        character_defeat_task = db.batch_update_character(
-            str(battle.character.user_id), 
-            battle.character.name, 
-            {
-                "gas": battle.character.gas,
-                "max_gas": battle.character.max_gas,
-                "current_hp": battle.character.current_hp,
-                "updated_at": datetime.now(timezone.utc)
-            }
-        )
-        
-        player_defeat_task = db.batch_update_player(
-            str(user_id), 
-            {
-                "explore_count": explore_count + 1,
-                "updated_at": datetime.now(timezone.utc),
-                **buff_updates  # Include buff counter updates
-            }
-        )
+async def _handle_run_action(battle, user_id, context):
+    """Handles the logic for a player attempting to run from battle."""
+    if random.random() < 0.7:  # 70% success
+        cleanup_battle(user_id, "escaped", battle)
+        return True, f"🏃💨 {battle.character.name} successfully escaped!"
+    else:
+        return False, f"❌ {battle.character.name} failed to escape! The titan blocks your path!"
 
-        try:
-            await asyncio.gather(character_defeat_task, player_defeat_task, return_exceptions=True)
-        except Exception as e:
-            logger.error(f"Error during defeat batch update: {e}")
+async def _handle_switch_action(query, battle, context):
+    """Displays the character switching UI."""
+    if not battle.player or not hasattr(battle.player, 'team') or len(battle.player.team) <= 1:
+        await query.answer("You don't have other characters to switch to!", show_alert=True)
+        # Need to redraw the UI and restart the timer if the action is invalid
+        await _update_battle_ui(query, battle, context, [])
+        return
 
-        # Background processing for defeat
-        asyncio.create_task(_process_defeat_updates(
-            db, player_data, user_id, query.message.chat_id if query.message else None, context.bot.send_message
-        ))
-
-    # Fast cleanup - clear caches immediately
-    db.invalidate_battle_caches(user_id)
-
-    # Clear battle flags - safely handle context.bot_data if it doesn't exist
-    battle_flags_to_clear = [
-        f"active_battle_id_{user_id}",
-        f"titan_battle_started_{user_id}",
-        f"last_titan_data_{user_id}"
-    ]
+    switch_keyboard = []
+    current_name = battle.character.name
+    for i, member in enumerate(battle.player.team):
+        char_name = member.character_name
+        if char_name != current_name:
+            switch_keyboard.append([InlineKeyboardButton(char_name, callback_data=f"switch_to_{i}")])
     
-    if hasattr(context, 'bot_data') and context.bot_data is not None:
-        for flag in battle_flags_to_clear:
-            if flag in context.bot_data:
-                context.bot_data.pop(flag, None)
-
-    # Clear cached battle data - safely handle context.user_data if it doesn't exist
-    if hasattr(context, 'user_data') and context.user_data is not None:
-        if "battle_cache" in context.user_data:
-            context.user_data.pop("battle_cache", None)
-
-    cleanup_battle(user_id, "completed", battle)
+    switch_keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="switch_back")])
+    
+    await query.edit_message_text(
+        "<b>Select a character to switch to:</b>",
+        reply_markup=InlineKeyboardMarkup(switch_keyboard),
+        parse_mode=ParseMode.HTML
+    )
+    # Restart timeout after showing switch menu
+    battle.timeout_task = asyncio.create_task(battle_timeout(str(query.from_user.id), query, battle, context))
 
 
-async def _process_post_battle_updates(db, player_obj, participating_characters, participating_level_infos, user_id, chat_id, send_func,
-                                      marks_reward, battle, victory=False, player_level_info=None):
-    """Process mission progress and level up messages in background."""
+async def _handle_do_switch(action, battle, user_id, context):
+    """Handles the actual character switch logic."""
     try:
-        # Get fresh player data for mission processing
-        player_obj_fresh = await db.get_player(user_id)
-        if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
-            return
-            
-        # Initialize notifications list for Mission 14
-        all_notifications = []
-            
-        # Process mission progress in parallel
-        mission_tasks = [
-            process_titan_reward_mission_progress(db, player_obj_fresh, marks_reward),
-            process_explore_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None)),
-            process_titan_defeat_mission_progress(db, player_obj_fresh, getattr(player_obj_fresh, "location", None))
-        ]
+        index = int(action.split('_')[-1])
+        # Ensure player and team exist and are valid
+        if not battle.player or not battle.player.team:
+            return "Player data is missing."
+        target_member = battle.player.team[index]
+        target_name = target_member.character_name
+    except (ValueError, IndexError):
+        return "Invalid switch selection."
 
-        mission_results = await asyncio.gather(*mission_tasks, return_exceptions=True)
+    db = context.bot_data["db"]
+    target_character = await db.get_character(user_id, target_name)
+    if not target_character:
+        return f"Could not load character: {target_name}"
+    
+    if target_character.current_hp <= 0:
+        return f"{target_name} has 0 HP and cannot be switched in!"
 
-        # Send mission notifications
-        all_notifications = []
-        for result in mission_results:
-            if isinstance(result, list):
-                all_notifications.extend(result)
+    # Add both characters to participants for XP
+    battle.participating_characters.add(battle.character.name)
+    battle.participating_characters.add(target_name)
 
-        if all_notifications:
-            for notification in all_notifications[:2]:  # Limit to 2 notifications
-                try:
-                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
-                except Exception as e:
-                    logger.error(f"Error sending mission notification: {e}")
+    old_name = battle.character.name
+    battle.character = target_character
+    battle.character_hp = target_character.current_hp
+    battle.gas = target_character.gas
+    battle.character_gas = target_character.max_gas
+    battle.max_gas = target_character.max_gas
+    
+    # Re-initialize cooldowns for the new character
+    character_data = get_character_data(target_character.character_type)
+    if character_data:
+        battle.ability_cooldowns = {
+            ability.name: 0 for ability in (
+                (character_data.active_abilities or []) +
+                (character_data.passive_abilities or []) +
+                (character_data.ultimate_abilities or [])
+            )
+        }
 
-        # Process mission item drops only for victories
-        if victory:
-            try:
-                mission_item_drops = await check_mission_item_drops(player_obj_fresh)
-                for item_drop in mission_item_drops:
-                    result = await add_mission_item(db, player_obj_fresh, item_drop["key"])
-                    if isinstance(result, tuple) and len(result) == 2:
-                        success, msg = result
-                        if success and msg:
-                            try:
-                                await send_func(chat_id, msg, parse_mode=ParseMode.MARKDOWN)
-                            except Exception as e:
-                                logger.error(f"Error sending mission item notification: {e}")
-            except Exception as e:
-                logger.error(f"Error processing mission item drops: {e}")
+    battle.apply_passives("battle_start") # Apply passives of new character
 
-        # Send level up messages for all participating characters
-        for i, (character, level_info) in enumerate(zip(participating_characters, participating_level_infos)):
-            await _send_level_up_messages(level_info, player_level_info if i == 0 else None, character, player_obj if i == 0 else None, chat_id, send_func)
+    return f"🔄 Switched from {old_name} to {target_name}!"
 
-        # Track battle stats in background
-        try:
-            # Track for the main character
-            track_battle_end(int(user_id), participating_characters[0].name, "victory")
-            from game.stats_command import track_explore_stats
-            player_first_name = getattr(player_obj_fresh, "first_name", None) or getattr(player_obj_fresh, "username", None) or str(user_id)
-            await track_explore_stats(user_id, player_first_name, True)
-        except Exception as e:
-            logger.error(f"Error tracking battle stats: {e}")
+async def _handle_basic_attack(battle, context):
+    """Handles the logic for a basic attack."""
+    gas_cost = 20
+    if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
+        gas_cost = 10
 
-    except Exception as e:
-        logger.error(f"Error in post-battle updates: {e}")
+    if battle.gas < gas_cost:
+        return True, f"out of gas refill it by /char {battle.character.name}"
 
+    battle.gas -= gas_cost
+    
+    shop_items = context.bot_data.get("shop_items", {})
+    weapon = battle.get_equipped_weapon(shop_items)
+    
+    # Simplified damage calculation for performance
+    if weapon and hasattr(weapon, 'attributes'):
+        min_dmg = weapon.attributes.get("damage_min", 10)
+        max_dmg = weapon.attributes.get("damage_max", 20)
+        base_dmg = random.randint(min_dmg, max_dmg)
+        atk_bonus = int(base_dmg * (battle.character.stats.ATK / 100))
+        total_damage = base_dmg + atk_bonus
+        message = f"⚔️ {battle.character.name} attacks with {weapon.name}, dealing {total_damage} damage!"
+    else:
+        total_damage = max(10, battle.character.stats.ATK + random.randint(15, 25))
+        message = f"⚔️ {battle.character.name} attacks with a basic strike, dealing {total_damage} damage!"
 
-async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
-    """Process updates after defeat."""
-    try:
-        player_obj_fresh = await db.get_player(user_id)
-        if not player_obj_fresh or not hasattr(player_obj_fresh, "missions"):
-            return
-            
-        # Process exploration mission progress
-        explore_notifications = await process_explore_mission_progress(
-            db, player_obj_fresh, getattr(player_obj_fresh, "location", None)
-        )
+    battle.titan_hp = max(0, battle.titan_hp - total_damage)
+    return False, message
 
-        # Send mission notifications
-        if explore_notifications:
-            for notification in explore_notifications[:2]:
-                try:
-                    await send_func(chat_id, notification, parse_mode=ParseMode.MARKDOWN)
-                except Exception as e:
-                    logger.error(f"Error sending defeat mission notification: {e}")
-
-        # Track defeat stats
-        try:
-            from database.characters import get_character_data
-            character_data = get_character_data(player_obj_fresh.team[0].character_name if player_obj_fresh.team else "Unknown")
-            character_name = character_data.name if character_data else "Unknown"
-            track_battle_end(int(user_id), character_name, "defeat")
-
-            from game.stats_command import track_explore_stats
-            player_first_name = getattr(player_obj_fresh, "first_name", None) or getattr(player_obj_fresh, "username", None) or str(user_id)
-            await track_explore_stats(user_id, player_first_name, True)
-        except Exception as e:
-            logger.error(f"Error tracking defeat stats: {e}")
-
-    except Exception as e:
-        logger.error(f"Error in defeat updates: {e}")
-
-
-async def _send_level_up_messages(char_level_info, player_level_info, character, player_obj, chat_id, send_func):
-    """Send level up messages efficiently."""
-    try:
-        # Character level ups
-        if char_level_info and char_level_info["total_level_ups"] > 0:
-            for level_up in char_level_info["level_ups"]:
-                stat_lines = []
-
-                # Get stat increases
-                stat_increases = level_up.get('stat_increases', {})
-
-                if stat_increases:
-                    stat_order = ['HP', 'ATK', 'DEF', 'ACC', 'INT', 'SPD']
-                    stat_emojis = {
-                        'HP': '❤️', 'ATK': '⚔️', 'DEF': '🛡️',
-                        'ACC': '🎯', 'INT': '🧠', 'SPD': '⚡'
-                    }
-
-                    for stat in stat_order:
-                        increase = stat_increases.get(stat, 0)
-                        if increase > 0:
-                            emoji = stat_emojis.get(stat, '')
-                            stat_lines.append(f"  {emoji} {stat}: +{increase}")
-
-                msg_parts = [
-                    f"🎊 <b>{character.name} leveled Up !!</b>",
-                    f"<b>Level :</b> {level_up['old_level']} ➜ {level_up['new_level']}"
-                ]
-
-                if stat_lines:
-                    msg_parts.append("<b>Stat increases:</b>")
-                    msg_parts.extend(stat_lines)
-
-                if level_up.get("newly_unlocked_abilities"):
-                    msg_parts.append(f"\n🌟 New abilities unlocked:")
-                    for ability in level_up["newly_unlocked_abilities"]:
-                        ability_type = "🔥" if ability["type"] == "ultimate" else "⚡" if ability["type"] == "active" else "🛡️"
-                        msg_parts.append(f"{ability_type} {ability['name']} ({ability['description']})")
-
-                await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
-
-        # Player level ups
-        if player_level_info and player_level_info["total_level_ups"] > 0:
-            for lvl_up in player_level_info["level_ups"]:
-                msg_parts = [
-                    f"PLAYER LEVEL UP! ",
-                    f"Level: {lvl_up['old_level']} → {lvl_up['new_level']}"
-                ]
-
-                rewards = lvl_up.get("rewards", {})
-                if rewards.get("marks", 0) > 0:
-                    msg_parts.append(f"🪙 Marks: +{rewards['marks']}")
-                if rewards.get("valor", 0) > 0:
-                    msg_parts.append(f"⚔️ Valor: +{rewards['valor']}")
-
-                await send_func(chat_id, "\n".join(msg_parts), parse_mode=ParseMode.HTML)
-
-    except Exception as e:
-        logger.error(f"Error sending level up messages: {e}")
-
-async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle battle timeout."""
-    user_id = str(user_id)
-    try:
-        battle.timeout_task = asyncio.current_task()
-        await asyncio.sleep(180)
-        async with active_battles_lock:
-            if user_id in active_battles:
-                db = context.bot_data.get("db")
-                if not db:
-                    logger.error("Database not initialized")
-                else:
-                    try:
-                        # Save all participating characters' states
-                        for char_name in battle.participating_characters:
-                            try:
-                                if char_name == battle.character.name:
-                                    # Current character
-                                    await db.characters.update_one(
-                                        {"user_id": user_id, "name": char_name},
-                                        {"$set": {
-                                            "current_hp": battle.character_hp,
-                                            "gas": battle.character_gas,
-                                            "max_gas": battle.character.max_gas,
-                                            "ability_cooldowns": battle.ability_cooldowns
-                                        }}
-                                    )
-                                else:
-                                    # Other participating characters - just save their current state
-                                    other_char = await db.get_character(user_id, char_name)
-                                    if other_char:
-                                        await db.characters.update_one(
-                                            {"user_id": user_id, "name": char_name},
-                                            {"$set": {
-                                                "current_hp": other_char.current_hp,
-                                                "gas": other_char.gas,
-                                                "max_gas": other_char.max_gas
-                                            }}
-                                        )
-                            except Exception as char_error:
-                                logger.error(f"Failed to save character {char_name} state on timeout: {char_error}")
-                    except Exception as e:
-                        logger.error(f"Failed to save character state on timeout for user {user_id}: {e}")
-                    try:
-                        # Clear all battle-related caches on timeout
-                        db.invalidate_battle_caches(user_id)
-                        # Clear the battle started flag so user can start new battles
-                        if f"titan_battle_started_{user_id}" in context.bot_data:
-                            del context.bot_data[f"titan_battle_started_{user_id}"]
-                        # Clear titan cache to prevent data leakage
-                        if f"last_titan_data_{user_id}" in context.bot_data:
-                            del context.bot_data[f"last_titan_data_{user_id}"]
-                            
-                        await query.edit_message_text(
-                            "⏰ Battle Expired ⏰\n\n"
-                            "You didn't respond in time. The battle has expired.\n"
-                            "Use /explore to find another titan."
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to update message on timeout for user {user_id}: {e}")
-                    try:
-                        await db.delete_titan(user_id)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete titan on timeout for user {user_id}: {e}")
-                # Always cleanup battle, even if above fails
-                cleanup_battle(user_id, "timeout", battle)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        logger.error(f"Error in battle_timeout for user {user_id}: {e}")
-        cleanup_battle(user_id, "timeout_error", battle)
+async def _handle_ability_action(action, battle):
+    """Handles the logic for using an ability."""
+    ability_name = action.split('_', 1)[1]
+    _, message, _, battle_end = battle.use_ability(ability_name)
+    return battle_end, message
