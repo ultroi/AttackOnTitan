@@ -1,4 +1,5 @@
 from typing import Callable, Any
+from flask import logging
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -7,7 +8,7 @@ from utils.owners import get_owner_ids
 from database.db_instance import get_database
 from utils.mod_utils import is_mod
 
-
+logger = logging.getLogger(__name__)
 # Ban collection name
 BAN_COLLECTION = "bans"
 BAN_LOG_CHAT_ID = -1002873117075
