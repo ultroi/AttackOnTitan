@@ -223,7 +223,8 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
         created_at=datetime.now(timezone.utc),
         spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
         min_level_requirement=max(1, player.level - 2),
-        abilities=[]
+        abilities=[],
+        drop_table={}
     )
     context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
     await db.store_titan(user_id_str, titan)
