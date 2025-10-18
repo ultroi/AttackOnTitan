@@ -1446,12 +1446,34 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
 async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle battle timeout - ends the battle if no actions are taken within the limit."""
     user_id = str(user_id)
-    async with active_battles_lock:
-        battle_instance = active_battles.get(user_id)
-        if battle_instance and not battle_instance.battle_ended:
-            # Force cleanup and mark as ended
-            cleanup_battle(user_id, "timeout", battle_instance)
-            try:
-                await query.edit_message_text("🕰️ Battle ended due to inactivity.", parse_mode=ParseMode.HTML)
-            except Exception:
-                pass
+    
+    try:
+        # Wait for 3 minutes (180 seconds) before timing out
+        await asyncio.sleep(180)
+        
+        # Check if battle is still active and not ended
+        async with active_battles_lock:
+            battle_instance = active_battles.get(user_id)
+            if battle_instance and not battle_instance.battle_ended:
+                # Force cleanup and mark as ended
+                cleanup_battle(user_id, "timeout", battle_instance)
+                
+                # Also clean up any battle tracking data
+                if f"titan_battle_started_{user_id}" in context.bot_data:
+                    del context.bot_data[f"titan_battle_started_{user_id}"]
+                
+                try:
+                    await query.edit_message_text(
+                        "🕰️ <b>Battle Ended - Inactivity Timeout!</b>\n\n"
+                        "You didn't take any action for 3 minutes.\n"
+                        "Your character escaped from the battle.\n\n"
+                        "Use /explore to find another titan.",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception:
+                    pass
+    except asyncio.CancelledError:
+        # This is expected when a new action is taken
+        pass
+    except Exception as e:
+        logger.error(f"Error in battle_timeout: {e}")

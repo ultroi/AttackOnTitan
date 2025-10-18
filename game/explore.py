@@ -335,16 +335,22 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         
         # If user is in battle or has explored again, the timeout is no longer valid.
         if _is_in_battle(user_id_str) or user_last_explore.get(user_id_str, 0) > time.time() - TITAN_TIMEOUT_SECONDS:
+            logger.info(f"Timeout cancelled for user {user_id_str} - already in battle or explored again")
             return
         
         db = context.bot_data.get("db")
         if not db:
+            logger.error(f"Database not available for timeout handling for user {user_id_str}")
             return
-            
+        
+        # Handle spam detection FIRST before cleanup
         await _handle_timeout_spam_detection(user_id, user_id_str, context, db)
+        
+        # Then clean up titan data
         await _handle_timeout_titan_cleanup(user_id_str, context, db, sent_message)
         
     except asyncio.CancelledError:
+        logger.info(f"Timeout task cancelled for user {user_id_str}")
         pass  # This is expected if the user explores again.
     except Exception as e:
         logger.error(f"Error in titan_encounter_timeout for user {user_id_str}: {e}", exc_info=True)
@@ -359,16 +365,21 @@ async def _handle_timeout_spam_detection(user_id, user_id_str, context, db):
         current_spam_count = spam_counts.get(user_id_str, 0) + 1
         spam_counts[user_id_str] = current_spam_count
         
+        # Update database immediately (not as background task)
         await db.bans.update_one(
             {"user_id": user_id_str},
             {"$set": {"spam_count": current_spam_count, "last_spam_update": int(time.time())}},
             upsert=True
         )
         
+        logger.info(f"Spam count for user {user_id_str}: {current_spam_count}")
+        
         if current_spam_count == 10:
+            # Send warning immediately
             await _send_spam_warning(user_id, context, "🚨 <b>Warning:</b> You have let 10 titan encounters expire! Continuing this may result in a ban.")
         elif current_spam_count >= 15:
-            await _handle_spam_ban(user_id, context)
+            # Apply ban immediately
+            await _handle_spam_ban(user_id, user_id_str, context, db)
     
     except Exception as e:
         logger.error(f"Error in spam detection for user {user_id_str}: {e}")
@@ -378,6 +389,7 @@ async def _handle_timeout_titan_cleanup(user_id_str, context, db, sent_message):
         # Clean up titan data
         if await db.get_titan(user_id_str):
             await db.delete_titan(user_id_str)
+            logger.info(f"Deleted expired titan for user {user_id_str}")
         
         # Clean up battle ID to prevent stale battle buttons
         battle_id_key = f"active_battle_id_{user_id_str}"
@@ -385,14 +397,23 @@ async def _handle_timeout_titan_cleanup(user_id_str, context, db, sent_message):
             del context.bot_data[battle_id_key]
             logger.info(f"Cleaned up expired battle ID for user {user_id_str}")
         
-        # Update message if available
+        # Update message if available - IMMEDIATELY with no delays
         if sent_message:
-            from game.safe_edit import safe_edit_message_text
-            await safe_edit_message_text(
-                sent_message,
-                "⏰ Titan encounter expired! Use /explore to find another.",
-                parse_mode=ParseMode.HTML
-            )
+            try:
+                from game.safe_edit import safe_edit_message_text
+                timeout_message = (
+                    "⏰ <b>Titan Encounter Expired!</b>\n\n"
+                    "You didn't engage the titan in time.\n"
+                    "Use /explore to find another titan."
+                )
+                await safe_edit_message_text(
+                    sent_message,
+                    timeout_message,
+                    parse_mode=ParseMode.HTML
+                )
+                logger.info(f"✅ Updated timeout message for user {user_id_str}")
+            except Exception as edit_error:
+                logger.error(f"Failed to update timeout message for user {user_id_str}: {edit_error}")
     except Exception as e:
         logger.error(f"Error in titan cleanup for user {user_id_str}: {e}")
 
@@ -400,26 +421,37 @@ async def _send_spam_warning(user_id: int, context: ContextTypes.DEFAULT_TYPE, m
     """Sends a spam warning message to the user."""
     try:
         await context.bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML)
-        logger.info(f"Sent spam warning to user {user_id}")
+        logger.info(f"✅ Sent spam warning to user {user_id}")
     except Exception as e:
-        logger.error(f"Failed to send spam warning to user {user_id}: {e}")
+        logger.error(f"❌ Failed to send spam warning to user {user_id}: {e}")
 
-async def _handle_spam_ban(user_id, context):
+async def _handle_spam_ban(user_id, user_id_str, context, db):
     """Bans a user for spamming the explore command."""
     try:
-        db = context.bot_data.get("db")
-        if not db: return
-
-        expiry = int(time.time()) + 24 * 3600  # 24-hour ban
-        ban_data = {"user_id": user_id, "expiry": expiry, "reason": "Spamming explore", "banned_by": context.bot.id, "banned_at": int(time.time())}
+        expiry = int(time.time()) + 24 * 3600  # 24 hours
+        ban_data = {
+            "user_id": user_id_str,
+            "expiry": expiry,
+            "reason": "Spamming explore - letting titans timeout",
+            "banned_by": context.bot.id,
+            "banned_at": int(time.time())
+        }
         
-        await db.bans.update_one({"user_id": str(user_id)}, {"$set": ban_data}, upsert=True)
-        context.bot_data.setdefault("explore_spam_count", {})[str(user_id)] = 0
+        # Update ban in database immediately
+        await db.bans.update_one({"user_id": user_id_str}, {"$set": ban_data}, upsert=True)
         
-        await context.bot.send_message(chat_id=user_id, text="You have been banned for 24 hours for spamming the explore command without battling.")
-        logger.info(f"Banned user {user_id} for spamming.")
+        # Reset spam count
+        context.bot_data.setdefault("explore_spam_count", {})[user_id_str] = 0
+        
+        # Send ban notification immediately
+        ban_message = (
+            "🚫 <b>You have been banned for 24 hours!</b>\n\n"
+            "<b>Reason:</b> Spamming /explore command without engaging in battles.\n"
+        )
+        await context.bot.send_message(chat_id=user_id, text=ban_message, parse_mode=ParseMode.HTML)
+        logger.warning(f"⚠️ BANNED user {user_id_str} for explore spam - 24 hour ban applied")
     except Exception as e:
-        logger.error(f"Spam ban error for user {user_id}: {e}", exc_info=True)
+        logger.error(f"❌ Spam ban error for user {user_id}: {e}", exc_info=True)
 
 # =====================================================================================
 # Utility and Helper Functions

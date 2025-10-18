@@ -28,23 +28,47 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
                 if update.effective_message is not None:
                     await update.effective_message.reply_text("Database unavailable. Please try again later.")
                 return
-            ban_doc = await db[BAN_COLLECTION].find_one({"user_id": user_id})
+            
+            # Check for ban in database
+            ban_doc = await db[BAN_COLLECTION].find_one({"user_id": str(user_id)})
             if ban_doc:
                 expiry = ban_doc.get("expiry")
-                if expiry and expiry < int(time.time()):
-                    # Ban expired, remove
-                    await db[BAN_COLLECTION].delete_one({"user_id": user_id})
+                current_time = int(time.time())
+                
+                # Check if ban has expired
+                if expiry and expiry < current_time:
+                    # Ban expired, remove it
+                    await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
+                    logger.info(f"✅ Removed expired ban for user {user_id}")
                 else:
+                    # User is still banned
+                    reason = ban_doc.get("reason", "No reason provided")
+                    time_left = ""
+                    if expiry:
+                        hours_left = (expiry - current_time) // 3600
+                        minutes_left = ((expiry - current_time) % 3600) // 60
+                        if hours_left > 0:
+                            time_left = f"\n⏰ <b>Time remaining:</b> {hours_left}h {minutes_left}m"
+                        else:
+                            time_left = f"\n⏰ <b>Time remaining:</b> {minutes_left}m"
+                    
                     # Notify only once per session
                     if context.user_data is None:
                         context.user_data = {}
                     if not context.user_data.get('ban_notified', False):
                         if update.effective_message is not None:
-                            await update.effective_message.reply_text("You are banned!!")
+                            ban_message = (
+                                f"🚫 <b>You are banned!</b>\n\n"
+                                f"<b>Reason:</b> {reason}"
+                                f"{time_left}"
+                            )
+                            await update.effective_message.reply_text(ban_message, parse_mode=ParseMode.HTML)
                         context.user_data['ban_notified'] = True
+                        logger.warning(f"⚠️ Blocked banned user {user_id} from using command")
                     # After first notification, do not respond to further commands
                     return
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error checking ban status for user {user_id}: {e}", exc_info=True)
             if update.effective_message is not None:
                 await update.effective_message.reply_text("Error accessing database. Please try again later.")
             return
@@ -118,11 +142,19 @@ async def ban_user(update: Update, context: CallbackContext):
                 await update.effective_message.reply_text("Database unavailable. Please try again later.")
             return
         await db[BAN_COLLECTION].update_one(
-            {"user_id": target_id},
-            {"$set": {"user_id": target_id, "expiry": expiry, "reason": reason, "banned_by": update.effective_user.id, "banned_at": int(time.time())}},
+            {"user_id": str(target_id)},  # Store as string for consistency
+            {"$set": {
+                "user_id": str(target_id),
+                "expiry": expiry,
+                "reason": reason,
+                "banned_by": update.effective_user.id,
+                "banned_at": int(time.time())
+            }},
             upsert=True
         )
-    except Exception:
+        logger.info(f"✅ Banned user {target_id} - Reason: {reason}, Duration: {duration}s")
+    except Exception as e:
+        logger.error(f"Error banning user {target_id}: {e}")
         if update.effective_message is not None:
             await update.effective_message.reply_text("Error accessing database. Please try again later.")
         return
