@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 import random
@@ -79,6 +79,12 @@ class Player(BaseModel):
     mission14_area_counts: Dict[str, int] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @validator("missions", pre=True)
+    def validate_missions(cls, v):
+        if not isinstance(v, dict):
+            return {}
+        return v
 
     def increment_daily_explores(self, timestamp: datetime):
         """Adds a record of a daily explore."""

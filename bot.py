@@ -23,7 +23,7 @@ from utils.diagnostics import diagnostic_db_command, check_group_record
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command
-from game.explore import explore, close_keyboard, reset_verify, open_keyboard
+from game.explore import explore, close_keyboard, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
@@ -61,18 +61,17 @@ load_dotenv()
 
 # Get environment variables
 ENV = os.getenv("ENV", "development")
-USE_POLLING = True  # Always use polling for local testing
+USE_POLLING = True  
 TEST_BOT_TOKEN = os.getenv("TEST_BOT_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or TEST_BOT_TOKEN
 MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME", "attackontitan")
-DEBUG = os.getenv("DEBUG", "true").lower() == "true"  # Default to debug mode in test environment
+DEBUG = os.getenv("DEBUG", "true").lower() == "true"  
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", TELEGRAM_TOKEN.split(":")[1] if TELEGRAM_TOKEN else "")
 
 # Test mode configuration - ensures data safety
 TEST_MODE = os.getenv("TEST_MODE", "true").lower() == "true"
 if TEST_MODE:
-    # Use test database to prevent changes to production data
     DB_NAME = f"{DB_NAME}_test"
 
 # Local memory storage for test mode
@@ -88,7 +87,6 @@ class LocalMemoryDatabase:
         self.shop_items = {}
         self.active_battles = {}
         self.titan_timeout_tasks = {}
-        # Add compatibility properties
         self.db = None
         self.characters_collection = self.characters  # Use the dict as mock collection
         self.characters = self.characters  # For compatibility
@@ -1887,7 +1885,6 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("explore", auto_load_user_data(disable_protected(explore))))
     application.add_handler(CommandHandler("open", auto_load_user_data(disable_protected(open_keyboard))))
     application.add_handler(CommandHandler("close", auto_load_user_data(disable_protected(close_keyboard))))
-    application.add_handler(CommandHandler("resetverify", auto_load_user_data(disable_protected(reset_verify))))
     application.add_handler(CommandHandler("map", auto_load_user_data(disable_protected(show_map))))
     application.add_handler(CommandHandler("travel", auto_load_user_data(disable_protected(travel_command))))
     application.add_handler(CommandHandler("shop", auto_load_user_data(disable_protected(shop_command))))
