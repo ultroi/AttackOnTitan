@@ -48,7 +48,7 @@ class BattleSystem:
         self.character_gas: int = character.max_gas  
         self.max_gas: int = character.max_gas  
         self.character.max_gas = self.max_gas  
-        self.character.stats = character.stats or CharacterStats(HP=650, ATK=25, DEF=10, SPD=10, ACC=10, INT=10)
+        self.character.stats = character.stats or CharacterStats()
         self.ability_cooldowns: Dict[str, int] = {
             ability.name: 0 for ability in (
                 (character.active_abilities or []) +

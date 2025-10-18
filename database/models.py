@@ -4,11 +4,15 @@ from datetime import datetime, timezone
 import random
 
 class CharacterStats(BaseModel):
-    HP: int = 0
-    attack: int = 0
-    agility: int = 0
-    luck: int = 0
-    precision: int = 0
+    HP: int = Field(default=650, alias='HP')
+    ATK: int = Field(default=25, alias='attack')
+    DEF: int = Field(default=10, alias='DEF')
+    SPD: int = Field(default=10, alias='agility')
+    ACC: int = Field(default=10, alias='precision')
+    INT: int = Field(default=10, alias='INT')
+
+    class Config:
+        populate_by_name = True
 
 class Character(BaseModel):
     user_id: str
