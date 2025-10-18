@@ -76,7 +76,7 @@ class BattleSystem:
             "pixis_buff_values": {}
         }
         self.emergency_heal_used: bool = False
-        self.character._check_ability_unlocks()
+        self.character.unlock_abilities()
         self.apply_passives("battle_start")
         self.timeout_task: Optional[asyncio.Task] = None
         self._is_disposed: bool = False
