@@ -22,8 +22,13 @@ from game.start import (
 )
 from game.travel_map import TRAVEL_MAP
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+# Track processed callback queries to prevent duplicates
+processed_callbacks = {}
+CALLBACK_EXPIRY = 60  # Seconds to keep track of processed callbacks
 
 async def update_battle_status(query: Update.callback_query, battle: BattleSystem, message: str):
     """Update the battle status message with current state."""
@@ -105,6 +110,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query or not update.effective_user:
         logger.warning("No query or user information available")
         return
+    
+    # Prevent duplicate processing of same callback query
+    callback_id = query.id
+    current_time = time.time()
+    
+    # Clean old entries
+    expired_ids = [cid for cid, timestamp in processed_callbacks.items() if current_time - timestamp > CALLBACK_EXPIRY]
+    for cid in expired_ids:
+        del processed_callbacks[cid]
+    
+    # Check if already processed
+    if callback_id in processed_callbacks:
+        logger.info(f"Callback {callback_id} already processed, skipping duplicate")
+        try:
+            await query.answer("Already processing this action...")
+        except Exception:
+            pass
+        return
+    
+    # Mark as processed
+    processed_callbacks[callback_id] = current_time
+    
     user_id = str(update.effective_user.id)
     try:
         shop_system = context.bot_data.get("shop_system")

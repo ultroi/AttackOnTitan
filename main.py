@@ -81,17 +81,17 @@ ENV = os.getenv("ENV", "development")
 
 # Updated ALLOWED_IPS with proper CIDR ranges and specific IPs
 ALLOWED_IPS = [
-    "91.108.4.0/22",      # Telegram IP range
-    "91.108.5.82",        # Specific Telegram IP that was being blocked
-    "91.108.56.0/22",     # Telegram IP range
-    "149.154.160.0/20",   # Telegram IP range
-    "95.161.64.0/20",     # Telegram IP range
-    "35.197.0.0/16",      # Render IP range
-    "35.235.0.0/16",      # Render IP range
-    "35.236.0.0/16",      # Additional Render IP range
-    "35.237.0.0/16",      # Additional Render IP range
-    "34.0.0.0/8",         # Additional potential Render IP range
-    "0.0.0.0/0"           # Allow all IPs for testing (remove in production)
+    "91.108.4.0/22",      
+    "91.108.5.82",        
+    "91.108.56.0/22",     
+    "149.154.160.0/20",   
+    "95.161.64.0/20",     
+    "35.197.0.0/16",      
+    "35.235.0.0/16",      
+    "35.236.0.0/16",      
+    "35.237.0.0/16",      
+    "34.0.0.0/8",         
+    "0.0.0.0/0"           
 ]
 
 # Configure logging
@@ -107,10 +107,10 @@ app = FastAPI()
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],  
+    allow_headers=["*"],  
 )
 
 # Register dashboard route for FastAPI
@@ -135,7 +135,6 @@ def is_ip_allowed(client_ip: str) -> bool:
 async def migrate_schema(db):
     # --- Character migration ---
     char_fields = Character.model_fields if hasattr(Character, "model_fields") else Character.__annotations__
-    # Use type-based defaults for required fields
     from datetime import datetime, timezone
     from database.models import CharacterStats
     def get_default_value(field_type, field_name=None):
@@ -241,12 +240,10 @@ async def initialize_application():
             return None
         application = Application.builder().token(TOKEN).build()
     try:
-        # Initialize database and other services ONCE
         if global_db is None:
-            # Use persistent DB connection for best performance
             motor_db = await get_persistent_database()
             global_db = Database()
-            await global_db.init_db(motor_db)  # Pass the database instance to init_db
+            await global_db.init_db(motor_db)  
             await migrate_schema(global_db)
             
             # Apply battle system fixes
@@ -258,7 +255,6 @@ async def initialize_application():
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
         application.bot_data["shop_system"] = shop_system
-        # Initialize shop_items including both regular and hidden items
         application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
         
         # Initialize spin system
@@ -283,7 +279,7 @@ async def initialize_application():
                 if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
                     try:
                         if update.effective_message:
-                            await asyncio.sleep(min(retry_seconds, 5))  # Wait a bit before sending the message
+                            await asyncio.sleep(min(retry_seconds, 5))  
                             await update.effective_message.reply_text(
                                 f"Bot is being rate limited. Please try again in {int(retry_seconds)} seconds."
                             )

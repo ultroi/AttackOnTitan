@@ -781,11 +781,31 @@ class Database:
             start = time.perf_counter()
 
             update_data["updated_at"] = datetime.now(timezone.utc)
+            
+            # Serialize complex objects before updating
+            serialized_update = {}
+            for key, value in update_data.items():
+                if isinstance(value, list):
+                    # Handle lists that may contain Pydantic models
+                    serialized_list = []
+                    for item in value:
+                        if hasattr(item, 'dict'):
+                            serialized_list.append(item.dict())
+                        elif isinstance(item, dict):
+                            serialized_list.append(item)
+                        else:
+                            serialized_list.append(item)
+                    serialized_update[key] = serialized_list
+                elif hasattr(value, 'dict'):
+                    # Serialize Pydantic models
+                    serialized_update[key] = value.dict()
+                else:
+                    serialized_update[key] = value
 
             # Use update_one with $set for better performance
             result = await self.players.update_one(
                 {"user_id": str(user_id)},
-                {"$set": update_data},
+                {"$set": serialized_update},
                 upsert=False  
             )
 

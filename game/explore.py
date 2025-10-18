@@ -240,9 +240,16 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     update_data = {"last_explore_time": time.time()}
     asyncio.create_task(db.batch_update_player(user_id_str, update_data))
     
-    # Update daily_explores separately if it exists
+    # Update daily_explores separately if it exists - properly serialize DailyExplores objects
     if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
-        asyncio.create_task(db.batch_update_player(user_id_str, {"daily_explores": player.daily_explores}))
+        # Convert DailyExplores objects to dictionaries for MongoDB
+        daily_explores_dicts = []
+        for daily in player.daily_explores:
+            if hasattr(daily, 'dict'):
+                daily_explores_dicts.append(daily.dict())
+            elif isinstance(daily, dict):
+                daily_explores_dicts.append(daily)
+        asyncio.create_task(db.batch_update_player(user_id_str, {"daily_explores": daily_explores_dicts}))
     await _handle_travel_progress(update, context, user_id_str, db, player)
 
 # =====================================================================================
