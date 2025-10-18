@@ -97,9 +97,11 @@ class Titan(BaseModel):
 class Equipment(BaseModel):
     name: str
     type: str
-    stats: Dict
+    attributes: Dict
     rarity: str
-    cost: int
+    price: int
+    currency: str
+    description: str
 
 class BankAccount(BaseModel):
     user_id: str
