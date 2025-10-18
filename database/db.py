@@ -563,12 +563,22 @@ class Database:
             from database.models import TeamMember
             players = []
             for player_data in players_data:
+                # Sanitize daily_explores field to prevent validation errors from corrupt data
+                if 'daily_explores' in player_data and not isinstance(player_data['daily_explores'], list):
+                    logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to [].")
+                    player_data['daily_explores'] = []
+                
                 if "team" in player_data and player_data["team"]:
                     player_data["team"] = [
                         TeamMember(**member) if isinstance(member, dict) else member
                         for member in player_data["team"]
                     ]
-                players.append(Player(**player_data))
+                try:
+                    players.append(Player(**player_data))
+                except Exception as e:
+                    logger.error(f"Failed to create Player object for user {player_data.get('user_id', 'unknown')}: {e}")
+                    # Skip this player and continue
+                    continue
             
             elapsed = (time.perf_counter() - start) * 1000
             logger.info(f"get_all_players query time: {elapsed:.2f} ms")

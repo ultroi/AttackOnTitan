@@ -1369,6 +1369,8 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
                     # Perform level up
                     char_data.level_up()
                     level_up_messages.append(f"🎉 {char_data.name} leveled up to {char_data.level}!")
+                    # Save the updated character to database
+                    await db.update_character(char_data)
             except Exception as e:
                 logger.error(f"Error processing level up for character {char}: {e}")
         
@@ -1377,6 +1379,8 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
             if player_obj.needs_level_up():
                 player_obj.level_up()
                 level_up_messages.append(f"🎊 You leveled up to {player_obj.level}!")
+                # Save the updated player to database
+                await db.save_player(player_obj)
         except Exception as e:
             logger.error(f"Error processing player level up for user {user_id}: {e}")
         

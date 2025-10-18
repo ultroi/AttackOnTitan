@@ -34,40 +34,47 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
             # Check for ban in database
             ban_doc = await db[BAN_COLLECTION].find_one({"user_id": str(user_id)})
             if ban_doc:
-                expiry = ban_doc.get("expiry")
-                current_time = int(time.time())
-                
-                # Check if ban has expired
-                if expiry and expiry < current_time:
-                    # Ban expired, remove it
-                    await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
-                    logger.info(f"✅ Removed expired ban for user {user_id}")
+                # Only consider it a ban if it has banned_at or reason field
+                # Documents with only spam_count are NOT bans
+                if not ban_doc.get("banned_at") and not ban_doc.get("reason"):
+                    # This is just a spam tracking document, not an actual ban
+                    logger.debug(f"Found spam tracking document for user {user_id}, not a ban")
                 else:
-                    # User is still banned
-                    reason = ban_doc.get("reason", "No reason provided")
-                    time_left = ""
-                    if expiry:
-                        hours_left = (expiry - current_time) // 3600
-                        minutes_left = ((expiry - current_time) % 3600) // 60
-                        if hours_left > 0:
-                            time_left = f"\n⏰ <b>Time remaining:</b> {hours_left}h {minutes_left}m"
-                        else:
-                            time_left = f"\n⏰ <b>Time remaining:</b> {minutes_left}m"
+                    # This is an actual ban
+                    expiry = ban_doc.get("expiry")
+                    current_time = int(time.time())
                     
-                    # Notify only once per session
-                    if context.user_data is None:
-                        context.user_data = {}
-                    if not context.user_data.get('ban_notified', False):
-                        if update.effective_message is not None:
-                            ban_message = (
-                                f"🚫 <b>You are banned!</b>\n\n"
-                                f"<b>Reason:</b> {reason}"
-                                f"{time_left}"
-                            )
-                            await update.effective_message.reply_text(ban_message, parse_mode=ParseMode.HTML)
-                        context.user_data['ban_notified'] = True
-                        logger.warning(f"⚠️ Blocked banned user {user_id} from using command")
-                    return
+                    # Check if ban has expired
+                    if expiry and expiry < current_time:
+                        # Ban expired, remove it
+                        await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
+                        logger.info(f"✅ Removed expired ban for user {user_id}")
+                    else:
+                        # User is still banned
+                        reason = ban_doc.get("reason", "No reason provided")
+                        time_left = ""
+                        if expiry:
+                            hours_left = (expiry - current_time) // 3600
+                            minutes_left = ((expiry - current_time) % 3600) // 60
+                            if hours_left > 0:
+                                time_left = f"\n⏰ <b>Time remaining:</b> {hours_left}h {minutes_left}m"
+                            else:
+                                time_left = f"\n⏰ <b>Time remaining:</b> {minutes_left}m"
+                        
+                        # Notify only once per session
+                        if context.user_data is None:
+                            context.user_data = {}
+                        if not context.user_data.get('ban_notified', False):
+                            if update.effective_message is not None:
+                                ban_message = (
+                                    f"🚫 <b>You are banned!</b>\n\n"
+                                    f"<b>Reason:</b> {reason}"
+                                    f"{time_left}"
+                                )
+                                await update.effective_message.reply_text(ban_message, parse_mode=ParseMode.HTML)
+                            context.user_data['ban_notified'] = True
+                            logger.warning(f"⚠️ Blocked banned user {user_id} from using command")
+                        return
         except Exception as e:
             logger.error(f"Error checking ban status for user {user_id}: {e}", exc_info=True)
             if update.effective_message is not None:
@@ -258,6 +265,12 @@ async def is_banned(user_id: int) -> bool:
         ban_doc = await db[BAN_COLLECTION].find_one({"user_id": str(user_id)})
         if not ban_doc:
             return False
+        
+        # Only consider it a ban if it has banned_at or reason field
+        # Documents with only spam_count are NOT bans
+        if not ban_doc.get("banned_at") and not ban_doc.get("reason"):
+            return False
+            
         expiry = ban_doc.get("expiry")
         if expiry and expiry < int(time.time()):
             await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
