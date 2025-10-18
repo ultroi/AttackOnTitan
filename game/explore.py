@@ -362,20 +362,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data and "player_level" in context.user_data:
         actual_player_level = context.user_data.get("player_level", 1)
     
-    # IMPORTANT: Check if user has started the game BEFORE any encounters
+    # Get DB reference
     db = context.bot_data.get("db")
     if not db:
         await _reply_error(update, "Database not available. Please try again later.")
-        return
-    
-    try:
-        player_check = await db.get_player(user_id_str)
-        if not player_check:
-            await _reply_error(update, "You need to start the game first! Use /start to begin your adventure.")
-            return
-    except Exception as e:
-        logger.error(f"Error checking player existence for {user_id_str}: {e}")
-        await _reply_error(update, "Unable to verify player data. Please try again.")
         return
     
     # Check for dealer encounter (2% chance) - synchronous to prevent showing both
@@ -419,13 +409,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     titan_max_hp = titan_data["max_hp"]
     titan_xp = titan_data["xp_reward"]
     difficulty = titan_data["difficulty"]
-    
-    # Fast image lookup
-    titan_key = titan_name.lower().replace(" titan", "")
-    titan_image_url = TITAN_TYPE_IMAGE_URLS.get(
-        titan_key, 
-        random.choice(list(TITAN_TYPE_IMAGE_URLS.values()))
-    )
+    titan_image_url = titan_data["image_url"]  # Use pre-cached image URL
 
     # Generate battle ID
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
@@ -463,21 +447,17 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             # Record response time immediately
             response_time = (time.time() - start_time) * 1000
-            if response_time > 100:
-                logger.warning(f"Explore response above target: {response_time:.1f}ms > 100ms")
+            if response_time > 50:
+                logger.warning(f"Explore response above target: {response_time:.1f}ms > 50ms")
             else:
-                logger.info(f"Explore response time: {response_time:.1f}ms (target: <100ms)")
+                logger.info(f"Explore response time: {response_time:.1f}ms (target: <50ms)")
         except Exception as e:
             logger.error(f"Failed to send titan message: {e}")
             return
     else:
         return
         
-    # Get database reference for quick validation
-    # Note: DB reference already obtained above
-    
-    # Quick validation: Player existence already checked above, so proceed
-    
+    # All validation and processing happens in background - NEVER block user response
     asyncio.create_task(_validate_and_process_optimized(
         update, context, user_id, user_id_str, username, db,
         titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
@@ -494,91 +474,61 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
                                titan_name, titan_level, titan_max_hp, titan_xp, difficulty, titan_image_url,
                                send_message_task, start_time, actual_player_level, reply_text):
     
-    # Before anything else, store sent time for benchmarking
-    send_time = time.time() - start_time
-    logger.info(f"Initial response time (before validation): {send_time*1000:.1f}ms")
-    
-    # First thing - check spam count in memory (faster than DB check)
-    spam_detected = False
-    if "explore_spam_count" in context.bot_data:
-        current_spam_count = context.bot_data["explore_spam_count"].get(user_id_str, 0)
-        SPAM_THRESHOLD = 15
-        if current_spam_count >= SPAM_THRESHOLD:
-            logger.warning(f"Player {user_id_str} has spam count {current_spam_count} - blocking explore in background")
-            spam_detected = True
-    
-    # Start multiple DB operations in parallel for maximum efficiency
+    # Wait for message to be sent (highest priority)
     try:
-        # Launch all DB operations in parallel
-        player_future = db.get_player(user_id_str)
+        sent_message = await send_message_task
+        response_time = (time.time() - start_time) * 1000
+        logger.info(f"Message sent to user in: {response_time:.1f}ms")
+    except Exception as e:
+        logger.error(f"Failed to send message: {e}")
+        return
+    
+    # All validation happens AFTER message is sent - non-blocking for user
+    try:
+        # Use cached player data if available
+        cache_key = f"player_{user_id_str}"
+        player = None
         
-        # Try to get spam count from DB in parallel
-        spam_count_future = db.bans.find_one({"user_id": user_id_str, "spam_count": {"$exists": True}})
+        # Try to get from cache first
+        from database.db import PLAYER_CACHE, CACHE_ENABLED
+        if CACHE_ENABLED and cache_key in PLAYER_CACHE:
+            cached_data = PLAYER_CACHE[cache_key]
+            if time.time() - cached_data["timestamp"] < 3600:  # 1 hour cache
+                player = cached_data["player"]
         
-        # Clean up existing titan in parallel
-        cleanup_titan_future = asyncio.create_task(_cleanup_existing_titan(user_id_str, db))
-        
-        # Wait for message to be sent
-        try:
-            sent_message = await send_message_task
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
-            return
-        
-        # Wait for player data
-        try:
-            player = await player_future
-        except Exception as db_error:
-            logger.error(f"Database error fetching player {user_id_str}: {db_error}")
-            return
-        
+        # If not in cache, fetch from DB
         if not player:
-            logger.warning(f"Player {user_id_str} not found in database")
+            player = await db.get_player(user_id_str)
+            
+        if not player or not hasattr(player, 'team') or not player.team:
+            logger.warning(f"Player {user_id_str} validation failed")
             return
         
-        if not hasattr(player, 'team') or not player.team:
-            logger.warning(f"Player {user_id_str} has no team")
-            return
-        
-        # Get character name and launch character query
+        # Get character name and fetch character
         try:
             character_name = player.team[0].character_name if hasattr(player.team[0], 'character_name') else player.team[0]
-            character_future = db.get_character(user_id_str, character_name)
+            character = await db.get_character(user_id_str, character_name)
         except (IndexError, AttributeError) as e:
-            logger.error(f"Error getting character name for player {user_id_str}: {e}")
-            return
-        
-        # Update actual player level in context for faster future lookups
-        try:
-            spam_count_doc = await spam_count_future
-            if spam_count_doc:
-                # Initialize explore_spam_count dict if it doesn't exist
-                if "explore_spam_count" not in context.bot_data:
-                    context.bot_data["explore_spam_count"] = {}
-                context.bot_data["explore_spam_count"][user_id_str] = spam_count_doc.get("spam_count", 0)
-        except Exception as e:
-            logger.error(f"Error fetching spam count: {e}")
-            
-        # Get location and unlocked areas while waiting for character
-        location = getattr(player, 'location', None)
-        unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
-        
-        # Get character data
-        try:
-            character = await character_future
-        except Exception as db_error:
-            logger.error(f"Database error fetching character for {user_id_str}: {db_error}")
+            logger.error(f"Error getting character for player {user_id_str}: {e}")
             return
         
         if not character:
-            logger.warning(f"Character {character_name} not found for player {user_id_str}")
+            logger.warning(f"Character {character_name} not found")
             return
+        
+        # Update context with player level for faster future lookups
+        if context.user_data:
+            context.user_data["player_level"] = player.level
+        
+        # Get location and unlocked areas
+        location = getattr(player, 'location', None)
+        unlocked_areas = getattr(player, 'unlocked_areas', DEFAULT_AREAS)
         
         # Update daily explores
         player.increment_daily_explores(datetime.now(timezone.utc))
         
-        # Wait for titan cleanup to finish
-        await cleanup_titan_future
+        # Clean up existing titan (fire-and-forget)
+        asyncio.create_task(_cleanup_existing_titan(user_id_str, db))
         
         # Create and store titan object
         titan = Titan(
@@ -594,63 +544,65 @@ async def _validate_and_process_optimized(update, context, user_id, user_id_str,
             min_level_requirement=max(1, actual_player_level - 2)
         )
         
-        # Store titan object - fire and forget for better performance
-        try:
-            asyncio.create_task(db.store_titan(user_id_str, titan))
-
-            # Capture response time before proceeding
-            response_time = (time.time() - start_time) * 1000
-            logger.info(f"Full response time: {response_time:.1f}ms")
-
-            # Cache titan data immediately (don't wait for DB)
-            context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
-            
-            # Process Emergency Heal (Mission 7) if applicable
-            mission_task = None
-            if player and hasattr(character, 'current_hp'):
-                mission_7_completed = False
-                player_missions = getattr(player, "missions", [])
-                
-                for mission in player_missions:
-                    if (mission.get("mission_id") == 7 and mission.get("status") == "completed"):
-                        mission_7_completed = True
-                        break
-                
-                if mission_7_completed and character.current_hp < 100:
-                    heal_amount = 40
-                    old_hp = character.current_hp
-                    character.current_hp = min(character.stats.HP, character.current_hp + heal_amount)
-                    actual_heal = character.current_hp - old_hp
-                    
-                    if actual_heal > 0:
-                        mission_task = asyncio.create_task(db.update_character(user_id_str, character))
-                        
-                        # Send additional heal notification
-                        try:
-                            heal_message = f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!"
-                            asyncio.create_task(update.message.reply_text(heal_message, parse_mode=ParseMode.MARKDOWN))
-                        except Exception:
-                            pass
-            
-            # Start timeout task for titan
-            timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
-            user_timeout_tasks[user_id_str] = timeout_task
-            
-            # Wait for mission task if it exists
-            if mission_task:
-                await mission_task
-            
-            # Launch remaining background operations in parallel
-            asyncio.create_task(_handle_explore_background_optimized(
-                update, context, user_id, user_id_str, username, db,
-                player, titan, sent_message, start_time
+        # Cache titan data immediately for instant access
+        context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
+        
+        # Store titan in DB (fire-and-forget)
+        asyncio.create_task(db.store_titan(user_id_str, titan))
+        
+        # Start timeout task for titan
+        timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+        user_timeout_tasks[user_id_str] = timeout_task
+        
+        # Process Emergency Heal (Mission 7) if applicable (fire-and-forget)
+        if player and hasattr(character, 'current_hp'):
+            asyncio.create_task(_process_emergency_heal(
+                player, character, user_id_str, db, update
             ))
-            
-        except Exception as db_error:
-            logger.error(f"Database error storing titan for {user_id_str}: {db_error}")
-    
+        
+        # Launch all background operations (fire-and-forget)
+        asyncio.create_task(_handle_explore_background_optimized(
+            update, context, user_id, user_id_str, username, db,
+            player, titan, sent_message, start_time
+        ))
+        
+        # Log final processing time
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"Total explore processing: {total_time:.1f}ms")
+        
     except Exception as e:
         logger.error(f"Error in _validate_and_process_optimized: {e}", exc_info=True)
+
+
+async def _process_emergency_heal(player, character, user_id_str, db, update):
+    """Process Mission 7 emergency heal in background"""
+    try:
+        mission_7_completed = False
+        player_missions = getattr(player, "missions", [])
+        
+        for mission in player_missions:
+            if (mission.get("mission_id") == 7 and mission.get("status") == "completed"):
+                mission_7_completed = True
+                break
+        
+        if mission_7_completed and character.current_hp < 100:
+            heal_amount = 40
+            old_hp = character.current_hp
+            character.current_hp = min(character.stats.HP, character.current_hp + heal_amount)
+            actual_heal = character.current_hp - old_hp
+            
+            if actual_heal > 0:
+                # Update character HP
+                await db.update_character(character)
+                
+                # Send heal notification
+                try:
+                    heal_message = f"🩹 *Emergency Heal!* Restored {actual_heal} HP from Mission 7 reward!"
+                    await update.message.reply_text(heal_message, parse_mode=ParseMode.MARKDOWN)
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"Error processing emergency heal: {e}")
 
 
 async def _cleanup_existing_titan(user_id_str, db):
@@ -678,21 +630,16 @@ async def _cleanup_existing_titan(user_id_str, db):
 
 
 async def _handle_explore_background_optimized(update, context, user_id, user_id_str, username, db, player, titan, sent_message, start_time):
-    
+    """Background processing - all fire-and-forget for maximum speed"""
     try:
-        # Start all operations in parallel for maximum speed
-        tasks = []
+        # Track statistics (fire-and-forget)
+        asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
         
-        # 1. Track statistics (fire-and-forget)
-        stats_task = asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
-        tasks.append(stats_task)
-        
-        # 2. Update last explore time and cancel previous timeout - batched operation
+        # Prepare player update data
         current_time = time.time()
-        update_data = {}
-        update_data["last_explore_time"] = current_time
+        update_data = {"last_explore_time": current_time}
         
-        # Properly handle DailyExplores objects to ensure they can be serialized
+        # Handle DailyExplores serialization
         if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
             daily_explores_dicts = []
             for de in player.daily_explores:
@@ -704,30 +651,27 @@ async def _handle_explore_background_optimized(update, context, user_id, user_id
                     try:
                         daily_explores_dicts.append({"date": getattr(de, "date", ""), "count": getattr(de, "count", 0)})
                     except:
-                        logger.warning(f"Could not convert DailyExplores object to dict: {de}")
-            update_data["daily_explores"] = daily_explores_dicts
+                        pass
+            
+            # Convert to JSON string for database compatibility
+            import json
+            update_data["daily_explores"] = json.dumps(daily_explores_dicts)
         
+        # Batch update player data (fire-and-forget)
+        asyncio.create_task(db.batch_update_player(user_id_str, update_data))
         
-        # 4. Handle travel progress asynchronously
-        travel_task = asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
-        tasks.append(travel_task)
+        # Handle travel progress (fire-and-forget)
+        asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
         
-        # 5. Cancel existing timeout task if needed
+        # Cancel existing timeout task if needed
         if user_id_str in user_timeout_tasks:
             existing_task = user_timeout_tasks[user_id_str]
             if not existing_task.done():
                 existing_task.cancel()
         
-        # 5. Batch update all player data changes - optimize for speed
-        if update_data:
-            asyncio.create_task(db.batch_update_player(user_id_str, update_data))
-        
-        # Wait for all critical tasks to complete
-        await asyncio.gather(*tasks, return_exceptions=True)
-        
         # Log completion time
         processing_time = (time.time() - start_time) * 1000
-        logger.info(f"Complete explore processing time: {processing_time:.1f}ms for user {user_id_str}")
+        logger.info(f"Background processing started in: {processing_time:.1f}ms for user {user_id_str}")
         
     except Exception as e:
         logger.error(f"Error in _handle_explore_background_optimized: {e}", exc_info=True)
