@@ -1,5 +1,5 @@
 from typing import Callable, Any
-from flask import logging
+import logging
 from telegram import Update
 from telegram.ext import CallbackContext
 from telegram.constants import ParseMode
@@ -66,7 +66,6 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
                             await update.effective_message.reply_text(ban_message, parse_mode=ParseMode.HTML)
                         context.user_data['ban_notified'] = True
                         logger.warning(f"⚠️ Blocked banned user {user_id} from using command")
-                    # After first notification, do not respond to further commands
                     return
         except Exception as e:
             logger.error(f"Error checking ban status for user {user_id}: {e}", exc_info=True)
