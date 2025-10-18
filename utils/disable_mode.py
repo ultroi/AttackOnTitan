@@ -2,8 +2,6 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from utils.owners import get_owner_ids
 from utils.mod_utils import is_mod
-
-
 from database.db_instance import get_database
 
 DISABLE_COLLECTION = "disabled_commands_list"
@@ -42,12 +40,19 @@ async def get_disabled_commands_db():
 # Decorator to protect specific commands
 def disable_protected(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        import logging
+        logger = logging.getLogger(__name__)
         user_id = getattr(update.effective_user, "id", 0) or 0
         command = None
         if hasattr(update, "message") and update.message and update.message.text:
             command = update.message.text.split()[0].lstrip("/").split("@")[0].lower()
         if command:
-            disabled = await get_disabled_commands_db()
+            try:
+                disabled = await get_disabled_commands_db()
+            except Exception as e:
+                logger.error(f"⚠️ Failed to get disabled commands: {e}")
+                # Continue anyway, don't block the command
+                disabled = []
             if command in disabled:
                 owner_ids = get_owner_ids()
                 mod = False

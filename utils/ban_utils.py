@@ -26,6 +26,7 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
         try:
             db = await get_database()
             if db is None:
+                logger.error(f"⚠️ Database is None in ban_protected for user {user_id}")
                 if update.effective_message is not None:
                     await update.effective_message.reply_text("Database unavailable. Please try again later.")
                 return

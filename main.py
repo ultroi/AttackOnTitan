@@ -241,9 +241,15 @@ async def initialize_application():
         application = Application.builder().token(TOKEN).build()
     try:
         if global_db is None:
+            logger.info("Initializing database connection...")
             motor_db = await get_persistent_database()
+            if motor_db is None:
+                logger.error("Failed to get database instance!")
+                raise Exception("Database connection failed")
+            logger.info("Database instance obtained successfully")
             global_db = Database()
             await global_db.init_db(motor_db)  
+            logger.info("Database initialized successfully")
             await migrate_schema(global_db)
             
             # Apply battle system fixes
@@ -411,12 +417,22 @@ async def webhook(request: Request):
         if not app_initialized:
             logger.info("Initializing application for webhook")
             app_instance = await initialize_application()
+            if not app_instance:
+                logger.error("Failed to initialize application!")
+                return Response(status_code=500)
         else:
             app_instance = application
             
         if not app_instance:
             logger.error("Application not initialized, cannot process webhook")
             return Response(status_code=500)
+        
+        # Check database status
+        if global_db is None:
+            logger.error("⚠️ CRITICAL: global_db is None - database not initialized!")
+            return Response(status_code=500)
+        else:
+            logger.info(f"✅ Database is available: {type(global_db)}")
             
         update = Update.de_json(json_data, app_instance.bot)
         if update:
@@ -675,6 +691,7 @@ def register_handlers(app_instance):
 
     # Mod/owner commands (not protected by disable)
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
+    app_instance.add_handler(CommandHandler("ping", ping_command))
     app_instance.add_handler(CommandHandler("nuke", reset_handler))
     app_instance.add_handler(CommandHandler("bfb", ban_user))
     app_instance.add_handler(CommandHandler("ubfb", unban_user))
@@ -780,6 +797,48 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in shop_command: {e}")
         if update.message:
             await update.message.reply_text("An error occurred while showing the shop.")
+
+# Ping command to test database connectivity
+async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test command to verify database connectivity"""
+    try:
+        from database.db_instance import get_database
+        db = await get_database()
+        
+        status_message = "🏓 **Pong!**\n\n"
+        
+        if db is None:
+            status_message += "❌ Database: **NOT CONNECTED**\n"
+            status_message += "⚠️ Commands will not work until database is connected!"
+        else:
+            status_message += "✅ Database: **CONNECTED**\n"
+            status_message += f"📦 Database Name: `{db.name}`\n"
+            
+            # Try to count players
+            try:
+                player_count = await db.players.count_documents({})
+                status_message += f"👥 Players in DB: {player_count}\n"
+            except Exception as e:
+                status_message += f"⚠️ Could not count players: {str(e)}\n"
+        
+        # Check global_db
+        if global_db is None:
+            status_message += "\n❌ Global DB: **NOT INITIALIZED**"
+        else:
+            status_message += f"\n✅ Global DB: **INITIALIZED** ({type(global_db).__name__})"
+        
+        # Check bot_data
+        if context.bot_data.get("db") is None:
+            status_message += "\n❌ Bot Data DB: **NOT SET**"
+        else:
+            status_message += "\n✅ Bot Data DB: **SET**"
+        
+        await update.message.reply_text(status_message, parse_mode="Markdown")
+        
+    except Exception as e:
+        logger.error(f"Error in ping_command: {e}", exc_info=True)
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
 
 
 

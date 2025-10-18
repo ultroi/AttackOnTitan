@@ -246,7 +246,6 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     
     # Update daily_explores separately if it exists - properly serialize DailyExplores objects
     if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
-        # Convert DailyExplores objects to dictionaries for MongoDB
         daily_explores_dicts = []
         for daily in player.daily_explores:
             if hasattr(daily, 'dict'):

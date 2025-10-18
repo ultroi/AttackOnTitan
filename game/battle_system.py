@@ -782,17 +782,14 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Create player object and battle system
     if player_data:
-        # Check if player_data is already a Player object
         if isinstance(player_data, Player):
             player = player_data
         else:
-            # If it's a dict, create a Player object
             player = Player(**player_data)
     else:
         player = None
     battle = BattleSystem(character, titan, player)
     
-    # Mission 7 Emergency Heal: Apply at battle start if HP < 100
     emergency_heal_message = ""
     if player:
         mission_7_completed = False
@@ -889,11 +886,6 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Start timeout in background and set it to battle
     battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
-    
-   
-        
-    # Add a record to track that this user has started a battle with this titan
-    # This prevents multiple battles from being started with the same titan
     context.bot_data[f"titan_battle_started_{user_id}"] = time.time()
 
 # Helper function to move tracking to background
@@ -1054,8 +1046,7 @@ async def _update_battle_ui(query, battle, context, full_message):
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>",
         f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>",
         f"{status['character_bar']}",
-        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>",
-        f"Turn: {battle.turn}" # Visible turn counter
+        f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
     ]
     battle_message = "\n".join(message_parts)
 
