@@ -51,6 +51,19 @@ TITAN_TYPE_IMAGE_URLS = {
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
+# =====================================================================================
+# Helper Functions (defined before use in module-level code)
+# =====================================================================================
+
+def get_titan_difficulty_by_level(level: int) -> str:
+    """Returns the difficulty level based on player level."""
+    if level <= 50:
+        return "Easy"
+    elif level <= 100:
+        return "Normal"
+    else:
+        return "Hard"
+
 # Pre-generate a pool of titans for instant generation and variety
 TITAN_POOL = {}
 for lvl in range(1, 126):
@@ -225,22 +238,16 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
     
     update_data = {"last_explore_time": time.time()}
-    if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
-        update_data["daily_explores"] = [de.dict() for de in player.daily_explores]
     asyncio.create_task(db.batch_update_player(user_id_str, update_data))
+    
+    # Update daily_explores separately if it exists
+    if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
+        asyncio.create_task(db.batch_update_player(user_id_str, {"daily_explores": player.daily_explores}))
     await _handle_travel_progress(update, context, user_id_str, db, player)
 
 # =====================================================================================
 # Titan Management
 # =====================================================================================
-
-def get_titan_difficulty_by_level(level: int) -> str:
-    if level <= 50:
-        return "Easy"
-    elif level <= 100:
-        return "Normal"
-    else:
-        return "Hard"
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
