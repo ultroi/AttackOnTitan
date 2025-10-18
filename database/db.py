@@ -685,7 +685,7 @@ class Database:
                 return character
             return None
         except Exception as e:
-            logger.error(f"Failed to get character: {e}")
+            logger.error(f"Failed to get character: {e}", exc_info=True)
             raise
 
     async def update_character(self, character: Character) -> Character:

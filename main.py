@@ -661,11 +661,6 @@ async def monitor_dashboard(request: Request):
 
 
 def register_handlers(app_instance):
-
-    # Command handlers
-
-
-    # User commands (protected only by disable)
     app_instance.add_handler(CommandHandler("start", disable_protected(start_character_selection)))
     app_instance.add_handler(CommandHandler("inv", disable_protected(profile)))
     app_instance.add_handler(CommandHandler("explore", disable_protected(explore)))

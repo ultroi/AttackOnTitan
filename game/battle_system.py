@@ -1362,24 +1362,20 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
         level_up_messages = []
         
         # Check for character level ups
-        for char in participating_characters:
+        for char_obj, level_info in participating_level_infos:
             try:
-                char_data = await db.get_character(user_id, char)
-                if char_data and char_data.needs_level_up():
-                    # Perform level up
-                    char_data.level_up()
-                    level_up_messages.append(f"🎉 {char_data.name} leveled up to {char_data.level}!")
-                    # Save the updated character to database
-                    await db.update_character(char_data)
+                if level_info and level_info.get('leveled_up'):
+                    level_up_messages.append(f"🎉 {char_obj.name} leveled up to {char_obj.level}!")
+                    # Character object is already updated by add_xp, just need to save
+                    await db.update_character(char_obj)
             except Exception as e:
-                logger.error(f"Error processing level up for character {char}: {e}")
+                logger.error(f"Error processing level up for character {char_obj.name if char_obj else 'N/A'}: {e}")
         
         # Check for player level up
         try:
-            if player_obj.needs_level_up():
-                player_obj.level_up()
+            if player_level_info and player_level_info.get('leveled_up'):
                 level_up_messages.append(f"🎊 You leveled up to {player_obj.level}!")
-                # Save the updated player to database
+                # Player object is already updated by add_xp, just need to save
                 await db.save_player(player_obj)
         except Exception as e:
             logger.error(f"Error processing player level up for user {user_id}: {e}")
