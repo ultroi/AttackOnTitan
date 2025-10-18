@@ -64,8 +64,8 @@ class Player(BaseModel):
     hcaptcha_start_time: Optional[datetime] = None
     explore_start_time: Optional[datetime] = None
     last_explore_time: Optional[datetime] = None
-    inventory: List[Dict] = []
-    missions: Dict = {}
+    inventory: Dict[str, int] = Field(default_factory=dict)
+    missions: Dict = Field(default_factory=dict)
     pvp_wins: int = 0
     pvp_losses: int = 0
     battle_rating: int = 1000
