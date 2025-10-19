@@ -1,7 +1,3 @@
-"""
-Handles the /broadcast command for sending messages to all users.
-This command is owner-only and includes a confirmation step, cooldown, and non-blocking execution.
-"""
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -62,11 +58,16 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Store the message temporarily for the callback handler
     context.chat_data['broadcast_message'] = message_to_broadcast
 
-    keyboard = [[InlineKeyboardButton("✅ Confirm Broadcast", callback_data="confirm_broadcast")]]
+    keyboard = [
+        [InlineKeyboardButton("👤 User Only", callback_data="broadcast_location_users")],
+        [InlineKeyboardButton("👥 Group Only", callback_data="broadcast_location_groups")],
+        [InlineKeyboardButton("🌐 Both", callback_data="broadcast_location_both")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="broadcast_cancel")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
-        "<b>⚠️ Please confirm you want to broadcast the following message to all users:</b>\n\n"
+        "<b>⚠️ Please select where to broadcast the following message:</b>\n\n"
         f"{message_to_broadcast}",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
@@ -85,8 +86,9 @@ async def confirm_broadcast_callback(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
     message_to_broadcast = context.chat_data.get('broadcast_message')
-    if not message_to_broadcast:
-        await query.edit_message_text("❌ Error: Broadcast message not found. Please try again.")
+    broadcast_location = context.chat_data.get('broadcast_location')
+    if not message_to_broadcast or not broadcast_location:
+        await query.edit_message_text("❌ Error: Broadcast message or location not found. Please try again.")
         return
 
     # Edit the original message to show the broadcast is starting
@@ -98,12 +100,68 @@ async def confirm_broadcast_callback(update: Update, context: ContextTypes.DEFAU
     # Run the broadcast in the background
     db = context.bot_data.get("db")
     admin_chat_id = update.effective_chat.id
-    asyncio.create_task(_send_broadcast(admin_chat_id, message_to_broadcast, db, context))
+    asyncio.create_task(_send_broadcast(admin_chat_id, message_to_broadcast, broadcast_location, db, context, query.message.message_id))
 
 
-async def _send_broadcast(admin_chat_id: int, message: str, db: Database, context: ContextTypes.DEFAULT_TYPE) -> None:
+@is_owner
+async def broadcast_location_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Fetches all users and sends them the broadcast message.
+    Handles the location selection for broadcast.
+    """
+    query = update.callback_query
+    if not query or not context.chat_data:
+        return
+
+    await query.answer()
+
+    message_to_broadcast = context.chat_data.get('broadcast_message')
+    if not message_to_broadcast:
+        await query.edit_message_text("❌ Error: Broadcast message not found. Please try again.")
+        return
+
+    # Parse the location from callback data
+    callback_data = query.data
+    if callback_data == "broadcast_cancel":
+        # Clear stored data and cancel
+        context.chat_data.pop('broadcast_message', None)
+        await query.edit_message_text("❌ Broadcast cancelled.")
+        return
+
+    location_map = {
+        "broadcast_location_users": "users",
+        "broadcast_location_groups": "groups", 
+        "broadcast_location_both": "both"
+    }
+    
+    broadcast_location = location_map.get(callback_data)
+    if not broadcast_location:
+        await query.edit_message_text("❌ Error: Invalid location selection.")
+        return
+
+    # Store the location choice
+    context.chat_data['broadcast_location'] = broadcast_location
+
+    # Show confirmation button
+    keyboard = [[InlineKeyboardButton("✅ Confirm Broadcast", callback_data="confirm_broadcast")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    location_text = {
+        "users": "👤 Users Only",
+        "groups": "👥 Groups Only", 
+        "both": "🌐 Both Users and Groups"
+    }[broadcast_location]
+
+    await query.edit_message_text(
+        f"<b>⚠️ Confirm broadcast to {location_text}:</b>\n\n"
+        f"{message_to_broadcast}",
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+
+
+async def _send_broadcast(admin_chat_id: int, message: str, broadcast_location: str, db: Database, context: ContextTypes.DEFAULT_TYPE, message_id: int) -> None:
+    """
+    Fetches users/groups and sends them the broadcast message.
     Runs as a non-blocking background task.
     """
     if not db:
@@ -111,40 +169,103 @@ async def _send_broadcast(admin_chat_id: int, message: str, db: Database, contex
         await context.bot.send_message(admin_chat_id, "❌ Broadcast failed: Database connection is missing.")
         return
 
-    try:
-        all_users = await db.get_all_players()
-        user_ids = [user.user_id for user in all_users]
-    except Exception as e:
-        logger.error(f"Broadcast failed: Could not fetch users from DB. Error: {e}")
-        await context.bot.send_message(admin_chat_id, "❌ Broadcast failed: Could not fetch users from the database.")
+    targets = []
+    
+    # Get targets based on location
+    if broadcast_location in ["users", "both"]:
+        try:
+            all_users = await db.get_all_players()
+            user_ids = [user.user_id for user in all_users]
+            targets.extend([("user", user_id) for user_id in user_ids])
+        except Exception as e:
+            logger.error(f"Broadcast failed: Could not fetch users from DB. Error: {e}")
+            await context.bot.send_message(admin_chat_id, "❌ Broadcast failed: Could not fetch users from the database.")
+            return
+    
+    if broadcast_location in ["groups", "both"]:
+        try:
+            all_groups = await db.get_all_groups()
+            group_ids = [group.get("group_id") for group in all_groups if group.get("group_id")]
+            targets.extend([("group", group_id) for group_id in group_ids])
+        except Exception as e:
+            logger.error(f"Broadcast failed: Could not fetch groups from DB. Error: {e}")
+            await context.bot.send_message(admin_chat_id, "❌ Broadcast failed: Could not fetch groups from the database.")
+            return
+
+    if not targets:
+        await context.bot.send_message(admin_chat_id, "❌ No targets found for broadcast.")
         return
 
     success_count = 0
     failure_count = 0
+    total_count = len(targets)
 
-    for user_id in user_ids:
+    # Update message with initial progress
+    try:
+        await context.bot.edit_message_text(
+            chat_id=admin_chat_id,
+            message_id=message_id,
+            text=f"📡 <b>Broadcasting in Progress</b>\nCompleted: 0/{total_count}",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.warning(f"Could not update initial progress message: {e}")
+
+    for i, (target_type, target_id) in enumerate(targets):
         try:
-            await context.bot.send_message(chat_id=user_id, text=message, parse_mode=ParseMode.HTML)
+            await context.bot.send_message(chat_id=target_id, text=message, parse_mode=ParseMode.HTML)
             success_count += 1
         except Forbidden:
-            # User has blocked the bot
+            # User/group has blocked the bot
             failure_count += 1
-            logger.warning(f"Broadcast failed for user {user_id}: Bot was blocked.")
+            logger.warning(f"Broadcast failed for {target_type} {target_id}: Bot was blocked.")
         except BadRequest:
             # Chat not found or other issue
             failure_count += 1
-            logger.warning(f"Broadcast failed for user {user_id}: Chat not found or bad request.")
+            logger.warning(f"Broadcast failed for {target_type} {target_id}: Chat not found or bad request.")
         except Exception as e:
             failure_count += 1
-            logger.error(f"Broadcast failed for user {user_id}: {e}")
+            logger.error(f"Broadcast failed for {target_type} {target_id}: {e}")
+
+        # Update progress every 10 messages or at the end
+        if (i + 1) % 10 == 0 or i == total_count - 1:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=admin_chat_id,
+                    message_id=message_id,
+                    text=f"📡 <b>Broadcasting in Progress</b>\nCompleted: {i+1}/{total_count}",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.warning(f"Could not update progress message: {e}")
 
         # Sleep for a short duration to avoid hitting rate limits
         await asyncio.sleep(0.1)
 
-    # Send final report to the admin
+    # Send final report
+    location_text = {
+        "users": "👤 Users Only",
+        "groups": "👥 Groups Only", 
+        "both": "🌐 Both Users and Groups"
+    }[broadcast_location]
+
     report_message = (
         f"✅ <b>Broadcast Complete!</b>\n\n"
-        f"Sent to: {success_count} users\n"
-        f"Failed for: {failure_count} users"
+        f"<b>Location:</b> {location_text}\n"
+        f"<b>Message:</b> {message}\n\n"
+        f"📊 <b>Results:</b>\n"
+        f"✅ Sent successfully: {success_count}\n"
+        f"❌ Failed to send: {failure_count}\n"
+        f"📈 Total targets: {total_count}"
     )
-    await context.bot.send_message(admin_chat_id, report_message, parse_mode=ParseMode.HTML)
+    
+    try:
+        await context.bot.edit_message_text(
+            chat_id=admin_chat_id,
+            message_id=message_id,
+            text=report_message,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        # If edit fails, send as new message
+        await context.bot.send_message(admin_chat_id, report_message, parse_mode=ParseMode.HTML)

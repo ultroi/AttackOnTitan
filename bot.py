@@ -22,6 +22,7 @@ from utils.disable_mode import disable_command, enable_command, disable_protecte
 from utils.diagnostics import diagnostic_db_command, check_group_record
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
+from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback
 from utils.extra import buy_command, give_command
 from game.explore import explore, close_keyboard, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
@@ -1918,6 +1919,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("checkgroup", check_group_record))
     application.add_handler(CommandHandler("taxstatus", tax_status_command))
     application.add_handler(CommandHandler("forcetax", force_tax_check_command))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
     
     # Test mode only commands
     if TEST_MODE:
@@ -1981,6 +1983,10 @@ def setup_handlers(application):
     # Mission handlers
     application.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
     application.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
+
+    # Broadcast handlers
+    application.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern=r"^broadcast_location_"))
+    application.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast_"))
 
     # Shop and purchases
     application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))

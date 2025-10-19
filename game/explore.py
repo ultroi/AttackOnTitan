@@ -52,7 +52,7 @@ TITAN_TYPE_IMAGE_URLS = {
 }
 
 BOSS_TITAN_IMAGE_URLS = [
-    "https://ibb.co/vCkN4cxY",
+    "https://i.ibb.co/cz6bJ0J/image.jpg",
     
 ]
 
