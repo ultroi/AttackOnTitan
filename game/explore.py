@@ -298,6 +298,11 @@ async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFA
         "is_boss": True
     }
 
+    # --- Send Alert Message ---
+    alert_text = f"🔥 <b><a href='https://telegra.ph/Boss-Titan-Alert-The-Armored-Titan-Awakens-10-19'>TITANS TREBLE!</a></b> 🔥\nThe earth shakes as <b>{titan_data['name']}</b> emerges from the shadows!\n<b>Prepare for an epic battle!</b>"
+    await update.message.reply_text(alert_text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+    
     # --- Send Message Immediately ---
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
@@ -375,7 +380,7 @@ async def _process_boss_explore_post_send(context, user_id_str, db, titan_data, 
 def format_boss_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
         f"<code>-------------------------</code>\n"
-        f"🚨 <b>A <a href='https://telegra.ph/Boss-Titan-Alert-The-Armored-Titan-Awakens-10-19'>BOSS</a> APPEARED!</b> 🚨\n"
+        f"🚨 <b>BOSS APPEARED!</b> 🚨\n"
         f"🔥 <b>{name} Lvl ({level})</b>\n"
         f"<b>stands in your path, radiating immense power!{image_embed}</b>\n"
         f"<code>-------------------------</code>"

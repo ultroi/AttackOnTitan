@@ -748,22 +748,22 @@ def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[Cha
     """
     # Dynamic scaling based on active character's stats
     if character_stats:
-        # Titan HP is a mix of character's survivability and damage output
-        base_hp = character_stats.HP * 0.6 + character_stats.ATK * 4
+        # Titan HP is approximately 20% of character's HP with randomization
+        base_hp = character_stats.HP * 0.2
         
         difficulty_multipliers = {
-            "Easy": 0.8,  # Easy titans should be quickly defeatable
-            "Normal": 1.1,
-            "Hard": 1.5
+            "Easy": 0.8,  # Easy titans are slightly weaker
+            "Normal": 1.0,
+            "Hard": 1.2  # Hard titans are slightly stronger
         }
         
         scaled_hp = base_hp * difficulty_multipliers.get(difficulty, 1.0)
         
-        # Add slight variation
-        variation = random.uniform(0.9, 1.1)
+        # Add more variation for randomness
+        variation = random.uniform(0.8, 1.2)
         final_hp = scaled_hp * variation
         
-        return max(int(final_hp), 75) # Ensure a minimum HP
+        return max(int(final_hp), 50)  # Ensure a minimum HP of 50
 
     # Fallback for pre-generation pool (less aggressive scaling)
     min_hp, max_hp = HP_RANGES[difficulty]

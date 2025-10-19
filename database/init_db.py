@@ -359,7 +359,7 @@ async def initialize_database() -> None:
                         "abilities": {"bsonType": "array", "items": {"bsonType": "string"}},
                         "drop_table": {"bsonType": "object"},
                         "xp_reward": {"bsonType": "int", "minimum": 0},
-                        "difficulty": {"enum": ["Easy", "Normal", "Hard"]},
+                        "difficulty": {"enum": ["Easy", "Normal", "Hard", "Boss"]},
                         # ...existing code...
                         "weakness": {"bsonType": ["string", "null"]},
                         "resistance": {"bsonType": ["string", "null"]},
