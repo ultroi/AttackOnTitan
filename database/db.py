@@ -34,6 +34,24 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
+def sanitize_player_data(player_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Sanitize player data before creating a Player object.
+    This ensures that daily_explores field has valid structure.
+    """
+    if 'daily_explores' in player_data:
+        if not isinstance(player_data['daily_explores'], list):
+            logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to [].")
+            player_data['daily_explores'] = []
+        else:
+            # Validate and sanitize each daily_explores entry
+            sanitized_explores = []
+            for entry in player_data['daily_explores']:
+                if isinstance(entry, dict) and 'date' in entry and 'count' in entry:
+                    sanitized_explores.append(entry)
+            player_data['daily_explores'] = sanitized_explores
+    return player_data
+
 class Database:
     def __init__(self):
         self.db: Optional[AsyncIOMotorDatabase] = None
@@ -88,9 +106,8 @@ class Database:
             # Cache them
             current_time = time.time()
             for player_data in recent_players:
-                # Sanitize data before creating Player object
-                if 'daily_explores' in player_data and not isinstance(player_data.get('daily_explores'), list):
-                    player_data['daily_explores'] = []
+                # Sanitize player data before creating Player object
+                player_data = sanitize_player_data(player_data)
 
                 # Handle data correctly - player_data is always a dictionary here since it comes from database
                 if isinstance(player_data, dict) and "user_id" in player_data:
@@ -256,10 +273,8 @@ class Database:
             # Create a Player object
             player = None
             if player_data:
-                # Sanitize daily_explores field to prevent validation errors from corrupt data
-                if 'daily_explores' in player_data and not isinstance(player_data['daily_explores'], list):
-                    logger.warning(f"Corrupted daily_explores found for user {user_id}. Resetting to [].")
-                    player_data['daily_explores'] = []
+                # Sanitize player data before creating Player object
+                player_data = sanitize_player_data(player_data)
 
                 # Convert team members to proper TeamMember objects if present
                 if "team" in player_data and player_data["team"]:
@@ -563,10 +578,8 @@ class Database:
             from database.models import TeamMember
             players = []
             for player_data in players_data:
-                # Sanitize daily_explores field to prevent validation errors from corrupt data
-                if 'daily_explores' in player_data and not isinstance(player_data['daily_explores'], list):
-                    logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to [].")
-                    player_data['daily_explores'] = []
+                # Sanitize player data before creating Player object
+                player_data = sanitize_player_data(player_data)
                 
                 if "team" in player_data and player_data["team"]:
                     player_data["team"] = [

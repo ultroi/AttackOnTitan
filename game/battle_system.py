@@ -785,6 +785,9 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         if isinstance(player_data, Player):
             player = player_data
         else:
+            # Sanitize player data before creating Player object
+            from database.db import sanitize_player_data
+            player_data = sanitize_player_data(player_data)
             player = Player(**player_data)
     else:
         player = None

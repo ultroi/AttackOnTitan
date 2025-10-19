@@ -341,8 +341,11 @@ class LocalMemoryDatabase:
             await self._try_load_from_persistent_db(user_id_str)
         player_data = self._players_dict.get(user_id_str)
         if player_data and isinstance(player_data, dict):
-            # Convert dict back to Player object
+            # Sanitize player data before creating Player object
+            from database.db import sanitize_player_data
             from database.models import Player
+            player_data = sanitize_player_data(player_data)
+            # Convert dict back to Player object
             return Player(**player_data)
         return player_data
 
