@@ -169,7 +169,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             )
         response_time = (time.time() - start_time) * 1000
-        logger.info(f"Explore response time: {response_time:.1f}ms")
+        if response_time > 500:
+            logger.warning(f"Explore response time: {response_time:.1f}ms")
+        else:
+            logger.debug(f"Explore response time: {response_time:.1f}ms")
     except Exception as e:
         logger.error(f"Failed to send titan message: {e}")
         return
@@ -233,7 +236,7 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
     context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
     
     await _handle_background_tasks(update, context, user_id_str, db, player)
-    logger.info(f"Total explore processing for user {user_id_str}: {(time.time() - start_time) * 1000:.1f}ms")
+    # Don't log here - moved to separate async task to avoid blocking
 
 async def _handle_background_tasks(update, context, user_id_str, db, player):
     username = update.effective_user.username or update.effective_user.first_name
@@ -242,15 +245,9 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     # Combine multiple updates into a single batch_update_player call
     update_data = {"last_explore_time": time.time()}
     
-    # Update daily_explores in the same update if it exists - properly serialize DailyExplores objects
-    if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
-        daily_explores_dicts = []
-        for daily in player.daily_explores:
-            if hasattr(daily, 'dict'):
-                daily_explores_dicts.append(daily.dict())
-            elif isinstance(daily, dict):
-                daily_explores_dicts.append(daily)
-        update_data["daily_explores"] = daily_explores_dicts
+    # Update daily_explores properly - it's a Dict[str, int], not a list
+    if hasattr(player, "daily_explores") and isinstance(player.daily_explores, dict):
+        update_data["daily_explores"] = player.daily_explores
     
     # Handle travel progress in the same update
     travel = getattr(player, "travel", {})

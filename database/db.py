@@ -473,30 +473,27 @@ class Database:
         return False
 
     def invalidate_battle_caches(self, user_id: str):
-        """
-        Invalidate all battle-related caches for a user (character, player, titan).
-        Call this at the start/end of battles to ensure data consistency.
-        """
-        cleared_count = 0
+        if not CACHE_ENABLED:
+            return
 
         # Clear all character caches for this user
-        if self.invalidate_all_character_caches(user_id):
-            cleared_count += 1
+        keys_to_remove = []
+        for cache_key in list(CHARACTER_CACHE.keys()):
+            if cache_key.startswith(f"character_{user_id}_"):
+                keys_to_remove.append(cache_key)
+
+        for cache_key in keys_to_remove:
+            CHARACTER_CACHE.pop(cache_key, None)
 
         # Clear player cache for this user
-        if CACHE_ENABLED:
-            player_cache_key = f"player_{user_id}"
-            if player_cache_key in PLAYER_CACHE:
-                PLAYER_CACHE.pop(player_cache_key, None)
-                logger.debug(f"Invalidated player cache for user {user_id}")
-                cleared_count += 1
+        player_cache_key = f"player_{user_id}"
+        PLAYER_CACHE.pop(player_cache_key, None)
 
         # Clear titan cache for this user
-        if self.invalidate_titan_cache(user_id):
-            cleared_count += 1
+        self.invalidate_titan_cache(user_id)
 
-        if cleared_count > 0:
-            logger.info(f"Cleared {cleared_count} battle-related cache entries for user {user_id}")
+        if len(keys_to_remove) > 0:
+            logger.debug(f"Cleared {len(keys_to_remove) + 2} battle-related cache entries for user {user_id}")
 
         return cleared_count > 0
         
@@ -804,7 +801,21 @@ class Database:
             # Serialize complex objects before updating
             serialized_update = {}
             for key, value in update_data.items():
-                if isinstance(value, list):
+                if isinstance(value, dict):
+                    # Handle dict fields properly - don't convert them to lists
+                    if key == "daily_explores":
+                        # daily_explores is a Dict[str, int] - keep it as dict
+                        serialized_update[key] = value
+                    else:
+                        # Other dict fields
+                        serialized_dict = {}
+                        for k, v in value.items():
+                            if hasattr(v, 'dict'):
+                                serialized_dict[k] = v.dict()
+                            else:
+                                serialized_dict[k] = v
+                        serialized_update[key] = serialized_dict
+                elif isinstance(value, list):
                     # Handle lists that may contain Pydantic models
                     serialized_list = []
                     for item in value:
@@ -835,16 +846,14 @@ class Database:
                     cached_player = PLAYER_CACHE[cache_key]["player"]
                     for key, value in update_data.items():
                         if hasattr(cached_player, key):
-                            # Special handling for list-based fields to prevent incorrect type conversion
-                            if key == 'daily_explores' and not isinstance(value, list):
-                                # If the update is not a list, it's likely incorrect; re-fetch to be safe
-                                self.invalidate_player_cache(user_id)
-                                continue
                             setattr(cached_player, key, value)
                     PLAYER_CACHE[cache_key]["timestamp"] = time.time()
 
             elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"batch_update_player query time: {elapsed:.2f} ms")
+            if elapsed > 250:  # Only log if it takes too long
+                logger.warning(f"batch_update_player query time: {elapsed:.2f} ms")
+            else:
+                logger.debug(f"batch_update_player query time: {elapsed:.2f} ms")
             return result.modified_count > 0
 
         except Exception as e:
