@@ -58,6 +58,7 @@ class BattleSystem:
         }
         # Pre-build ability lookup dictionary for O(1) access
         self.ability_lookup: Dict[str, Any] = {}
+        self.ability_prefixes: Dict[str, str] = {}
         character_data = get_character_data(character.character_type)
         if character_data:
             prefixes = {
@@ -69,9 +70,8 @@ class BattleSystem:
                 abilities = getattr(character_data, ability_type, [])
                 for ability in abilities:
                     if ability and ability.name:
-                        # Add prefix to ability for keyboard generation
-                        ability.prefix = prefix
                         self.ability_lookup[ability.name] = ability
+                        self.ability_prefixes[ability.name] = prefix
         self.buffs: Dict[str, Any] = {}
         self.debuffs: Dict[str, int] = {}  
         self.titan_debuffs: Dict[str, int] = {}
@@ -571,13 +571,13 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
             gas_cost = ability.gas_cost or 20
             
             if cooldown > 0:
-                button_text = f"{ability.prefix or ''} {ability.name} ({cooldown}t)"
+                button_text = f"{battle.ability_prefixes.get(ability_name, '')} {ability.name} ({cooldown}t)"
                 callback_data = f"cooldown_{ability.name}"
             elif battle.gas < gas_cost:
-                button_text = f"{ability.prefix or ''} {ability.name} (Low Gas)"
+                button_text = f"{battle.ability_prefixes.get(ability_name, '')} {ability.name} (Low Gas)"
                 callback_data = f"lowgas_{ability.name}"
             else:
-                button_text = f"{ability.prefix or ''} {ability.name}"
+                button_text = f"{battle.ability_prefixes.get(ability_name, '')} {ability.name}"
                 callback_data = f"ability_{ability.name}"
             
             ability_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
@@ -1145,12 +1145,13 @@ async def _handle_do_switch(action, battle, user_id, context):
             "ultimate_abilities": "✨"
         }
         battle.ability_lookup = {}
+        battle.ability_prefixes = {}
         for ability_type, prefix in prefixes.items():
             abilities = getattr(character_data, ability_type, [])
             for ability in abilities:
                 if ability and ability.name:
-                    ability.prefix = prefix
                     battle.ability_lookup[ability.name] = ability
+                    battle.ability_prefixes[ability.name] = prefix
 
     battle.apply_passives("battle_start") 
 
