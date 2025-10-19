@@ -1835,7 +1835,13 @@ async def initialize_bot():
     # Step 3: Create application
     logger.info("🤖 Creating Telegram application...")
     try:
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        from telegram.request import HTTPXRequest
+        # Set a longer connection timeout to handle potential network issues
+        request = HTTPXRequest(connect_timeout=30.0, read_timeout=20.0)
+        if not TELEGRAM_TOKEN:
+            logger.error("❌ TELEGRAM_TOKEN is not set")
+            return False
+        application = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
         logger.info("✅ Application created successfully")
     except Exception as e:
         logger.error(f"❌ Failed to create application: {e}")
