@@ -804,7 +804,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             await query.answer("This battle button has expired. Please /explore again.", show_alert=True)
         except Exception:
             pass
-        logger.info(f"Battle ID mismatch for user {user_id}: {callback_data} != {current_battle_id}")
+        if current_battle_id is not None:
+            logger.info(f"Battle ID mismatch for user {user_id}: {callback_data} != {current_battle_id}")
         return
     
     # Immediately invalidate the battle ID to prevent duplicate use

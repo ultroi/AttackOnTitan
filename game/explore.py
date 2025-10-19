@@ -153,13 +153,13 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Event Spawning (Fast, In-Memory) ---
     # These are checked before the main titan encounter.
     rand_val = random.random()
-    if rand_val < 0.02: # 2% chance for a boss
+    if rand_val < 0.06: # 2% chance for a boss
         asyncio.create_task(handle_boss_titan_encounter(update, context, player, character))
         return
-    if rand_val < 0.04: # Another 2% chance for a dealer (total 4%)
+    if rand_val < 0.04: 
         asyncio.create_task(handle_dealer_encounter(update, context))
         return
-    if rand_val < 0.06 and not context.user_data.get('captcha_active', False): # And another 2% for captcha
+    if rand_val < 0.05 and not context.user_data.get('captcha_active', False): 
         asyncio.create_task(spawn_captcha(update, context))
         return
     
