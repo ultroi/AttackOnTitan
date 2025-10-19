@@ -102,7 +102,7 @@ async def start_stats_scheduler(db):
 
     # Add job to reset weekly stats every Sunday at midnight IST
     stats_scheduler.add_job(
-        lambda: asyncio.run(reset_weekly_stats()),
+        reset_weekly_stats,
         'cron',
         day_of_week='sun',
         hour=0,
@@ -115,7 +115,7 @@ async def start_stats_scheduler(db):
 
     # Add job to reset daily stats every midnight IST
     stats_scheduler.add_job(
-        lambda: asyncio.run(reset_daily_stats()),
+        reset_daily_stats,
         'cron',
         hour=0,
         minute=0,
@@ -134,24 +134,33 @@ async def update_explorer_stats(user_id: str, name: str, battle_completed: bool 
     if not battle_completed:
         return
 
-    # Update weekly stats
-    if user_id not in stats_data["weekly_explorers"]:
-        stats_data["weekly_explorers"][user_id] = {"name": name, "count": 1}
-    else:
-        stats_data["weekly_explorers"][user_id]["count"] += 1
-        stats_data["weekly_explorers"][user_id]["name"] = name
+    try:
+        # Update weekly stats
+        if user_id not in stats_data["weekly_explorers"]:
+            stats_data["weekly_explorers"][user_id] = {"name": name, "count": 1}
+            logger.info(f"[Stats] New weekly explorer: {name} ({user_id})")
+        else:
+            stats_data["weekly_explorers"][user_id]["count"] += 1
+            stats_data["weekly_explorers"][user_id]["name"] = name
+            logger.debug(f"[Stats] Updated weekly explorer: {name} - {stats_data['weekly_explorers'][user_id]['count']} explores")
 
-    # Update daily stats (store first_name for display)
-    if user_id not in stats_data["daily_explorers"]:
-        stats_data["daily_explorers"][user_id] = {"name": name, "count": 1}
-    else:
-        stats_data["daily_explorers"][user_id]["count"] += 1
-        stats_data["daily_explorers"][user_id]["name"] = name
+        # Update daily stats (store first_name for display)
+        if user_id not in stats_data["daily_explorers"]:
+            stats_data["daily_explorers"][user_id] = {"name": name, "count": 1}
+            logger.info(f"[Stats] New daily explorer: {name} ({user_id})")
+        else:
+            stats_data["daily_explorers"][user_id]["count"] += 1
+            stats_data["daily_explorers"][user_id]["name"] = name
+            logger.debug(f"[Stats] Updated daily explorer: {name} - {stats_data['daily_explorers'][user_id]['count']} explores")
 
-    db = stats_data.get("_db")
-    if db:
-        # Fire-and-forget DB update for speed
-        asyncio.create_task(save_stats_data_to_db(db, stats_data))
+        db = stats_data.get("_db")
+        if db:
+            # Fire-and-forget DB update for speed
+            asyncio.create_task(save_stats_data_to_db(db, stats_data))
+        else:
+            logger.warning("[Stats] Database reference not found in stats_data, stats not persisted")
+    except Exception as e:
+        logger.error(f"[Stats] Error updating explorer stats: {e}", exc_info=True)
 
 def get_top_explorers(explorer_data: dict, limit: int = 3):
     """Get top explorers from the provided explorer data"""
@@ -171,21 +180,30 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_user:
         return
         
-    if update.effective_user.id: 
-        if context.args and context.args[0] == "reset":
-            if len(context.args) > 1 and context.args[1] == "weekly":
-                await reset_weekly_stats()
-                await update.message.reply_text("Weekly stats have been manually reset.")
-                return
-            elif len(context.args) > 1 and context.args[1] == "daily":
-                await reset_daily_stats()
-                await update.message.reply_text("Daily stats have been manually reset.")
-                return
-            elif len(context.args) > 1 and context.args[1] == "all":
-                await reset_weekly_stats()
-                await reset_daily_stats()
-                await update.message.reply_text("All stats have been manually reset.")
-                return
+    # Reset commands - mod only
+    if context.args and len(context.args) > 0 and context.args[0] == "reset":
+        # Check if user is mod/owner (reusing mod_only logic)
+        from utils.owners import is_owner
+        user_id = update.effective_user.id
+        
+        # Check if user is owner or mod
+        if not is_owner(user_id):
+            await update.message.reply_text("⛔ You don't have permission to reset stats.")
+            return
+            
+        if len(context.args) > 1 and context.args[1] == "weekly":
+            await reset_weekly_stats()
+            await update.message.reply_text("✅ Weekly stats have been manually reset.")
+            return
+        elif len(context.args) > 1 and context.args[1] == "daily":
+            await reset_daily_stats()
+            await update.message.reply_text("✅ Daily stats have been manually reset.")
+            return
+        elif len(context.args) > 1 and context.args[1] == "all":
+            await reset_weekly_stats()
+            await reset_daily_stats()
+            await update.message.reply_text("✅ All stats have been manually reset.")
+            return
 
     # Check if user is in active battle
     from game.battle_system import active_battles
@@ -258,14 +276,21 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{i+1}. {get_daily_display_name(user_id, name, update)} - {count} explores"
             for i, (user_id, name, count) in enumerate(top_daily)
         ]) if top_daily else "No data yet"
+        
+        # Debug log to check stats_data
+        logger.info(f"[Stats] Daily explorers count: {len(stats_data['daily_explorers'])}")
+        logger.info(f"[Stats] Weekly explorers count: {len(stats_data['weekly_explorers'])}")
 
         # Create message
         message = (
-            f"<b>Total Users:</b> <code>{total_users}</code>\n"
-            f"<b>Total Groups:</b> <code>{total_groups}</code>\n\n"
-            f"<b>TOP 3 EXPLORERS:</b>\n{top_explorers_text}\n\n"
-            f"<b>TOP 3 LEVELS:</b>\n{top_levels_text}\n\n"
-            f"<b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
+            f"📊 <b>GAME STATISTICS</b> 📊\n"
+            f"━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
+            f"👥 <b>Total Groups:</b> <code>{total_groups}</code>\n\n"
+            f"🏆 <b>TOP 3 EXPLORERS (ALL-TIME):</b>\n{top_explorers_text}\n\n"
+            f"⭐ <b>TOP 3 LEVELS:</b>\n{top_levels_text}\n\n"
+            f"🔥 <b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━"
         )
 
         await update.message.reply_text(message, parse_mode="HTML")
@@ -273,6 +298,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in stats_command: {e}", exc_info=True)
         await update.message.reply_text("An error occurred while processing the command.")
+
+        
 # Mod-only command for /stats users
 @mod_only
 async def stats_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

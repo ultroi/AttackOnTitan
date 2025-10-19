@@ -11,6 +11,7 @@ import asyncio
 import random
 from utils.monitor import track_battle_end
 from database.missions import process_titan_reward_mission_progress, process_explore_mission_progress, check_mission_item_drops, add_mission_item, process_titan_defeat_mission_progress
+from game.stats_command import track_explore_stats
 import logging
 from datetime import datetime, timezone
 import time
@@ -1496,6 +1497,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
 
         participating_chars = [char for char, _ in participating_level_infos]
         participating_level_infos_only = [level_info for _, level_info in participating_level_infos]
+        
+        # Track explore stats for daily leaderboard (fire-and-forget)
+        player_name = player_data.name if hasattr(player_data, 'name') else player_data.username if hasattr(player_data, 'username') else "Player"
+        asyncio.create_task(track_explore_stats(user_id, player_name, battle_completed=True))
         
         asyncio.create_task(_process_post_battle_updates(
             db, player_data, participating_chars, participating_level_infos_only, user_id, 

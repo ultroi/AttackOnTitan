@@ -46,8 +46,8 @@ RARITY_WEIGHTS = {
 }
 
 SPIN_COSTS = {
-    "single": 5, 
-    "multi": 45,  
+    "single": 15,  
+    "multi": 90,   
 }
 
 # Strict silent cooldown for spin buttons (seconds)
@@ -158,12 +158,7 @@ class SpinSystem:
             # Check if character already owned
             if item_key in player.owned_characters:
                 reward_info["duplicate"] = True
-                # Refund based on rarity
-                if item["rarity"] == "rare":
-                    reward_info["valor_refund"] = 3
-                elif item["rarity"] == "ultra_rare":
-                    reward_info["valor_refund"] = 10
-                player.valor += reward_info["valor_refund"]
+                # No refund for duplicates - they just don't get the character again
             else:
                 # Add character to owned list AND create character data
                 player.owned_characters.append(item_key)
@@ -436,11 +431,50 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             try:
                 success = await db.add_new_character_to_player(user_id, awarded_item)
                 if success:
-                    logger.info(f"Created character data for {awarded_item} from fragments for user {user_id}")
+                    logger.info(f"✅ Created character {awarded_item} from fragments for user {user_id}")
+                    # Verify creation
+                    created_char = await db.get_character(user_id, awarded_item)
+                    if created_char:
+                        logger.info(f"✅ Verified fragment character {awarded_item}: Level {created_char.level}, "
+                                  f"Abilities: {len(created_char.unlocked_abilities)}")
+                    else:
+                        logger.error(f"❌ Fragment character {awarded_item} not found after creation!")
+                        # Refund fragments
+                        player.inventory["ultra_rare_fragment"] = fragments
+                        await db.update_player(user_id, {
+                            "inventory": player.inventory,
+                            "owned_characters": [c for c in player.owned_characters if c != awarded_item],
+                            "updated_at": datetime.now(timezone.utc)
+                        })
+                        await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
+                        await spin_callback_handler(update, context)
+                        return
                 else:
-                    logger.warning(f"Failed to create character data for {awarded_item} from fragments for user {user_id}")
+                    logger.warning(f"⚠️ Failed to create character {awarded_item} from fragments for user {user_id}")
+                    # Refund fragments
+                    player.inventory["ultra_rare_fragment"] = fragments
+                    await db.update_player(user_id, {
+                        "inventory": player.inventory,
+                        "owned_characters": [c for c in player.owned_characters if c != awarded_item],
+                        "updated_at": datetime.now(timezone.utc)
+                    })
+                    await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
+                    await spin_callback_handler(update, context)
+                    return
             except Exception as e:
-                logger.error(f"Error creating character {awarded_item} from fragments for user {user_id}: {e}")
+                logger.error(f"❌ Error creating character {awarded_item} from fragments for user {user_id}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Refund fragments
+                player.inventory["ultra_rare_fragment"] = fragments
+                await db.update_player(user_id, {
+                    "inventory": player.inventory,
+                    "owned_characters": [c for c in player.owned_characters if c != awarded_item],
+                    "updated_at": datetime.now(timezone.utc)
+                })
+                await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
+                await spin_callback_handler(update, context)
+                return
             
             item_name = SPIN_ITEMS[awarded_item]["name"]
             await query.answer(f"🎉 Congratulations! You collected 50 fragments and received: {item_name}!", show_alert=True)
@@ -604,11 +638,34 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 # Create the character data in database
                 success = await db.add_new_character_to_player(user_id, reward["item_key"])
                 if success:
-                    logger.info(f"Created character data for {reward['item_key']} for user {user_id}")
+                    logger.info(f"✅ Successfully created character {reward['item_key']} for user {user_id}")
+                    
+                    # Verify character was created properly
+                    created_char = await db.get_character(user_id, reward["item_key"])
+                    if created_char:
+                        logger.info(f"✅ Verified character {reward['item_key']}: Level {created_char.level}, "
+                                  f"HP {created_char.current_hp}/{created_char.stats.HP}, "
+                                  f"Gas {created_char.gas}/{created_char.max_gas}, "
+                                  f"Abilities: {len(created_char.unlocked_abilities)}")
+                    else:
+                        logger.error(f"❌ Character {reward['item_key']} was not found after creation!")
                 else:
-                    logger.warning(f"Failed to create character data for {reward['item_key']} for user {user_id}")
+                    logger.warning(f"⚠️ Failed to create character data for {reward['item_key']} for user {user_id}")
+                    # Remove from owned_characters if creation failed
+                    if reward["item_key"] in player.owned_characters:
+                        player.owned_characters.remove(reward["item_key"])
+                        # Mark as duplicate so it doesn't show as "new" in results
+                        reward["duplicate"] = True
+                        logger.info(f"❌ Removed failed character from owned list: {reward['item_key']}")
             except Exception as e:
-                logger.error(f"Error creating character {reward['item_key']} for user {user_id}: {e}")
+                logger.error(f"❌ Error creating character {reward['item_key']} for user {user_id}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # Remove from owned_characters if creation failed
+                if reward["item_key"] in player.owned_characters:
+                    player.owned_characters.remove(reward["item_key"])
+                    # Mark as duplicate so it doesn't show as "new" in results
+                    reward["duplicate"] = True
 
     finally:
         # Delete animation message if present
@@ -637,9 +694,8 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         detailed_lines = []
         total_gas = 0
         total_marks = 0
-        total_valor_refund = 0
         new_characters = []
-        duplicates = 0
+        duplicate_characters = []
 
         for reward in rewards:
             rarity_emoji = {
@@ -654,9 +710,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
             status_parts = []
             if reward.get("duplicate"):
-                status_parts.append(f"♻️ Duplicate (+{reward.get('valor_refund',0)}⚔️)")
-                total_valor_refund += reward.get('valor_refund', 0)
-                duplicates += 1
+                if reward.get("type") == "character":
+                    status_parts.append("♻️ Duplicate")
+                    duplicate_characters.append(reward.get('item_name'))
             else:
                 if reward.get("type") == "character":
                     status_parts.append("✨ New")
@@ -708,6 +764,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if new_characters:
             for cname in new_characters:
                 reward_text += f"• ✨ <b>{cname}</b> — Congratulations!\n"
+        elif duplicate_characters:
+            for cname in duplicate_characters:
+                reward_text += f"• ♻️ <b>{cname}</b> — Duplicate (Already Owned)\n"
         else:
             reward_text += "• <b>None</b>\n"
 

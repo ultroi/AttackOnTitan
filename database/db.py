@@ -1180,17 +1180,82 @@ class Database:
         return 0
 
     async def add_new_character_to_player(self, user_id: str, character_name: str) -> bool:
+        """
+        Create a new character for a player with proper initialization.
+        This is called when a player unlocks a character from spin or other means.
+        """
         try:
+            # Get character template data
             char_data = get_character_data(character_name)
             if not char_data:
+                logger.error(f"Character data not found for: {character_name}")
                 return False
+            
+            # Check if character already exists
             existing_char = await self.get_character(str(user_id), character_name)
             if existing_char:
+                logger.warning(f"Character {character_name} already exists for user {user_id}")
                 return False
-            await self.create_character(str(user_id), character_name, character_name, current_hp=char_data.base_stats.HP)
+            
+            # Create character with proper initialization
+            # Level 1 max HP from character data
+            max_hp = char_data.get_max_hp(1)
+            
+            # Create the character document
+            new_character = Character(
+                user_id=str(user_id),
+                name=character_name,
+                character_type=character_name,
+                current_hp=max_hp,
+                level=1,
+                xp=0,
+                total_xp=0,
+                stats=char_data.base_stats.dict(),  # Use base stats from character data
+                gas=5000,  # Starting gas
+                max_gas=5000,  # Starting max gas
+                equipped_weapon=None,
+                active_abilities=[],
+                passive_abilities=[],
+                ultimate_abilities=[],
+                unlocked_abilities={},
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            
+            # Unlock level 1 abilities
+            for ability in char_data.active_abilities:
+                if ability.level_required <= 1:
+                    ability_dict = ability.dict()
+                    ability_dict['is_unlocked'] = True
+                    ability_dict['unlocked'] = True
+                    new_character.active_abilities.append(Ability(**ability_dict))
+                    new_character.unlocked_abilities[ability.name] = True
+                    
+            for ability in char_data.passive_abilities:
+                if ability.level_required <= 1:
+                    ability_dict = ability.dict()
+                    ability_dict['is_unlocked'] = True
+                    ability_dict['unlocked'] = True
+                    new_character.passive_abilities.append(Ability(**ability_dict))
+                    new_character.unlocked_abilities[ability.name] = True
+                    
+            for ability in char_data.ultimate_abilities:
+                if ability.level_required <= 1:
+                    ability_dict = ability.dict()
+                    ability_dict['is_unlocked'] = True
+                    ability_dict['unlocked'] = True
+                    new_character.ultimate_abilities.append(Ability(**ability_dict))
+                    new_character.unlocked_abilities[ability.name] = True
+            
+            # Save to database
+            await self.characters.insert_one(new_character.dict())
+            logger.info(f"Successfully created character {character_name} for user {user_id} with {len(new_character.unlocked_abilities)} abilities unlocked")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to add new character to player: {e}")
+            logger.error(f"Failed to add new character {character_name} to player {user_id}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             raise
 
     async def get_connection_stats(self) -> Optional[Dict]:
