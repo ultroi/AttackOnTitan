@@ -314,15 +314,21 @@ class PvPBattleSystem:
             self.challenger_gas -= gas_cost
         else:
             self.defender_gas -= gas_cost
+        
+        # Calculate opponent HP percent
+        opponent_hp = self.defender_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.challenger_hp
+        opponent_max_hp = opponent_char.stats.HP if hasattr(opponent_char, 'stats') and hasattr(opponent_char.stats, 'HP') else (opponent_char.stats.get('HP', 0) if isinstance(opponent_char.stats, dict) else 100)
+        target_hp_percent = opponent_hp / opponent_max_hp if opponent_max_hp > 0 else 1.0
             
         # Build context for ability effect
         ctx = {
             "character_stats": current_char.stats.dict() if getattr(current_char, 'stats', None) else {},
             "opponent_stats": opponent_char.stats.dict() if getattr(opponent_char, 'stats', None) else {},
             "character_hp": self.challenger_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.defender_hp,
-            "opponent_hp": self.defender_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.challenger_hp,
+            "opponent_hp": opponent_hp,
             "character_max_hp": current_char.stats.HP if hasattr(current_char, 'stats') and hasattr(current_char.stats, 'HP') else (current_char.stats.get('HP', 0) if isinstance(current_char.stats, dict) else 0),
-            "opponent_max_hp": opponent_char.stats.HP if hasattr(opponent_char, 'stats') and hasattr(opponent_char.stats, 'HP') else (opponent_char.stats.get('HP', 0) if isinstance(opponent_char.stats, dict) else 0),
+            "opponent_max_hp": opponent_max_hp,
+            "target_hp_percent": target_hp_percent,  # FIX: Now properly calculated
             "pvp": True,
             "turn": self.turn_count,
             "gas": gas - gas_cost,

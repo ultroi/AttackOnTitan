@@ -128,6 +128,11 @@ class BattleSystem:
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
         """Build context for ability effect functions."""
         base_damage = (ability.base_damage + self.character.stats.ATK) if ability and ability.base_damage else 0
+        
+        # NEW: Apply command_boost if Chain of Command is active
+        if self.buffs.get("command_boost", 1.0) > 1.0:
+            base_damage = int(base_damage * self.buffs["command_boost"])
+        
         return {
             "character_stats": self.character.stats.dict() if self.character.stats else {},
             "character_hp": self.character_hp,
@@ -208,6 +213,13 @@ class BattleSystem:
                 self.titan_debuffs["damage_reduction"] = 1  
         if effect.buffs:
             self.buffs.update(effect.buffs)
+            
+            # NEW: Handle cooldown reset from Chain of Command
+            if effect.buffs.get("reset_all_cooldowns") == 1:
+                for ability_name in self.ability_cooldowns:
+                    self.ability_cooldowns[ability_name] = 0
+                logger.info("⚔️ All ability cooldowns reset by Chain of Command!")
+        
         if effect.debuffs:
             for k, v in effect.debuffs.items():
                 self.titan_debuffs[k] = int(v)
@@ -219,6 +231,23 @@ class BattleSystem:
             self.titan_debuffs["target_confusion"] = 2
         if effect.bleed_applied:
             self.titan_debuffs["bleed"] = max(self.titan_debuffs.get("bleed", 0), 3)
+
+    # ---------- Immunity Helper ----------
+    def check_immunity(self, debuff_name: str) -> bool:
+        """Check if character is immune to a specific debuff."""
+        immunity_map = {
+            "stun": "immune_stun",
+            "slow": "immune_slow",
+            "confusion": "immune_confusion",
+            "bleed": "immune_bleed",
+            "burn": "immune_burn",
+            "poison": "immune_poison",
+        }
+        
+        immunity_flag = immunity_map.get(debuff_name)
+        if immunity_flag and immunity_flag in self.buffs:
+            return True
+        return False
 
     # ---------- Titan Turn Logic ----------
     def titan_attack(self) -> Tuple[int, str]:
@@ -245,7 +274,13 @@ class BattleSystem:
         special_messages = []
 
         # Character DEF reduces damage more significantly
-        def_reduction = min(0.8, self.character.stats.DEF / 300)  
+        # NEW: Check if DEF is set to 0 by Iron Conviction reversal
+        if self.buffs.get("def_zero", 0) > 0:
+            def_reduction = 0.0  # No damage reduction when DEF=0
+            special_messages.append("⚠️ Floch's defenses are completely down!")
+        else:
+            def_reduction = min(0.8, self.character.stats.DEF / 300)  
+        
         damage = int(base_damage * (1 - def_reduction))
         
         # SPD affects dodge chance
@@ -256,6 +291,13 @@ class BattleSystem:
         
         # Ensure minimum damage
         damage = max(5, damage + random.randint(5, 15))
+        
+        # NEW: Apply morale damage reduction if active
+        if self.buffs.get("morale_damage", 0) > 0:
+            morale_reduction = self.buffs["morale_damage"]
+            original_damage = damage
+            damage = int(damage * (1.0 - morale_reduction))
+            special_messages.append(f"🎭 Morale damage reduced attack by {int(morale_reduction*100)}% ({original_damage} → {damage})")
         
         if self.buffs.get("damage_reduction", 0):
             damage = int(damage * (1 - self.buffs["damage_reduction"]))
@@ -319,6 +361,15 @@ class BattleSystem:
         
         if not self.character or not self.character.stats:
             return damage, "Error: Character stats not available", effects, False
+        
+        # NEW: Check for mental exhaustion (blocks ultimate abilities)
+        if self.debuffs.get("mental_exhaustion", 0) > 0:
+            # Only block if trying to use an ultimate ability
+            ability = self.ability_lookup.get(ability_name)
+            if ability:
+                character_data = get_character_data(self.character.character_type)
+                if character_data and ability in getattr(character_data, "ultimate_abilities", []):
+                    return 0, f"⚠️ {self.character.name} is mentally exhausted and cannot use ultimate abilities! ({self.debuffs['mental_exhaustion']} turns remaining)", effects, False
             
         # O(1) ability lookup using pre-built dictionary
         ability = self.ability_lookup.get(ability_name)
@@ -389,6 +440,39 @@ class BattleSystem:
         for ability_name in list(self.ability_cooldowns.keys()):
             if self.ability_cooldowns[ability_name] > 0:
                 self.ability_cooldowns[ability_name] -= 1
+        
+        # Handle Iron Conviction reversal (Last Bastion of War aftermath)
+        if "iron_conviction" in self.buffs:
+            iron_conv_turns = self.buffs.get("iron_conviction_turns", 0)
+            iron_conv_turns -= 1
+            self.buffs["iron_conviction_turns"] = iron_conv_turns
+            
+            if iron_conv_turns <= 0:
+                # Remove immunity buffs and apply reversal
+                immunity_flags = ["immune_stun", "immune_slow", "immune_confusion", "immune_bleed"]
+                for flag in immunity_flags:
+                    if flag in self.buffs:
+                        del self.buffs[flag]
+                
+                if "iron_conviction" in self.buffs:
+                    del self.buffs["iron_conviction"]
+                if "iron_conviction_turns" in self.buffs:
+                    del self.buffs["iron_conviction_turns"]
+                
+                # Apply reversal debuffs
+                self.debuffs["stun"] = 1  # 1-turn stun
+                self.buffs["def_zero"] = 2  # DEF reduced to 0 for 2 turns
+                logger.info(f"Iron Conviction ended - {self.character.name} is now stunned and vulnerable!")
+        
+        # Handle DEF=0 duration
+        if "def_zero" in self.buffs:
+            def_zero_duration = self.buffs["def_zero"]
+            def_zero_duration -= 1
+            
+            if def_zero_duration <= 0:
+                del self.buffs["def_zero"]
+            else:
+                self.buffs["def_zero"] = def_zero_duration
         
         # Process titan debuffs efficiently
         to_remove = []

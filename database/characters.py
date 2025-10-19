@@ -1110,22 +1110,31 @@ def scapegoat_rally_effect(ctx: BattleContext) -> AbilityEffect:
         is_pvp = getattr(ctx, "is_pvp", False)
     
     buffs = {}
+    
     if flochs_last_standing:
-        # Buffs based on death count
+        # Buffs based on death count - note: ally_death_count tracks how many allies died BEFORE Floch was last standing
         if ally_death_count >= 3:
             buffs["full_cooldown_reset"] = 1.0  # Reset all cooldowns
             buffs["hp_regen"] = 0.1  # 10% HP regen over 3 turns
-            message = "Scapegoat Rally: Last standing with 3+ deaths! Full cooldown reset and 10% HP regen over 3 turns"
+            buffs["ATK"] = 1.5  # +50% ATK
+            buffs["SPD"] = 1.4  # +40% SPD
+            message = f"🎖️ Scapegoat Rally: Floch stands alone with {ally_death_count} fallen comrades!\n" \
+                      f"✅ Full cooldown reset, +50% ATK, +40% SPD, 10% HP regen over 3 turns"
         elif ally_death_count >= 2:
             buffs["damage_multiplier"] = 1.25  # +25% damage
-            message = "Scapegoat Rally: Last standing with 2 deaths! +25% damage"
+            buffs["ATK"] = 1.25
+            buffs["SPD"] = 1.15  # +15% SPD
+            message = f"🎖️ Scapegoat Rally: Floch rallies with {ally_death_count} fallen comrades!\n" \
+                      f"⚡ +25% Damage, +15% SPD"
         elif ally_death_count >= 1:
             buffs["SPD"] = 1.1  # +10% speed
-            message = "Scapegoat Rally: Last standing with 1 death! +10% speed"
+            buffs["ATK"] = 1.1  # +10% ATK
+            message = f"🎖️ Scapegoat Rally: Floch stands alone after {ally_death_count} comrade fell!\n" \
+                      f"⚡ +10% Speed and Attack"
         else:
-            message = "Scapegoat Rally: Last standing but no deaths tracked"
+            message = "🎖️ Scapegoat Rally: Floch stands alone but no allies fell yet..."
     else:
-        message = "Scapegoat Rally: Waiting to be last standing"
+        message = "🎖️ Scapegoat Rally: Waiting to be last standing..."
     
     return create_effect(message=message, buffs=buffs)
 
@@ -1186,7 +1195,15 @@ def execute_traitor_effect(ctx: BattleContext) -> AbilityEffect:
         return create_effect(message=message)
 
 def last_bastion_of_war_effect(ctx: BattleContext) -> AbilityEffect:
-    """Ultimate: 3-turn buffed state"""
+    """Ultimate: 3-turn buffed state with immunity and reversal mechanic"""
+    import random
+    
+    # 49% success rate as described
+    success_rate = 0.49
+    if random.random() > success_rate:
+        message = "⚠️ Last Bastion of War: Failed to activate! (49% failure chance triggered)"
+        return create_effect(message=message, buffs={})
+    
     buffs = {
         "immune_stun": 1,
         "immune_slow": 1,
@@ -1194,75 +1211,96 @@ def last_bastion_of_war_effect(ctx: BattleContext) -> AbilityEffect:
         "immune_bleed": 1,
         "SPD": 2.0,  # Double speed
         "ATK": 2.0,  # Double attack
-        "iron_conviction": 3  # 3-turn duration
+        "iron_conviction": 1,  # Flag to track state
+        "iron_conviction_turns": 3  # 3-turn duration - tracked for reversal
     }
-    message = "Last Bastion of War: Iron Conviction activated! Immune to stun/slow/confusion/bleed, double speed and attack for 3 turns"
+    message = "🛡️ Last Bastion of War: Iron Conviction activated!\n" \
+              "✅ Immune to stun/slow/confusion/bleed\n" \
+              "⚡ 2x Speed and 2x Attack for 3 turns\n" \
+              "⚠️ WARNING: After 3 turns, you will be stunned for 1 turn and your DEF will be set to 0 for 2 turns!"
     
-    # After 3 turns, would apply stun and def=0, but that's handled separately
     return create_effect(message=message, buffs=buffs)
 
 # Commander Pixis effect functions
 def warlord_command_effect(ctx: BattleContext) -> AbilityEffect:
-    """Passive: Battle start buffs"""
-    if isinstance(ctx, dict):
-        pixis_buffs_distributed = ctx.get("pixis_buffs_distributed", 0)
-        pixis_buff_targets = ctx.get("pixis_buff_targets", [])
-        pixis_buff_values = ctx.get("pixis_buff_values", {})
-        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
-    else:
-        pixis_buffs_distributed = getattr(ctx, "pixis_buffs_distributed", 0)
-        pixis_buff_targets = getattr(ctx, "pixis_buff_targets", [])
-        pixis_buff_values = getattr(ctx, "pixis_buff_values", {})
-        is_pvp = getattr(ctx, "is_pvp", False)
+    """Passive: Strategic buff at battle start - now works in single-player"""
+    import random
     
-    # Apply buffs to tracked targets
-    buffs = {}
-    if pixis_buff_targets and pixis_buff_values:
-        # This would apply the specific buffs to the designated targets
-        # For now, return the general buff effect
-        buffs.update(pixis_buff_values)
-        message = f"Warlord Command: Distributed buffs to {len(pixis_buff_targets)} teammates"
-    else:
-        # Default battle start buffs
-        buffs = {
-            "DEF": 1.2,  # +20% DEF
-            "SPD": 1.15  # +15% SPD
-        }
-        message = "Warlord Command: Distributed buffs to 2 teammates (+20% DEF, +15% SPD)"
+    # Select 2 random buffs from pool
+    buff_pool = [
+        ("DEF", 1.2),      # +20% DEF
+        ("SPD", 1.15),     # +15% SPD
+        ("ATK", 1.15),     # +15% ATK
+        ("ACC", 1.1),      # +10% ACC
+        ("crit_rate", 1.15) # +15% Crit Rate
+    ]
+    
+    # Select 2 random buffs
+    selected_buffs = random.sample(buff_pool, min(2, len(buff_pool)))
+    buffs = {name: multiplier for name, multiplier in selected_buffs}
+    
+    buff_names = [f"+{int((multiplier-1)*100)}% {name}" for name, multiplier in selected_buffs]
+    message = f"⚔️ Warlord Command: Pixis strategically positions the garrison! Activating: {', '.join(buff_names)}"
     
     return create_effect(message=message, buffs=buffs)
 
 def crisis_order_effect(ctx: BattleContext) -> AbilityEffect:
-    """Active: Rescue low HP ally"""
+    """Active: Emergency defensive ability - absorbs damage and grants temporary immunity"""
     if isinstance(ctx, dict):
-        target_hp_percent = ctx.get("target_hp_percent", 1.0)
+        character_max_hp = ctx.get("character_max_hp", 100)
         is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
     else:
-        target_hp_percent = ctx.target_hp_percent
+        character_max_hp = ctx.character_max_hp
         is_pvp = getattr(ctx, "is_pvp", False)
     
-    if target_hp_percent < 0.2:  # <20% HP
+    # Create a shield and buff for 2 turns
+    shield_amount = int(character_max_hp * 0.3)  # 30% max HP shield
+    
+    if is_pvp:
+        # PvP version - shorter duration, focused protection
         buffs = {
-            "block_hit": 1,  # Block 1 hit
-            "shield": 2,  # Shield for 2 turns
-            "transfer_buff": 1  # Transfer one buff
+            "shield": shield_amount,
+            "damage_reduction": 0.15  # 15% damage reduction for 2 turns
         }
-        message = "Crisis Order: Teleported to rescue! Blocked 1 hit, shielded for 2 turns, transferred buff"
-        return create_effect(message=message, buffs=buffs)
+        message = f"🛡️ Crisis Order (PvP): Emergency defensive stance! Shield: {shield_amount} HP, +15% damage reduction for 2 turns"
     else:
-        message = "Crisis Order: Ally HP not low enough (<20%)"
-        return create_effect(message=message)
+        # Titan battle version - more powerful
+        buffs = {
+            "shield": shield_amount,
+            "damage_reduction": 0.25,  # 25% damage reduction for 2 turns
+            "block_incoming": 1  # Flag to indicate defensive stance
+        }
+        message = f"🛡️ Crisis Order: Pixis takes a defensive stance! Shield: {shield_amount} HP, +25% damage reduction for 2 turns, and blocks 1 hit"
+    
+    return create_effect(message=message, buffs=buffs)
 
 def chain_of_command_effect(ctx: BattleContext) -> AbilityEffect:
-    """Ultimate: Reset all actives, then exhaust"""
+    """Ultimate: Emergency cooldown reset and damage boost - modified for single-player"""
+    import random
+    
+    # 60% success rate (balanced for balance)
+    success_rate = 0.60
+    if random.random() > success_rate:
+        message = "⚠️ Chain of Command: Failed to organize troops! (40% failure chance triggered)"
+        return create_effect(message=message, buffs={})
+    
+    # Reset all cooldowns
     buffs = {
-        "reset_cooldowns": 1,  # All actives off cooldown
-        "multi_cast": 1  # Can use once in same turn
+        "reset_all_cooldowns": 1,  # Signal to reset all ability cooldowns
+        "cooldown_reset_active": 1,
+        "command_boost": 1.5,  # 50% attack boost from rallying troops
+        "allied_support": 1,   # Flag for bonus effects
+        "mental_fatigue": 3    # Duration of following exhaustion (tracking)
     }
+    
     debuffs = {
-        "mental_exhaustion": 3  # Cannot use actives/passives for 3 turns
+        "mental_exhaustion": 3  # Cannot use another ultimate for 3 turns
     }
-    message = "Chain of Command: All teammate actives off cooldown and can be used once this turn! Pixis exhausted for 3 turns"
+    
+    message = "🎖️ Chain of Command: Pixis rallies all troops!\n" \
+              "✅ All ability cooldowns reset!\n" \
+              "⚡ +50% Attack boost from allied support (this turn)\n" \
+              "⚠️ WARNING: Cannot use another ultimate for 3 turns due to mental exhaustion"
     
     return create_effect(message=message, buffs=buffs, debuffs=debuffs)
 
