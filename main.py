@@ -723,6 +723,10 @@ def register_handlers(app_instance):
     # Item usage handlers
     app_instance.add_handler(CommandHandler("use", disable_protected(use_command)))
 
+    # Broadcast handlers (moved earlier to avoid accidental matching by later handlers)
+    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern="^confirm_broadcast$"))
+    app_instance.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern="^broadcast_"))
+
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
@@ -763,8 +767,6 @@ def register_handlers(app_instance):
 
     # Shop and purchases
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
-    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern="^confirm_broadcast$"))
-    app_instance.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern="^broadcast_"))
 
     # Group membership handler
     app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
