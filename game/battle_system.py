@@ -56,6 +56,22 @@ class BattleSystem:
                 (character.ultimate_abilities or [])
             )
         }
+        # Pre-build ability lookup dictionary for O(1) access
+        self.ability_lookup: Dict[str, Any] = {}
+        character_data = get_character_data(character.character_type)
+        if character_data:
+            prefixes = {
+                "active_abilities": "⚔️",
+                "passive_abilities": " ",
+                "ultimate_abilities": "✨"
+            }
+            for ability_type, prefix in prefixes.items():
+                abilities = getattr(character_data, ability_type, [])
+                for ability in abilities:
+                    if ability and ability.name:
+                        # Add prefix to ability for keyboard generation
+                        ability.prefix = prefix
+                        self.ability_lookup[ability.name] = ability
         self.buffs: Dict[str, Any] = {}
         self.debuffs: Dict[str, int] = {}  
         self.titan_debuffs: Dict[str, int] = {}
@@ -83,7 +99,9 @@ class BattleSystem:
         self.battle_ended: bool = False
         self.initial_gas: int = character.gas  
         self.last_character_refresh: float = time.time()  
-        self.participating_characters: set = {character.name}  
+        # Cache for passive effects to avoid repeated calculations
+        self.passive_cache: Dict[str, List[Dict]] = {}
+        self.last_passive_refresh: float = 0  
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -134,11 +152,20 @@ class BattleSystem:
 
     def apply_passives(self, trigger: str) -> List[str]:
         """Apply passive abilities for a given trigger and collect messages."""
-        character_data = get_character_data(self.character.character_type)
         messages = []
+        character_data = get_character_data(self.character.character_type)
         if not character_data:
             return messages
+        
+        # Get passive abilities once
         passive_abilities = getattr(character_data, "passive_abilities", [])
+        if not passive_abilities:
+            return messages
+        
+        # Pre-build context once for all passives
+        context = self.build_context(trigger)
+        
+        # Single loop through passives with pre-built context
         for ability in passive_abilities:
             if not ability or not ability.name:
                 continue
@@ -146,9 +173,9 @@ class BattleSystem:
                 continue
             if not (ability.is_unlocked or self.character.unlocked_abilities.get(ability.name, False)):
                 continue
+            
             try:
                 if ability.effect_function:
-                    context = self.build_context(trigger, ability)
                     effect = ability.effect_function(context)
                     if effect:
                         self.apply_effect(effect)
@@ -156,6 +183,7 @@ class BattleSystem:
                             messages.append(effect.message)
             except Exception as e:
                 logger.error(f"Error applying passive ability {ability.name}: {e}")
+        
         return messages
 
     def apply_effect(self, effect: AbilityEffect) -> None:
@@ -292,27 +320,8 @@ class BattleSystem:
         if not self.character or not self.character.stats:
             return damage, "Error: Character stats not available", effects, False
             
-        character_data = get_character_data(self.character.character_type)
-        if not character_data:
-            return damage, "Error: Character abilities not found", effects, False
-            
-        # Fast ability lookup using dictionary for speed
-        ability_types = {
-            "active": getattr(character_data, "active_abilities", []),
-            "passive": getattr(character_data, "passive_abilities", []),
-            "ultimate": getattr(character_data, "ultimate_abilities", [])
-        }
-        
-        # Find ability quickly with optimized search
-        ability = None
-        for abilities in ability_types.values():
-            for ab in abilities:
-                if ab and ab.name == ability_name:
-                    ability = ab
-                    break
-            if ability:
-                break
-                
+        # O(1) ability lookup using pre-built dictionary
+        ability = self.ability_lookup.get(ability_name)
         if not ability:
             return damage, f"Error: Ability {ability_name} not found", effects, False
             
@@ -364,22 +373,12 @@ class BattleSystem:
 
     def has_usable_abilities(self) -> bool:
         """Check if character has any usable (off-cooldown, enough gas) abilities."""
-        character_data = get_character_data(self.character.character_type)
-        if not character_data:
-            return False
-        for ability_type in ["active", "passive", "ultimate"]:
-            abilities = getattr(character_data, f"{ability_type}_abilities", [])
-            for ability in abilities:
-                if not ability or not ability.name:
-                    continue
-                if self.character.level < ability.level_required:
-                    continue
-                if not (ability.is_unlocked or self.character.unlocked_abilities.get(ability.name, False)):
-                    continue
-                if ability.disabled_against_titans:
-                    continue
-                if self.ability_cooldowns.get(ability.name, 0) == 0 and self.gas >= (ability.gas_cost or 0):
-                    return True
+        for ability_name, ability in self.ability_lookup.items():
+            if (self.character.level >= ability.level_required and
+                not ability.disabled_against_titans and
+                self.ability_cooldowns.get(ability_name, 0) == 0 and
+                self.gas >= (ability.gas_cost or 0)):
+                return True
         return False
 
     # ---------- Turn & Status Updates ----------
@@ -452,12 +451,13 @@ class BattleSystem:
         character_bar = "█" * char_bar_filled + "▒" * (10 - char_bar_filled)
         titan_bar = "█" * titan_bar_filled + "▒" * (10 - titan_bar_filled)
         
-        status_parts = [f"Turn: {self.turn + 1}", f"Difficulty: {self.titan.difficulty}"]
-        
-        # Add character stats display
-        if self.character.stats:
-            status_parts.append(f"⚔️ ATK: {self.character.stats.ATK} | 🛡️ DEF: {self.character.stats.DEF}")
-            status_parts.append(f"🎯 ACC: {self.character.stats.ACC} | 🧠 INT: {self.character.stats.INT} | ⚡ SPD: {self.character.stats.SPD}")
+        # Pre-build status parts list for efficient joining
+        status_parts = [
+            f"Turn: {self.turn + 1}",
+            f"Difficulty: {self.titan.difficulty}",
+            f"⚔️ ATK: {self.character.stats.ATK} | 🛡️ DEF: {self.character.stats.DEF}",
+            f"🎯 ACC: {self.character.stats.ACC} | 🧠 INT: {self.character.stats.INT} | ⚡ SPD: {self.character.stats.SPD}"
+        ]
         
         status_message = "\n".join(status_parts)
         
@@ -552,48 +552,39 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     
     shop_items = context.bot_data.get("shop_items") or {}
     
-    prefixes = {
-        "active": "⚔️",
-        "passive": " ",
-        "ultimate": "✨"
-    }
-    
-    # Fast ability button creation in a single loop
-    ability_buttons = []
-    for ability_type in ["active", "passive", "ultimate"]:
-        abilities = getattr(character_data, f"{ability_type}_abilities", [])
-        prefix = prefixes[ability_type]
-        
-        for ability in abilities:
-            if ability_type == "passive" and not getattr(ability, 'show_as_button', False):
-                continue
-
-            if battle.character.level >= ability.level_required:
-                cooldown = battle.ability_cooldowns.get(ability.name, 0)
-                gas_cost = ability.gas_cost or 20
-                
-                if cooldown > 0:
-                    button_text = f"{prefix} {ability.name} ({cooldown}t)"
-                    callback_data = f"cooldown_{ability.name}"
-                elif battle.gas < gas_cost:
-                    button_text = f"{prefix} {ability.name} (Low Gas)"
-                    callback_data = f"lowgas_{ability.name}"
-                else:
-                    button_text = f"{prefix} {ability.name}"
-                    callback_data = f"ability_{ability.name}"
-                
-                ability_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
-    
-    keyboard.extend(ability_buttons)
-
-    # Get weapon info
-    weapon = battle.get_equipped_weapon(shop_items)
-    
-    # Add attack button based on gas
+    # Pre-calculate gas costs and weapon info
     attack_gas_cost = 20
     if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
         attack_gas_cost = 10
     
+    weapon = battle.get_equipped_weapon(shop_items)
+    
+    # Build ability buttons in a single pass
+    ability_buttons = []
+    for ability_name, ability in battle.ability_lookup.items():
+        # Skip passive abilities that shouldn't show as buttons
+        if hasattr(ability, 'show_as_button') and not ability.show_as_button:
+            continue
+
+        if battle.character.level >= ability.level_required:
+            cooldown = battle.ability_cooldowns.get(ability_name, 0)
+            gas_cost = ability.gas_cost or 20
+            
+            if cooldown > 0:
+                button_text = f"{ability.prefix or ''} {ability.name} ({cooldown}t)"
+                callback_data = f"cooldown_{ability.name}"
+            elif battle.gas < gas_cost:
+                button_text = f"{ability.prefix or ''} {ability.name} (Low Gas)"
+                callback_data = f"lowgas_{ability.name}"
+            else:
+                button_text = f"{ability.prefix or ''} {ability.name}"
+                callback_data = f"ability_{ability.name}"
+            
+            ability_buttons.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+    
+    keyboard.extend(ability_buttons)
+
+    # Add attack button based on gas
     attack_row = []
     if battle.gas >= attack_gas_cost:
         attack_text = "🗡️ Attack"
@@ -1112,8 +1103,14 @@ async def _handle_do_switch(action, battle, user_id, context):
     except (ValueError, IndexError):
         return "Invalid switch selection."
 
-    db = context.bot_data["db"]
-    target_character = await db.get_character(user_id, target_name)
+    # Check cache first, then DB
+    target_character = battle.character_cache.get(target_name)
+    if not target_character:
+        db = context.bot_data["db"]
+        target_character = await db.get_character(user_id, target_name)
+        if target_character:
+            battle.character_cache[target_name] = target_character
+    
     if not target_character:
         return f"Could not load character: {target_name}"
     
@@ -1141,6 +1138,19 @@ async def _handle_do_switch(action, battle, user_id, context):
                 (character_data.ultimate_abilities or [])
             )
         }
+        # Rebuild ability lookup for new character
+        prefixes = {
+            "active_abilities": "⚔️",
+            "passive_abilities": " ",
+            "ultimate_abilities": "✨"
+        }
+        battle.ability_lookup = {}
+        for ability_type, prefix in prefixes.items():
+            abilities = getattr(character_data, ability_type, [])
+            for ability in abilities:
+                if ability and ability.name:
+                    ability.prefix = prefix
+                    battle.ability_lookup[ability.name] = ability
 
     battle.apply_passives("battle_start") 
 

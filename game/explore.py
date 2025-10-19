@@ -196,12 +196,9 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
     
     try:
         character_name = player.team[0].character_name
-        character = await db.get_character(user_id_str, character_name)
-        if not character:
-            logger.warning(f"Character {character_name} not found for player {user_id_str}.")
-            return
+        # Character validation skipped for performance - assume valid if team exists
     except (IndexError, AttributeError) as e:
-        logger.error(f"Error getting character for player {user_id_str}: {e}")
+        logger.error(f"Error getting character name for player {user_id_str}: {e}")
         return
     
     # Update context with fresh player level for future commands.
@@ -255,8 +252,28 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
                 daily_explores_dicts.append(daily)
         update_data["daily_explores"] = daily_explores_dicts
     
+    # Handle travel progress in the same update
+    travel = getattr(player, "travel", {})
+    if travel.get("in_progress") and not _is_in_battle(user_id_str):
+        travel_progress = travel.get("progress", 0) + 1
+        travel_required = travel.get("required", 1)
+        
+        if travel_progress >= travel_required:
+            # Travel completed.
+            new_location = travel.get("to", player.location)
+            update_data["location"] = new_location
+            update_data["travel"] = {}
+            
+            # Send arrival message
+            arrival_message = f"🗺️ You have arrived at <b>{new_location}</b>!"
+            if update.message:
+                asyncio.create_task(update.message.reply_text(arrival_message, parse_mode=ParseMode.HTML))
+        else:
+            # Travel in progress.
+            travel["progress"] = travel_progress
+            update_data["travel"] = travel
+    
     asyncio.create_task(db.batch_update_player(user_id_str, update_data))
-    asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
 
 # =====================================================================================
 # Titan Management
@@ -298,36 +315,6 @@ async def handle_dealer_encounter(update: Update, context: ContextTypes.DEFAULT_
         await show_dealer(update, context)
     except Exception as e:
         logger.error(f"Error initiating dealer encounter: {e}")
-
-# =====================================================================================
-# Travel System
-# =====================================================================================
-
-async def _handle_travel_progress(update, context, user_id_str, db, player):
-    """Updates the player's travel progress after an explore action."""
-    travel = getattr(player, "travel", {})
-    if not travel.get("in_progress") or _is_in_battle(user_id_str):
-        return
-    
-    travel_progress = travel.get("progress", 0) + 1
-    travel_required = travel.get("required", 1)
-    
-    try:
-        if travel_progress >= travel_required:
-            # Travel completed.
-            new_location = travel.get("to", player.location)
-            update_data = {"location": new_location, "travel": {}}
-            await db.batch_update_player(user_id_str, update_data)
-            
-            arrival_message = f"🗺️ You have arrived at <b>{new_location}</b>!"
-            if update.message:
-                await update.message.reply_text(arrival_message, parse_mode=ParseMode.HTML)
-        else:
-            # Travel in progress.
-            travel["progress"] = travel_progress
-            await db.batch_update_player(user_id_str, {"travel": travel})
-    except Exception as e:
-        logger.error(f"Error updating travel progress for user {user_id_str}: {e}")
 
 # =====================================================================================
 # Timeout and Spam Handling

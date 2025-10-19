@@ -160,7 +160,7 @@ class Character(BaseModel):
                 
             # Level up core logic
             self.level += 1
-            self.xp -= self.xp_to_next_level
+            # XP subtraction is now handled in add_xp method
             if self.xp < 0:
                 self.xp = 0
                 
@@ -246,8 +246,12 @@ class Character(BaseModel):
         while self.xp >= self.xp_to_next_level:
             old_level = self.level
             
+            # Store the current xp_to_next before leveling up
+            current_xp_to_next = self.xp_to_next_level
             # Perform level up and get stat increases
             stat_increases = self.level_up()
+            # Subtract the xp_to_next that was used for the check
+            self.xp -= current_xp_to_next
             new_level = self.level
             
             # Track what was unlocked at this level
@@ -485,7 +489,11 @@ class Player(BaseModel):
     
         level_ups = []
         while self.xp >= self.xp_to_next_level:
+            # Store the current xp_to_next before leveling up
+            current_xp_to_next = self.xp_to_next_level
             level_up_data = self.level_up()
+            # Subtract the xp_to_next that was used for the check
+            self.xp -= current_xp_to_next
             level_ups.append(level_up_data)
     
         return {
@@ -499,7 +507,7 @@ class Player(BaseModel):
     def level_up(self, db=None, context=None) -> dict:
         old_level = self.level
         self.level += 1
-        self.xp -= self.xp_to_next_level
+        # XP subtraction is now handled in add_xp method
 
         # Apply rewards
         rewards = self.get_level_up_rewards(self.level)
