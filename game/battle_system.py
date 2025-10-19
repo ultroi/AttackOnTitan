@@ -99,9 +99,9 @@ class BattleSystem:
         self.battle_ended: bool = False
         self.initial_gas: int = character.gas  
         self.last_character_refresh: float = time.time()  
-        # Cache for passive effects to avoid repeated calculations
         self.passive_cache: Dict[str, List[Dict]] = {}
         self.last_passive_refresh: float = 0  
+        self.participating_characters = set([self.character.name])  
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
