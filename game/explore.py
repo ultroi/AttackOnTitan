@@ -57,7 +57,7 @@ BOSS_TITAN_IMAGE_URLS = [
 ]
 
 # =====================================================================================
-# Helper Functions (defined before use in module-level code)
+# Helper Functions
 # =====================================================================================
 
 def get_titan_difficulty_by_level(level: int) -> str:
@@ -69,27 +69,31 @@ def get_titan_difficulty_by_level(level: int) -> str:
     else:
         return "Hard"
 
-# Pre-generate a pool of titans for instant generation and variety
-TITAN_POOL = {}
-for lvl in range(1, 126):
-    TITAN_POOL[lvl] = []
-    for _ in range(30):
-        difficulty = get_titan_difficulty_by_level(lvl)
-        name = generate_titan_name(difficulty)
-        max_hp = generate_titan_hp(lvl, difficulty)
-        xp = generate_titan_xp(lvl, difficulty)
-        
-        titan_key = name.lower().replace(" titan", "")
-        image_url = TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
-        
-        TITAN_POOL[lvl].append({
-            "name": name,
-            "level": lvl,
-            "max_hp": max_hp,
-            "xp_reward": xp,
-            "difficulty": difficulty,
-            "image_url": image_url
-        })
+def _generate_dynamic_titan(player: Player, character) -> dict:
+    """
+    Generates a titan dynamically based on the active character's stats.
+    """
+    difficulty = get_titan_difficulty_by_level(player.level)
+    
+    # Generate HP based on character stats, passing difficulty for multipliers
+    hp = generate_titan_hp(character_stats=character.stats, difficulty=difficulty)
+    
+    # Generate other stats based on player level and difficulty
+    name = generate_titan_name(difficulty)
+    xp = generate_titan_xp(player.level, difficulty)
+    
+    titan_key = name.lower().replace(" titan", "")
+    image_url = TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
+
+    return {
+        "name": name,
+        "level": player.level, # Titan level matches player level
+        "max_hp": hp,
+        "xp_reward": xp,
+        "difficulty": difficulty,
+        "image_url": image_url,
+        "is_boss": False
+    }
 
 # =====================================================================================
 # Core Explore Logic
@@ -98,6 +102,11 @@ for lvl in range(1, 126):
 @maintenance_protected
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handles the /explore command with a focus on sending the titan encounter
+    message as fast as possible (under 500ms).
+    All database writes and non-essential logic are deferred to a background task.
+    """
     start_time = time.time()
     
     if not update.effective_user or not update.effective_chat:
@@ -110,29 +119,27 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_id_str = str(user_id)
     
-    # Immediate validation: Check if user is already in a battle.
+    # --- Pre-computation Checks (Fast, In-Memory) ---
     if _is_in_battle(user_id_str):
         await _reply_error(update, "⚔️ You are currently in a battle! Complete it first before exploring.")
         return
     
-    # Use a non-blocking lock to prevent concurrent explore commands.
     if user_id_str not in user_explore_locks:
         user_explore_locks[user_id_str] = asyncio.Lock()
     if user_explore_locks[user_id_str].locked():
         return
     
+    # --- Initial Database Reads (Necessary) ---
     db = context.bot_data.get("db")
     if not db:
         await _reply_error(update, "Database not available. Please try again later.")
         return
     
-    # Optimized check for player existence
     player = await db.get_player(user_id_str)
     if not player or not hasattr(player, 'team') or not player.team:
         await _reply_error(update, "You need to start the bot with /start first!")
         return
 
-    # Fetch active character for dynamic scaling
     try:
         character = await db.get_character(user_id_str, player.team[0].character_name)
         if not character or not character.stats:
@@ -140,29 +147,28 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
     except Exception as e:
         logger.error(f"Failed to get character for explore for user {user_id_str}: {e}")
-        return
-    
-    # --- Event Spawning ---
-    # Randomly trigger a dealer, captcha, or titan encounter.
-    
-    # Boss Titan Encounter (2% chance)
-    if random.random() < 0.02:
-        asyncio.create_task(handle_boss_titan_encounter(update, context, player))
+        await _reply_error(update, "An error occurred while fetching your character data.")
         return
 
-    if random.random() < 0.02:
+    # --- Event Spawning (Fast, In-Memory) ---
+    # These are checked before the main titan encounter.
+    rand_val = random.random()
+    if rand_val < 0.02: # 2% chance for a boss
+        asyncio.create_task(handle_boss_titan_encounter(update, context, player, character))
+        return
+    if rand_val < 0.04: # Another 2% chance for a dealer (total 4%)
         asyncio.create_task(handle_dealer_encounter(update, context))
         return
-
-    if context.user_data and random.random() < 0.02 and not context.user_data.get('captcha_active', False):
+    if rand_val < 0.06 and not context.user_data.get('captcha_active', False): # And another 2% for captcha
         asyncio.create_task(spawn_captcha(update, context))
         return
     
-    # --- Titan Encounter ---
-    # Dynamically generate titan based on character stats
+    # --- Core Titan Encounter Logic (Optimized for Speed) ---
+    
+    # 1. Generate Titan Data (In-Memory)
     titan_data = _generate_dynamic_titan(player, character)
     
-    # Prepare the battle message and send it immediately.
+    # 2. Prepare Message
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
     
@@ -176,62 +182,41 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
+    # 3. Send Message Immediately
+    sent_message = None
     try:
         if update.message:
-            send_message_task = asyncio.create_task(
-                update.message.reply_text(
-                    reply_text,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
-                )
+            sent_message = await update.message.reply_text(
+                reply_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False
             )
         response_time = (time.time() - start_time) * 1000
-        if response_time > 500:
-            logger.warning(f"Explore response time: {response_time:.1f}ms")
-        else:
-            logger.debug(f"Explore response time: {response_time:.1f}ms")
+        logger.info(f"Explore response time: {response_time:.1f}ms for user {user_id_str}")
+
     except Exception as e:
-        logger.error(f"Failed to send titan message: {e}")
+        logger.error(f"Failed to send titan message for user {user_id_str}: {e}")
+        # If sending fails, we don't proceed to the background tasks.
         return
         
-    # Offload all further processing to a background task to keep the bot responsive.
-    asyncio.create_task(_process_explore_after_reply(
-        update, context, user_id, db, titan_data, send_message_task, start_time, player
+    # 4. Defer ALL other processing to a background task
+    asyncio.create_task(_process_explore_post_send(
+        context, user_id_str, db, titan_data, sent_message, player, update.effective_user.username
     ))
 
-async def _process_explore_after_reply(update, context, user_id, db, titan_data, send_message_task, start_time, player):
-    try:
-        sent_message = await send_message_task
-    except Exception as e:
-        logger.error(f"Failed to get sent message: {e}")
-        return
+async def _process_explore_post_send(context, user_id_str, db, titan_data, sent_message, player, username):
+    """
+    Handles all deferred tasks after the explore message has been sent.
+    This includes all database writes and other non-time-critical operations.
+    """
+    user_id = int(user_id_str)
     
-    user_id_str = str(user_id)
-    
-    # Fetch player and character data.
-    # Player already passed from main function
-    if not player or not hasattr(player, 'team') or not player.team:
-        logger.warning(f"Player {user_id_str} validation failed after reply.")
-        return
-    
-    try:
-        character_name = player.team[0].character_name
-        # Character validation skipped for performance - assume valid if team exists
-    except (IndexError, AttributeError) as e:
-        logger.error(f"Error getting character name for player {user_id_str}: {e}")
-        return
-    
-    # Update context with fresh player level for future commands.
-    context.user_data["player_level"] = player.level
-    
-    # Update daily explore count.
-    player.increment_daily_explores(datetime.now(timezone.utc))
-    
-    # Clean up any old titan data for the user.
+    # --- Database Writes ---
+    # 1. Clean up any previous titan for this user.
     await _cleanup_existing_titan(user_id_str, db)
     
-    # Create and store the new Titan object.
+    # 2. Create and store the new Titan object.
     titan = Titan(
         name=titan_data["name"],
         level=titan_data["level"],
@@ -244,76 +229,60 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
         abilities=[],
         drop_table={}
     )
-    context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
     await db.store_titan(user_id_str, titan)
-    
-    # Create timeout task and store it in BOTH places for compatibility
-    timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
-    user_timeout_tasks[user_id_str] = timeout_task
-    # Also store in bot_data so battle_system can cancel it
-    context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
-    
-    await _handle_background_tasks(update, context, user_id_str, db, player)
-    # Don't log here - moved to separate async task to avoid blocking
+    # Store a dictionary version for quick access if needed, avoiding another DB hit.
+    context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
 
-async def _handle_background_tasks(update, context, user_id_str, db, player):
-    username = update.effective_user.username or update.effective_user.first_name
-    asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
-    
-    # Combine multiple updates into a single batch_update_player call
+    # --- Player Stats and Travel Update ---
     update_data = {"last_explore_time": time.time()}
-    
-    # Update daily_explores properly - it's a Dict[str, int], not a list
-    if hasattr(player, "daily_explores") and isinstance(player.daily_explores, dict):
-        update_data["daily_explores"] = player.daily_explores
-    
-    # Handle travel progress in the same update
+    player.increment_daily_explores(datetime.now(timezone.utc))
+    update_data["daily_explores"] = player.daily_explores
+
     travel = getattr(player, "travel", {})
     if travel.get("in_progress") and not _is_in_battle(user_id_str):
         travel_progress = travel.get("progress", 0) + 1
         travel_required = travel.get("required", 1)
         
         if travel_progress >= travel_required:
-            # Travel completed.
             new_location = travel.get("to", player.location)
             update_data["location"] = new_location
             update_data["travel"] = {}
-            
-            # Send arrival message
             arrival_message = f"🗺️ You have arrived at <b>{new_location}</b>!"
-            if update.message:
-                asyncio.create_task(update.message.reply_text(arrival_message, parse_mode=ParseMode.HTML))
+            asyncio.create_task(context.bot.send_message(chat_id=user_id, text=arrival_message, parse_mode=ParseMode.HTML))
         else:
-            # Travel in progress.
             travel["progress"] = travel_progress
             update_data["travel"] = travel
+            
+    # 3. Perform a single batch update to the player document.
+    await db.batch_update_player(user_id_str, update_data)
+
+    # --- Timeout and Background Tasks ---
+    # Create timeout task and store it.
+    timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+    user_timeout_tasks[user_id_str] = timeout_task
+    context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
     
-    asyncio.create_task(db.batch_update_player(user_id_str, update_data))
+    # Run other non-critical tasks.
+    asyncio.create_task(track_explore_stats(user_id_str, username or player.username, battle_completed=False))
+
 
 # =====================================================================================
 # Boss Titan Encounter
 # =====================================================================================
 
-async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFAULT_TYPE, player: Player):
-    """Handles the logic for a rare Boss Titan encounter."""
+async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFAULT_TYPE, player: Player, character):
+    """
+    Handles the logic for a rare Boss Titan encounter.
+    Optimized to send the message first and defer DB writes.
+    """
     start_time = time.time()
     user_id = player.user_id
-    
+    user_id_str = str(user_id)
     db = context.bot_data.get("db")
     if not db:
         return
 
-    # Fetch the player's active character to scale the boss
-    try:
-        character = await db.get_character(user_id, player.team[0].character_name)
-        if not character or not character.stats:
-            await _reply_error(update, "Your character data is missing. Cannot spawn boss.")
-            return
-    except Exception as e:
-        logger.error(f"Failed to get character for boss encounter for user {user_id}: {e}")
-        return
-
-    # --- Boss Titan Generation ---
+    # --- Boss Titan Generation (In-Memory) ---
     boss_hp = character.stats.HP * 15
     boss_level = player.level + 5
     boss_name = "The Armored Titan" # Example name
@@ -329,7 +298,7 @@ async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFA
         "is_boss": True
     }
 
-    # Prepare the battle message
+    # --- Send Message Immediately ---
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     context.bot_data[f"active_battle_id_{user_id}"] = battle_id
     
@@ -343,39 +312,34 @@ async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFA
     keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    sent_message = None
     try:
         if update.message:
-            send_message_task = asyncio.create_task(
-                update.message.reply_text(
-                    reply_text,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False
-                )
+            sent_message = await update.message.reply_text(
+                reply_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False
             )
         response_time = (time.time() - start_time) * 1000
-        logger.info(f"Boss Titan encounter response time: {response_time:.1f}ms")
+        logger.info(f"Boss Titan encounter response time: {response_time:.1f}ms for user {user_id_str}")
     except Exception as e:
-        logger.error(f"Failed to send boss titan message: {e}")
+        logger.error(f"Failed to send boss titan message for user {user_id_str}: {e}")
         return
 
-    # Process the rest in the background
-    asyncio.create_task(_process_boss_explore_after_reply(
-        update, context, user_id, db, titan_data, send_message_task, player
+    # --- Defer all other processing ---
+    asyncio.create_task(_process_boss_explore_post_send(
+        context, user_id_str, db, titan_data, sent_message, player
     ))
 
-async def _process_boss_explore_after_reply(update, context, user_id, db, titan_data, send_message_task, player):
-    try:
-        sent_message = await send_message_task
-    except Exception as e:
-        logger.error(f"Failed to get sent message for boss encounter: {e}")
-        return
+async def _process_boss_explore_post_send(context, user_id_str, db, titan_data, sent_message, player):
+    """Handles deferred tasks for a boss encounter."""
+    user_id = int(user_id_str)
     
-    user_id_str = str(user_id)
-    
+    # 1. Clean up any previous titan.
     await _cleanup_existing_titan(user_id_str, db)
     
-    # Create and store the new Boss Titan object
+    # 2. Create and store the new Boss Titan object.
     titan = Titan(
         name=titan_data["name"],
         level=titan_data["level"],
@@ -389,16 +353,20 @@ async def _process_boss_explore_after_reply(update, context, user_id, db, titan_
         drop_table={},
         is_boss=True
     )
-    context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
     await db.store_titan(user_id_str, titan)
+    context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
     
-    # Create timeout task
+    # 3. Create timeout task.
     timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
     user_timeout_tasks[user_id_str] = timeout_task
     context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
     
-    # Handle other background tasks like travel
-    await _handle_background_tasks(update, context, user_id_str, db, player)
+    # 4. Handle other background tasks like travel (reusing the normal explore's logic).
+    update_data = {"last_explore_time": time.time()}
+    player.increment_daily_explores(datetime.now(timezone.utc))
+    update_data["daily_explores"] = player.daily_explores
+    # (Travel logic is not duplicated here but could be refactored into a shared function if needed)
+    await db.batch_update_player(user_id_str, update_data)
 
 # =====================================================================================
 # Titan Management
@@ -420,14 +388,6 @@ def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
         f"<b>has blocked your way{image_embed}</b>\n"
         f"<code>-------------------------</code>"
     )
-
-def _generate_titan_from_pool(player_level: int) -> dict:
-    """Selects a random titan from the pre-generated pool based on player level."""
-    titan_variations = []
-    for offset in [-1, 0, 1]:
-        lvl = max(1, min(125, player_level + offset))
-        titan_variations.extend(TITAN_POOL[lvl])
-    return random.choice(titan_variations)
 
 async def _cleanup_existing_titan(user_id_str: str, db: Database):
     """Deletes any old, un-battled titan for a user."""

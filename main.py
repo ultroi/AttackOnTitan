@@ -64,6 +64,7 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
+from utils.broadcast import broadcast_command, confirm_broadcast_callback
 
 # Spin System
 from game.spin_system import spin_command, spin_callback_handler
@@ -699,6 +700,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("checkgroup", check_group_record))
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
+    app_instance.add_handler(CommandHandler("broadcast", broadcast_command))
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))
@@ -761,6 +763,7 @@ def register_handlers(app_instance):
 
     # Shop and purchases
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
+    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern="^confirm_broadcast$"))
 
     # Group membership handler
     app_instance.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
