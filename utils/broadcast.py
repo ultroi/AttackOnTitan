@@ -25,7 +25,7 @@ LAST_BROADCAST_TIME_KEY = "last_broadcast_time"
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Initiates a broadcast. Only available to bot owners.
-    Usage: /broadcast <message>
+    Usage: /broadcast <message> or reply to a message with /broadcast
     """
     if not update.effective_user or not update.message:
         return
@@ -40,14 +40,23 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     # --- Message Content Check ---
-    message_to_broadcast = update.message.text.partition(' ')[2]
+    if update.message.reply_to_message:
+        # Use the replied-to message as the broadcast content
+        message_to_broadcast = update.message.reply_to_message.text or update.message.reply_to_message.caption
+    else:
+        # Use text after the command
+        message_to_broadcast = update.message.text.partition(' ')[2]
+        
     if not message_to_broadcast:
         await update.message.reply_text(
-            "Please provide a message to broadcast.\n\n"
-            "<b>Usage:</b> /broadcast <i>Your message here</i>",
+            "Please provide a message to broadcast or reply to a message.\n\n"
+            "<b>Usage:</b> /broadcast <i>Your message here</i> or reply to any message with /broadcast",
             parse_mode=ParseMode.HTML
         )
         return
+
+    # Convert message to bold format
+    message_to_broadcast = f"<b>{message_to_broadcast}</b>"
 
     # --- Confirmation Step ---
     # Store the message temporarily for the callback handler
@@ -58,7 +67,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     await update.message.reply_text(
         "<b>⚠️ Please confirm you want to broadcast the following message to all users:</b>\n\n"
-        f"<i>{message_to_broadcast}</i>",
+        f"{message_to_broadcast}",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
