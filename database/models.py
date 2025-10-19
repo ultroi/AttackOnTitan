@@ -669,6 +669,7 @@ class Titan(BaseModel):
     internal_name: Optional[str] = None
     drop_table: Dict[str, Any] = Field(default_factory=dict)
     xp_reward: int = 0
+    is_boss: bool = False
 
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
@@ -739,23 +740,41 @@ def generate_titan_name(difficulty: str) -> str:
                 return f"{descriptor} {second_descriptor} {titan_type} Titan"
         return f"{descriptor} {titan_type} Titan"
 
-def generate_titan_hp(level: int, difficulty: str) -> int:
-    """Generate HP within specified ranges with level scaling and randomization"""
+def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[CharacterStats] = None) -> int:
+    """
+    Generate Titan HP.
+    If character_stats are provided, HP is based on character's power.
+    Otherwise, it's based on player level for the pre-generated pool.
+    """
+    # Dynamic scaling based on active character's stats
+    if character_stats:
+        # Titan HP is a mix of character's survivability and damage output
+        base_hp = character_stats.HP * 0.6 + character_stats.ATK * 4
+        
+        difficulty_multipliers = {
+            "Easy": 0.8,  # Easy titans should be quickly defeatable
+            "Normal": 1.1,
+            "Hard": 1.5
+        }
+        
+        scaled_hp = base_hp * difficulty_multipliers.get(difficulty, 1.0)
+        
+        # Add slight variation
+        variation = random.uniform(0.9, 1.1)
+        final_hp = scaled_hp * variation
+        
+        return max(int(final_hp), 75) # Ensure a minimum HP
+
+    # Fallback for pre-generation pool (less aggressive scaling)
     min_hp, max_hp = HP_RANGES[difficulty]
     
-    # Better level scaling formula - more moderate
-    level_multiplier = 1 + (level * 0.12)  # Reduced from 15% to 12% per level
+    # Reduced level scaling
+    level_multiplier = 1 + (level * 0.08)
     
-    # Add randomization for variety (±15% variation)
     variation = random.uniform(0.85, 1.15)
-    
-    # Randomize within base range
     base_hp = random.randint(min_hp, max_hp)
-    
-    # Apply level scaling and variation
     final_hp = base_hp * level_multiplier * variation
     
-    # Ensure minimum HP based on difficulty
     min_final_hp = {
         "Easy": 50,
         "Normal": 100,

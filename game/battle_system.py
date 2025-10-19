@@ -102,6 +102,7 @@ class BattleSystem:
         self.passive_cache: Dict[str, List[Dict]] = {}
         self.last_passive_refresh: float = 0  
         self.participating_characters = set([self.character.name])  
+        self.is_boss_battle: bool = getattr(titan, 'is_boss', False)
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -267,6 +268,10 @@ class BattleSystem:
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
         
+        # --- Boss Titan AI ---
+        if self.is_boss_battle:
+            return self.boss_titan_attack()
+
         # Enhanced damage calculation using character DEF more effectively
         base_damage = max(15, self.titan.level * 8 + 10)
         difficulty_multipliers = {"Easy": 0.7, "Normal": 1.0, "Hard": 1.4}
@@ -350,6 +355,43 @@ class BattleSystem:
         special_messages.extend(messages)
         return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
+    def boss_titan_attack(self) -> Tuple[int, str]:
+        """Special attack logic for Boss Titans."""
+        attack_roll = random.random()
+        
+        # Enraged Assault (below 30% HP)
+        if self.titan_hp / self.titan.max_hp < 0.3 and attack_roll < 0.20:
+            damage = int(self.character.stats.HP * 0.6) # Massive damage
+            self.character_hp = max(0, self.character_hp - damage)
+            return damage, f"🔥 The Armored Titan unleashes an **Enraged Assault**, dealing a devastating {damage} damage!"
+
+        # Devastating Slam
+        if attack_roll < 0.30:
+            damage = int(self.character.stats.HP * 0.4)
+            self.character_hp = max(0, self.character_hp - damage)
+            return damage, f"💥 The Armored Titan uses **Devastating Slam**, crushing you for {damage} damage!"
+
+        # Terrifying Roar
+        elif attack_roll < 0.55: # 0.30 + 0.25
+            self.debuffs["fear"] = 2 # Apply fear for 2 turns
+            return 0, f"😱 The Armored Titan lets out a **Terrifying Roar**! Your attack power is reduced."
+
+        # Ground Shake
+        elif attack_roll < 0.80: # 0.55 + 0.25
+            damage = int(self.character.stats.HP * 0.15)
+            self.character_hp = max(0, self.character_hp - damage)
+            stun_chance = 0.50
+            if random.random() < stun_chance:
+                self.debuffs["stun"] = 1
+                return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage and stuns you for 1 turn!"
+            return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage."
+        
+        # Default basic attack if no special move triggers
+        else:
+            damage = int(self.character.stats.HP * 0.2)
+            self.character_hp = max(0, self.character_hp - damage)
+            return damage, f"⚔️ The Armored Titan performs a swift attack, dealing {damage} damage."
+
     # ---------- Ability Usage ----------
     def use_ability(self, ability_name: str) -> Tuple[int, str, Dict, bool]:
         self.keyboard_cache_invalid = True
@@ -382,6 +424,9 @@ class BattleSystem:
             return damage, f"{ability_name} is on cooldown for {cooldown} turns!", effects, False
             
         gas_cost = ability.gas_cost or 20
+        if self.is_boss_battle:
+            gas_cost = int(gas_cost * 1.5)
+
         if self.gas < gas_cost:
             return damage, f"out of gas refill it by /char {self.character.name}", effects, True
         
@@ -582,6 +627,13 @@ class BattleSystem:
             crystal = random.randint(1, 2)
         elif random.random() < 0.001:  # Ultra-rare 0.1% for bonus
             crystal += random.randint(3, 5)
+
+        # Boss Rewards
+        if self.is_boss_battle:
+            xp *= 5
+            marks *= 3
+            crystal += random.randint(1, 3) # Guaranteed crystal
+            valor += random.randint(5, 10) # Guaranteed valor
             
         return {
             "xp": xp,
@@ -1156,11 +1208,21 @@ async def _update_battle_ui(query, battle, context, full_message):
 
 async def _handle_run_action(battle, user_id, context):
     """Handles the logic for a player attempting to run from battle."""
+    if battle.is_boss_battle:
+        if random.random() < 0.20:  # 20% success chance against boss
+            cleanup_battle(user_id, "escaped", battle)
+            return True, f"🏃💨 Against all odds, {battle.character.name} successfully escaped the Boss Titan!"
+        else:
+            # Failed escape: Boss gets a free attack
+            _, titan_message = battle.titan_attack()
+            message = f"❌ {battle.character.name} failed to escape! The Boss Titan attacks!\n\n{titan_message}"
+            return False, message
+            
     if random.random() < 0.7:  # 70% success
         cleanup_battle(user_id, "escaped", battle)
         return True, f"🏃💨 {battle.character.name} successfully escaped!"
     else:
-        return False, f"❌ {battle.character.name} failed to escape! The titan blocks your path!"
+        return False, f"❌ {battle.character.name} failed to escape!"
 
 async def _handle_switch_action(query, battle, context):
     """Displays the character switching UI."""
@@ -1257,6 +1319,9 @@ async def _handle_do_switch(action, battle, user_id, context):
 async def _handle_basic_attack(battle, context):
     """Handles the logic for a basic attack."""
     gas_cost = 20
+    if battle.is_boss_battle:
+        gas_cost = int(gas_cost * 1.5)
+
     if battle.player and hasattr(battle.player, 'double_gas_injector_uses') and battle.player.double_gas_injector_uses > 0:
         gas_cost = 10
 
@@ -1279,6 +1344,11 @@ async def _handle_basic_attack(battle, context):
     else:
         total_damage = max(10, battle.character.stats.ATK + random.randint(15, 25))
         message = f"⚔️ {battle.character.name} attacks with a basic strike, dealing {total_damage} damage!"
+
+    # Apply fear debuff if active
+    if battle.debuffs.get("fear", 0) > 0:
+        total_damage = int(total_damage * 0.7) # 30% damage reduction
+        message += "\n(Attack power reduced by fear!)"
 
     battle.titan_hp = max(0, battle.titan_hp - total_damage)
     return False, message

@@ -51,6 +51,11 @@ TITAN_TYPE_IMAGE_URLS = {
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
 }
 
+BOSS_TITAN_IMAGE_URLS = [
+    "https://ibb.co/vCkN4cxY",
+    
+]
+
 # =====================================================================================
 # Helper Functions (defined before use in module-level code)
 # =====================================================================================
@@ -126,9 +131,25 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player or not hasattr(player, 'team') or not player.team:
         await _reply_error(update, "You need to start the bot with /start first!")
         return
+
+    # Fetch active character for dynamic scaling
+    try:
+        character = await db.get_character(user_id_str, player.team[0].character_name)
+        if not character or not character.stats:
+            await _reply_error(update, "Your active character data is missing.")
+            return
+    except Exception as e:
+        logger.error(f"Failed to get character for explore for user {user_id_str}: {e}")
+        return
     
     # --- Event Spawning ---
     # Randomly trigger a dealer, captcha, or titan encounter.
+    
+    # Boss Titan Encounter (2% chance)
+    if random.random() < 0.02:
+        asyncio.create_task(handle_boss_titan_encounter(update, context, player))
+        return
+
     if random.random() < 0.02:
         asyncio.create_task(handle_dealer_encounter(update, context))
         return
@@ -138,11 +159,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # --- Titan Encounter ---
-    # Instantly generate titan data from the pre-generated pool.
-    player_level = player.level if player else 1
-    if not player_level and context.user_data:
-        player_level = context.user_data.get("player_level", 1)
-    titan_data = _generate_titan_from_pool(player_level)
+    # Dynamically generate titan based on character stats
+    titan_data = _generate_dynamic_titan(player, character)
     
     # Prepare the battle message and send it immediately.
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
@@ -273,8 +291,127 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     asyncio.create_task(db.batch_update_player(user_id_str, update_data))
 
 # =====================================================================================
+# Boss Titan Encounter
+# =====================================================================================
+
+async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFAULT_TYPE, player: Player):
+    """Handles the logic for a rare Boss Titan encounter."""
+    start_time = time.time()
+    user_id = player.user_id
+    
+    db = context.bot_data.get("db")
+    if not db:
+        return
+
+    # Fetch the player's active character to scale the boss
+    try:
+        character = await db.get_character(user_id, player.team[0].character_name)
+        if not character or not character.stats:
+            await _reply_error(update, "Your character data is missing. Cannot spawn boss.")
+            return
+    except Exception as e:
+        logger.error(f"Failed to get character for boss encounter for user {user_id}: {e}")
+        return
+
+    # --- Boss Titan Generation ---
+    boss_hp = character.stats.HP * 15
+    boss_level = player.level + 5
+    boss_name = "The Armored Titan" # Example name
+    boss_xp = generate_titan_xp(boss_level, "Hard") * 5
+
+    titan_data = {
+        "name": boss_name,
+        "level": boss_level,
+        "max_hp": boss_hp,
+        "xp_reward": boss_xp,
+        "difficulty": "Boss",
+        "image_url": random.choice(BOSS_TITAN_IMAGE_URLS),
+        "is_boss": True
+    }
+
+    # Prepare the battle message
+    battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
+    context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+    
+    image_embed = f'<a href="{titan_data["image_url"]}">!</a>'
+    reply_text = format_boss_titan_message(
+        name=titan_data["name"],
+        level=titan_data["level"],
+        image_embed=image_embed
+    )
+    
+    keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    try:
+        if update.message:
+            send_message_task = asyncio.create_task(
+                update.message.reply_text(
+                    reply_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
+            )
+        response_time = (time.time() - start_time) * 1000
+        logger.info(f"Boss Titan encounter response time: {response_time:.1f}ms")
+    except Exception as e:
+        logger.error(f"Failed to send boss titan message: {e}")
+        return
+
+    # Process the rest in the background
+    asyncio.create_task(_process_boss_explore_after_reply(
+        update, context, user_id, db, titan_data, send_message_task, player
+    ))
+
+async def _process_boss_explore_after_reply(update, context, user_id, db, titan_data, send_message_task, player):
+    try:
+        sent_message = await send_message_task
+    except Exception as e:
+        logger.error(f"Failed to get sent message for boss encounter: {e}")
+        return
+    
+    user_id_str = str(user_id)
+    
+    await _cleanup_existing_titan(user_id_str, db)
+    
+    # Create and store the new Boss Titan object
+    titan = Titan(
+        name=titan_data["name"],
+        level=titan_data["level"],
+        max_hp=titan_data["max_hp"],
+        xp_reward=titan_data["xp_reward"],
+        difficulty=titan_data["difficulty"],
+        created_at=datetime.now(timezone.utc),
+        spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
+        min_level_requirement=max(1, player.level - 2),
+        abilities=[],
+        drop_table={},
+        is_boss=True
+    )
+    context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
+    await db.store_titan(user_id_str, titan)
+    
+    # Create timeout task
+    timeout_task = asyncio.create_task(titan_encounter_timeout(user_id, context, sent_message))
+    user_timeout_tasks[user_id_str] = timeout_task
+    context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
+    
+    # Handle other background tasks like travel
+    await _handle_background_tasks(update, context, user_id_str, db, player)
+
+# =====================================================================================
 # Titan Management
 # =====================================================================================
+
+def format_boss_titan_message(name: str, level: int, image_embed: str = "") -> str:
+    return (
+        f"<code>-------------------------</code>\n"
+        f"🚨 <b>A BOSS APPEARED!</b> 🚨\n"
+        f"🔥 <b>{name} Lvl ({level})</b>\n"
+        f"<b>stands in your path, radiating immense power!{image_embed}</b>\n"
+        f"<code>-------------------------</code>"
+    )
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
