@@ -386,18 +386,6 @@ class TeamMember(BaseModel):
             "position": self.position
         }
 
-class DailyExplores(BaseModel):
-    """Model to track daily explores with dates"""
-    date: str  # ISO format date string
-    count: int
-    
-    def dict(self, *args, **kwargs):
-        """Explicitly define dict method to ensure proper serialization for MongoDB"""
-        return {
-            "date": self.date,
-            "count": self.count
-        }
-
 class Player(BaseModel):
     # Basic player information
     user_id: str

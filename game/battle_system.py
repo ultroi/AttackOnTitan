@@ -619,7 +619,7 @@ class BattleSystem:
         
         # FIXED: Increased valor drops from 0.01% to 5%
         valor = 0
-        if random.random() < 0.05:  # 5% chance instead of 0.01%
+        if random.random() < 0.02: 
             valor = random.randint(1, 3)
         
         # FIXED: Added crystal drops (0.5% base chance + ultra-rare)
@@ -631,10 +631,10 @@ class BattleSystem:
 
         # Boss Rewards - BALANCED: Better rewards for harder fight
         if self.is_boss_battle:
-            xp *= 7  # Increased from 5x to 7x
+            xp *= 7  
             marks *= 5  # Increased from 3x to 5x
-            crystal += random.randint(2, 5) # Guaranteed 2-5 crystals (increased from 1-3)
-            valor += random.randint(8, 15) # Guaranteed 8-15 valor (increased from 5-10)
+            crystal += random.randint(2, 5) 
+            valor += random.randint(8, 15) 
             
         return {
             "xp": xp,

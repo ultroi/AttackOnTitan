@@ -43,8 +43,18 @@ def sanitize_player_data(player_data: Dict[str, Any]) -> Dict[str, Any]:
             # Validate and sanitize each daily_explores entry
             sanitized_explores = {}
             for date_str, count in player_data['daily_explores'].items():
+                # Handle case where count might be stored as an object with 'date' and 'count' fields
+                if isinstance(count, dict):
+                    if 'count' in count:
+                        count = count['count']
+                    else:
+                        logger.warning(f"Invalid daily_explores entry format for user {player_data.get('user_id', 'unknown')}: {count}")
+                        continue
+                
                 if isinstance(date_str, str) and isinstance(count, int) and count >= 0:
                     sanitized_explores[date_str] = count
+                else:
+                    logger.warning(f"Invalid daily_explores entry for user {player_data.get('user_id', 'unknown')}: date_str={date_str}, count={count}")
             player_data['daily_explores'] = sanitized_explores
     return player_data
 
