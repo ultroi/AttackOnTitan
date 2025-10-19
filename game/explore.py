@@ -427,7 +427,7 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
     """Clean up old titan"""
     try:
         result = await db.titans.delete_one({"user_id": user_id_str})
-        deleted_count = getattr(result, 'deleted_count', result.get('deleted_count', 0)) if result else 0
+        deleted_count = getattr(result, 'deleted_count', 0) if result else 0
         if deleted_count > 0:
             db.invalidate_titan_cache(user_id_str)
             logger.info(f"Cleaned up titan for user {user_id_str}")

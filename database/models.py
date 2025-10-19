@@ -748,15 +748,16 @@ def generate_titan_name(difficulty: str) -> str:
         return f"{descriptor} {titan_type} Titan"
 
 def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[CharacterStats] = None) -> int:
-    """
-    Generate Titan HP.
-    If character_stats are provided, HP is based on character's power.
-    Otherwise, it's based on player level for the pre-generated pool.
-    """
     # Dynamic scaling based on active character's stats
     if character_stats:
+        # Fix: Handle both CharacterStats object and dict
+        if isinstance(character_stats, dict):
+            hp_value = character_stats.get('HP', 650)
+        else:
+            hp_value = character_stats.HP
+            
         # Titan HP is approximately 20% of character's HP with randomization
-        base_hp = character_stats.HP * 0.2
+        base_hp = hp_value * 0.2
         
         difficulty_multipliers = {
             "Easy": 0.8,  # Easy titans are slightly weaker
