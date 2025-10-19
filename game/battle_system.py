@@ -782,16 +782,24 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Quick validation - exit early if invalid
     if callback_data != current_battle_id:
-        asyncio.create_task(query.answer("Battle expired. Use /explore", show_alert=True))
+        # Check if it was already used or expired
+        if current_battle_id and (current_battle_id.startswith("used_") or current_battle_id.startswith("expired_")):
+            asyncio.create_task(query.answer("⚠️ This titan encounter has already been used or expired. Use /explore again!", show_alert=True))
+            logger.warning(f"Battle button clicked but ID already used/expired for user {user_id}")
+        else:
+            asyncio.create_task(query.answer("⚠️ Battle expired or invalid. Use /explore again!", show_alert=True))
+            logger.warning(f"Battle button clicked but ID mismatch for user {user_id}: {callback_data} != {current_battle_id}")
         return
     
     # Check if already in battle (fast check without lock first)
     if user_id in active_battles:
-        asyncio.create_task(query.answer("Already in battle!", show_alert=True))
+        asyncio.create_task(query.answer("⚠️ You are already in a battle!", show_alert=True))
+        logger.warning(f"User {user_id} already in active battle")
         return
     
     # Immediately invalidate battle ID to prevent double-click
     context.bot_data[f"active_battle_id_{user_id}"] = f"used_{current_battle_id}_{time.time()}"
+    logger.info(f"Battle ID marked as used for user {user_id}")
     
     # OPTIMIZED: Cancel timeout in background (non-blocking)
     titan_timeout_key = f"titan_timeout_{user_id}"
@@ -833,8 +841,14 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Use cached titan data if available or show error
         cached_titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
         if not cached_titan_data:
-            # Minimized logging for better performance
-            await query.edit_message_text("⚠️ This titan encounter has expired. Please use /explore to find a new titan.")
+            # Titan expired or deleted - restore battle ID for retry
+            context.bot_data[f"active_battle_id_{user_id}"] = current_battle_id
+            logger.warning(f"Titan not found for user {user_id} - titan may have expired")
+            await query.edit_message_text(
+                "⚠️ <b>This titan encounter has expired.</b>\n\n"
+                "Please use /explore to find a new titan.",
+                parse_mode=ParseMode.HTML
+            )
             return
         titan_data = cached_titan_data
     else:

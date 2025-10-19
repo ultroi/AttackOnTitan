@@ -360,7 +360,13 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan_
             # Store titan data in memory
             context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
             
-            # 6. Start timeout (non-blocking)
+            # 6. Cancel any existing timeout task before starting a new one
+            old_timeout_task = user_timeout_tasks.get(user_id_str)
+            if old_timeout_task and not old_timeout_task.done():
+                old_timeout_task.cancel()
+                logger.info(f"Cancelled old timeout task for user {user_id_str}")
+            
+            # Start new timeout task (non-blocking)
             timeout_task = asyncio.create_task(
                 titan_encounter_timeout(user_id, context, sent_message)
             )
@@ -526,6 +532,12 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             # Update player data
             await db.batch_update_player(user_id_str, update_data)
             
+            # Cancel any existing timeout task before starting a new one
+            old_timeout_task = user_timeout_tasks.get(user_id_str)
+            if old_timeout_task and not old_timeout_task.done():
+                old_timeout_task.cancel()
+                logger.info(f"Cancelled old boss timeout task for user {user_id_str}")
+            
             # Start timeout for boss
             timeout_task = asyncio.create_task(
                 titan_encounter_timeout(user_id, context, sent_message)
@@ -548,19 +560,23 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     try:
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         
+        # Check if user already in battle (battle started before timeout)
         if FastPreCheck.is_in_battle(user_id_str):
+            logger.info(f"Timeout cancelled - user {user_id_str} is in battle")
             return
         
         db = context.bot_data.get("db")
         if not db:
             return
         
-        # Cleanup
-        await _cleanup_existing_titan(user_id_str, db)
-        
+        # IMPORTANT: Mark battle ID as expired BEFORE cleanup
         battle_id_key = f"active_battle_id_{user_id_str}"
         if battle_id_key in context.bot_data:
-            del context.bot_data[battle_id_key]
+            old_battle_id = context.bot_data[battle_id_key]
+            context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
+        
+        # Cleanup titan
+        await _cleanup_existing_titan(user_id_str, db)
         
         # Update message
         if sent_message:
@@ -585,6 +601,7 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         )
         
     except asyncio.CancelledError:
+        logger.info(f"Timeout task cancelled for user {user_id_str}")
         pass
     except Exception as e:
         logger.error(f"Timeout error: {e}")
