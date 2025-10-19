@@ -474,7 +474,7 @@ class Database:
 
     def invalidate_battle_caches(self, user_id: str):
         if not CACHE_ENABLED:
-            return
+            return False
 
         # Clear all character caches for this user
         keys_to_remove = []
@@ -495,7 +495,7 @@ class Database:
         if len(keys_to_remove) > 0:
             logger.debug(f"Cleared {len(keys_to_remove) + 2} battle-related cache entries for user {user_id}")
 
-        return cleared_count > 0
+        return len(keys_to_remove) > 0
         
     def invalidate_titan_cache(self, user_id: str):
         if user_id in self._titan_cache:
