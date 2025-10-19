@@ -271,10 +271,6 @@ async def _process_explore_post_send(context, user_id_str, db, titan_data, sent_
 # =====================================================================================
 
 async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFAULT_TYPE, player: Player, character):
-    """
-    Handles the logic for a rare Boss Titan encounter.
-    Optimized to send the message first and defer DB writes.
-    """
     start_time = time.time()
     user_id = player.user_id
     user_id_str = str(user_id)
@@ -283,8 +279,9 @@ async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFA
         return
 
     # --- Boss Titan Generation (In-Memory) ---
-    boss_hp = character.stats.HP * 15
-    boss_level = player.level + 5
+    # BALANCED: HP multiplier reduced from 15 to 8 for fair difficulty
+    boss_hp = character.stats.HP * 8
+    boss_level = player.level + 3  # Reduced from +5 to +3
     boss_name = "The Armored Titan" # Example name
     boss_xp = generate_titan_xp(boss_level, "Hard") * 5
 

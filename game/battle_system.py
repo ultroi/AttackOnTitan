@@ -356,39 +356,39 @@ class BattleSystem:
         return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
     def boss_titan_attack(self) -> Tuple[int, str]:
-        """Special attack logic for Boss Titans."""
+        """Special attack logic for Boss Titans - BALANCED VERSION."""
         attack_roll = random.random()
         
-        # Enraged Assault (below 30% HP)
-        if self.titan_hp / self.titan.max_hp < 0.3 and attack_roll < 0.20:
-            damage = int(self.character.stats.HP * 0.6) # Massive damage
+        # Enraged Assault (below 30% HP) - BALANCED: Reduced from 60% to 30%
+        if self.titan_hp / self.titan.max_hp < 0.3 and attack_roll < 0.15:
+            damage = int(self.character.stats.HP * 0.30) # Reduced from 0.6 to 0.3
             self.character_hp = max(0, self.character_hp - damage)
-            return damage, f"🔥 The Armored Titan unleashes an **Enraged Assault**, dealing a devastating {damage} damage!"
+            return damage, f"🔥 The Armored Titan unleashes an **Enraged Assault**, dealing {damage} damage!"
 
-        # Devastating Slam
+        # Devastating Slam - BALANCED: Reduced from 40% to 22%
         if attack_roll < 0.30:
-            damage = int(self.character.stats.HP * 0.4)
+            damage = int(self.character.stats.HP * 0.22) # Reduced from 0.4 to 0.22
             self.character_hp = max(0, self.character_hp - damage)
-            return damage, f"💥 The Armored Titan uses **Devastating Slam**, crushing you for {damage} damage!"
+            return damage, f"💥 The Armored Titan uses **Devastating Slam**, dealing {damage} damage!"
 
-        # Terrifying Roar
-        elif attack_roll < 0.55: # 0.30 + 0.25
+        # Terrifying Roar - Unchanged (no damage, just debuff)
+        elif attack_roll < 0.50: # Reduced chance from 0.55 to 0.50
             self.debuffs["fear"] = 2 # Apply fear for 2 turns
-            return 0, f"😱 The Armored Titan lets out a **Terrifying Roar**! Your attack power is reduced."
+            return 0, f"😱 The Armored Titan lets out a **Terrifying Roar**! Your attack power is reduced for 2 turns."
 
-        # Ground Shake
-        elif attack_roll < 0.80: # 0.55 + 0.25
-            damage = int(self.character.stats.HP * 0.15)
+        # Ground Shake - BALANCED: Reduced from 15% to 12%
+        elif attack_roll < 0.75: # Reduced chance from 0.80 to 0.75
+            damage = int(self.character.stats.HP * 0.12) # Reduced from 0.15 to 0.12
             self.character_hp = max(0, self.character_hp - damage)
-            stun_chance = 0.50
+            stun_chance = 0.35  # Reduced from 0.50 to 0.35
             if random.random() < stun_chance:
                 self.debuffs["stun"] = 1
                 return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage and stuns you for 1 turn!"
             return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage."
         
-        # Default basic attack if no special move triggers
+        # Default basic attack - BALANCED: Reduced from 20% to 15%
         else:
-            damage = int(self.character.stats.HP * 0.2)
+            damage = int(self.character.stats.HP * 0.15) # Reduced from 0.20 to 0.15
             self.character_hp = max(0, self.character_hp - damage)
             return damage, f"⚔️ The Armored Titan performs a swift attack, dealing {damage} damage."
 
@@ -628,12 +628,12 @@ class BattleSystem:
         elif random.random() < 0.001:  # Ultra-rare 0.1% for bonus
             crystal += random.randint(3, 5)
 
-        # Boss Rewards
+        # Boss Rewards - BALANCED: Better rewards for harder fight
         if self.is_boss_battle:
-            xp *= 5
-            marks *= 3
-            crystal += random.randint(1, 3) # Guaranteed crystal
-            valor += random.randint(5, 10) # Guaranteed valor
+            xp *= 7  # Increased from 5x to 7x
+            marks *= 5  # Increased from 3x to 5x
+            crystal += random.randint(2, 5) # Guaranteed 2-5 crystals (increased from 1-3)
+            valor += random.randint(8, 15) # Guaranteed 8-15 valor (increased from 5-10)
             
         return {
             "xp": xp,
