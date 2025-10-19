@@ -555,25 +555,38 @@ class BattleSystem:
         }
 
     def calculate_rewards(self, titan: Titan, character: Character, player: Optional[Player], explore_count: int) -> Dict:
-        """Calculate rewards for defeating the titan (XP, marks, valor) - simplified, no difficulty system."""
+        """Calculate rewards for defeating the titan (XP, marks, valor, crystal) - FIXED ECONOMY."""
         xp = max(1, random.randint(100, 180))
         
         if player and hasattr(player, 'frenzy_elixir_uses') and player.frenzy_elixir_uses > 0:
             xp *= 3
         
-        marks = max(1, random.randint(70, 100) + (titan.level * 2))
+        # FIXED: Reduced marks by 40% + better scaling for high levels
+        base_marks = random.randint(40, 60)
+        level_bonus = titan.level * 1
+        if titan.level > 50:  # Diminishing returns after level 50
+            level_bonus = (50 * 1) + ((titan.level - 50) * 0.3)
+        marks = max(1, base_marks + int(level_bonus))
         
         if player and hasattr(player, 'mark_surge_token_uses') and player.mark_surge_token_uses > 0:
             marks *= 2
         
+        # FIXED: Increased valor drops from 0.01% to 5%
         valor = 0
-        if random.random() < 0.0001: 
-            valor = 1
+        if random.random() < 0.05:  # 5% chance instead of 0.01%
+            valor = random.randint(1, 3)
+        
+        # FIXED: Added crystal drops (0.5% base chance + ultra-rare)
+        crystal = 0
+        if random.random() < 0.005:  # 0.5% chance
+            crystal = random.randint(1, 2)
+        elif random.random() < 0.001:  # Ultra-rare 0.1% for bonus
+            crystal += random.randint(3, 5)
             
         return {
             "xp": xp,
             "marks": marks,
-            "crystal": 0,  
+            "crystal": crystal,  # Now actually drops!
             "valor": valor,
         }
 

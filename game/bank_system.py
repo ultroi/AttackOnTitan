@@ -13,11 +13,11 @@ LATE_DEPOSIT_PENALTY = 5.0
 
 # Tax System Constants
 TAX_THRESHOLDS = {
-    'marks': 80000,
-    'valor': 1500,
-    'crystal': 500
+    'marks': 50000,      # Reduced from 80k (progressive)
+    'valor': 500,        # Reduced from 1.5k (stricter)
+    'crystal': 50        # Reduced from 500 (aggressive)
 }
-TAX_RATE = 0.08  # 8% tax rate
+TAX_RATE = 0.15  # Increased from 0.08 (8% → 15% for better inflation control)
 
 # Used for richness calculation to avoid magic numbers
 CURRENCY_VALUES = {
