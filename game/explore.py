@@ -76,7 +76,7 @@ def _generate_dynamic_titan(player: Player, character) -> dict:
     difficulty = get_titan_difficulty_by_level(player.level)
     
     # Generate HP based on character stats, passing difficulty for multipliers
-    hp = generate_titan_hp(character_stats=character.stats, difficulty=difficulty)
+    hp = generate_titan_hp(level=player.level, difficulty=difficulty, character_stats=character.stats)
     
     # Generate other stats based on player level and difficulty
     name = generate_titan_name(difficulty)
