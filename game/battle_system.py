@@ -624,9 +624,9 @@ class BattleSystem:
         
         # FIXED: Added crystal drops (0.5% base chance + ultra-rare)
         crystal = 0
-        if random.random() < 0.005:  # 0.5% chance
+        if random.random() < 0.002:  
             crystal = random.randint(1, 2)
-        elif random.random() < 0.001:  # Ultra-rare 0.1% for bonus
+        elif random.random() < 0.001:  
             crystal += random.randint(3, 5)
 
         # Boss Rewards - BALANCED: Better rewards for harder fight
