@@ -738,12 +738,12 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     if battle.gas >= attack_gas_cost:
         attack_text = "🗡️ Attack"
         if weapon:
-            attack_text = f"🗡️ Attack ({weapon.get('name', 'Weapon')})"
+            attack_text = f"🗡️ Attack ({weapon.name if weapon else 'Weapon'})"
         attack_row.append(InlineKeyboardButton(attack_text, callback_data="action_basic_attack"))
     else:
         attack_text = "🗡️ Attack (No Gas)"
         if weapon:
-            attack_text = f"🗡️ Attack ({weapon.get('name', 'Weapon')}) (No Gas)"
+            attack_text = f"🗡️ Attack ({weapon.name if weapon else 'Weapon'}) (No Gas)"
         attack_row.append(InlineKeyboardButton(attack_text, callback_data="lowgas_attack"))
     
     if attack_row:

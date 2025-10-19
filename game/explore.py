@@ -293,7 +293,7 @@ async def handle_boss_titan_encounter(update: Update, context: ContextTypes.DEFA
         "level": boss_level,
         "max_hp": boss_hp,
         "xp_reward": boss_xp,
-        "difficulty": "Boss",
+        "difficulty": "Hard",
         "image_url": random.choice(BOSS_TITAN_IMAGE_URLS),
         "is_boss": True
     }
