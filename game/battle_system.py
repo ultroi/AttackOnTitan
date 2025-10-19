@@ -1362,34 +1362,25 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
 
     # Level up handling
     if victory:
-        level_up_messages = []
+        # Create level info tuples for the _send_level_up_messages function
+        char_level_info = list(zip(participating_characters, participating_level_infos))
         
-        # Check for character level ups
-        for char_obj, level_info in participating_level_infos:
+        # Send detailed level up messages using the dedicated function
+        await _send_level_up_messages(char_level_info, player_level_info, None, player_obj, chat_id, send_func)
+        
+        # Still need to save the character and player objects after level up
+        for char_obj, level_info in zip(participating_characters, participating_level_infos):
             try:
                 if level_info and level_info.get('leveled_up'):
-                    level_up_messages.append(f"🎉 {char_obj.name} leveled up to {char_obj.level}!")
-                    # Character object is already updated by add_xp, just need to save
                     await db.update_character(char_obj)
             except Exception as e:
-                logger.error(f"Error processing level up for character {char_obj.name if char_obj else 'N/A'}: {e}")
+                logger.error(f"Error saving character {char_obj.name if char_obj else 'N/A'}: {e}")
         
-        # Check for player level up
         try:
             if player_level_info and player_level_info.get('leveled_up'):
-                level_up_messages.append(f"🎊 You leveled up to {player_obj.level}!")
-                # Player object is already updated by add_xp, just need to save
                 await db.save_player(player_obj)
         except Exception as e:
-            logger.error(f"Error processing player level up for user {user_id}: {e}")
-        
-        # Send level up messages
-        if level_up_messages:
-            await send_func(
-                chat_id=chat_id,
-                text="\n".join(level_up_messages),
-                parse_mode=ParseMode.HTML
-            )
+            logger.error(f"Error saving player {user_id}: {e}")
 
 async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
     """Process updates specifically for defeat scenarios."""
@@ -1418,15 +1409,15 @@ async def _send_level_up_messages(char_level_info, player_level_info, character,
             if level_info:
                 messages.append(f"🎉 {char.name} leveled up to {char.level}!")
                 # Add stat increase details
-                if hasattr(level_info, 'stat_increases'):
-                    for stat, increase in level_info.stat_increases.items():
+                if isinstance(level_info, dict) and 'stat_increases' in level_info:
+                    for stat, increase in level_info['stat_increases'].items():
                         messages.append(f"   • {stat}: +{increase}")
     
     if player_level_info:
         messages.append(f"🎊 You leveled up to {player_obj.level}!")
         # Add player stat increases if available
-        if hasattr(player_level_info, 'stat_increases'):
-            for stat, increase in player_level_info.stat_increases.items():
+        if isinstance(player_level_info, dict) and 'stat_increases' in player_level_info:
+            for stat, increase in player_level_info['stat_increases'].items():
                 messages.append(f"   • {stat}: +{increase}")
 
     # Send all messages at once
@@ -1459,8 +1450,6 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                 try:
                     await query.edit_message_text(
                         "🕰️ <b>Battle Ended - Inactivity Timeout!</b>\n\n"
-                        "You didn't take any action for 3 minutes.\n"
-                        "Your character escaped from the battle.\n\n"
                         "Use /explore to find another titan.",
                         parse_mode=ParseMode.HTML
                     )

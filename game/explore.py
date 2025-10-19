@@ -242,10 +242,10 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
     username = update.effective_user.username or update.effective_user.first_name
     asyncio.create_task(track_explore_stats(user_id_str, username, battle_completed=False))
     
+    # Combine multiple updates into a single batch_update_player call
     update_data = {"last_explore_time": time.time()}
-    asyncio.create_task(db.batch_update_player(user_id_str, update_data))
     
-    # Update daily_explores separately if it exists - properly serialize DailyExplores objects
+    # Update daily_explores in the same update if it exists - properly serialize DailyExplores objects
     if hasattr(player, "daily_explores") and isinstance(player.daily_explores, list):
         daily_explores_dicts = []
         for daily in player.daily_explores:
@@ -253,8 +253,10 @@ async def _handle_background_tasks(update, context, user_id_str, db, player):
                 daily_explores_dicts.append(daily.dict())
             elif isinstance(daily, dict):
                 daily_explores_dicts.append(daily)
-        asyncio.create_task(db.batch_update_player(user_id_str, {"daily_explores": daily_explores_dicts}))
-    await _handle_travel_progress(update, context, user_id_str, db, player)
+        update_data["daily_explores"] = daily_explores_dicts
+    
+    asyncio.create_task(db.batch_update_player(user_id_str, update_data))
+    asyncio.create_task(_handle_travel_progress(update, context, user_id_str, db, player))
 
 # =====================================================================================
 # Titan Management
