@@ -1238,7 +1238,11 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             try:
                 char_to_update = await db.get_character(user_id, char_name)
                 if char_to_update:
+                    old_level = char_to_update.level
+                    old_stats = char_to_update.stats.dict() if char_to_update.stats else {}
                     level_info = char_to_update.add_xp(xp_per_character)
+                    level_info['old_level'] = old_level
+                    level_info['old_stats'] = old_stats
                     participating_level_infos.append((char_to_update, level_info))
             except Exception as e:
                 logger.error(f"Error updating XP for participating character {char_name}: {e}")
@@ -1248,7 +1252,11 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = battle.character.stats.HP # Heal after victory
 
+        old_player_level = player_data.level
+        old_player_stats = getattr(player_data, 'stats', {}) or {}
         player_level_info = player_data.add_xp(player_xp)
+        player_level_info['old_level'] = old_player_level
+        player_level_info['old_stats'] = old_player_stats
         player_data.marks = max(0, player_data.marks + rewards["marks"])
         player_data.valor = max(0, player_data.valor + rewards["valor"])
         player_data.explore_count = explore_count + 1
@@ -1273,6 +1281,12 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             reward_parts.append(f"⚔️ <b>Valor: +{rewards['valor']}</b>")
 
         await query.edit_message_text("\n".join(reward_parts), parse_mode=ParseMode.HTML)
+
+        # Send levelup messages separately
+        participating_chars = [char for char, _ in participating_level_infos]
+        participating_level_infos_only = [level_info for _, level_info in participating_level_infos]
+        char_level_info = list(zip(participating_chars, participating_level_infos_only))
+        await _send_level_up_messages(char_level_info, player_level_info, player_data, query.message.chat_id if query.message else None, context.bot.send_message)
 
         # Random drop system
         if random.random() < 0.09:
@@ -1376,9 +1390,6 @@ async def _process_post_battle_updates(db, player_obj, participating_characters,
         # Create level info tuples for the _send_level_up_messages function
         char_level_info = list(zip(participating_characters, participating_level_infos))
         
-        # Send detailed level up messages using the dedicated function
-        await _send_level_up_messages(char_level_info, player_level_info, None, player_obj, chat_id, send_func)
-        
         # Still need to save the character and player objects after level up
         for char_obj, level_info in zip(participating_characters, participating_level_infos):
             try:
@@ -1412,30 +1423,41 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         parse_mode=ParseMode.HTML
     )
 
-async def _send_level_up_messages(char_level_info, player_level_info, character, player_obj, chat_id, send_func):
+async def _send_level_up_messages(char_level_info, player_level_info, player_obj, chat_id, send_func):
     """Send messages for level up rewards and updates."""
-    messages = []
     if char_level_info:
         for char, level_info in char_level_info:
-            if level_info:
-                messages.append(f"🎉 {char.name} leveled up to {char.level}!")
-                # Add stat increase details
+            if level_info and level_info.get('leveled_up'):
+                message = f"🎉 {char.name} leveled up from {level_info['old_level']} to {char.level}!"
                 if isinstance(level_info, dict) and 'stat_increases' in level_info:
                     for stat, increase in level_info['stat_increases'].items():
-                        messages.append(f"   • {stat}: +{increase}")
+                        old_val = level_info['old_stats'].get(stat, 0)
+                        new_val = old_val + increase
+                        message += f"\n   • {stat}: {old_val} → {new_val}"
+                await send_func(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode=ParseMode.HTML
+                )
     
-    if player_level_info:
-        messages.append(f"🎊 You leveled up to {player_obj.level}!")
-        # Add player stat increases if available
-        if isinstance(player_level_info, dict) and 'stat_increases' in player_level_info:
-            for stat, increase in player_level_info['stat_increases'].items():
-                messages.append(f"   • {stat}: +{increase}")
-
-    # Send all messages at once
-    if messages:
+    if player_level_info and player_level_info.get('leveled_up'):
+        message = f"🎊 You leveled up from {player_level_info['old_level']} to {player_obj.level}!"
+        
+        # Add levelup rewards if any
+        level_ups = player_level_info.get('level_ups', [])
+        if level_ups:
+            for level_up in level_ups:
+                lup_rewards = level_up.get('rewards', {})
+                if lup_rewards.get('marks', 0) > 0 or lup_rewards.get('valor', 0) > 0:
+                    message += f"\n\n<b>Level Up Rewards:</b>"
+                    if lup_rewards.get('marks', 0) > 0:
+                        message += f"\n🪙 Marks: +{lup_rewards['marks']}"
+                    if lup_rewards.get('valor', 0) > 0:
+                        message += f"\n⚔️ Valor: +{lup_rewards['valor']}"
+            
         await send_func(
             chat_id=chat_id,
-            text="\n".join(messages),
+            text=message,
             parse_mode=ParseMode.HTML
         )
 

@@ -220,29 +220,31 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Count total groups
         total_groups = await db.groups.count_documents({})
 
-        # Get all players for top explorer and top level
-        players = await db.get_all_players()
+        # Get top 3 explorers (by explore_count) efficiently
+        top_explorers_cursor = db.players.find({}, {"name": 1, "explore_count": 1, "user_id": 1}).sort("explore_count", -1).limit(3)
+        top_explorers_data = await top_explorers_cursor.to_list(None)
+
+        # Get top 3 levels efficiently
+        top_levels_cursor = db.players.find({}, {"name": 1, "level": 1, "user_id": 1}).sort("level", -1).limit(3)
+        top_levels_data = await top_levels_cursor.to_list(None)
 
         # Try to get first_name from update.effective_user
-        def get_display_name(player, update):
-            if update.effective_user and hasattr(update.effective_user, 'id') and hasattr(player, 'user_id'):
-                if str(update.effective_user.id) == str(getattr(player, 'user_id', '')):
-                    return update.effective_user.first_name or player.name
-            return getattr(player, 'name', 'Unknown')
+        def get_display_name(player_data, update):
+            if update.effective_user and str(update.effective_user.id) == player_data.get("user_id", ""):
+                return update.effective_user.first_name or player_data.get("name", "Unknown")
+            return player_data.get("name", "Unknown")
 
         # Top 3 explorers (by explore_count)
-        top_explorers = sorted(players, key=lambda p: getattr(p, 'explore_count', 0), reverse=True)[:3]
         top_explorers_text = "\n".join([
-            f"{i+1}. {get_display_name(p, update)} - {getattr(p, 'explore_count', 0)} explores"
-            for i, p in enumerate(top_explorers)
-        ]) if top_explorers else "~"
+            f"{i+1}. {get_display_name(p, update)} - {p.get('explore_count', 0)} explores"
+            for i, p in enumerate(top_explorers_data)
+        ]) if top_explorers_data else "~"
 
         # Top 3 levels
-        top_levels = sorted(players, key=lambda p: getattr(p, 'level', 0), reverse=True)[:3]
         top_levels_text = "\n".join([
-            f"{i+1}. {get_display_name(p, update)} - Level {getattr(p, 'level', 0)}"
-            for i, p in enumerate(top_levels)
-        ]) if top_levels else "~"
+            f"{i+1}. {get_display_name(p, update)} - Level {p.get('level', 0)}"
+            for i, p in enumerate(top_levels_data)
+        ]) if top_levels_data else "~"
 
         # Get top daily explorers (top 10, from stats_data)
         def get_daily_display_name(user_id, name, update):

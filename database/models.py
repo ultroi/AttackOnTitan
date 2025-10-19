@@ -406,7 +406,7 @@ class Player(BaseModel):
     
     # Progression tracking
     explore_count: int = 0
-    daily_explores: List[DailyExplores] = Field(default_factory=list)
+    daily_explores: Dict[str, int] = Field(default_factory=dict)
     completed_quests: List[str] = Field(default_factory=list)
     missions: List[Dict[str, Any]] = Field(default_factory=list)
     mission14_area_counts: Dict[str, int] = Field(default_factory=dict)  # Track explores per area for Mission 14
@@ -641,67 +641,21 @@ class Player(BaseModel):
     def get_daily_explores_count(self, date: datetime) -> int:
         """Get the number of explores for a specific date"""
         date_str = date.strftime('%Y-%m-%d')
-        for daily in self.daily_explores:
-            # Get date value safely
-            daily_date = None
-            if isinstance(daily, dict):
-                daily_date = daily.get('date')
-            elif hasattr(daily, 'date'):
-                daily_date = daily.date
-            
-            if daily_date == date_str:
-                # Get count safely
-                if isinstance(daily, dict):
-                    return daily.get('count', 0)
-                elif hasattr(daily, 'count'):
-                    return daily.count
-        return 0
+        return self.daily_explores.get(date_str, 0)
 
     def increment_daily_explores(self, date: datetime) -> int:
         """Increment the daily explores count and return the new count"""
         date_str = date.strftime('%Y-%m-%d')
         
-        # Find existing record - handle both DailyExplores objects and dictionaries
-        for i, daily in enumerate(self.daily_explores):
-            # Get date value safely
-            daily_date = None
-            if isinstance(daily, dict):
-                daily_date = daily.get('date')
-            elif hasattr(daily, 'date'):
-                daily_date = daily.date
-            
-            if daily_date == date_str:
-                # Increment count safely
-                if isinstance(daily, dict):
-                    daily['count'] = daily.get('count', 0) + 1
-                    return daily['count']
-                elif hasattr(daily, 'count'):
-                    daily.count += 1
-                    return daily.count
-        
-        # Create new record if not found
-        new_daily = DailyExplores(date=date_str, count=1)
-        self.daily_explores.append(new_daily)
+        self.daily_explores[date_str] = self.daily_explores.get(date_str, 0) + 1
         
         # Clean up old records (keep only last 7 days)
         current_date = datetime.now(timezone.utc)
         cutoff_date = (current_date - timedelta(days=7)).strftime('%Y-%m-%d')
         
-        # Filter the list while handling both object types
-        filtered_explores = []
-        for d in self.daily_explores:
-            d_date = None
-            if isinstance(d, dict):
-                d_date = d.get('date', '')
-            elif hasattr(d, 'date'):
-                d_date = d.date
-            
-            if d_date and d_date >= cutoff_date:
-                filtered_explores.append(d)
+        self.daily_explores = {k: v for k, v in self.daily_explores.items() if k >= cutoff_date}
         
-        self.daily_explores = filtered_explores
-        
-        return 1
+        return self.daily_explores[date_str]
 
 class Titan(BaseModel):
     name: str

@@ -35,20 +35,16 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 def sanitize_player_data(player_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Sanitize player data before creating a Player object.
-    This ensures that daily_explores field has valid structure.
-    """
     if 'daily_explores' in player_data:
-        if not isinstance(player_data['daily_explores'], list):
-            logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to [].")
-            player_data['daily_explores'] = []
+        if not isinstance(player_data['daily_explores'], dict):
+            logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to {{}}.")
+            player_data['daily_explores'] = {}
         else:
             # Validate and sanitize each daily_explores entry
-            sanitized_explores = []
-            for entry in player_data['daily_explores']:
-                if isinstance(entry, dict) and 'date' in entry and 'count' in entry:
-                    sanitized_explores.append(entry)
+            sanitized_explores = {}
+            for date_str, count in player_data['daily_explores'].items():
+                if isinstance(date_str, str) and isinstance(count, int) and count >= 0:
+                    sanitized_explores[date_str] = count
             player_data['daily_explores'] = sanitized_explores
     return player_data
 

@@ -176,10 +176,10 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # Offload all further processing to a background task to keep the bot responsive.
     asyncio.create_task(_process_explore_after_reply(
-        update, context, user_id, db, titan_data, send_message_task, start_time
+        update, context, user_id, db, titan_data, send_message_task, start_time, player
     ))
 
-async def _process_explore_after_reply(update, context, user_id, db, titan_data, send_message_task, start_time):
+async def _process_explore_after_reply(update, context, user_id, db, titan_data, send_message_task, start_time, player):
     try:
         sent_message = await send_message_task
     except Exception as e:
@@ -189,7 +189,7 @@ async def _process_explore_after_reply(update, context, user_id, db, titan_data,
     user_id_str = str(user_id)
     
     # Fetch player and character data.
-    player = await db.get_player(user_id_str)
+    # Player already passed from main function
     if not player or not hasattr(player, 'team') or not player.team:
         logger.warning(f"Player {user_id_str} validation failed after reply.")
         return
@@ -298,9 +298,9 @@ def _generate_titan_from_pool(player_level: int) -> dict:
 async def _cleanup_existing_titan(user_id_str: str, db: Database):
     """Deletes any old, un-battled titan for a user."""
     try:
-        existing_titan = await db.get_titan(user_id_str)
-        if existing_titan:
-            await db.delete_titan(user_id_str)
+        result = await db.titans.delete_one({"user_id": user_id_str})
+        if result.deleted_count > 0:
+            db.invalidate_titan_cache(user_id_str)
             logger.info(f"Cleaned up existing titan for user {user_id_str}")
     except Exception as e:
         logger.error(f"Error cleaning up existing titan for user {user_id_str}: {e}")
