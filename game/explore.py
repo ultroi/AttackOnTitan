@@ -472,9 +472,6 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
 # Random Events (Background Operations)
 # =====================================================================================
 
-# Boss Titan (Background Operation) - only this event replaces normal titan
-
-
 async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                     user_id_str: str, player: Player, db: Database):
     """Spawn boss titan directly without showing normal titan first"""
