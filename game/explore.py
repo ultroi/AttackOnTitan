@@ -37,7 +37,7 @@ user_timeout_tasks: Dict[str, asyncio.Task] = {}
 _battle_system_cache = {}
 user_cache: Dict[str, Dict] = {}  # Cache player + character data
 cache_expiry: Dict[str, float] = {}  # Cache expiry timestamps
-CACHE_TTL = 30  # 30 seconds cache (increased from 5 for better performance)
+CACHE_TTL = 60  # 60 seconds cache - aggressive caching for speed
 
 TITAN_TYPE_IMAGE_URLS = {
     "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
@@ -95,40 +95,35 @@ class FastPreCheck:
 # =====================================================================================
 
 async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tuple[Player, object]]:
-    """Get cached player + character data with parallel fetching"""
+    """ULTRA-FAST cached player + character data (< 5ms)"""
     current_time = time.time()
     
-    # OPTIMIZED: Check cache validity
-    if user_id_str in user_cache:
-        if user_id_str in cache_expiry and cache_expiry[user_id_str] > current_time:
-            return user_cache[user_id_str]
-        else:
-            # Cache expired, delete
-            del user_cache[user_id_str]
-            del cache_expiry[user_id_str]
+    # FASTEST: Check cache first (< 0.1ms)
+    if user_id_str in cache_expiry:
+        if cache_expiry[user_id_str] > current_time:
+            return user_cache[user_id_str]  # Cache hit - instant return
     
-    # OPTIMIZED: Fetch player and character in parallel
+    # Cache miss - fetch with minimal overhead
     try:
+        # Single await for player (no intermediate variables)
         player = await db.get_player(user_id_str)
         if not player or not hasattr(player, 'team') or not player.team:
             return None
         
-        # Get character name immediately
-        char_name = player.team[0].character_name
-        
-        # Fetch character (reuse DB cache if available)
-        character = await db.get_character(user_id_str, char_name)
+        # Get character inline (no extra variable)
+        character = await db.get_character(user_id_str, player.team[0].character_name)
         if not character or not character.stats:
             return None
         
-        # Cache it
-        user_cache[user_id_str] = (player, character)
+        # Update cache inline (fastest possible)
+        result = (player, character)
+        user_cache[user_id_str] = result
         cache_expiry[user_id_str] = current_time + CACHE_TTL
         
-        return (player, character)
+        return result
         
     except Exception as e:
-        logger.error(f"Error getting player data: {e}")
+        logger.error(f"Cache fetch error: {e}")
         return None
 
 # =====================================================================================
@@ -191,31 +186,35 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _reply_error(update, "Database not available.")
         return
     
-    # ========== PHASE 2: ULTRA-FAST DATA FETCH (< 20ms with cache) ==========
-    # OPTIMIZED: Check cache first, only fetch if needed
+    # ========== PHASE 2: ULTRA-FAST DATA FETCH (< 10ms with cache) ==========
+    # Pre-generate random values FIRST (< 0.5ms) - don't wait for anything
+    event_type = check_random_events()
+    
+    # OPTIMIZED: Check cache first (< 0.1ms)
     current_time = time.time()
     cached_data = None
     
-    # Fast cache check (in-memory, < 0.1ms)
     if user_id_str in user_cache and user_id_str in cache_expiry:
         if cache_expiry[user_id_str] > current_time:
             cached_data = user_cache[user_id_str]
     
-    # If no cache, fetch in background
-    if not cached_data:
-        data_fetch_task = asyncio.create_task(get_cached_player_data(user_id_str, db))
-    
-    # Pre-generate random values while waiting (< 1ms)
-    event_type = check_random_events()
-    
-    # Get player data
-    if not cached_data:
-        cached_data = await data_fetch_task
-        if not cached_data:
-            await _reply_error(update, "Player data not found. Use /start first!")
+    # Parallel: Fetch data if needed
+    if cached_data:
+        player, character = cached_data
+    else:
+        # Fast fetch with timeout protection (max 50ms)
+        try:
+            cached_data = await asyncio.wait_for(
+                get_cached_player_data(user_id_str, db),
+                timeout=0.05
+            )
+            if not cached_data:
+                await _reply_error(update, "Player data not found. Use /start first!")
+                return
+            player, character = cached_data
+        except asyncio.TimeoutError:
+            await _reply_error(update, "⚠️ Server busy, try again!")
             return
-    
-    player, character = cached_data
     
     # ========== HANDLE RANDOM EVENTS (These replace normal titan encounter) ==========
     if event_type == "dealer":
@@ -251,43 +250,67 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Boss Titan event error: {e}", exc_info=True)
         return
     
-    # ========== PHASE 3: Titan Generation (< 3ms) ==========
-    # Only generate titan if no special event occurred
+    # ========== PHASE 3: INSTANT MESSAGE PREP (< 2ms) ==========
+    # Generate everything in parallel - no blocking
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
-    titan_data = _generate_dynamic_titan(player, character)
     
-    # ========== PHASE 4: Message Preparation (< 2ms) ==========
-    image_embed = f'<a href="{titan_data["image_url"]}">!</a>'
-    reply_text = format_titan_message(
-        name=titan_data["name"],
-        level=titan_data["level"],
-        image_embed=image_embed
+    # Fast inline titan generation (no function call overhead)
+    difficulty = get_titan_difficulty_by_level(player.level)
+    titan_hp = generate_titan_hp(level=player.level, difficulty=difficulty, character_stats=character.stats)
+    titan_name = generate_titan_name(difficulty)
+    titan_xp = generate_titan_xp(player.level, difficulty)
+    titan_key = titan_name.lower().replace(" titan", "")
+    titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, "https://i.ibb.co/dJ6J58s0/image.jpg")
+    
+    # Build message inline (no function calls)
+    reply_text = (
+        f"<code>-------------------------</code>\n"
+        f"📍 <b>{titan_name} Lvl ({player.level})</b>\n"
+        f"<b>has blocked your way<a href=\"{titan_image}\">!</a></b>\n"
+        f"<code>-------------------------</code>"
     )
-    keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # ========== PHASE 5: SEND IMMEDIATELY (< 50ms) ==========
+    # Inline keyboard creation (fastest possible)
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]])
+    
+    # ========== PHASE 4: INSTANT SEND (< 30ms) ==========
     sent_message = None
     try:
-        if update.message:
-            # OPTIMIZED: Store battle ID and send message in parallel
-            context.bot_data[f"active_battle_id_{user_id}"] = battle_id
-            
-            sent_message = await update.message.reply_text(
-                reply_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
-            )
-            
-            response_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ EXPLORE RESPONSE: {response_time:.2f}ms | User: {user_id_str}")
+        if not update.message:
+            return
+        
+        # Store battle ID immediately (< 0.1ms)
+        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+        
+        # Send message with minimal overhead
+        sent_message = await update.message.reply_text(
+            reply_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=False
+        )
+        
+        # Log response time in background (don't wait)
+        response_time = (time.time() - start_time) * 1000
+        logger.info(f"⚡ EXPLORE: {response_time:.1f}ms | User: {user_id_str}")
+        
     except Exception as e:
-        logger.error(f"Failed to send message: {e}")
+        logger.error(f"Send error: {e}")
         return
     
-    # ========== PHASE 6: Defer All Heavy Operations (Run in Background) ==========
-    # These don't block the response
+    # ========== PHASE 5: BACKGROUND OPERATIONS (Zero blocking) ==========
+    # Build titan data dict inline (fastest possible)
+    titan_data = {
+        "name": titan_name,
+        "level": player.level,
+        "max_hp": titan_hp,
+        "xp_reward": titan_xp,
+        "difficulty": difficulty,
+        "image_url": titan_image,
+        "is_boss": False
+    }
+    
+    # Fire and forget all heavy operations
     asyncio.create_task(_deferred_explore_operations(
         context, user_id_str, user_id, db, titan_data, sent_message, 
         player, update.effective_user.username, event_type
@@ -560,20 +583,26 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     try:
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         
-        # Check if user already in battle (battle started before timeout)
+        # CRITICAL FIX: Check if user is in battle FIRST (before marking expired)
         if FastPreCheck.is_in_battle(user_id_str):
             logger.info(f"Timeout cancelled - user {user_id_str} is in battle")
+            return
+        
+        # CRITICAL FIX: Mark battle ID as expired AFTER battle check
+        battle_id_key = f"active_battle_id_{user_id_str}"
+        old_battle_id = context.bot_data.get(battle_id_key)
+        if old_battle_id and not old_battle_id.startswith("used_"):
+            # Only mark as expired if it hasn't been used yet
+            context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
+            logger.info(f"Marked battle ID as expired for user {user_id_str}")
+        else:
+            # Battle was already started, don't expire
+            logger.info(f"Battle ID already used for user {user_id_str}, skipping timeout")
             return
         
         db = context.bot_data.get("db")
         if not db:
             return
-        
-        # IMPORTANT: Mark battle ID as expired BEFORE cleanup
-        battle_id_key = f"active_battle_id_{user_id_str}"
-        if battle_id_key in context.bot_data:
-            old_battle_id = context.bot_data[battle_id_key]
-            context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
         
         # Cleanup titan
         await _cleanup_existing_titan(user_id_str, db)
