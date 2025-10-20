@@ -837,21 +837,19 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data["battle_cache"] = {}
     battle_cache = context.user_data["battle_cache"]
     
+    # CRITICAL FIX: Save cached titan data BEFORE clearing it (prevent race condition)
+    cached_titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
+    
     # Prepare player data fetch - use cached if available
     player_data_task = None
     if not battle_cache.get("player_data"):
         # Use get_player for both DB and memory
         player_data_task = db.get_player(user_id)
     
-    # Clear any existing titan cache for this user to prevent data leakage between battles
-    if f"last_titan_data_{user_id}" in context.bot_data:
-        del context.bot_data[f"last_titan_data_{user_id}"]
-    
     # Wait for titan data
     titan_obj = await titan_task
     if not titan_obj:
         # Use cached titan data if available or show error
-        cached_titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
         if not cached_titan_data:
             # Titan expired or deleted
             logger.warning(f"Titan not found for user {user_id} - titan may have expired")
@@ -928,6 +926,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Create titan object
     titan = Titan(**titan_data)
+    
+    # NOW clear the cached titan data to prevent data leakage between battles
+    if f"last_titan_data_{user_id}" in context.bot_data:
+        del context.bot_data[f"last_titan_data_{user_id}"]
     
     # Get player data (either from cache or database)
     if player_data_task:
