@@ -453,8 +453,13 @@ def format_boss_titan_message(name: str, level: int, image_embed: str = "") -> s
     )
 
 async def _cleanup_existing_titan(user_id_str: str, db: Database):
-    """Clean up old titan"""
+    """Clean up old titan - with race condition protection"""
     try:
+        # CRITICAL: Double-check if battle is starting before cleanup
+        if FastPreCheck.is_in_battle(user_id_str):
+            logger.info(f"Skipping titan cleanup - user {user_id_str} is in battle")
+            return
+        
         result = await db.titans.delete_one({"user_id": user_id_str})
         deleted_count = getattr(result, 'deleted_count', 0) if result else 0
         if deleted_count > 0:
@@ -583,22 +588,25 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     try:
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         
+        # CRITICAL FIX: Check if battle ID was already used (battle started)
+        battle_id_key = f"active_battle_id_{user_id_str}"
+        old_battle_id = context.bot_data.get(battle_id_key)
+        
+        # If battle ID starts with "used_", the battle has already started - don't cleanup
+        if old_battle_id and old_battle_id.startswith("used_"):
+            logger.info(f"Timeout skipped - battle already started for user {user_id_str}")
+            return
+        
         # CRITICAL FIX: Check if user is in battle FIRST (before marking expired)
         if FastPreCheck.is_in_battle(user_id_str):
             logger.info(f"Timeout cancelled - user {user_id_str} is in battle")
             return
         
         # CRITICAL FIX: Mark battle ID as expired AFTER battle check
-        battle_id_key = f"active_battle_id_{user_id_str}"
-        old_battle_id = context.bot_data.get(battle_id_key)
-        if old_battle_id and not old_battle_id.startswith("used_"):
+        if old_battle_id:
             # Only mark as expired if it hasn't been used yet
             context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
             logger.info(f"Marked battle ID as expired for user {user_id_str}")
-        else:
-            # Battle was already started, don't expire
-            logger.info(f"Battle ID already used for user {user_id_str}, skipping timeout")
-            return
         
         db = context.bot_data.get("db")
         if not db:

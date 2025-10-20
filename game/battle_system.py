@@ -853,23 +853,76 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Use cached titan data if available or show error
         cached_titan_data = context.bot_data.get(f"last_titan_data_{user_id}")
         if not cached_titan_data:
-            # Titan expired or deleted - DON'T restore battle ID, it's already used
+            # Titan expired or deleted
             logger.warning(f"Titan not found for user {user_id} - titan may have expired")
-            try:
-                await query.edit_message_text(
-                    "⏰ <b>This titan encounter has expired!</b>\n\n"
-                    "Use /explore to find a new one.",
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                logger.error(f"Error editing message for expired titan: {e}")
-                # Try answering callback query if edit fails
+            
+            # Check if battle_id was marked as used (race condition case)
+            if current_battle_id and current_battle_id.startswith("used_"):
+                # Battle was already initiated, use emergency cached data
+                logger.info(f"Battle initiated but titan deleted - checking emergency cache")
+                
+                # Try to recreate titan from message context if possible
                 try:
-                    await query.answer("⚠️ This titan has expired. Use /explore again!", show_alert=True)
-                except Exception:
-                    pass
-            return
-        titan_data = cached_titan_data
+                    # Fallback: Create a basic titan for the user
+                    from database.models import generate_titan_hp, generate_titan_name, generate_titan_xp
+                    
+                    # Get player level for titan generation
+                    if player_data_task:
+                        player_data = await player_data_task
+                    else:
+                        player_data = battle_cache.get("player_data")
+                    
+                    if player_data:
+                        difficulty = "Normal"  # Default difficulty
+                        titan_level = player_data.level if hasattr(player_data, 'level') else 1
+                        
+                        titan_data = {
+                            "name": generate_titan_name(difficulty),
+                            "level": titan_level,
+                            "max_hp": generate_titan_hp(level=titan_level, difficulty=difficulty, character_stats=None),
+                            "xp_reward": generate_titan_xp(titan_level, difficulty),
+                            "difficulty": difficulty,
+                            "created_at": datetime.now(timezone.utc),
+                            "spawn_areas": ["Trost"],
+                            "min_level_requirement": max(1, titan_level - 2),
+                            "abilities": [],
+                            "drop_table": {},
+                            "is_boss": False
+                        }
+                        
+                        logger.info(f"Emergency titan created for user {user_id}")
+                    else:
+                        raise ValueError("Cannot recreate titan without player data")
+                        
+                except Exception as e:
+                    logger.error(f"Emergency titan creation failed: {e}")
+                    try:
+                        await query.edit_message_text(
+                            "⏰ <b>This titan encounter has expired!</b>\n\n"
+                            "Use /explore to find a new one.",
+                            parse_mode=ParseMode.HTML
+                        )
+                    except Exception:
+                        pass
+                    return
+            else:
+                # Normal timeout/expiration case
+                try:
+                    await query.edit_message_text(
+                        "⏰ <b>This titan encounter has expired!</b>\n\n"
+                        "Use /explore to find a new one.",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error editing message for expired titan: {e}")
+                    # Try answering callback query if edit fails
+                    try:
+                        await query.answer("⚠️ This titan has expired. Use /explore again!", show_alert=True)
+                    except Exception:
+                        pass
+                return
+        else:
+            titan_data = cached_titan_data
     else:
         titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
     
