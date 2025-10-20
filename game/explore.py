@@ -37,7 +37,7 @@ user_timeout_tasks: Dict[str, asyncio.Task] = {}
 _battle_system_cache = {}
 user_cache: Dict[str, Dict] = {}  # Cache player + character data
 cache_expiry: Dict[str, float] = {}  # Cache expiry timestamps
-CACHE_TTL = 60  # 60 seconds cache - aggressive caching for speed
+CACHE_TTL = 300  # 300 seconds (5 minutes) cache - prevents thrashing while reducing stale data
 
 TITAN_TYPE_IMAGE_URLS = {
     "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
@@ -202,18 +202,19 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if cached_data:
         player, character = cached_data
     else:
-        # Fast fetch with timeout protection (max 50ms)
+        # Fast fetch with reasonable timeout protection (max 2 seconds)
         try:
             cached_data = await asyncio.wait_for(
                 get_cached_player_data(user_id_str, db),
-                timeout=0.05
+                timeout=2.0
             )
             if not cached_data:
                 await _reply_error(update, "Player data not found. Use /start first!")
                 return
             player, character = cached_data
         except asyncio.TimeoutError:
-            await _reply_error(update, "⚠️ Server busy, try again!")
+            await _reply_error(update, "⚠️ Database timeout. Try again!")
+            logger.warning(f"Explore timeout for user {user_id_str} - database took too long")
             return
     
     # ========== HANDLE RANDOM EVENTS (These replace normal titan encounter) ==========
