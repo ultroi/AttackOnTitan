@@ -431,12 +431,11 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             try:
                 success = await db.add_new_character_to_player(user_id, awarded_item)
                 if success:
-                    logger.info(f"✅ Created character {awarded_item} from fragments for user {user_id}")
+                    # Character creation from fragments logging removed for cleaner logs
                     # Verify creation
                     created_char = await db.get_character(user_id, awarded_item)
                     if created_char:
-                        logger.info(f"✅ Verified fragment character {awarded_item}: Level {created_char.level}, "
-                                  f"Abilities: {len(created_char.unlocked_abilities)}")
+                        # Fragment character verification logging removed for cleaner logs
                     else:
                         logger.error(f"❌ Fragment character {awarded_item} not found after creation!")
                         # Refund fragments
@@ -638,15 +637,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 # Create the character data in database
                 success = await db.add_new_character_to_player(user_id, reward["item_key"])
                 if success:
-                    logger.info(f"✅ Successfully created character {reward['item_key']} for user {user_id}")
+                    # Character creation success logging removed for cleaner logs
                     
                     # Verify character was created properly
                     created_char = await db.get_character(user_id, reward["item_key"])
                     if created_char:
-                        logger.info(f"✅ Verified character {reward['item_key']}: Level {created_char.level}, "
-                                  f"HP {created_char.current_hp}/{created_char.stats.HP}, "
-                                  f"Gas {created_char.gas}/{created_char.max_gas}, "
-                                  f"Abilities: {len(created_char.unlocked_abilities)}")
+                        # Character verification logging removed for cleaner logs
                     else:
                         logger.error(f"❌ Character {reward['item_key']} was not found after creation!")
                 else:
@@ -656,7 +652,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                         player.owned_characters.remove(reward["item_key"])
                         # Mark as duplicate so it doesn't show as "new" in results
                         reward["duplicate"] = True
-                        logger.info(f"❌ Removed failed character from owned list: {reward['item_key']}")
+                        # Failed character removal logging removed for cleaner logs
             except Exception as e:
                 logger.error(f"❌ Error creating character {reward['item_key']} for user {user_id}: {e}")
                 import traceback

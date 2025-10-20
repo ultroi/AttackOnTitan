@@ -67,7 +67,7 @@ async def travel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_travel_direction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    logger.info(f"[HANDLER] handle_travel_direction got callback: {query.data}")
+    # Travel direction callback logging removed for cleaner logs
     await query.answer()
     db = context.bot_data.get("db")
     user_id = str(query.from_user.id)
@@ -105,7 +105,7 @@ async def handle_travel_direction(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_cancel_travel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    logger.info(f"[HANDLER] handle_cancel_travel got callback: {query.data}")
+    # Cancel travel callback logging removed for cleaner logs
     await query.answer()
     db = context.bot_data.get("db")
     user_id = str(query.from_user.id)

@@ -25,5 +25,5 @@ def start_scheduled_tasks(bot):
     """Start all scheduled tasks.
     Note: Tax task is now handled by game/scheduler.py
     """
-    logger.info("Scheduled tasks handling moved to game/scheduler.py")
+    # Scheduled tasks logging removed for cleaner logs
     pass

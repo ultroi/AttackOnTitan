@@ -67,7 +67,7 @@ async def reset_weekly_stats():
     db = stats_data.get("_db")
     if db:
         await save_stats_data_to_db(db, stats_data)
-    logger.info(f"[Stats] Weekly explorer stats reset at {stats_data['last_weekly_reset']} IST")
+    # Weekly stats reset logging removed for cleaner logs
 
 
 async def reset_daily_stats():
@@ -77,7 +77,7 @@ async def reset_daily_stats():
     db = stats_data.get("_db")
     if db:
         await save_stats_data_to_db(db, stats_data)
-    logger.info(f"[Stats] Daily explorer stats reset at {stats_data['last_daily_reset']} IST")
+    # Daily stats reset logging removed for cleaner logs
 
 
 async def start_stats_scheduler(db):
@@ -126,7 +126,7 @@ async def start_stats_scheduler(db):
     )
 
     stats_scheduler.start()
-    logger.info("[Stats] Stats scheduler started successfully and stats loaded from DB")
+    # Stats scheduler started logging removed for cleaner logs
 
 
 async def update_explorer_stats(user_id: str, name: str, battle_completed: bool = False):
@@ -138,7 +138,7 @@ async def update_explorer_stats(user_id: str, name: str, battle_completed: bool 
         # Update weekly stats
         if user_id not in stats_data["weekly_explorers"]:
             stats_data["weekly_explorers"][user_id] = {"name": name, "count": 1}
-            logger.info(f"[Stats] New weekly explorer: {name} ({user_id})")
+            # New weekly explorer logging removed for cleaner logs
         else:
             stats_data["weekly_explorers"][user_id]["count"] += 1
             stats_data["weekly_explorers"][user_id]["name"] = name
@@ -147,7 +147,7 @@ async def update_explorer_stats(user_id: str, name: str, battle_completed: bool 
         # Update daily stats (store first_name for display)
         if user_id not in stats_data["daily_explorers"]:
             stats_data["daily_explorers"][user_id] = {"name": name, "count": 1}
-            logger.info(f"[Stats] New daily explorer: {name} ({user_id})")
+            # New daily explorer logging removed for cleaner logs
         else:
             stats_data["daily_explorers"][user_id]["count"] += 1
             stats_data["daily_explorers"][user_id]["name"] = name
@@ -278,8 +278,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]) if top_daily else "No data yet"
         
         # Debug log to check stats_data
-        logger.info(f"[Stats] Daily explorers count: {len(stats_data['daily_explorers'])}")
-        logger.info(f"[Stats] Weekly explorers count: {len(stats_data['weekly_explorers'])}")
+        # Explorer count logging removed for cleaner logs
 
         # Create message
         message = (

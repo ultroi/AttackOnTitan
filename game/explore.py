@@ -214,7 +214,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player, character = cached_data
         except asyncio.TimeoutError:
             await _reply_error(update, "⚠️ Database timeout. Try again!")
-            logger.warning(f"Explore timeout for user {user_id_str} - database took too long")
             return
     
     # ========== HANDLE RANDOM EVENTS (These replace normal titan encounter) ==========
@@ -222,7 +221,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Dealer event - NO titan, only dealer
         try:
             await show_dealer(update, context)
-            logger.info(f"🎲 Dealer event triggered for user {user_id}")
             # Track stats
             asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
         except Exception as e:
@@ -233,7 +231,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Captcha event - NO titan, only captcha
         try:
             await spawn_captcha(update, context)
-            logger.info(f"⚠️ Captcha event triggered for user {user_id}")
             # Track stats
             asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
         except Exception as e:
@@ -244,7 +241,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Boss Titan event - NO normal titan, directly show boss
         try:
             await spawn_boss_titan_directly(update, context, user_id_str, player, db)
-            logger.info(f"🔥 Boss Titan event triggered for user {user_id}")
             # Track stats
             asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
         except Exception as e:
@@ -308,9 +304,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             disable_web_page_preview=False
         )
         
-        # Log response time in background (don't wait)
-        response_time = (time.time() - start_time) * 1000
-        logger.info(f"⚡ EXPLORE: {response_time:.1f}ms | User: {user_id_str}")
+        # Response sent successfully
         
     except Exception as e:
         logger.error(f"Send error: {e}")
@@ -391,7 +385,6 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
             old_timeout_task = user_timeout_tasks.get(user_id_str)
             if old_timeout_task and not old_timeout_task.done():
                 old_timeout_task.cancel()
-                logger.info(f"Cancelled old timeout task for user {user_id_str}")
             
             # Start new timeout task (non-blocking)
             timeout_task = asyncio.create_task(
@@ -461,14 +454,13 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
     try:
         # CRITICAL: Double-check if battle is starting before cleanup
         if FastPreCheck.is_in_battle(user_id_str):
-            logger.info(f"Skipping titan cleanup - user {user_id_str} is in battle")
+            # Titan cleanup skip logging removed for cleaner logs
             return
         
         result = await db.titans.delete_one({"user_id": user_id_str})
         deleted_count = getattr(result, 'deleted_count', 0) if result else 0
         if deleted_count > 0:
             db.invalidate_titan_cache(user_id_str)
-            logger.info(f"Cleaned up titan for user {user_id_str}")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
@@ -565,7 +557,6 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             old_timeout_task = user_timeout_tasks.get(user_id_str)
             if old_timeout_task and not old_timeout_task.done():
                 old_timeout_task.cancel()
-                logger.info(f"Cancelled old boss timeout task for user {user_id_str}")
             
             # Start timeout for boss
             timeout_task = asyncio.create_task(
@@ -573,8 +564,6 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             )
             user_timeout_tasks[user_id_str] = timeout_task
             context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
-            
-            logger.info(f"🔥 Boss Titan spawned directly for user {user_id_str}")
             
     except Exception as e:
         logger.error(f"Boss spawn error: {e}", exc_info=True)
@@ -595,19 +584,16 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         
         # If battle ID starts with "used_", the battle has already started - don't cleanup
         if old_battle_id and old_battle_id.startswith("used_"):
-            logger.info(f"Timeout skipped - battle already started for user {user_id_str}")
             return
         
         # CRITICAL FIX: Check if user is in battle FIRST (before marking expired)
         if FastPreCheck.is_in_battle(user_id_str):
-            logger.info(f"Timeout cancelled - user {user_id_str} is in battle")
             return
         
         # CRITICAL FIX: Mark battle ID as expired AFTER battle check
         if old_battle_id:
             # Only mark as expired if it hasn't been used yet
             context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
-            logger.info(f"Marked battle ID as expired for user {user_id_str}")
         
         db = context.bot_data.get("db")
         if not db:
@@ -639,7 +625,6 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
         )
         
     except asyncio.CancelledError:
-        logger.info(f"Timeout task cancelled for user {user_id_str}")
         pass
     except Exception as e:
         logger.error(f"Timeout error: {e}")

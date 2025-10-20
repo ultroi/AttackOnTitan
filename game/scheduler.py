@@ -16,7 +16,7 @@ async def run_midnight_tax():
     ist_timezone = pytz.timezone('Asia/Kolkata')
     current_time = datetime.now(ist_timezone)
     
-    logger.info(f"[Scheduler] Midnight tax job started at {current_time} (IST)!")
+    # Midnight tax job started logging removed for cleaner logs
     
     try:
         # Initialize database connection
@@ -36,16 +36,16 @@ async def run_midnight_tax():
             
         bank_system = BankSystem(db)
         
-        logger.info("[Scheduler] Database initialized, starting tax collection...")
+        # Database initialized logging removed for cleaner logs
         
         # Execute tax collection
         tax_reports = await bank_system.check_and_apply_midnight_tax()
         
-        logger.info(f"[Scheduler] Tax collection completed. {len(tax_reports)} players taxed.")
+        # Tax collection completed logging removed for cleaner logs
         
         # Send notifications to users if bot is available
         if global_bot and tax_reports:
-            logger.info(f"[Scheduler] Sending tax notifications to {len(tax_reports)} players")
+            # Tax notifications logging removed for cleaner logs
             notification_count = 0
             
             for tax_report in tax_reports:

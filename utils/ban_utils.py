@@ -48,7 +48,7 @@ def ban_protected(func: Callable[[Update, CallbackContext], Any]) -> Callable[[U
                     if expiry and expiry < current_time:
                         # Ban expired, remove it
                         await db[BAN_COLLECTION].delete_one({"user_id": str(user_id)})
-                        logger.info(f"✅ Removed expired ban for user {user_id}")
+                        # Expired ban removal logging removed for cleaner logs
                     else:
                         # User is still banned
                         reason = ban_doc.get("reason", "No reason provided")
@@ -160,7 +160,7 @@ async def ban_user(update: Update, context: CallbackContext):
             }},
             upsert=True
         )
-        logger.info(f"✅ Banned user {target_id} - Reason: {reason}, Duration: {duration}s")
+        # Ban user logging removed for cleaner logs
     except Exception as e:
         logger.error(f"Error banning user {target_id}: {e}")
         if update.effective_message is not None:
@@ -231,7 +231,7 @@ async def unban_user(update: Update, context: CallbackContext):
             return
         # Convert to string for consistency with how we store bans
         await db[BAN_COLLECTION].delete_one({"user_id": str(target_id)})
-        logger.info(f"✅ Unbanned user {target_id}")
+        # Unban user logging removed for cleaner logs
     except Exception as e:
         logger.error(f"Error unbanning user {target_id}: {e}")
         if update.effective_message is not None:

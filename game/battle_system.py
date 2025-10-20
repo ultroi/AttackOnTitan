@@ -220,7 +220,6 @@ class BattleSystem:
             if effect.buffs.get("reset_all_cooldowns") == 1:
                 for ability_name in self.ability_cooldowns:
                     self.ability_cooldowns[ability_name] = 0
-                logger.info("⚔️ All ability cooldowns reset by Chain of Command!")
         
         if effect.debuffs:
             for k, v in effect.debuffs.items():
@@ -508,7 +507,6 @@ class BattleSystem:
                 # Apply reversal debuffs
                 self.debuffs["stun"] = 1  # 1-turn stun
                 self.buffs["def_zero"] = 2  # DEF reduced to 0 for 2 turns
-                logger.info(f"Iron Conviction ended - {self.character.name} is now stunned and vulnerable!")
         
         # Handle DEF=0 duration
         if "def_zero" in self.buffs:
@@ -807,17 +805,14 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             await titan_timeout_task
         except asyncio.CancelledError:
             pass
-        logger.info(f"Timeout task cancelled for user {user_id}")
     
     # Also remove from global timeout tasks dictionary
     from game.explore import user_timeout_tasks
     if user_id in user_timeout_tasks:
         del user_timeout_tasks[user_id]
-        logger.info(f"Removed timeout task from global dict for user {user_id}")
     
     # NOW mark battle ID as used (after timeout is fully cancelled)
     context.bot_data[f"active_battle_id_{user_id}"] = f"used_{current_battle_id}_{time.time()}"
-    logger.info(f"Battle ID marked as used for user {user_id}")
     
     # OPTIMIZED: Get DB reference (fast)
     db = context.bot_data.get("db")
@@ -857,7 +852,6 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             # Check if battle_id was marked as used (race condition case)
             if current_battle_id and current_battle_id.startswith("used_"):
                 # Battle was already initiated, use emergency cached data
-                logger.info(f"Battle initiated but titan deleted - checking emergency cache")
                 
                 # Try to recreate titan from message context if possible
                 try:
@@ -888,7 +882,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
                             "is_boss": False
                         }
                         
-                        logger.info(f"Emergency titan created for user {user_id}")
+                        # Emergency titan created successfully
                     else:
                         raise ValueError("Cannot recreate titan without player data")
                         

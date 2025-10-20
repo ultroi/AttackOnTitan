@@ -18,7 +18,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     # Handle both chat_member updates and regular message updates with member changes
     if update.my_chat_member or update.chat_member:
         event = update.my_chat_member or update.chat_member
-        logger.info(f"Group update event received (chat_member): {event}")
+        # Group update event logging removed for cleaner logs
         
         chat = event.chat
         user = event.from_user
@@ -26,7 +26,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         new_status = event.new_chat_member.status if hasattr(event, 'new_chat_member') else None
     elif update.message and (update.message.new_chat_members or update.message.left_chat_member):
         # Handle through regular message updates
-        logger.info(f"Group update event received (message): {update.message}")
+        # Group update message logging removed for cleaner logs
         
         chat = update.message.chat
         user = update.message.from_user
@@ -41,7 +41,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     break
             else:
                 # No bot in new members
-                logger.info(f"Bot not in new chat members, skipping")
+                # Bot not in new members logging removed for cleaner logs
                 return
                 
         # Check if bot was removed
@@ -52,20 +52,20 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 new_status = None
             else:
                 # Not about our bot
-                logger.info(f"Left chat member is not our bot, skipping")
+                # Left chat member logging removed for cleaner logs
                 return
         else:
             return
     else:
-        logger.info("No event data in group update handler, skipping")
+        # No event data logging removed for cleaner logs
         return
     
     # Detailed logging
-    logger.info(f"Group update: chat_id={chat.id}, type={chat.type}, old_status={old_status}, new_status={new_status}")
+    # Group update logging removed for cleaner logs
     
     # Only care about groups/supergroups
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        logger.info(f"Skipping update for non-group chat type: {chat.type}")
+        # Non-group chat type logging removed for cleaner logs
         return
     
     # Check if the update is from a message with new_chat_members or left_chat_member
@@ -144,7 +144,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             from database.db_instance import get_persistent_database
             db = Database()
             await db.init_db()  # Make sure to initialize the database
-            logger.info("Created and initialized new database instance for group update")
+            # Database instance creation logging removed for cleaner logs
 
         # Prepare group data
         group_data = {
@@ -181,7 +181,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Use the database function to update the group
         if await db.update_group(group_id, group_data):
-            logger.info(f"Group {action} in DB: {group_id} - {group_title}")
+            # Group update success logging removed for cleaner logs
         else:
             logger.warning(f"Failed to update group in database, possibly due to connection issue: {group_id} - {group_title}")
     except Exception as db_err:

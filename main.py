@@ -192,9 +192,9 @@ async def migrate_schema(db):
             char_updates.append(UpdateOne({"_id": doc["_id"]}, update_op))
     if char_updates:
         result = await db.characters.bulk_write(char_updates)
-        logger.info(f"Migrated {result.modified_count} character documents to latest schema.")
+        # Character migration logging removed for cleaner logs
     else:
-        logger.info("No character documents needed migration.")
+        # Character migration logging removed for cleaner logs
 
     # --- Player migration ---
     player_fields = Player.model_fields if hasattr(Player, "model_fields") else Player.__annotations__
@@ -227,9 +227,9 @@ async def migrate_schema(db):
             player_updates.append(UpdateOne({"_id": doc["_id"]}, update_op))
     if player_updates:
         result = await db.players.bulk_write(player_updates)
-        logger.info(f"Migrated {result.modified_count} player documents to latest schema.")
+        # Player migration logging removed for cleaner logs
     else:
-        logger.info("No player documents needed migration.")
+        # Player migration logging removed for cleaner logs
 
 
 
@@ -242,22 +242,22 @@ async def initialize_application():
         application = Application.builder().token(TOKEN).build()
     try:
         if global_db is None:
-            logger.info("Initializing database connection...")
+            # Database initialization logging removed for cleaner logs
             motor_db = await get_persistent_database()
             if motor_db is None:
                 logger.error("Failed to get database instance!")
                 raise Exception("Database connection failed")
-            logger.info("Database instance obtained successfully")
+            # Database instance logging removed for cleaner logs
             global_db = Database()
             await global_db.init_db(motor_db)  
-            logger.info("Database initialized successfully")
+            # Database initialization success logging removed for cleaner logs
             await migrate_schema(global_db)
             
             # Apply battle system fixes
             from game.battle_fix import apply_battle_fixes
             fixes_applied = await apply_battle_fixes(global_db)
             if fixes_applied:
-                logger.info("Applied battle system fixes")
+                # Battle system fixes logging removed for cleaner logs
             
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
@@ -330,7 +330,7 @@ async def initialize_application():
             await application.initialize()
             await application.start()
             app_initialized = True
-            logger.info("Bot application initialized and started successfully")
+            # Bot application initialization logging removed for cleaner logs
             # Get latest commit message
             commit_message = None
             try:
@@ -358,7 +358,7 @@ async def shutdown_application():
     """Gracefully shutdown the application."""
     global application, app_initialized
     if application and app_initialized:
-        logger.info("Starting graceful shutdown...")
+        # Shutdown logging removed for cleaner logs
         try:
             # Stop receiving updates first
             if hasattr(application, 'updater') and application.updater is not None:
@@ -366,7 +366,7 @@ async def shutdown_application():
             # Then stop the application
             await application.stop()
             await application.shutdown()
-            logger.info("Shutdown completed successfully")
+            # Shutdown completion logging removed for cleaner logs
         except Exception as e:
             logger.error(f"Error during shutdown: {e}", exc_info=True)
         finally:
@@ -374,7 +374,7 @@ async def shutdown_application():
 
 def handle_shutdown(signum, frame):
     """Handle shutdown signals."""
-    logger.info(f"Received shutdown signal {signum}")
+    # Shutdown signal logging removed for cleaner logs
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -390,11 +390,11 @@ def handle_shutdown(signum, frame):
 @app.post("/webhook")
 async def webhook(request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    logger.info(f"Received webhook request from IP: {client_ip}")
+    # Webhook IP logging removed for cleaner logs
 
     # Log all headers for debugging
     headers = dict(request.headers)
-    logger.info(f"Webhook headers: {headers}")
+    # Webhook headers logging removed for cleaner logs
 
     # For now, skip IP check if we're on Render
     if client_ip != "unknown" and ENV != "development" and not is_ip_allowed(client_ip):
@@ -412,11 +412,11 @@ async def webhook(request: Request):
             logger.warning("Empty webhook payload received")
             return Response(status_code=400)
 
-        logger.info(f"Webhook payload: {json_data}")
+        # Webhook payload logging removed for cleaner logs
 
         # Use global application and db
         if not app_initialized:
-            logger.info("Initializing application for webhook")
+            # Webhook app initialization logging removed for cleaner logs
             app_instance = await initialize_application()
             if not app_instance:
                 logger.error("Failed to initialize application!")
@@ -485,7 +485,7 @@ async def set_webhook(request: Request):
     try:
         host = request.headers.get("host")
         webhook_url = f"https://{host}/webhook"
-        logger.info(f"Attempting to set webhook to: {webhook_url}")
+        # Webhook URL setting logging removed for cleaner logs
         if not webhook_url.startswith("https://"):
             return JSONResponse({"status": "error", "message": "Webhook URL must use HTTPS"}, status_code=400)
         app_instance = await initialize_application()
@@ -496,7 +496,7 @@ async def set_webhook(request: Request):
             allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"]
         )
         webhook_info = await app_instance.bot.get_webhook_info()
-        logger.info(f"Webhook info: {webhook_info}")
+        # Webhook info logging removed for cleaner logs
         return {
             "status": "success",
             "message": f"Webhook set to {webhook_url}",
@@ -608,11 +608,11 @@ async def monitor_dashboard(request: Request):
         try:
             # Import here to avoid circular imports
             from utils.monitor import resource_monitor
-            logger.info("Monitor dashboard API called by user ID: " + str(user_id))
+            # Monitor dashboard API logging removed for cleaner logs
             
             live_players = resource_monitor.get_live_player_stats()
             player_count = len(live_players.get('players', []))
-            logger.info(f"Got live player stats: {player_count} players")
+            # Live player stats logging removed for cleaner logs
             
             # Get memory and CPU usage
             memory_usage = resource_monitor.get_memory_usage()
@@ -846,7 +846,7 @@ async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     try:
         await asyncio.sleep(2)
-        logger.info(f"Starting bot in {ENV} environment")
+        # Bot starting logging removed for cleaner logs
         
         # Set up signal handlers
         signal.signal(signal.SIGINT, handle_shutdown)
@@ -864,7 +864,7 @@ async def main():
         # Set webhook for Telegram
         if ENV != "development" and app_instance:
             webhook_url = "https://attackontitangamebot.onrender.com/webhook"
-            logger.info(f"Setting webhook to: {webhook_url}")
+            # Webhook setting logging removed for cleaner logs
             try:
                 await app_instance.bot.set_webhook(
                     url=webhook_url,
@@ -873,13 +873,13 @@ async def main():
                     allowed_updates=["message", "callback_query", "my_chat_member", "chat_member"]
                 )
                 webhook_info = await app_instance.bot.get_webhook_info()
-                logger.info(f"Webhook info: {webhook_info}")
+                # Webhook info logging removed for cleaner logs
             except Exception as e:
                 logger.error(f"Failed to set webhook: {e}", exc_info=True)
 
         # Configure and start server
         port = int(os.environ.get('PORT', 10000))
-        logger.info(f"Starting server on port {port}")
+        # Server starting logging removed for cleaner logs
         config = uvicorn.Config(
             app=app,
             host="0.0.0.0",
@@ -891,7 +891,7 @@ async def main():
         try:
             await server.serve()
         except asyncio.CancelledError:
-            logger.info("Server shutdown requested")
+            # Server shutdown logging removed for cleaner logs
         finally:
             await shutdown_application()
                 

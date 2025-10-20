@@ -91,7 +91,7 @@ def log_dashboard_access(user_id: int, action: str, ip_address: str, details: Op
         dashboard_access_log.pop(0)
     
     # Log to security log file
-    logger.info(f"DASHBOARD_ACCESS: user_id={user_id}, action={action}, ip={ip_address}, details={json.dumps(details or {})}")
+    # Dashboard access logging removed for cleaner logs
     
     # For critical actions, could also notify owners via Telegram
 
@@ -629,7 +629,7 @@ async def notify_user_success(user_id: str, player: Optional[dict]):
                     timeout=10.0  # Set a reasonable timeout
                 )
             # If successful, break the retry loop
-            logger.info(f"Successfully sent verification success notification to user {user_id}")
+            # Verification success notification logging removed for cleaner logs
             break
         except Exception as e:
             if attempt < max_retries - 1:

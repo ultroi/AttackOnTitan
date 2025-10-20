@@ -76,7 +76,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
                 referral_code = parts[1][len('referral_'):]
             else:
                 referral_code = parts[1]  # Accept direct code format too
-            logger.info(f"Detected referral code: {referral_code} for user {user_id}")
+            # Referral code detection logging removed for cleaner logs
 
 
     # Step 2: FULL MEMORY CLEANUP (except referral and hcaptcha_pending)
@@ -87,7 +87,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
         context.user_data.clear()
         if final_referral:
             context.user_data['referred_by'] = final_referral
-            logger.info(f"Saved referral code {final_referral} to context for user {user_id}")
+            # Referral code saving logging removed for cleaner logs
         if hcaptcha_pending:
             context.user_data['hcaptcha_pending'] = hcaptcha_pending
 
@@ -114,11 +114,11 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
 
         # Clear battle-related flags to fix button issues
         if f"active_battle_id_{user_id}" in context.bot_data:
-            logger.info(f"Clearing active_battle_id for user {user_id}")
+            # Battle cleanup logging removed for cleaner logs
             del context.bot_data[f"active_battle_id_{user_id}"]
         
         if f"titan_battle_started_{user_id}" in context.bot_data:
-            logger.info(f"Clearing titan_battle_started for user {user_id}")
+            # Titan battle cleanup logging removed for cleaner logs
             del context.bot_data[f"titan_battle_started_{user_id}"]
 
         # Cancel titan timeouts ONLY if hCaptcha is not pending
@@ -145,7 +145,7 @@ async def start_character_selection(update: Update, context: ContextTypes.DEFAUL
     # Log the referral context before sending welcome message
     if hasattr(context, 'user_data') and context.user_data is not None:
         referral_code = context.user_data.get('referred_by')
-        logger.info(f"Before sending welcome: User {user_id} has referral code: {referral_code}")
+        # Referral code before welcome logging removed for cleaner logs
     
     try:
         await update.message.reply_photo(
@@ -281,7 +281,7 @@ async def confirm_character_selection(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text("Error: Could not identify user.")
         return
     user_id = str(update.effective_user.id)
-    logger.info(f"User {user_id} selected character: {char_name}")
+    # Character selection logging removed for cleaner logs
     birthplaces = ["Shiganshina", "Karanes", "Trost", "Orvud"]
     # Arrange buttons 2 per row
     keyboard = [
@@ -395,7 +395,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
             referred_by = None
             if hasattr(context, 'user_data') and context.user_data is not None:
                 referred_by = context.user_data.get('referred_by')
-                logger.info(f"Creating character: User {user_id} has referral code in context: {referred_by}")
+                # Character creation referral logging removed for cleaner logs
             
             ref_player = None
             is_new_player = False
@@ -409,11 +409,11 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 is_new_player = True
                 try:
                     if referred_by:
-                        logger.info(f"Creating player with referral: user={user_id}, referrer={referred_by}")
+                        # Player creation with referral logging removed for cleaner logs
                         # Convert user_id to int for DB compatibility
                         player = await db.create_player(int(user_id), username, name, referred_by=referred_by)
                     else:
-                        logger.info(f"Creating player without referral: user={user_id}")
+                        # Player creation without referral logging removed for cleaner logs
                         player = await db.create_player(int(user_id), username, name)
                 except Exception as create_err:
                     logger.error(f"Failed to create player: {create_err}")
@@ -504,7 +504,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     try:
                         # Make sure DB is initialized
                         if db.players is None:
-                            logger.info("DB not initialized, initializing now...")
+                            # DB initialization logging removed for cleaner logs
                             await db.init_db()
                             
                         # Now check if DB initialization was successful
@@ -512,13 +512,13 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             logger.error("DB initialization failed, can't process referral")
                             ref_player = None
                         else:
-                            logger.info(f"Looking up referrer with code: {referred_by}")
+                            # Referrer lookup logging removed for cleaner logs
                             # Try to find player by either referral code or user_id
                             ref_player = await db.players.find_one({"$or": [
                                 {"referral_code": referred_by},
                                 {"user_id": referred_by}
                             ]})
-                            logger.info(f"Referral lookup result: {ref_player is not None}")
+                            # Referral lookup result logging removed for cleaner logs
                         
                         if ref_player and str(getattr(ref_player, 'user_id', None)) != user_id:
                             # Calculate and log referee rewards
@@ -527,8 +527,8 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 referee_rewards[k] = v
                                 starter_rewards[k] = starter_rewards.get(k, 0) + v
                             
-                            logger.info(f"Referee {user_id} gets rewards: {referee_rewards}")
-                            logger.info(f"Referrer {referred_by} (ID: {getattr(ref_player, 'user_id', None)}) to receive: {REFERRER_REWARDS}")
+                            # Referee rewards logging removed for cleaner logs
+                            # Referrer rewards logging removed for cleaner logs
                             
                             # Update referrer if db was initialized
                             if db.players is not None:
@@ -542,7 +542,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     ]}, 
                                     {"$inc": {"referral_count": 1, "valor": REFERRER_REWARDS["valor"]}}
                                 )
-                                logger.info(f"Referral update result: matched={update_result.matched_count}, modified={update_result.modified_count}")
+                                # Referral update result logging removed for cleaner logs
                                 
                                 # Clear cache for the referrer to ensure fresh data
                                 if hasattr(db, 'invalidate_player_cache'):
@@ -551,7 +551,7 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 # Double-check referrer after update to verify count was increased
                                 updated_referrer = await db.players.find_one({"user_id": ref_user_id})
                                 if updated_referrer:
-                                    logger.info(f"Referrer {ref_user_id} new referral_count: {updated_referrer.get('referral_count', 0)}")
+                                    # Referrer referral count logging removed for cleaner logs
                                     milestones = updated_referrer.get('referral_milestones', {}) or {}
                                     milestone_updates = {}
                                     milestone_msgs = []
@@ -600,12 +600,12 @@ async def create_character(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         try:
                             # Ensure DB is initialized
                             if db.characters is None:
-                                logger.info("DB characters collection not initialized, initializing DB...")
+                                # DB characters collection initialization logging removed for cleaner logs
                                 await db.init_db()
                                 
                             if db.characters is not None:
                                 await db.characters.delete_one({"user_id": str(user_id), "name": selected_character})
-                                logger.info(f"Deleted character {selected_character} for user {user_id}")
+                                # Character deletion logging removed for cleaner logs
                             else:
                                 logger.error("Failed to initialize DB characters collection")
                         except Exception as del_char_err:

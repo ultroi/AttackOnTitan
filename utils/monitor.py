@@ -25,13 +25,13 @@ def track_player_action(user_id: int, username: str, action: str, details: Optio
         "timestamp": datetime.now(),
         "details": details or {}
     }
-    logger.info(f"📱 {username} ({user_id}) is now {action}")
+    # Player activity logging removed for cleaner logs
 
 def remove_player_activity(user_id: int):
     """Remove player from activity tracking"""
     if user_id in live_player_activity:
         player = live_player_activity[user_id]
-        logger.info(f"📱 {player['name']} ({user_id}) finished {player['action']}")
+        # Player activity removal logging removed for cleaner logs
         del live_player_activity[user_id]
 
 def track_battle_end(user_id: int, username: str, result: str = "ended"):
@@ -42,7 +42,7 @@ def track_battle_end(user_id: int, username: str, result: str = "ended"):
         "timestamp": datetime.now(),
         "details": {"battle_result": result, "status": "ended"}
     }
-    logger.info(f"⚔️ {username} ({user_id}) battle {result}")
+    # Battle result logging removed for cleaner logs
     
     # Remove after 30 seconds to avoid cluttering the log
     import threading
@@ -68,7 +68,7 @@ def cleanup_stale_activity(max_age_minutes: int = 10):
         del live_player_activity[user_id]
     
     if stale_users:
-        logger.info(f"Cleaned up {len(stale_users)} stale activity records")
+        # Stale activity cleanup logging removed for cleaner logs
 
 class ResourceMonitor:
     """Monitor system resources and bot performance"""
@@ -160,10 +160,7 @@ class ResourceMonitor:
             battles = self.get_battle_stats()
             system = self.get_system_load()
             
-            logger.info(f"📊 Performance Stats:")
-            logger.info(f"   Memory: {memory['rss_mb']}MB ({memory['percent']}%)")
-            logger.info(f"   Active Battles: {battles['active_battles']}")
-            logger.info(f"   CPU: {system['cpu_percent']}%")
+            # Performance stats logging removed for cleaner logs
             
         except Exception as e:
             logger.error(f"Failed to log performance stats: {e}")
