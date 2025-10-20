@@ -262,6 +262,20 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     titan_key = titan_name.lower().replace(" titan", "")
     titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, "https://i.ibb.co/dJ6J58s0/image.jpg")
     
+    # Create titan object for immediate storage
+    titan = Titan(
+        name=titan_name,
+        level=player.level,
+        max_hp=titan_hp,
+        xp_reward=titan_xp,
+        difficulty=difficulty,
+        created_at=datetime.now(timezone.utc),
+        spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
+        min_level_requirement=max(1, player.level - 2),
+        abilities=[],
+        drop_table={}
+    )
+    
     # Build message inline (no function calls)
     reply_text = (
         f"<code>-------------------------</code>\n"
@@ -281,6 +295,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Store battle ID immediately (< 0.1ms)
         context.bot_data[f"active_battle_id_{user_id}"] = battle_id
+        
+        # Store titan data immediately for battle callback
+        context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
         
         # Send message with minimal overhead
         sent_message = await update.message.reply_text(
@@ -312,7 +329,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Fire and forget all heavy operations
     asyncio.create_task(_deferred_explore_operations(
-        context, user_id_str, user_id, db, titan_data, sent_message, 
+        context, user_id_str, user_id, db, titan, sent_message, 
         player, update.effective_user.username, event_type
     ))
 
@@ -320,7 +337,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # DEFERRED: Background Operations (Don't Block Response)
 # =====================================================================================
 
-async def _deferred_explore_operations(context, user_id_str, user_id, db, titan_data, 
+async def _deferred_explore_operations(context, user_id_str, user_id, db, titan, 
                                       sent_message, player, username, event_type):
     """
     ULTRA OPTIMIZED: All heavy operations run in parallel - NO IMPACT ON RESPONSE TIME
@@ -333,21 +350,7 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan_
             # 1. Cleanup old titan (non-blocking)
             cleanup_task = asyncio.create_task(_cleanup_existing_titan(user_id_str, db))
             
-            # 2. Create titan object (fast)
-            titan = Titan(
-                name=titan_data["name"],
-                level=titan_data["level"],
-                max_hp=titan_data["max_hp"],
-                xp_reward=titan_data["xp_reward"],
-                difficulty=titan_data["difficulty"],
-                created_at=datetime.now(timezone.utc),
-                spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
-                min_level_requirement=max(1, player.level - 2),
-                abilities=[],
-                drop_table={}
-            )
-            
-            # 3. Prepare update data (fast)
+            # 2. Prepare update data (fast)
             player.increment_daily_explores(datetime.now(timezone.utc))
             update_data = {
                 "last_explore_time": time.time(),
