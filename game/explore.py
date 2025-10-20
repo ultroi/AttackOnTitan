@@ -133,11 +133,11 @@ async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tup
 def check_random_events() -> Optional[str]:
     """Ultra-fast random event check - returns event type or None"""
     rand_val = random.random()
-    if rand_val < 0.02:  # 2% chance - Boss Titan
+    if rand_val < 0.02:  
         return "boss_titan"
-    elif rand_val < 0.07:  # 5% chance - Dealer (0.02 to 0.07)
+    elif rand_val < 0.05:  
         return "dealer"
-    elif rand_val < 0.12:  # 5% chance - Captcha (0.07 to 0.12)
+    elif rand_val < 0.05:  
         return "captcha"
     return None  # 88% chance - Normal titan
 
@@ -148,15 +148,6 @@ def check_random_events() -> Optional[str]:
 @maintenance_protected
 @ban_protected
 async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Ultra-optimized /explore command with <100ms response time.
-    
-    Strategy:
-    1. All pre-checks in-memory only (< 1ms)
-    2. Generate titan data (< 2ms)
-    3. Send message IMMEDIATELY (< 50ms)
-    4. Defer all DB operations to background (async)
-    """
     start_time = time.time()
     
     # ========== PHASE 1: Lightning-Fast Pre-Checks (< 5ms) ==========
