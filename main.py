@@ -64,7 +64,7 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
-from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback
+from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback
 
 # Spin System
 from game.spin_system import spin_command, spin_callback_handler
@@ -193,8 +193,7 @@ async def migrate_schema(db):
     if char_updates:
         result = await db.characters.bulk_write(char_updates)
         # Character migration logging removed for cleaner logs
-    else:
-        # Character migration logging removed for cleaner logs
+    # Character migration completed
 
     # --- Player migration ---
     player_fields = Player.model_fields if hasattr(Player, "model_fields") else Player.__annotations__
@@ -228,8 +227,7 @@ async def migrate_schema(db):
     if player_updates:
         result = await db.players.bulk_write(player_updates)
         # Player migration logging removed for cleaner logs
-    else:
-        # Player migration logging removed for cleaner logs
+    # Player migration completed
 
 
 
@@ -256,8 +254,7 @@ async def initialize_application():
             # Apply battle system fixes
             from game.battle_fix import apply_battle_fixes
             fixes_applied = await apply_battle_fixes(global_db)
-            if fixes_applied:
-                # Battle system fixes logging removed for cleaner logs
+            # Battle system fixes applied if needed
             
         application.bot_data["db"] = global_db
         shop_system = ShopSystem()
@@ -724,8 +721,11 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("use", disable_protected(use_command)))
 
     # Broadcast handlers (moved earlier to avoid accidental matching by later handlers)
-    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern="^confirm_broadcast$"))
-    app_instance.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern="^broadcast_"))
+    app_instance.add_handler(CallbackQueryHandler(broadcast_type_callback, pattern=r"^broadcast_type_"))
+    app_instance.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern=r"^broadcast_location_"))
+    app_instance.add_handler(CallbackQueryHandler(vote_options_callback, pattern=r"^vote_options_"))
+    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast"))
+    app_instance.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote_"))
 
     # Character selection and team management
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
@@ -892,6 +892,7 @@ async def main():
             await server.serve()
         except asyncio.CancelledError:
             # Server shutdown logging removed for cleaner logs
+            pass
         finally:
             await shutdown_application()
                 
