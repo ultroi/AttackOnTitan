@@ -182,6 +182,7 @@ async def group_update_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # Use the database function to update the group
         if await db.update_group(group_id, group_data):
             # Group update success logging removed for cleaner logs
+            pass
         else:
             logger.warning(f"Failed to update group in database, possibly due to connection issue: {group_id} - {group_title}")
     except Exception as db_err:

@@ -437,6 +437,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     created_char = await db.get_character(user_id, awarded_item)
                     if created_char:
                         # Fragment character verification logging removed for cleaner logs
+                        pass
                     else:
                         logger.error(f"❌ Fragment character {awarded_item} not found after creation!")
                         # Refund fragments
@@ -644,6 +645,7 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     created_char = await db.get_character(user_id, reward["item_key"])
                     if created_char:
                         # Character verification logging removed for cleaner logs
+                        pass
                     else:
                         logger.error(f"❌ Character {reward['item_key']} was not found after creation!")
                 else:
