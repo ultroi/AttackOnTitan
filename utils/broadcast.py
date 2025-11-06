@@ -241,10 +241,133 @@ async def broadcast_location_callback(update: Update, context: ContextTypes.DEFA
 
 
 @is_owner
-async def vote_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def custom_options_count_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Handles the vote options selection for vote broadcasts.
+    Handles the custom options count selection.
     """
+    query = update.callback_query
+    if not query or not context.chat_data:
+        return
+
+    await query.answer()
+
+    message_to_broadcast = context.chat_data.get('broadcast_message')
+    broadcast_location = context.chat_data.get('broadcast_location')
+    broadcast_type = context.chat_data.get('broadcast_type')
+    if not all([message_to_broadcast, broadcast_location, broadcast_type]):
+        await query.edit_message_text("❌ Error: Broadcast data not found. Please try again.")
+        return
+
+    callback_data = query.data
+    if callback_data == "custom_cancel":
+        context.chat_data.pop('broadcast_message', None)
+        context.chat_data.pop('broadcast_type', None)
+        context.chat_data.pop('broadcast_location', None)
+        await query.edit_message_text("❌ Custom options setup cancelled.")
+        return
+
+    # Parse count from callback
+    try:
+        count = int(callback_data.split('_')[2])  # custom_count_2, custom_count_3, etc.
+    except (ValueError, IndexError):
+        await query.edit_message_text("❌ Error: Invalid option count selection.")
+        return
+
+    if not 2 <= count <= 5:
+        await query.edit_message_text("❌ Error: Invalid option count. Must be between 2-5.")
+        return
+
+    # Store count and initialize options collection
+    context.chat_data['custom_options_count'] = count
+    context.chat_data['custom_options_collected'] = []
+    context.chat_data['custom_current_option'] = 1
+
+    # Ask for first option
+    await query.edit_message_text(
+        f"📝 <b>Custom Options Setup</b>\n\n"
+        f"Please reply with <b>Option 1</b> of {count}:\n\n"
+        f"<i>Example: Yes, I agree</i>",
+        parse_mode=ParseMode.HTML
+    )
+
+
+@is_owner
+async def collect_custom_option(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handles collecting individual custom options via text messages.
+    """
+    if not update.effective_user or not update.message or not update.message.text:
+        return
+
+    # Check if we're in custom options collection mode
+    if 'custom_current_option' not in context.chat_data:
+        return
+
+    current_option = context.chat_data.get('custom_current_option', 0)
+    total_count = context.chat_data.get('custom_options_count', 0)
+    collected_options = context.chat_data.get('custom_options_collected', [])
+
+    if current_option > total_count:
+        return  # Collection complete
+
+    # Validate option text
+    option_text = update.message.text.strip()
+    if not option_text:
+        await update.message.reply_text("❌ Option cannot be empty. Please try again.")
+        return
+
+    if len(option_text) > 50:
+        await update.message.reply_text("❌ Option too long (max 50 characters). Please try again.")
+        return
+
+    # Add emoji if not present
+    if not any(char in option_text for char in ['👍', '👎', '✅', '❌', '🤔', '❤️', '🔥', '⭐']):
+        option_text = f"📌 {option_text}"
+
+    # Store the option
+    collected_options.append(option_text)
+    context.chat_data['custom_options_collected'] = collected_options
+    context.chat_data['custom_current_option'] = current_option + 1
+
+    if current_option < total_count:
+        # Ask for next option
+        await update.message.reply_text(
+            f"✅ <b>Option {current_option} saved:</b> {option_text}\n\n"
+            f"Please reply with <b>Option {current_option + 1}</b> of {total_count}:",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        # All options collected, show confirmation
+        context.chat_data['vote_options'] = collected_options
+        
+        message_to_broadcast = context.chat_data.get('broadcast_message')
+        broadcast_location = context.chat_data.get('broadcast_location')
+        
+        location_text = {
+            "users": "👤 Users Only",
+            "groups": "👥 Groups Only", 
+            "both": "🌐 Both Users and Groups"
+        }[broadcast_location]
+
+        keyboard = [[InlineKeyboardButton("✅ Confirm Custom Vote Broadcast", callback_data="confirm_broadcast")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        options_list = "\n".join(f"• {opt}" for opt in collected_options)
+        
+        await update.message.reply_text(
+            f"🎉 <b>All Custom Options Collected!</b>\n\n"
+            f"<b>Vote Options ({len(collected_options)}):</b>\n{options_list}\n\n"
+            f"<b>Location:</b> {location_text}\n"
+            f"<b>Message:</b> {message_to_broadcast}\n\n"
+            f"Ready to broadcast?",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+
+        # Clean up temporary data
+        context.chat_data.pop('custom_options_count', None)
+        context.chat_data.pop('custom_current_option', None)
+        context.chat_data.pop('custom_options_collected', None)
     query = update.callback_query
     if not query or not context.chat_data:
         return
@@ -272,9 +395,25 @@ async def vote_options_callback(update: Update, context: ContextTypes.DEFAULT_TY
         context.chat_data['vote_options'] = ["✅ Yes", "❌ No"]
         vote_text = "Yes/No"
     elif callback_data == "vote_options_custom":
-        # For now, use default custom options. In a real implementation, you'd ask for custom options
-        context.chat_data['vote_options'] = ["👍 Option 1", "👎 Option 2", "🤔 Option 3"]
-        vote_text = "Custom Options"
+        # Start custom options collection
+        keyboard = [
+            [InlineKeyboardButton("2 Options", callback_data="custom_count_2"),
+             InlineKeyboardButton("3 Options", callback_data="custom_count_3")],
+            [InlineKeyboardButton("4 Options", callback_data="custom_count_4"),
+             InlineKeyboardButton("5 Options", callback_data="custom_count_5")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="custom_cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"<b>📊 Custom Vote Options Setup</b>\n\n"
+            f"{message_to_broadcast}\n\n"
+            f"<b>How many voting options do you want?</b>\n"
+            f"Choose 2-5 options for your custom poll:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        return  # Don't proceed to confirmation yet
     else:
         await query.edit_message_text("❌ Error: Invalid vote options selection.")
         return
@@ -287,7 +426,7 @@ async def vote_options_callback(update: Update, context: ContextTypes.DEFAULT_TY
         "users": "👤 Users Only",
         "groups": "👥 Groups Only", 
         "both": "🌐 Both Users and Groups"
-    }[broadcast_location]
+    }.get(broadcast_location, "Unknown")
 
     await query.edit_message_text(
         f"<b>🗳️ Confirm Vote Broadcast to {location_text}:</b>\n\n"
@@ -432,15 +571,19 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not query:
         return
 
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        # Query is too old, can't respond
+        return
 
     current_vote = context.bot_data.get('current_vote')
     if not current_vote:
-        await query.answer("No active vote found.")
+        # Can't answer old queries, just return
         return
 
     callback_data = query.data
-    if not callback_data.startswith("vote_"):
+    if not callback_data or not callback_data.startswith("vote_"):
         return
 
     vote_index = int(callback_data.split("_")[1])
@@ -498,6 +641,15 @@ async def vote_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # Confirm vote to user
     await query.answer(f"You voted for: {current_vote['options'][vote_index]}")
+
+    # Edit the user's message to show thank you
+    try:
+        await query.edit_message_text(
+            text="✅ <b>Thanks for Your Feedback!</b>\n\nYour vote has been recorded.",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.warning(f"Could not edit vote message for user {user.id}: {e}")
 
 
 async def _send_vote_broadcast(admin_chat_id: int, message: str, broadcast_location: str, vote_options: list, db: Database, context: ContextTypes.DEFAULT_TYPE, message_id: int) -> None:
