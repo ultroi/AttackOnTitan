@@ -69,6 +69,7 @@ def cleanup_stale_activity(max_age_minutes: int = 10):
     
     if stale_users:
         # Stale activity cleanup logging removed for cleaner logs
+        pass
 
 class ResourceMonitor:
     """Monitor system resources and bot performance"""
