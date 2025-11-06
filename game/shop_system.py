@@ -67,13 +67,13 @@ class ShopSystem:
         """Initialize all shop items with their specifications."""
         items = {
             "echo_shard": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="echo_shard", rarity="rare", attributes={"damage_min": 40.0, "damage_max": 60.0, "accuracy": 25.0}, price=50000, currency="marks", description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="echo_shard", rarity="rare", attributes={"damage_min": 75.0, "damage_max": 95.0, "crit_rate": 20.0}, price=70000, currency="marks", description="Blades made of ultrahard steel with enhanced critical hits."
             ),
             "combat_boots": Equipment(
-            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 90.0, "damage_max": 110.0}, price=40000, currency="marks", description="Spears that unleash thunderous attacks."
+            name="Thunder Spears", type="gear", rarity="epic", attributes={"damage_min": 65.0, "damage_max": 85.0, "speed": 10.0}, price=40000, currency="marks", description="Spears that unleash thunderous attacks with speed boost."
             ),
             "anti_titan_armor": Equipment(
-            name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 30.0, "damage_max": 45.0}, price=20000, currency="marks", description="Bolt-action rifles."
+            name="Rifles (Bolt-Action)", type="gear", rarity="uncommon", attributes={"damage_min": 35.0, "damage_max": 50.0, "accuracy": 15.0}, price=15000, currency="marks", description="Bolt-action rifles with accuracy bonus."
             ),
             "time_contract": Equipment(
             name="Time Contract Scroll", type="utility", rarity="uncommon", attributes={
@@ -119,38 +119,38 @@ class ShopSystem:
             }, price=60000, currency="marks", description="All attacks against Titans deal +10% damage for 30 minutes. Additionally, +20 Intelligence against Abnormal or Intelligent Titans during that duration."
             ),
             "dual_blades": Equipment(
-            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 35, "damage_max": 50}, price=70000, currency="marks", description="Blades made of ultrahard steel."
+            name="Dual Blades / Ultrahard Steel Blades", type="weapon", rarity="legendary", attributes={"damage_min": 45, "damage_max": 65, "crit_chance": 25}, price=25000, currency="marks", description="Blades made of ultrahard steel with high critical chance."
             ),
             "bladed_gloves": Equipment(
-            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"damage_min": 105, "damage_max": 145}, price=280000, currency="marks", description="Gloves with blades for close combat. High critical chance."
+            name="Bladed Gloves", type="weapon", rarity="legendary", attributes={"damage_min": 55, "damage_max": 75, "crit_chance": 25}, price=35000, currency="marks", description="Gloves with blades for close combat with high critical chance."
             ),
             "satchel_bombs": Equipment(
-            name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 65, "damage_max": 95}, price=120000, currency="marks", description="Grenades for anti-titan combat. High critical chance."
+            name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 80, "damage_max": 110, "crit_chance": 25}, price=75000, currency="marks", description="Grenades for anti-titan combat with high critical chance."
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 140, "damage_max": 200}, price=400000, currency="marks", description="Serum that transforms the user into a titan."
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 160, "damage_max": 220, "crit_chance": 25}, price=140000, currency="marks", description="Serum that transforms the user into a titan with high critical chance."
             ),
             "colossal_power": Equipment(
-            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 260, "damage_max": 300}, price=490000, currency="marks", description="Grants the power of the Colossal Titan."
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 200, "damage_max": 260, "crit_chance": 25}, price=160000, currency="marks", description="Grants the power of the Colossal Titan with high critical chance."
             ),
             "control_rod": Equipment(
-            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 300, "damage_max": 375}, price=600000, currency="marks", description="Rod to control the Founding Titan."
+            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 280, "damage_max": 350, "crit_chance": 25}, price=240000, currency="marks", description="Rod to control the Founding Titan with high critical chance."
             ),
             "warhammer_weapons": Equipment(
-            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 270, "damage_max": 315}, price=500000, currency="marks", description="Weapons constructed by the Warhammer Titan."
+            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 240, "damage_max": 300, "crit_chance": 25}, price=200000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
             ),
             "warhammer_titan_weapons": Equipment(
-            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 210, "damage_max": 255}, price=400000, currency="marks", description="Weapons constructed by the Warhammer Titan."
+            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 120, "damage_max": 160, "crit_chance": 25}, price=90000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
             ),
             # Military category weapons
             "airship_machine_guns": Equipment(
-            name="Airship-Mounted Machine Guns", type="barracks", rarity="legendary", attributes={"damage_min": 175, "damage_max": 235}, price=200000, currency="marks", description="Heavy machine guns mounted on airships for aerial combat."
+            name="Airship-Mounted Machine Guns", type="barracks", rarity="legendary", attributes={"damage_min": 140, "damage_max": 180, "area_damage": 50, "speed": -20}, price=50000, currency="marks", description="Heavy machine guns mounted on airships for aerial combat with area damage but reduced speed."
             ),
             "airship_machine_guns_v2": Equipment(
-            name="Airship-Mounted Machine Guns (v2)", type="barracks", rarity="legendary", attributes={"damage_min": 200, "damage_max": 250}, price=380000, currency="marks", description="Upgraded version of airship machine guns with improved firing rate and accuracy."
+            name="Airship-Mounted Machine Guns (v2)", type="barracks", rarity="legendary", attributes={"damage_min": 170, "damage_max": 210, "area_damage": 70, "stun_chance": 15, "speed": -20}, price=100000, currency="marks", description="Upgraded version of airship machine guns with improved firing rate, area damage, stun chance but reduced speed."
             ),
             "naval_ship_cannons": Equipment(
-            name="Naval Ship Cannons", type="barracks", rarity="legendary", attributes={"damage_min": 300, "damage_max": 375}, price=600000, currency="marks", description="Powerful cannons from naval vessels, repurposed for anti-Titan warfare."
+            name="Naval Ship Cannons", type="barracks", rarity="legendary", attributes={"damage_min": 250, "damage_max": 320, "area_damage": 100, "knockback": 30, "speed": -25}, price=180000, currency="marks", description="Powerful cannons from naval vessels, repurposed for anti-Titan warfare with massive area damage and knockback but very slow."
             ),
         }
         # self.hidden_items is intentionally left empty
