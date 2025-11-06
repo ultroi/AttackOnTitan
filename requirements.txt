@@ -16,4 +16,3 @@ jinja2
 python-multipart
 apscheduler==3.10.4
 pytz
-

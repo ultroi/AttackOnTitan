@@ -39,10 +39,10 @@ SPIN_ITEMS = {
 }
 
 RARITY_WEIGHTS = {
-    "common": 75,
+    "common": 70,
     "uncommon": 19,
-    "rare": 2,
-    "ultra_rare": 1,
+    "rare": 9,
+    "ultra_rare": 2,
 }
 
 SPIN_COSTS = {
@@ -138,6 +138,7 @@ class SpinSystem:
                 gas_limit = player.gas_limit
                 gas_to_add = min(item["amount"], gas_limit - player.gas)
                 player.gas += gas_to_add
+                reward_info["amount"] = gas_to_add  # Update to actual added amount
                 # Excess gas beyond limit is wasted
             elif item_key == "marks":
                 player.marks += item["amount"]

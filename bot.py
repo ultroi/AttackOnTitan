@@ -952,11 +952,9 @@ class LocalMemoryDatabase:
         return True
 
     def invalidate_all_character_caches(self, user_id: str):
-        """Mock invalidate_all_character_caches for compatibility"""
         return True
 
     def invalidate_battle_caches(self, user_id: str):
-        """Invalidate all battle-related caches for a user"""
         cleared_count = 0
 
         # Clear all character caches for this user
