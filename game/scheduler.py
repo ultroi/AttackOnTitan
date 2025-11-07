@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from game.bank_system import BankSystem
 from database.models import BankAccount
 from database.db import Database
+from database.db_instance import get_persistent_database
 import asyncio
 import logging
 from datetime import datetime
@@ -23,8 +24,12 @@ async def run_midnight_tax():
         # Note: We're NOT using asyncio.run() here since we're already in an async context
         db = Database()
         try:
-            # Ensure we're initializing with the current event loop
-            await db.init_db()
+            # Ensure we initialize the motor DB using shared instance
+            motor_db = await get_persistent_database()
+            if motor_db is None:
+                logger.error("[Scheduler] Could not get persistent database instance")
+                return
+            await db.init_db(motor_db)
         except RuntimeError as e:
             if "attached to a different loop" in str(e):
                 logger.error("[Scheduler] Event loop error in db initialization - trying to use current loop")
@@ -113,9 +118,41 @@ async def run_midnight_tax():
                         )
                         await db.save_bank_account(account)
 
+                    # If a 24-hour warning is scheduled and not yet sent, send it now
+                    try:
+                        if getattr(account, 'penalty_warning_date', None) and not getattr(account, 'penalty_warning_sent', False):
+                            warning_date = account.penalty_warning_date
+                            now_ist = datetime.now(pytz.timezone('Asia/Kolkata'))
+                            if warning_date and now_ist >= warning_date:
+                                # Send warning via bot if available
+                                try:
+                                    if global_bot:
+                                        warn_text = (
+                                            "⚠️ Reminder: You reached the bank-open level but haven't opened your bank account.\n"
+                                            "Please open your bank account within 2 more days to avoid penalties.\n"
+                                            "Use /bank to open your bank account now."
+                                        )
+                                        await global_bot.send_message(chat_id=player.user_id, text=warn_text, parse_mode="HTML")
+                                        logger.info(f"[Scheduler] Sent bank opening warning to {player.user_id}")
+                                except Exception as e:
+                                    logger.error(f"[Scheduler] Failed to send opening warning to {player.user_id}: {e}")
+                                # Mark warning as sent and persist
+                                account.penalty_warning_sent = True
+                                await db.save_bank_account(account)
+                    except Exception as e:
+                        logger.error(f"[Scheduler] Error checking/sending opening warning for {player.user_id}: {e}")
+
                     # Call the apply_opening_penalty method which will set penalty_start_date or apply penalty
                     try:
-                        await bank_system.apply_opening_penalty(player, account)
+                        result_msg = await bank_system.apply_opening_penalty(player, account)
+                        # If a message was returned (other than No penalty applied), notify the player
+                        if result_msg and result_msg != "No penalty applied.":
+                            try:
+                                if global_bot:
+                                    await global_bot.send_message(chat_id=player.user_id, text=result_msg, parse_mode="HTML")
+                                    logger.info(f"[Scheduler] Sent opening-penalty message to {player.user_id}")
+                            except Exception as e:
+                                logger.error(f"[Scheduler] Failed to send opening penalty message to {player.user_id}: {e}")
                     except Exception as e:
                         logger.error(f"[Scheduler] Error applying opening penalty for {player.user_id}: {e}")
                 except Exception as e:

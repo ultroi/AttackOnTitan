@@ -17,6 +17,10 @@ class BankAccount(BaseModel):
     penalty_applied: bool = False
     penalty_rate: float = 2.5
     penalty_start_date: Optional[datetime] = None
+    # When a player reaches the open-bank level but doesn't open an account,
+    # we schedule a 24-hour warning before the penalty starts. Track that here.
+    penalty_warning_date: Optional[datetime] = None
+    penalty_warning_sent: bool = False
     total_wealth: Optional[int] = None  # Added for central bank stats
     last_tax_check: Optional[datetime] = None  # Track when tax was last checked
     tax_history: List[Dict] = Field(default_factory=list)  # Track tax collection history

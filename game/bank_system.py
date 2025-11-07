@@ -200,9 +200,12 @@ class BankSystem:
         # Penalty starts 3 days after crossing level 15
         if not account.opened and player.level >= BANK_OPEN_LEVEL:
             if account.penalty_start_date is None:
+                # Schedule a warning after 24 hours and the actual penalty after 3 days
+                account.penalty_warning_date = now_ist + timedelta(days=1)
+                account.penalty_warning_sent = False
                 account.penalty_start_date = now_ist + timedelta(days=3)
                 await self.db.save_bank_account(account)
-                return "Penalty period will start in 3 days."
+                return "Penalty period will start in 3 days. A reminder will be sent after 24 hours."
             if now_ist >= account.penalty_start_date:
                 # Calculate penalty rate
                 days_since_start = (now_ist - account.penalty_start_date).days
@@ -215,7 +218,7 @@ class BankSystem:
                 account.penalty_applied = True
                 account.penalty_rate = penalty_rate
                 await self.db.save_bank_account(account)
-                return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
+        return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
         return "No penalty applied."
 
 
