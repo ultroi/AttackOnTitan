@@ -241,6 +241,70 @@ async def broadcast_location_callback(update: Update, context: ContextTypes.DEFA
 
 
 @is_owner
+async def vote_options_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+    query = update.callback_query
+    if not query or not context.chat_data:
+        return
+
+    await query.answer()
+
+    message_to_broadcast = context.chat_data.get('broadcast_message')
+    broadcast_location = context.chat_data.get('broadcast_location')
+    broadcast_type = context.chat_data.get('broadcast_type')
+    if not all([message_to_broadcast, broadcast_location, broadcast_type]):
+        await query.edit_message_text("❌ Error: Broadcast data not found. Please try again.")
+        return
+
+    callback_data = query.data
+    if callback_data == "vote_options_yesno":
+        # Store vote options and show confirmation
+        context.chat_data['vote_options'] = ["✅ Yes", "❌ No"]
+        vote_text = "Yes/No"
+    elif callback_data == "vote_options_custom":
+        # Show custom options count keyboard
+        keyboard = [
+            [InlineKeyboardButton("2 Options", callback_data="custom_count_2"),
+             InlineKeyboardButton("3 Options", callback_data="custom_count_3")],
+            [InlineKeyboardButton("4 Options", callback_data="custom_count_4"),
+             InlineKeyboardButton("5 Options", callback_data="custom_count_5")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="custom_cancel")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"<b>📊 Custom Vote Options Setup</b>\n\n"
+            f"{message_to_broadcast}\n\n"
+            f"<b>How many voting options do you want?</b>\n"
+            f"Choose 2-5 options for your custom poll:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        return
+    else:
+        await query.edit_message_text("❌ Error: Invalid vote options selection.")
+        return
+
+    # Show confirmation for vote broadcast
+    keyboard = [[InlineKeyboardButton("✅ Confirm Vote Broadcast", callback_data="confirm_broadcast")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    location_text = {
+        "users": "👤 Users Only",
+        "groups": "👥 Groups Only", 
+        "both": "🌐 Both Users and Groups"
+    }.get(broadcast_location, "Unknown")
+
+    await query.edit_message_text(
+        f"<b>🗳️ Confirm Vote Broadcast to {location_text}:</b>\n\n"
+        f"{message_to_broadcast}\n\n"
+        f"<b>Vote Options:</b> {vote_text}",
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
+
+
+@is_owner
 async def custom_options_count_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles the custom options count selection.
