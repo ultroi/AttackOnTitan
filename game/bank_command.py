@@ -5,6 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database.models import Player, BankAccount
 from game.bank_system import BankSystem, BANK_OPEN_FEE, PENALTY_BASE
+from utils.owners import is_owner
 
 
 async def get_player_and_dependencies(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -178,8 +179,9 @@ async def handle_withdrawal_command(update: Update, context: ContextTypes.DEFAUL
         return
 
     # --- Argument validation ---
-    if len(context.args) != 2:
-        await update.message.reply_text("Usage: `/withdraw <currency> <amount>`\nExample: `/withdraw marks 5000`", parse_mode='Markdown')
+    if not hasattr(context, 'args') or context.args is None or not isinstance(context.args, list) or len(context.args) != 2:
+        if hasattr(update, "message") and update.message is not None:
+            await update.message.reply_text("Usage: `/withdraw <currency> <amount>`\nExample: `/withdraw marks 5000`", parse_mode='Markdown')
         return
 
     currency = context.args[0].lower()
@@ -216,9 +218,47 @@ async def handle_open_bank_callback(update: Update, context: ContextTypes.DEFAUL
     bank_system = BankSystem(db)
     user_id = str(query.from_user.id)
     player = await db.get_player(user_id)
+    # Guard: ensure DB and player exist
+    if not db:
+        await query.edit_message_text(text="❌ Database not initialized. Please try again later.", parse_mode='Markdown')
+        return
+
+    if not player:
+        await query.edit_message_text(text="❌ You don't have a character yet. Use /start to create one.", parse_mode='Markdown')
+        return
 
     # Call the open_bank function which returns a status message
     status_message = await bank_system.open_bank(player)
 
     # Edit the original message to show the result
     await query.edit_message_text(text=status_message, parse_mode='Markdown')
+
+
+@is_owner
+async def handle_preview_opening_penalty_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only command to preview which players will receive an opening-penalty start date."""
+    db, bank_system, _ = await get_player_and_dependencies(update, context)
+    if not db:
+        return
+
+    players = await db.get_all_players()
+    previews = []
+    # Build preview list: players level >= BANK_OPEN_LEVEL and either no account or account.opened == False
+    from game.bank_system import BANK_OPEN_LEVEL
+    for p in players:
+        if getattr(p, 'level', 0) >= BANK_OPEN_LEVEL:
+            account = await db.get_bank_account(p.user_id)
+            if not account or not getattr(account, 'opened', False):
+                penalty_date = getattr(account, 'penalty_start_date', None) if account else None
+                previews.append((p.user_id, getattr(p, 'name', p.user_id), penalty_date))
+
+    if not previews:
+        await update.message.reply_text("No players currently eligible for opening-penalty preview.")
+        return
+
+    text = "Players who would receive opening-penalty start date:\n\n"
+    for uid, name, pd in previews:
+        pd_str = pd.isoformat() if pd else "Not set (would be set to now+3 days)"
+        text += f"• {name} ({uid}) — {pd_str}\n"
+
+    await update.message.reply_text(text)

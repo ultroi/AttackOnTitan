@@ -1,9 +1,10 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from game.bank_system import BankSystem, TAX_RATE, TAX_THRESHOLDS
+from game.bank_system import BankSystem
+from database.models import BankAccount
 from database.db import Database
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 import pytz  # Import pytz for timezone support
 
 # Global bot instance for notifications
@@ -14,7 +15,6 @@ async def run_midnight_tax():
     """Execute midnight tax collection at midnight IST (00:00)."""
     logger = logging.getLogger("scheduler")
     ist_timezone = pytz.timezone('Asia/Kolkata')
-    current_time = datetime.now(ist_timezone)
     
     # Midnight tax job started logging removed for cleaner logs
     
@@ -28,8 +28,6 @@ async def run_midnight_tax():
         except RuntimeError as e:
             if "attached to a different loop" in str(e):
                 logger.error("[Scheduler] Event loop error in db initialization - trying to use current loop")
-                # We'll continue without reinitializing, as the scheduler should have its own event loop
-                # and the database should be initialized in the main application
                 pass
             else:
                 raise
@@ -40,9 +38,10 @@ async def run_midnight_tax():
         
         # Execute tax collection
         tax_reports = await bank_system.check_and_apply_midnight_tax()
-        
-        # Tax collection completed logging removed for cleaner logs
-        
+
+        # Fetch all players once to reuse for opening-penalty checks below
+        all_players = await db.get_all_players()
+
         # Send notifications to users if bot is available
         if global_bot and tax_reports:
             # Tax notifications logging removed for cleaner logs
@@ -85,6 +84,46 @@ async def run_midnight_tax():
         
         logger.info(f"[Scheduler] Midnight tax job completed successfully at {datetime.now(ist_timezone)} (IST)")
         
+        # --- Automatic opening penalty check for players who reached level threshold but didn't open account ---
+        try:
+            logger.info("[Scheduler] Running automatic opening-penalty checks for eligible players")
+            bank_system = BankSystem(db)
+
+            # Iterate players and ensure a BankAccount record exists, then apply opening penalty logic
+            for player in all_players:
+                try:
+                    if not getattr(player, 'user_id', None):
+                        continue
+                    # Only consider players who reached the bank open level
+                    if getattr(player, 'level', 0) < getattr(bank_system, 'BANK_OPEN_LEVEL', 15):
+                        continue
+
+                    account = await db.get_bank_account(player.user_id)
+                    if not account:
+                        # Create a placeholder bank account (not opened)
+                        account = BankAccount(
+                            user_id=player.user_id,
+                            opened=False,
+                            opened_at=None,
+                            marks_balance=0,
+                            valor_balance=0,
+                            crystal_balance=0,
+                            penalty_start_date=None,
+                            penalty_applied=False
+                        )
+                        await db.save_bank_account(account)
+
+                    # Call the apply_opening_penalty method which will set penalty_start_date or apply penalty
+                    try:
+                        await bank_system.apply_opening_penalty(player, account)
+                    except Exception as e:
+                        logger.error(f"[Scheduler] Error applying opening penalty for {player.user_id}: {e}")
+                except Exception as e:
+                    logger.error(f"[Scheduler] Error processing player {getattr(player, 'user_id', 'unknown')}: {e}")
+            logger.info("[Scheduler] Opening-penalty checks completed")
+        except Exception as e:
+            logger.error(f"[Scheduler] Failed running opening-penalty checks: {e}")
+        
     except Exception as e:
         logger.error(f"[Scheduler] Midnight tax job failed: {e}", exc_info=True)
 
@@ -98,7 +137,7 @@ def start_scheduler(bot=None):
     # Create scheduler with the event loop of the application
     scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")  # Changed from UTC to IST timezone
     # Ensure it uses the right event loop
-    asyncio_event_loop = asyncio.get_event_loop()
+    # Use the current event loop implicitly; no explicit assignment needed
     
     # Add job to run every day at midnight (00:00) in IST timezone
     scheduler.add_job(
@@ -118,8 +157,8 @@ def start_scheduler(bot=None):
     # Get next run time for logging
     next_run = scheduler.get_job('midnight_tax_job').next_run_time
     
-    logger.info(f"[Scheduler] Midnight tax scheduler started successfully!")
-    logger.info(f"[Scheduler] Next tax collection scheduled for: {next_run}")
+    logger.info("[Scheduler] Midnight tax scheduler started successfully!")
+    logger.info("[Scheduler] Next tax collection scheduled for: %s", next_run)
     
     return scheduler
 
@@ -156,8 +195,6 @@ async def manual_tax_trigger(bot=None):
 def get_scheduler_status():
     """Get current scheduler status and next run times."""
     try:
-        from apscheduler.schedulers.base import STATE_RUNNING, STATE_PAUSED, STATE_STOPPED
-        
         # This would need to be called from where scheduler is stored
         # For now, return basic info
         return {

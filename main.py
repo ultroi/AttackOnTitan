@@ -47,7 +47,13 @@ from game.profile_system import (
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
 )
-from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
+from game.bank_command import (
+    handle_bank_command,
+    handle_deposit_command,
+    handle_withdrawal_command,
+    handle_open_bank_callback,
+    handle_preview_opening_penalty_command,
+)
 from utils.fastapi_dashboard import include_dashboard_route
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
@@ -698,6 +704,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("taxstatus", tax_status_command))
     app_instance.add_handler(CommandHandler("forcetax", force_tax_check_command))
     app_instance.add_handler(CommandHandler("broadcast", broadcast_command))
+    # Admin preview for bank opening-penalty (owner-only decorator enforces access)
+    app_instance.add_handler(CommandHandler("pop", handle_preview_opening_penalty_command))
 
     # Bank system handlers
     app_instance.add_handler(CommandHandler("bank", disable_protected(handle_bank_command)))

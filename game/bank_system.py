@@ -5,7 +5,7 @@ from database.models import BankAccount, Player
 
 # --- Constants ---
 BANK_OPEN_LEVEL = 15
-BANK_OPEN_FEE = {'marks': 5000, 'valor': 50}
+BANK_OPEN_FEE = {'marks': 5000, 'valor': 5}
 ## DEPOSIT_CAPS removed: No weekly deposit cap
 PENALTY_BASE = 2.5
 PENALTY_DAILY_INCREASE = 1.5
@@ -68,6 +68,9 @@ class BankSystem:
 
     async def deposit(self, player: Player, account: BankAccount, currency: str, amount: int) -> str:
         """Deposits currency from player's inventory to their bank account (no weekly cap)."""
+        if amount <= 0:
+            return f"❌ Amount must be a positive number."
+
         player_balance = getattr(player, currency, 0)
         if amount > player_balance:
             return f"❌ Insufficient funds. You only have `{player_balance}` {currency} in your inventory."
@@ -75,7 +78,8 @@ class BankSystem:
         # Perform the transaction
         setattr(player, currency, player_balance - amount)
         bank_balance_field = f"{currency}_balance"
-        setattr(account, bank_balance_field, getattr(account, bank_balance_field) + amount)
+        current_bank_balance = getattr(account, bank_balance_field, 0)
+        setattr(account, bank_balance_field, current_bank_balance + amount)
 
         ist = pytz.timezone('Asia/Kolkata')
         account.last_deposit = datetime.now(ist)
@@ -151,9 +155,9 @@ class BankSystem:
     def get_player_bank_info(self, account: BankAccount):
         """Gets a player's bank balance (no weekly quota)."""
         return {
-            'marks': account.marks_balance,
-            'valor': account.valor_balance,
-            'crystal': account.crystal_balance
+            'marks': getattr(account, 'marks_balance', 0),
+            'valor': getattr(account, 'valor_balance', 0),
+            'crystal': getattr(account, 'crystal_balance', 0)
         }
         
     async def check_player_tax_status(self, player) -> dict:
@@ -179,9 +183,9 @@ class BankSystem:
             return tax_info
         
         for currency in ["marks", "valor", "crystal"]:
-            player_balance = getattr(player, currency)
+            player_balance = getattr(player, currency, 0)
             tax_info[f'{currency}_balance'] = player_balance
-            
+
             if player_balance > TAX_THRESHOLDS[currency]:
                 tax_amount = int(player_balance * TAX_RATE)
                 tax_info['would_be_taxed'] = True
@@ -189,7 +193,7 @@ class BankSystem:
         
         return tax_info
 
-    def apply_opening_penalty(self, player: Player, account: BankAccount) -> str:
+    async def apply_opening_penalty(self, player: Player, account: BankAccount) -> str:
         # Use IST timezone for all time calculations
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
@@ -197,7 +201,7 @@ class BankSystem:
         if not account.opened and player.level >= BANK_OPEN_LEVEL:
             if account.penalty_start_date is None:
                 account.penalty_start_date = now_ist + timedelta(days=3)
-                self.db.save_bank_account(account)
+                await self.db.save_bank_account(account)
                 return "Penalty period will start in 3 days."
             if now_ist >= account.penalty_start_date:
                 # Calculate penalty rate
@@ -207,10 +211,10 @@ class BankSystem:
                 player.marks = int(player.marks * (1 - penalty_rate / 100))
                 player.valor = int(player.valor * (1 - penalty_rate / 100))
                 player.crystal = int(player.crystal * (1 - penalty_rate / 100))
-                self.db.save_player(player)
+                await self.db.save_player(player)
                 account.penalty_applied = True
                 account.penalty_rate = penalty_rate
-                self.db.save_bank_account(account)
+                await self.db.save_bank_account(account)
                 return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
         return "No penalty applied."
 
