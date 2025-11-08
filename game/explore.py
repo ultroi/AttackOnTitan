@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from database.db import Database
-from database.models import (Player, Titan, generate_titan_hp,
+from database.models import (Player, Titan, Character, CharacterStats, generate_titan_hp,
                            generate_titan_name, generate_titan_xp)
 from game.captcha import spawn_captcha
 from game.dealer_system import show_dealer
@@ -35,20 +35,23 @@ user_last_explore: Dict[str, float] = {}
 user_explore_locks: Dict[str, asyncio.Lock] = {}
 user_timeout_tasks: Dict[str, asyncio.Task] = {}
 _battle_system_cache = {}
-user_cache: Dict[str, Dict] = {}  # Cache player + character data
-cache_expiry: Dict[str, float] = {}  # Cache expiry timestamps
-CACHE_TTL = 300  # 300 seconds (5 minutes) cache - prevents thrashing while reducing stale data
+user_cache: Dict[str, Tuple[Player, Character]] = {}  
+cache_expiry: Dict[str, float] = {}  
+CACHE_TTL = 300  
 
 TITAN_TYPE_IMAGE_URLS = {
     "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
     "potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
     "bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
+    "colossal": "https://i.ibb.co/5hCrTgjN/image.jpg",
+    "war hammer": "https://i.ibb.co/SSts9zx/image.jpg",
     "gaping mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
     "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
     "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
     "bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
     "staggering creepers": "https://i.ibb.co/mFchdbj9/image.jpg",
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg"
+    
 }
 
 BOSS_TITAN_IMAGE_URLS = ["https://i.ibb.co/cz6bJ0J/image.jpg"]
@@ -88,13 +91,13 @@ class FastPreCheck:
     @staticmethod
     def is_chat_private(update: Update) -> bool:
         """Check if chat is private"""
-        return update.effective_chat and update.effective_chat.type == "private"
+        return update.effective_chat is not None and update.effective_chat.type == "private"
 
 # =====================================================================================
 # PERFORMANCE: Caching Layer
 # =====================================================================================
 
-async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tuple[Player, object]]:
+async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tuple[Player, Character]]:
     """ULTRA-FAST cached player + character data (< 5ms)"""
     current_time = time.time()
     
@@ -244,11 +247,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Fast inline titan generation (no function call overhead)
     difficulty = get_titan_difficulty_by_level(player.level)
-    titan_hp = generate_titan_hp(level=player.level, difficulty=difficulty, character_stats=character.stats)
+    titan_hp = generate_titan_hp(level=player.level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
     titan_name = generate_titan_name(difficulty)
     titan_xp = generate_titan_xp(player.level, difficulty)
     titan_key = titan_name.lower().replace(" titan", "")
-    titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, "https://i.ibb.co/dJ6J58s0/image.jpg")
+    titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
     
     # Create titan object for immediate storage
     titan = Titan(
@@ -288,12 +291,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
         
         # Send message with minimal overhead
-        sent_message = await update.message.reply_text(
-            reply_text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=False
-        )
+        if update.message:
+            sent_message = await update.message.reply_text(
+                reply_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False
+            )
+        else:
+            sent_message = None
         
         # Response sent successfully
         
@@ -448,7 +454,7 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
             # Titan cleanup skip logging removed for cleaner logs
             return
         
-        result = await db.titans.delete_one({"user_id": user_id_str})
+        result = await db.titans.delete_one({"user_id": user_id_str}) if db.titans else None
         deleted_count = getattr(result, 'deleted_count', 0) if result else 0
         if deleted_count > 0:
             db.invalidate_titan_cache(user_id_str)
@@ -509,12 +515,15 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            sent_message = await update.message.reply_text(
-                boss_message,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False
-            )
+            if update.message:
+                sent_message = await update.message.reply_text(
+                    boss_message,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                )
+            else:
+                sent_message = None
             
             # Update player stats in background
             player.increment_daily_explores(datetime.now(timezone.utc))
@@ -642,7 +651,8 @@ async def open_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [["/explore", "/close"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
-    await update.message.reply_text("Keyboard opened.", reply_markup=reply_markup)
+    if update.message:
+        await update.message.reply_text("Keyboard opened.", reply_markup=reply_markup)
 
 @ban_protected
 async def close_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):

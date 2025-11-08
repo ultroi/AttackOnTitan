@@ -22,7 +22,7 @@ from utils.disable_mode import disable_command, enable_command, disable_protecte
 from utils.diagnostics import diagnostic_db_command, check_group_record
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
-from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback
+from utils.broadcast import broadcast_command, broadcast_location_callback, end_voting_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback, custom_options_count_callback, collect_custom_option
 from utils.extra import buy_command, give_command
 from game.explore import explore, close_keyboard, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
@@ -1924,7 +1924,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("taxstatus", tax_status_command))
     application.add_handler(CommandHandler("forcetax", force_tax_check_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
-    
+
     # Test mode only commands
     if TEST_MODE:
         application.add_handler(CommandHandler("cleardb", clear_local_db_command))
@@ -1936,7 +1936,7 @@ def setup_handlers(application):
     application.add_handler(CommandHandler("deposit", disable_protected(handle_deposit_command)))
     application.add_handler(CommandHandler("withdraw", disable_protected(handle_withdrawal_command)))
     application.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
-    
+
     # PVP system handlers
     application.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
     application.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
@@ -1946,11 +1946,21 @@ def setup_handlers(application):
 
     application.add_handler(CommandHandler("use", disable_protected(use_command)))
 
-    # Character selection and team management
+    # Broadcast handlers (more specific patterns first)
+    application.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast$"))
+    application.add_handler(CallbackQueryHandler(broadcast_type_callback, pattern=r"^broadcast_type_"))
+    application.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern=r"^broadcast_location_"))
+    application.add_handler(CallbackQueryHandler(vote_options_callback, pattern=r"^vote_options_"))
+    application.add_handler(CallbackQueryHandler(custom_options_count_callback, pattern=r"^custom_count_"))
+    application.add_handler(CallbackQueryHandler(end_voting_callback, pattern=r"^end_voting$"))
+    application.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote_"))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_custom_option))
+
+    # Character selection and team management (general patterns after specific ones)
     application.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     application.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
-    application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
-    application.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
+    application.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_.*$"))
+    application.add_handler(CallbackQueryHandler(create_character, pattern=r"^location_"))
     application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
     application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
     application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
@@ -1988,13 +1998,6 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
     application.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
 
-    # Broadcast handlers
-    application.add_handler(CallbackQueryHandler(broadcast_type_callback, pattern=r"^broadcast_type_"))
-    application.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern=r"^broadcast_location_"))
-    application.add_handler(CallbackQueryHandler(vote_options_callback, pattern=r"^vote_options_"))
-    application.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast_"))
-    application.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote_"))
-
     # Shop and purchases
     application.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))
 
@@ -2002,12 +2005,12 @@ def setup_handlers(application):
     application.add_handler(ChatMemberHandler(group_update_handler, chat_member_types=ChatMemberHandler.MY_CHAT_MEMBER | ChatMemberHandler.CHAT_MEMBER))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS | filters.StatusUpdate.LEFT_CHAT_MEMBER, group_update_handler))
 
-    # Generic button handler (should be last)
+    # Generic button handler (should be last before fallback)
     application.add_handler(CallbackQueryHandler(button, pattern=r"^[A-Z0-9]+$"))
 
     # Fallback handler (must be absolutely last)
     application.add_handler(CallbackQueryHandler(button_callback))
-    
+
     # Text message handler
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, button))
 

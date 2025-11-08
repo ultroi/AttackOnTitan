@@ -70,7 +70,7 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
-from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback
+from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback, custom_options_count_callback, collect_custom_option, end_voting_callback
 
 # Spin System
 from game.spin_system import spin_command, spin_callback_handler
@@ -318,7 +318,7 @@ async def initialize_application():
             # Send error to group
             try:
                 await context.bot.send_message(
-                    chat_id=-1002463105932,
+                    chat_id=-1002848899456,
                     text=error_text,
                     parse_mode="HTML"
                 )
@@ -685,8 +685,6 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("missions", disable_protected(missions_command)))
     app_instance.add_handler(CommandHandler("resetmission", disable_protected(reset_mission_command)))
     app_instance.add_handler(CommandHandler("remission", disable_protected(remission_command)))
-    app_instance.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
-    app_instance.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
 
     # Mod/owner commands (not protected by disable)
     app_instance.add_handler(CommandHandler("monitor", monitor_command))
@@ -712,34 +710,36 @@ def register_handlers(app_instance):
     app_instance.add_handler(CommandHandler("deposit", disable_protected(handle_deposit_command)))
     app_instance.add_handler(CommandHandler("withdraw", disable_protected(handle_withdrawal_command)))
     app_instance.add_handler(CallbackQueryHandler(handle_open_bank_callback, pattern="^bank_open_account$"))
-    
+
     # PVP system handlers
     app_instance.add_handler(CommandHandler("pvp", disable_protected(pvp_command)))
     app_instance.add_handler(CallbackQueryHandler(pvp_callback_handler, pattern="^pvp_"))
-    
-    # Dealer system handlers
 
+    # Dealer system handlers
     app_instance.add_handler(CallbackQueryHandler(handle_dealer_callback, pattern="^dealer_"))
 
     # Spin system handlers
     app_instance.add_handler(CommandHandler("spin", disable_protected(spin_command)))
     app_instance.add_handler(CallbackQueryHandler(spin_callback_handler, pattern="^spin_"))
-    
+
     # Item usage handlers
     app_instance.add_handler(CommandHandler("use", disable_protected(use_command)))
 
-    # Broadcast handlers (moved earlier to avoid accidental matching by later handlers)
+    # Broadcast handlers (more specific patterns first)
+    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast$"))
     app_instance.add_handler(CallbackQueryHandler(broadcast_type_callback, pattern=r"^broadcast_type_"))
     app_instance.add_handler(CallbackQueryHandler(broadcast_location_callback, pattern=r"^broadcast_location_"))
     app_instance.add_handler(CallbackQueryHandler(vote_options_callback, pattern=r"^vote_options_"))
-    app_instance.add_handler(CallbackQueryHandler(confirm_broadcast_callback, pattern=r"^confirm_broadcast"))
+    app_instance.add_handler(CallbackQueryHandler(custom_options_count_callback, pattern=r"^custom_count_"))
+    app_instance.add_handler(CallbackQueryHandler(end_voting_callback, pattern=r"^end_voting$"))
     app_instance.add_handler(CallbackQueryHandler(vote_callback, pattern=r"^vote_"))
+    app_instance.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_custom_option))
 
-    # Character selection and team management
+    # Character selection and team management (general patterns after specific ones)
     app_instance.add_handler(CallbackQueryHandler(show_character_selection, pattern="^start_journey$"))
     app_instance.add_handler(CallbackQueryHandler(show_character_details, pattern=r"^select_"))
-    app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_"))
-    app_instance.add_handler(CallbackQueryHandler(create_character, pattern=r"^birthplace_"))
+    app_instance.add_handler(CallbackQueryHandler(confirm_character_selection, pattern=r"^confirm_.*$"))
+    app_instance.add_handler(CallbackQueryHandler(create_character, pattern=r"^location_"))
     app_instance.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
     app_instance.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
     app_instance.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
@@ -772,6 +772,10 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))
+
+    # Mission handlers
+    app_instance.add_handler(CallbackQueryHandler(missions_callback_handler, pattern=r"^mission_"))
+    app_instance.add_handler(CallbackQueryHandler(reset_mission_callback_handler, pattern=r"^reset_"))
 
     # Shop and purchases
     app_instance.add_handler(CallbackQueryHandler(button_callback, pattern=r"^(shop_|buy_|shop_refresh)"))

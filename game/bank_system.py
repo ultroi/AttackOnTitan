@@ -6,18 +6,17 @@ from database.models import BankAccount, Player
 # --- Constants ---
 BANK_OPEN_LEVEL = 15
 BANK_OPEN_FEE = {'marks': 5000, 'valor': 5}
-## DEPOSIT_CAPS removed: No weekly deposit cap
 PENALTY_BASE = 2.5
 PENALTY_DAILY_INCREASE = 1.5
 LATE_DEPOSIT_PENALTY = 5.0
 
 # Tax System Constants
 TAX_THRESHOLDS = {
-    'marks': 50000,      # Reduced from 80k (progressive)
-    'valor': 500,        # Reduced from 1.5k (stricter)
-    'crystal': 50        # Reduced from 500 (aggressive)
+    'marks': 50000,      
+    'valor': 500,        
+    'crystal': 50        
 }
-TAX_RATE = 0.15  # Increased from 0.08 (8% → 15% for better inflation control)
+TAX_RATE = 0.15  
 
 # Used for richness calculation to avoid magic numbers
 CURRENCY_VALUES = {
@@ -194,7 +193,6 @@ class BankSystem:
         return tax_info
 
     async def apply_opening_penalty(self, player: Player, account: BankAccount) -> str:
-        # Use IST timezone for all time calculations
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
         # Penalty starts 3 days after crossing level 15
@@ -205,7 +203,8 @@ class BankSystem:
                 account.penalty_warning_sent = False
                 account.penalty_start_date = now_ist + timedelta(days=3)
                 await self.db.save_bank_account(account)
-                return "Penalty period will start in 3 days. A reminder will be sent after 24 hours."
+                return ""
+            
             if now_ist >= account.penalty_start_date:
                 # Calculate penalty rate
                 days_since_start = (now_ist - account.penalty_start_date).days
@@ -218,8 +217,8 @@ class BankSystem:
                 account.penalty_applied = True
                 account.penalty_rate = penalty_rate
                 await self.db.save_bank_account(account)
-        return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
-        return "No penalty applied."
+                return f"Penalty applied: {penalty_rate:.2f}% deducted from your inventory."
+        return ""
 
 
     def get_current_tax_rate(self, account: BankAccount):

@@ -24,12 +24,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     user_id = str(update.effective_user.id)
-    context.user_data['owner_id'] = user_id  # Set owner for this session
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    context.user_data['owner_id'] = user_id 
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_profile_click', 0)
-    if now - last < 1.5:
-        return  # Ignore spam clicks silently
+    if now - last < 0.5:
+        return  
     context.user_data['last_profile_click'] = now
     # Check if user is in active battle
     if user_id in active_battles:
@@ -116,10 +116,10 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(query.from_user.id)
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_team_click', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_team_click'] = now
     # --- Privacy: Only allow owner to access ---
@@ -331,10 +331,10 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_inventory_click', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_inventory_click'] = now
     # Check if user is in active battle
@@ -424,10 +424,10 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_weapons', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_weapons'] = now
     # --- Privacy: Only allow owner to access ---
@@ -461,10 +461,10 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_gear', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_gear'] = now
     # --- Privacy: Only allow owner to access ---
@@ -498,10 +498,10 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_utilities', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_utilities'] = now
     # --- Privacy: Only allow owner to access ---
@@ -535,10 +535,10 @@ async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_military', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_military'] = now
     # --- Privacy: Only allow owner to access ---
@@ -572,10 +572,10 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_echo_shards', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_echo_shards'] = now
     # --- Privacy: Only allow owner to access ---
@@ -604,10 +604,10 @@ async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
     await query.answer()
     user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 1.5s ---
+    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_miscellaneous', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_view_miscellaneous'] = now
     # --- Privacy: Only allow owner to access ---
@@ -950,7 +950,7 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Anti-spam check
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_abilities_click', 0)
-    if now - last < 1.5:
+    if now - last < 0.5:
         return
     context.user_data['last_abilities_click'] = now
     

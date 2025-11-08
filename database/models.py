@@ -686,15 +686,15 @@ class Titan(BaseModel):
 TITAN_NAME_VARIANTS = {
     "Easy": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
     ],
     "Normal": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
     ],
     "Hard": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing"
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
     ]
 }
 
@@ -713,9 +713,6 @@ TITAN_DESCRIPTORS = {
         "Godlike", "Primordial", "Mythical", "Legendary", "Supreme"
     ]
 }
-
-# Special abilities by difficulty - Enhanced with anime references
-# ...existing code...
 
 # Base HP ranges by difficulty - Rebalanced for better gameplay
 HP_RANGES = {
