@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 from telegram.error import Forbidden, BadRequest
 
 from database.db import Database
-from utils.owners import is_owner
+from utils.owners import is_owner, get_owner_ids
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +113,6 @@ async def confirm_broadcast_callback(update: Update, context: ContextTypes.DEFAU
 
 @is_owner
 async def broadcast_type_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handles the broadcast type selection.
-    """
     query = update.callback_query
     if not query or not context.chat_data:
         return
@@ -355,17 +352,19 @@ async def custom_options_count_callback(update: Update, context: ContextTypes.DE
     )
 
 
-@is_owner
+
 async def collect_custom_option(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Handles collecting individual custom options via text messages.
-    """
     if not update.effective_user or not update.message or not update.message.text:
         return
 
     # Check if we're in custom options collection mode
     if 'custom_current_option' not in context.chat_data:
         return
+
+    # Check if user is owner (moved here to avoid triggering for normal messages)
+    user_id = update.effective_user.id
+    if user_id not in get_owner_ids():
+        return  # Silently ignore non-owner messages during collection
 
     current_option = context.chat_data.get('custom_current_option', 0)
     total_count = context.chat_data.get('custom_options_count', 0)

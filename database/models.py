@@ -685,32 +685,19 @@ class Titan(BaseModel):
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
     "Easy": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
+        "Jaw", "Founding", "Armored"
     ],
     "Normal": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
+        "Jaw", "Founding", "Armored"
     ],
     "Hard": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer"
-    ]
-}
-
-# Additional descriptive prefixes for variety
-TITAN_DESCRIPTORS = {
-    "Easy": [
-        "Clumsy", "Stumbling", "Bumbling", "Sluggish", "Wandering",
-        "Lost", "Confused", "Limping", "Shambling", "Drooling"
-    ],
-    "Normal": [
-        "Fierce", "Hungry", "Raging", "Prowling", "Charging",
-        "Brutal", "Menacing", "Territorial", "Aggressive", "Bloodthirsty"
-    ],
-    "Hard": [
-        "Devastating", "Catastrophic", "Apocalyptic", "Nightmare", "Terror",
-        "Godlike", "Primordial", "Mythical", "Legendary", "Supreme"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
+        "Jaw", "Founding", "Armored"
     ]
 }
 
@@ -727,26 +714,8 @@ def generate_titan_name(difficulty: str) -> str:
     # Use a new random instance with time-based seed for better uniqueness
     name_random = random.Random(current_time_micros)
     
-    rand = name_random.random()
     variants = TITAN_NAME_VARIANTS[difficulty]
-    descriptors = TITAN_DESCRIPTORS[difficulty]
-    if rand < 0.60:
-        return f"{name_random.choice(variants)} Titan"
-    elif rand < 0.85:
-        return f"{name_random.choice(descriptors)} {name_random.choice(variants)} Titan"
-    else:
-        # Precompute combined descriptors only once per call
-        if difficulty != "Easy":
-            all_descriptors = descriptors + TITAN_DESCRIPTORS["Easy"][:3]
-        else:
-            all_descriptors = descriptors
-        descriptor = name_random.choice(all_descriptors)
-        titan_type = name_random.choice(variants)
-        if name_random.random() < 0.3:
-            second_descriptor = name_random.choice(descriptors)
-            if second_descriptor != descriptor:
-                return f"{descriptor} {second_descriptor} {titan_type} Titan"
-        return f"{descriptor} {titan_type} Titan"
+    return f"{name_random.choice(variants)} Titan"
 
 def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[CharacterStats] = None) -> int:
     # Dynamic scaling based on active character's stats

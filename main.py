@@ -318,7 +318,7 @@ async def initialize_application():
             # Send error to group
             try:
                 await context.bot.send_message(
-                    chat_id=-1002848899456,
+                    chat_id=-1002463105932,
                     text=error_text,
                     parse_mode="HTML"
                 )
@@ -348,7 +348,7 @@ async def initialize_application():
                 msg = "<b>✅ Bot Started!</b>"
                 if commit_message:
                     msg += f"\n\n<b>Latest Commit:</b>\n<code>{commit_message}</code>"
-                await application.bot.send_message(chat_id=-1002463105932, text=msg, parse_mode="HTML")
+                await application.bot.send_message(chat_id=-1002848899456, text=msg, parse_mode="HTML")
             except Exception as e:
                 logger.error(f"Failed to send startup message: {e}")
     except Exception as e:
