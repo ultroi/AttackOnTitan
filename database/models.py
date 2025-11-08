@@ -214,34 +214,26 @@ class Character(BaseModel):
         return stat_increases
 
     def _check_ability_unlocks(self) -> None:
-        # Get character data to ensure we have all possible abilities
         if not hasattr(self, 'character_type') or not self.character_type:
             return
             
         character_data = get_character_data(self.character_type)
         if character_data:
             all_abilities = []
-            # Add abilities from character data
             for ability_list_name in ["active_abilities", "passive_abilities", "ultimate_abilities"]:
                 ability_list = getattr(character_data, ability_list_name, [])
                 all_abilities.extend(ability_list)
             
-            # Check each ability for unlocks
             for ability in all_abilities:
                 if self.level >= ability.level_required:
                     ability.is_unlocked = True
                     self.unlocked_abilities[ability.name] = True
 
     def add_xp(self, amount: int) -> Dict[str, Any]:
-        """Add XP and return level up information."""
-        # Ensure we never add negative XP that would result in negative total XP
         if amount < 0 and abs(amount) > self.xp:
-            # Clamp negative XP to current XP value to prevent going below 0
             amount = -self.xp
         
         self.xp += amount
-        
-        # Double-check to ensure XP is never negative (belt and suspenders approach)
         if self.xp < 0:
             self.xp = 0
             
@@ -388,7 +380,7 @@ class Player(BaseModel):
     valor: int = 0
     crystal: int = 0
     gas: int = 1000
-    max_gas: int = 10000  # Level 1 limit
+    max_gas: int = 10000 
     
     # Location and travel
     location: str = ""
@@ -404,7 +396,7 @@ class Player(BaseModel):
     daily_explores: Dict[str, int] = Field(default_factory=dict)
     completed_quests: List[str] = Field(default_factory=list)
     missions: List[Dict[str, Any]] = Field(default_factory=list)
-    mission14_area_counts: Dict[str, int] = Field(default_factory=dict)  # Track explores per area for Mission 14
+    mission14_area_counts: Dict[str, int] = Field(default_factory=dict) 
     
     # Inventory and shop
     inventory: Dict[str, Any] = Field(default_factory=dict)
@@ -444,9 +436,9 @@ class Player(BaseModel):
     last_spin_time: Optional[datetime] = None
     
     # Active Buffs
-    double_gas_injector_uses: int = 0  # Remaining uses for half gas cost
-    mark_surge_token_uses: int = 0     # Remaining titan kills for double marks
-    frenzy_elixir_uses: int = 0        # Remaining explorations for triple XP
+    double_gas_injector_uses: int = 0  
+    mark_surge_token_uses: int = 0     
+    frenzy_elixir_uses: int = 0        
     
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

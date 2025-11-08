@@ -248,8 +248,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"Boss Titan event error: {e}", exc_info=True)
         return
     
-    # ========== PHASE 3: INSTANT MESSAGE PREP (< 2ms) ==========
-    # Generate everything in parallel - no blocking
+
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     
     # Fast inline titan generation (no function call overhead)
@@ -281,8 +280,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>has blocked your way<a href=\"{titan_image}\">!</a></b>\n"
         f"<code>-------------------------</code>"
     )
-    
-    # Inline keyboard creation (fastest possible)
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]])
     
     # ========== PHASE 4: INSTANT SEND (< 30ms) ==========
@@ -305,15 +302,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             sent_message = None
-        
-        # Response sent successfully
-        
+
     except Exception as e:
         logger.error(f"Send error: {e}")
         return
     
-    # ========== PHASE 5: BACKGROUND OPERATIONS (Zero blocking) ==========
-    # Build titan data dict inline (fastest possible)
     titan_data = {
         "name": titan_name,
         "level": player.level,
@@ -330,9 +323,6 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         player, update.effective_user.username, event_type
     ))
 
-# =====================================================================================
-# DEFERRED: Background Operations (Don't Block Response)
-# =====================================================================================
 
 async def _deferred_explore_operations(context, user_id_str, user_id, db, titan, 
                                       sent_message, player, username, event_type):
@@ -583,21 +573,18 @@ async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TY
     try:
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
         
-        # CRITICAL FIX: Check if battle ID was already used (battle started)
+        
         battle_id_key = f"active_battle_id_{user_id_str}"
         old_battle_id = context.bot_data.get(battle_id_key)
         
-        # If battle ID starts with "used_", the battle has already started - don't cleanup
+        
         if old_battle_id and old_battle_id.startswith("used_"):
             return
         
-        # CRITICAL FIX: Check if user is in battle FIRST (before marking expired)
         if FastPreCheck.is_in_battle(user_id_str):
             return
-        
-        # CRITICAL FIX: Mark battle ID as expired AFTER battle check
+
         if old_battle_id:
-            # Only mark as expired if it hasn't been used yet
             context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"
         
         db = context.bot_data.get("db")
