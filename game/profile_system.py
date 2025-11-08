@@ -131,10 +131,7 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Database not initialized. Please try again later.")
         return
     # --- Optimization: Only fetch player once, use in-memory team for UI updates ---
-    player = context.user_data.get('cached_player')
-    if not player:
-        player = await db.get_player(user_id)
-        context.user_data['cached_player'] = player
+    player = await db.get_player(user_id)
     if not player:
         await query.edit_message_text("❌ You have no player account.")
         return

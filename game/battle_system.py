@@ -255,10 +255,10 @@ class BattleSystem:
         """Calculate titan attack damage and effects for this turn."""
         if self.titan_debuffs.get("stun", 0) > 0:
             self.titan_debuffs["stun"] -= 1
-            return 0, f"{self.titan.name} is stunned and cannot attack this turn!"
+            return 0, f"{self.get_titan_display_name()} is stunned and cannot attack this turn!"
         if self.titan_debuffs.get("delay", 0) > 0:
             self.titan_debuffs["delay"] -= 1
-            return 0, f"{self.titan.name} is delayed and cannot attack this turn!"
+            return 0, f"{self.get_titan_display_name()} is delayed and cannot attack this turn!"
         if self.buffs.get("dodge", 0) > 0 or self.trigger_states["dodge_count"] > 0:
             if self.buffs.get("dodge", 0) > 0:
                 del self.buffs["dodge"]
@@ -353,7 +353,7 @@ class BattleSystem:
         self.trigger_states["focused_turns"] = min(3, self.trigger_states["focused_turns"] + 1)
         messages = self.apply_passives("titan_attack")
         special_messages.extend(messages)
-        return damage, f"{self.titan.name} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
+        return damage, f"{self.get_titan_display_name()} attacks, dealing {damage} damage to {self.character.name}.\n" + "\n".join(special_messages)
 
     def boss_titan_attack(self) -> Tuple[int, str]:
         """Special attack logic for Boss Titans - BALANCED VERSION."""
@@ -363,18 +363,18 @@ class BattleSystem:
         if self.titan_hp / self.titan.max_hp < 0.3 and attack_roll < 0.15:
             damage = int(self.character.stats.HP * 0.30) # Reduced from 0.6 to 0.3
             self.character_hp = max(0, self.character_hp - damage)
-            return damage, f"🔥 The Armored Titan unleashes an **Enraged Assault**, dealing {damage} damage!"
+            return damage, f"🔥 The Boss Titan unleashes an **Enraged Assault**, dealing {damage} damage!"
 
         # Devastating Slam - BALANCED: Reduced from 40% to 22%
         if attack_roll < 0.30:
             damage = int(self.character.stats.HP * 0.22) # Reduced from 0.4 to 0.22
             self.character_hp = max(0, self.character_hp - damage)
-            return damage, f"💥 The Armored Titan uses **Devastating Slam**, dealing {damage} damage!"
+            return damage, f"💥 The Boss Titan uses **Devastating Slam**, dealing {damage} damage!"
 
         # Terrifying Roar - Unchanged (no damage, just debuff)
         elif attack_roll < 0.50: # Reduced chance from 0.55 to 0.50
             self.debuffs["fear"] = 2 # Apply fear for 2 turns
-            return 0, f"😱 The Armored Titan lets out a **Terrifying Roar**! Your attack power is reduced for 2 turns."
+            return 0, f"😱 The Boss Titan lets out a **Terrifying Roar**! Your attack power is reduced for 2 turns."
 
         # Ground Shake - BALANCED: Reduced from 15% to 12%
         elif attack_roll < 0.75: # Reduced chance from 0.80 to 0.75
@@ -383,14 +383,14 @@ class BattleSystem:
             stun_chance = 0.35  # Reduced from 0.50 to 0.35
             if random.random() < stun_chance:
                 self.debuffs["stun"] = 1
-                return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage and stuns you for 1 turn!"
-            return damage, f"🌋 The Armored Titan's **Ground Shake** deals {damage} damage."
+                return damage, f"🌋 The Boss Titan's **Ground Shake** deals {damage} damage and stuns you for 1 turn!"
+            return damage, f"🌋 The Boss Titan's **Ground Shake** deals {damage} damage."
         
         # Default basic attack - BALANCED: Reduced from 20% to 15%
         else:
             damage = int(self.character.stats.HP * 0.15) # Reduced from 0.20 to 0.15
             self.character_hp = max(0, self.character_hp - damage)
-            return damage, f"⚔️ The Armored Titan performs a swift attack, dealing {damage} damage."
+            return damage, f"⚔️ The Boss Titan performs a swift attack, dealing {damage} damage."
 
     # ---------- Ability Usage ----------
     def use_ability(self, ability_name: str) -> Tuple[int, str, Dict, bool]:
@@ -633,6 +633,9 @@ class BattleSystem:
             "crystal": crystal,  # Now actually drops!
             "valor": valor,
         }
+
+    def get_titan_display_name(self) -> str:
+        return "Boss Titan" if self.is_boss_battle else self.titan.name
 
 # =========================
 # UTILITY FUNCTIONS
@@ -1016,7 +1019,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     battle_message = (
         f"<b>⚔️ BATTLE ⚔️</b>\n"
         f"{emergency_heal_message}"
-        f"\n<b>| {battle.titan.name} ({battle.titan.level}) |</b>\n"
+        f"\n<b>| {battle.get_titan_display_name()} ({battle.titan.level}) |</b>\n"
         f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
         f"{status['titan_bar']}\n\n"
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
@@ -1174,7 +1177,7 @@ async def _update_battle_ui(query, battle, context, full_message):
     battle_message = (
         f"<b>⚔️ BATTLE ⚔️</b>\n"
         f"{chr(10).join(filter(None, full_message))}\n\n"
-        f"<b>| {battle.titan.name} ({battle.titan.level}) |</b>\n"
+        f"<b>| {battle.get_titan_display_name()} ({battle.titan.level}) |</b>\n"
         f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
         f"{status['titan_bar']}\n\n"
         f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
@@ -1441,11 +1444,20 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player_data.frenzy_elixir_uses -= 1
             buff_updates["frenzy_elixir_uses"] = player_data.frenzy_elixir_uses
 
-        reward_parts = [
-            f"<b>You have defeated {battle.titan.name}!</b>\n",
-            f"⚡ <b>XP: +{rewards['xp']}</b>",
-            f"🪙 <b>Marks: +{rewards['marks']}</b>"
-        ]
+        if battle.is_boss_battle:
+            victory_message = f"<b>🏆 GLORIOUS VICTORY! 🏆</b>\n<b>You have slain the mighty Boss Titan!</b>\n\n"
+            reward_parts = [
+                victory_message,
+                f"⚡ <b>XP: +{rewards['xp']}</b>",
+                f"🪙 <b>Marks: +{rewards['marks']}</b>"
+            ]
+        else:
+            reward_parts = [
+                f"<b>You have defeated {battle.get_titan_display_name()}!</b>\n",
+                f"⚡ <b>XP: +{rewards['xp']}</b>",
+                f"🪙 <b>Marks: +{rewards['marks']}</b>"
+            ]
+        
         if rewards['valor'] > 0:
             reward_parts.append(f"⚔️ <b>Valor: +{rewards['valor']}</b>")
 
@@ -1521,10 +1533,13 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             player_data.frenzy_elixir_uses -= 1
             buff_updates["frenzy_elixir_uses"] = player_data.frenzy_elixir_uses
 
-        await query.edit_message_text(
-            f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.titan.name}!",
-            parse_mode=ParseMode.HTML
+        defeat_message = (
+            f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by the Boss Titan!"
+            if battle.is_boss_battle
+            else f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.get_titan_display_name()}!"
         )
+
+        await query.edit_message_text(defeat_message, parse_mode=ParseMode.HTML)
 
         character_defeat_task = db.batch_update_character(
             str(user_id), battle.character.name, 

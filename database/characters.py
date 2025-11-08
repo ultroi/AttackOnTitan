@@ -1342,6 +1342,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         archetype="Tactical Support / Debuff Specialist",
         core_trait="Apathy → Awakening (Echo Trait Bias: Loyalty → Desperation)",
         base_stats={"HP": 650, "ATK": 12, "DEF": 11, "ACC": 10, "INT": 12, "SPD": 13},
+        max_potential={"HP": 1250, "ATK": 120, "DEF": 115, "ACC": 110, "INT": 120, "SPD": 125},
         passive_abilities=[
             {
                 "name": "Civilian Shell",
@@ -1526,6 +1527,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         archetype="Aggressive Support / Rally Specialist",
         core_trait="Fanaticism → Unhinged Power",
         base_stats={"HP": 700, "ATK": 15, "DEF": 10, "ACC": 12, "INT": 11, "SPD": 14},
+        max_potential={"HP": 1300, "ATK": 130, "DEF": 110, "ACC": 120, "INT": 115, "SPD": 130},
         passive_abilities=[
             {
                 "name": "Demagogue's Aura",
@@ -1586,6 +1588,7 @@ CHARACTERS: Dict[str, CharacterData] = {
         archetype="Strategic Commander / Team Buffer",
         core_trait="Authority → Sacrifice",
         base_stats={"HP": 750, "ATK": 12, "DEF": 14, "ACC": 11, "INT": 15, "SPD": 10},
+        max_potential={"HP": 1350, "ATK": 120, "DEF": 130, "ACC": 115, "INT": 135, "SPD": 110},
         passive_abilities=[
             {
                 "name": "Warlord Command",

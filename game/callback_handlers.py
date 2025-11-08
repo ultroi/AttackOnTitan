@@ -50,7 +50,7 @@ async def update_battle_status(query: Update.callback_query, battle: BattleSyste
         reply_markup = InlineKeyboardMarkup(keyboard)
         battle_message = (
             f"{message}\n\n"
-            f"| {battle.titan.name} (Lv. {battle.titan.level}) |\n"
+            f"| {battle.get_titan_display_name()} (Lv. {battle.titan.level}) |\n"
             f"HP: {status['titan_hp']}/{battle.titan.max_hp} [{status['titan_bar']}]\n\n"
             f"| {battle.character.name} (Lv. {battle.character.level}) |\n"
             f"HP: {status['character_hp']}/{battle.character.stats.HP} [{status['character_bar']}]\n"
