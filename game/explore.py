@@ -291,10 +291,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message:
             return
         
-        # Store battle ID immediately (< 0.1ms)
-        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
         
-        # Store titan data immediately for battle callback
+        context.bot_data[f"active_battle_id_{user_id}"] = battle_id
         context.bot_data[f"last_titan_data_{user_id_str}"] = titan.dict()
         
         # Send message with minimal overhead

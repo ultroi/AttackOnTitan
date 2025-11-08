@@ -250,6 +250,10 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
+    current_team = context.user_data.get("team", [])
+    if not current_team:
+        await query.answer("Team is already empty!", show_alert=True)
+        return
     context.user_data["team"] = []
     await query.answer("Team cleared.")
     await manage_team(update, context)
