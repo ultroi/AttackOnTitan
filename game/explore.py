@@ -212,11 +212,15 @@ async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tup
 def check_random_events() -> Optional[str]:
     """Ultra-fast random event check - returns event type or None"""
     rand_val = random.random()
-    if rand_val < 0.02:  
+    # Distribution:
+    #  - boss_titan: 2%
+    #  - dealer: next 3% (total < 5%)
+    #  - captcha: next 5% (total < 10%)
+    if rand_val < 0.02:
         return "boss_titan"
-    elif rand_val < 0.05:  
+    elif rand_val < 0.05:
         return "dealer"
-    elif rand_val < 0.05:  
+    elif rand_val < 0.10:
         return "captcha"
     return None
 
@@ -329,13 +333,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Generate titan
     difficulty = get_titan_difficulty_by_level(character.level)
     
-    # Adjust titan level based on difficulty with some randomness (close to character level)
-    if difficulty == "Easy":
-        titan_level = max(1, character.level + random.randint(-1, 1))  
-    elif difficulty == "Normal":
-        titan_level = max(1, character.level + random.randint(-1, 1))  
-    else:  # Hard
-        titan_level = character.level + random.randint(0, 2)  
+    min_level = max(1, character.level - 3)
+    max_level = character.level + 3
+    titan_level = random.randint(min_level, max_level)
     
     titan_hp = generate_titan_hp(level=titan_level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
     titan_name = generate_titan_name(difficulty)

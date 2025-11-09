@@ -113,11 +113,14 @@ class BattleSystem:
         if not self.team or len(self.team) <= 1:
             return False
         
+        # Sort team by position to respect team order
+        sorted_team = sorted(self.team, key=lambda m: getattr(m, 'position', 1) if hasattr(m, 'position') else (m.get('position', 1) if isinstance(m, dict) else 1))
+        
         # Find next character with HP > 0
         start_index = self.current_team_index
-        for i in range(1, len(self.team)):
-            next_index = (start_index + i) % len(self.team)
-            next_member = self.team[next_index]
+        for i in range(1, len(sorted_team)):
+            next_index = (start_index + i) % len(sorted_team)
+            next_member = sorted_team[next_index]
             next_name = next_member.character_name if hasattr(next_member, 'character_name') else next_member.get('character_name', next_member)
             
             # Skip current character
@@ -950,15 +953,37 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
                     # Fallback: Create a basic titan for the user
                     from database.models import generate_titan_hp, generate_titan_name, generate_titan_xp
                     
-                    # Get player level for titan generation
+                    # Get player data for titan generation (attempt to use a character level if available)
                     if player_data_task:
                         player_data = await player_data_task
                     else:
                         player_data = battle_cache.get("player_data")
-                    
+
                     if player_data:
                         difficulty = "Normal"  # Default difficulty
-                        titan_level = player_data.level if hasattr(player_data, 'level') else 1
+                        # Try to determine an appropriate character level to base titan on.
+                        # Prefer the first team member's character level if available, otherwise fall back to player's level.
+                        char_level = None
+                        try:
+                            # player_data may be an object or dict; handle both
+                            team = getattr(player_data, 'team', None) if not isinstance(player_data, dict) else player_data.get('team')
+                            if team and len(team) > 0:
+                                first = team[0]
+                                char_level = getattr(first, 'level', None) if not isinstance(first, dict) else first.get('level')
+                        except Exception:
+                            char_level = None
+
+                        if not char_level:
+                            # Use player's overall level as fallback
+                            char_level = getattr(player_data, 'level', None) if not isinstance(player_data, dict) else player_data.get('level', 1)
+
+                        if not char_level:
+                            char_level = 1
+
+                        # Choose titan level randomly between char_level-3 and char_level+3, clamped to >=1
+                        min_level = max(1, int(char_level) - 3)
+                        max_level = int(char_level) + 3
+                        titan_level = random.randint(min_level, max_level)
                         
                         titan_data = {
                             "name": generate_titan_name(difficulty),
@@ -1073,7 +1098,10 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         asyncio.create_task(query.edit_message_text("No character in team!"))
         return
     
-    team_member = team[0]
+    # Sort team by position to respect team order
+    sorted_team = sorted(team, key=lambda m: getattr(m, 'position', 1) if hasattr(m, 'position') else (m.get('position', 1) if isinstance(m, dict) else 1))
+    
+    team_member = sorted_team[0]
     character_name = team_member.character_name if hasattr(team_member, 'character_name') else team_member.get('character_name', team_member)
     
     # OPTIMIZED: Fetch character (use get_character which has caching)

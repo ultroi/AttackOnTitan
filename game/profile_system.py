@@ -939,13 +939,14 @@ async def view_abilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Parse callback data to extract char_name and category
     data = query.data.replace("view_abilities_", "")
-    if "_" in data:
-        parts = data.split("_", 1)
-        char_name = parts[0].replace("_", " ")
-        category = parts[1] if len(parts) > 1 else None
+    parts = data.split("_")
+    if parts and parts[-1] in ["active", "passive", "ultimate"]:
+        category = parts[-1]
+        char_name_parts = parts[:-1]
     else:
-        char_name = data.replace("_", " ")
         category = None
+        char_name_parts = parts
+    char_name = " ".join(char_name_parts)
     
     user_id = str(query.from_user.id)
     

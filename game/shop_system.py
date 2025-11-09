@@ -286,6 +286,45 @@ class ShopSystem:
             return barracks_items
         return {}
 
+    def _get_random_shop_items(self, category: str, user_id: str, context: ContextTypes.DEFAULT_TYPE) -> List[tuple]:
+        """Return a deterministic daily selection of items for the given user and category.
+
+        This method seeds a local Random with a hash of (user_id, date, category)
+        so the selection remains stable for the day but differs between users/categories.
+        Returns a list of (item_key, Equipment) tuples.
+        """
+        try:
+            category_items = self._get_category_items(category)
+            items = list(category_items.items())
+            if not items:
+                return []
+
+            # Create a deterministic seed per user, category and day so shop is stable for a day
+            from datetime import datetime
+            import hashlib
+
+            day_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            seed_input = f"{user_id}:{category}:{day_str}"
+            seed = int(hashlib.sha256(seed_input.encode()).hexdigest(), 16) % (2 ** 32)
+            rnd = random.Random(seed)
+
+            # Choose up to 12 items (or fewer if not enough items)
+            sample_size = min(len(items), 12)
+            try:
+                selected = rnd.sample(items, sample_size)
+            except ValueError:
+                # Fallback: return all items if sample fails
+                selected = items
+
+            return selected
+        except Exception as e:
+            logger.error(f"_get_random_shop_items failed: {e}")
+            # On failure, return a non-random full list to avoid breaking UI
+            try:
+                return list(self._get_category_items(category).items())
+            except Exception:
+                return []
+
     async def _can_afford(self, player: Player, item: Equipment) -> bool:
         """Check if player can afford the item."""
         if item.currency == "marks":
