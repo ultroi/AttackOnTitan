@@ -661,19 +661,19 @@ class Titan(BaseModel):
 # Anime-accurate titan names by difficulty
 TITAN_NAME_VARIANTS = {
     "Easy": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
-        "Jaw", "Founding", "Armored"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Beast"
     ],
     "Normal": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
-        "Jaw", "Founding", "Armored"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Beast"
     ],
     "Hard": [
-        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female", "Beast",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Colossal", "War Hammer", "Attack", "Cart",
-        "Jaw", "Founding", "Armored"
+        "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Beast"
     ]
 }
 
