@@ -6,7 +6,7 @@ import asyncio
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 from database.models import Character, Player, Titan, Equipment, CharacterStats, generate_titan_name, generate_titan_hp, generate_titan_xp
-from database.schemas import Ability  # Use Ability instead of AbilityInfo
+from database.schemas import Ability
 from database.characters import get_character_data
 from database.db_instance import get_database
 import logging
@@ -22,44 +22,61 @@ class BoundedCache:
     def __init__(self, max_size: int = 256):
         self.max_size = max_size
         self.cache = OrderedDict()
-        self.hits = 0
-        self.misses = 0
     
     def get(self, key: str):
         if key in self.cache:
-            self.hits += 1
             # Move to end (most recently used)
             self.cache.move_to_end(key)
             return self.cache[key]
-        self.misses += 1
         return None
     
     def set(self, key: str, value):
+        # FIX: Check size BEFORE adding to prevent overshoot
         if key in self.cache:
             self.cache.move_to_end(key)
-        self.cache[key] = value
+        else:
+            # Evict oldest BEFORE adding if at capacity
+            if len(self.cache) >= self.max_size:
+                oldest_key = next(iter(self.cache))
+                self.cache.pop(oldest_key)
         
-        # Evict oldest item if cache exceeds size
-        if len(self.cache) > self.max_size:
-            oldest_key = next(iter(self.cache))
-            self.cache.pop(oldest_key)
+        self.cache[key] = value
     
     def clear(self):
         self.cache.clear()
-        self.hits = 0
-        self.misses = 0
     
     def size(self):
         return len(self.cache)
+    
+    def cleanup_expired(self, current_time: float, ttl: int) -> int:
+        """Remove expired entries and return count removed"""
+        expired_keys = [
+            k for k, v in self.cache.items()
+            if current_time - v.get("timestamp", 0) > ttl
+        ]
+        
+        for key in expired_keys:
+            self.cache.pop(key, None)
+        
+        return len(expired_keys)
 
 # Use bounded caches instead of unbounded dictionaries
-PLAYER_CACHE = BoundedCache(max_size=128)  # Limit to 128 players in memory
-CHARACTER_CACHE = BoundedCache(max_size=256)  # Limit to 256 characters in memory
-PLAYER_CACHE_TTL = 1800  # Reduced to 30 minutes
-CHARACTER_CACHE_TTL = 1800  # Reduced to 30 minutes
+PLAYER_CACHE = BoundedCache(max_size=128)
+CHARACTER_CACHE = BoundedCache(max_size=256)
+PLAYER_CACHE_TTL = 600  
+CHARACTER_CACHE_TTL = 600  
+
+# FIX: Add TTL tracking for titan cache instead of unbounded dict
+_titan_cache = {}
+_titan_cache_expiry = {}
+TITAN_CACHE_TTL = 300  # 5 minutes (was forever!)
+MAX_TITAN_CACHE_SIZE = 100  # Limit to 100 active titans
+
+# FIX: Track background tasks for cleanup
+_background_tasks = set()
+
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
-CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,10 +91,8 @@ def sanitize_player_data(player_data: Dict[str, Any]) -> Dict[str, Any]:
             logger.warning(f"Corrupted daily_explores found for user {player_data.get('user_id', 'unknown')}. Resetting to {{}}.")
             player_data['daily_explores'] = {}
         else:
-            # Validate and sanitize each daily_explores entry
             sanitized_explores = {}
             for date_str, count in player_data['daily_explores'].items():
-                # Handle case where count might be stored as an object with 'date' and 'count' fields
                 if isinstance(count, dict):
                     if 'count' in count:
                         count = count['count']
@@ -92,6 +107,57 @@ def sanitize_player_data(player_data: Dict[str, Any]) -> Dict[str, Any]:
             player_data['daily_explores'] = sanitized_explores
     return player_data
 
+# FIX: Add cleanup functions
+def _cleanup_titan_cache():
+    """Remove expired titans from cache"""
+    current_time = time.time()
+    expired_users = [
+        user_id for user_id, expiry_time in _titan_cache_expiry.items()
+        if current_time > expiry_time
+    ]
+    
+    for user_id in expired_users:
+        _titan_cache.pop(user_id, None)
+        _titan_cache_expiry.pop(user_id, None)
+    
+    if expired_users:
+        logger.debug(f"Cleaned {len(expired_users)} expired titan cache entries")
+    
+    return len(expired_users)
+
+def _cleanup_background_tasks():
+    """Remove completed background tasks"""
+    completed = [task for task in _background_tasks if task.done()]
+    for task in completed:
+        _background_tasks.discard(task)
+    
+    if completed:
+        logger.debug(f"Cleaned {len(completed)} completed background tasks")
+    
+    return len(completed)
+
+async def _periodic_cache_cleanup():
+    """Run periodically to clean all caches (should be called from main app)"""
+    current_time = time.time()
+    
+    # Clean titan cache
+    titan_cleaned = _cleanup_titan_cache()
+    
+    # Clean player cache
+    player_cleaned = PLAYER_CACHE.cleanup_expired(current_time, PLAYER_CACHE_TTL)
+    
+    # Clean character cache
+    char_cleaned = CHARACTER_CACHE.cleanup_expired(current_time, CHARACTER_CACHE_TTL)
+    
+    # Clean background tasks
+    task_cleaned = _cleanup_background_tasks()
+    
+    if titan_cleaned + player_cleaned + char_cleaned + task_cleaned > 0:
+        logger.info(
+            f"Cache cleanup: titans={titan_cleaned}, "
+            f"players={player_cleaned}, chars={char_cleaned}, tasks={task_cleaned}"
+        )
+
 class Database:
     def __init__(self):
         self.db: Optional[AsyncIOMotorDatabase] = None
@@ -100,11 +166,11 @@ class Database:
         self.titans = None
         self.equipment = None
         self.shop_purchases = None
-        self.shop_purchases_collection = None  # For shop_system compatibility
+        self.shop_purchases_collection = None
         self.bank_accounts = None
         self.bans = None
-        self.groups = None  # For storing groups information
-        self.stats = None  # For storing game statistics
+        self.groups = None
+        self.stats = None
 
     async def init_db(self, db: AsyncIOMotorDatabase):
         """Initialize database collections"""
@@ -114,17 +180,31 @@ class Database:
         self.titans = db.titans
         self.equipment = db.equipment
         self.shop_purchases = db.shop_purchases
-        self.shop_purchases_collection = db.shop_purchases  # For shop_system compatibility
+        self.shop_purchases_collection = db.shop_purchases
         self.bank_accounts = db.bank_accounts
         self.bans = db.bans
-        self.groups = db.groups  # For storing groups information
-        self.stats = db.stats  # For storing game statistics
+        self.groups = db.groups
+        self.stats = db.stats
         logger.info("Database collections initialized successfully")
         logger.info("Caches will be populated on-demand for optimal memory usage")
+        
+        # FIX: Start periodic cleanup task
+        asyncio.create_task(self._run_periodic_cleanup())
+    
+    async def _run_periodic_cleanup(self):
+        """Background task to clean caches every 5 minutes"""
+        try:
+            while True:
+                await asyncio.sleep(300)  # Every 5 minutes
+                await _periodic_cache_cleanup()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in periodic cleanup: {e}")
     
     async def prewarm_caches(self):
         """Pre-warm caches - already done in init_db, this method exists for compatibility"""
-        pass  # Cache pre-warming is handled in init_db method
+        pass
     
     async def _prewarm_character_cache(self, user_id: str, character_name: str):
         """Pre-warm a specific character cache"""
@@ -186,7 +266,6 @@ class Database:
         try:
             import time
             start = time.perf_counter()
-            # Generate a unique referral code if not provided
             if not referral_code:
                 referral_code = str(user_id)
             player = Player(
@@ -237,7 +316,6 @@ class Database:
             # Not in cache or expired, query database
             if self.players is None:
                 raise ConnectionError("Database not initialized. Call init_db() first.")
-                
 
             player_data = await self.players.find_one({"user_id": user_id}, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
@@ -322,8 +400,6 @@ class Database:
                             "timestamp": time.time()
                         })
                 
-                # Use background update without awaiting - but ensure it completes
-                # Use update_one instead of fire-and-forget to reduce memory pressure
                 await self.players.update_one(
                     {"user_id": str(user_id)},
                     {"$set": update_data}
@@ -332,7 +408,6 @@ class Database:
                 elapsed = (time.perf_counter() - start) * 1000
                 logger.debug(f"update_player (time update): {elapsed:.2f} ms")
                 
-                # Return immediately with cached player
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
                     cached_data = PLAYER_CACHE.get(cache_key)
@@ -341,13 +416,13 @@ class Database:
                 else:
                     return await self.get_player(str(user_id))
             
-            # Check if this is a small update that doesn't need a full database refresh
+            # Check if this is a small update
             is_minor_update = len(update_data) <= 2 and all(key in [
                 'explore_start_time', 'hcaptcha_start_time', 'hcaptcha_verified',
                 'last_explore_time', 'location', 'travel'
             ] for key in update_data.keys())
             
-            # For minor updates, don't need to return the document
+            # For minor updates
             if is_minor_update:
                 update_data["updated_at"] = datetime.now(timezone.utc)
                 await self.players.update_one(
@@ -355,14 +430,11 @@ class Database:
                     {"$set": update_data}
                 )
                 
-                # Update cache if it exists - for mission updates, refresh from database
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
                     cached_data = PLAYER_CACHE.get(cache_key)
                     if cached_data:
-                        # For mission updates, refresh from database to ensure consistency
                         if "missions" in update_data:
-                            # Get fresh data from database
                             fresh_player_data = await self.players.find_one({"user_id": str(user_id)})
                             if fresh_player_data:
                                 fresh_player = Player(**fresh_player_data)
@@ -371,7 +443,6 @@ class Database:
                                     "timestamp": time.time()
                                 })
                         else:
-                            # For other minor updates, just update the cached object
                             player = cached_data["player"]
                             for key, value in update_data.items():
                                 if hasattr(player, key):
@@ -385,7 +456,7 @@ class Database:
                 logger.debug(f"update_player (minor): {elapsed:.2f} ms")
                 return await self.get_player(str(user_id))
             else:
-                # For major updates, need to get the updated document
+                # For major updates
                 update_data["updated_at"] = datetime.now(timezone.utc)
                 result = await self.players.find_one_and_update(
                     {"user_id": str(user_id)},
@@ -410,21 +481,6 @@ class Database:
             logger.error(f"Failed to update player: {e}")
             raise
             
-    async def _background_update_player(self, user_id: str, update_data: Dict):
-        """
-        DEPRECATED: Use direct update_one instead to reduce memory pressure
-        Internal method to update player data in the background without blocking.
-        Used for non-critical updates like timestamp tracking.
-        """
-        try:
-            await self.players.update_one(
-                {"user_id": str(user_id)},
-                {"$set": update_data}
-            )
-            logger.debug(f"Background player update completed for user {user_id}")
-        except Exception as e:
-            logger.error(f"Background player update failed: {e}")
-            
     def invalidate_character_cache(self, user_id: str, character_name: str):
         if CACHE_ENABLED:
             cache_key = f"character_{user_id}_{character_name}"
@@ -435,13 +491,9 @@ class Database:
         return False
         
     def invalidate_player_cache(self, user_id: str):
-        """
-        Invalidate player cache for a specific user.
-        Call this during battle operations to ensure fresh data.
-        """
+        """Invalidate player cache for a specific user"""
         if CACHE_ENABLED:
             cache_key = f"player_{user_id}"
-            # BoundedCache handles its own eviction, just clear from our managed cache
             if cache_key in PLAYER_CACHE.cache:
                 PLAYER_CACHE.cache.pop(cache_key, None)
                 logger.debug(f"Invalidated player cache for user {user_id}")
@@ -449,10 +501,7 @@ class Database:
         return False
 
     def invalidate_all_character_caches(self, user_id: str):
-        """
-        Invalidate all character caches for a specific user.
-        Call this during battle operations to ensure fresh data.
-        """
+        """Invalidate all character caches for a specific user"""
         if CACHE_ENABLED:
             keys_to_remove = []
             for cache_key in list(CHARACTER_CACHE.cache.keys()):
@@ -495,8 +544,10 @@ class Database:
         return len(keys_to_remove) > 0
         
     def invalidate_titan_cache(self, user_id: str):
-        if user_id in self._titan_cache:
-            del self._titan_cache[user_id]
+        """FIX: Also remove from expiry dict"""
+        if user_id in _titan_cache:
+            del _titan_cache[user_id]
+            _titan_cache_expiry.pop(user_id, None)
             logger.debug(f"Invalidated titan cache for user {user_id}")
             return True
         return False
@@ -507,7 +558,6 @@ class Database:
             player.updated_at = datetime.now(timezone.utc)
             player_dict = player.dict() if hasattr(player, 'dict') else player.__dict__
             
-            # Properly serialize TeamMember objects in the team list
             if 'team' in player_dict and player_dict['team']:
                 player_dict['team'] = [
                     {"character_name": member.character_name, "position": member.position} 
@@ -526,7 +576,6 @@ class Database:
             logger.error(f"Failed to save player: {e}")
             raise
 
-        
     async def get_player_characters(self, user_id: str) -> List[Character]:
         try:
             cursor = self.characters.find({"user_id": str(user_id)})
@@ -548,7 +597,7 @@ class Database:
             raise
 
     async def delete_player(self, user_id: str):
-        """Delete a player by user_id."""
+        """Delete a player by user_id"""
         try:
             await self.players.delete_one({"user_id": str(user_id)})
             logger.info(f"Deleted player with user_id: {user_id}")
@@ -557,18 +606,16 @@ class Database:
             raise
             
     async def get_all_players(self) -> List[Player]:
-        """Get all players from the database."""
+        """Get all players from the database"""
         try:
             import time
             start = time.perf_counter()
             cursor = self.players.find({})
             players_data = await cursor.to_list(None)
             
-            # Convert team members to proper TeamMember objects if present
             from database.models import TeamMember
             players = []
             for player_data in players_data:
-                # Sanitize player data before creating Player object
                 player_data = sanitize_player_data(player_data)
                 
                 if "team" in player_data and player_data["team"]:
@@ -580,7 +627,6 @@ class Database:
                     players.append(Player(**player_data))
                 except Exception as e:
                     logger.error(f"Failed to create Player object for user {player_data.get('user_id', 'unknown')}: {e}")
-                    # Skip this player and continue
                     continue
             
             elapsed = (time.perf_counter() - start) * 1000
@@ -592,13 +638,12 @@ class Database:
 
     # Character operations
     async def create_character(self, user_id: str, name: str, character_type: str, current_hp: int) -> Character:
-        """Create a new character."""
+        """Create a new character"""
         try:
             char_data = get_character_data(character_type)
             if not char_data:
                 raise ValueError(f"Character type {character_type} not found")
             
-            # Ensure stats are properly dumped
             stats_obj = char_data.base_stats
             if hasattr(stats_obj, 'dict'):
                 stats_dict = stats_obj.dict()
@@ -624,7 +669,6 @@ class Database:
             character.unlock_abilities()
             character_dict = character.dict()
             
-            # Ensure all abilities have the 'unlocked' field
             for ability_type in ['active_abilities', 'passive_abilities', 'ultimate_abilities']:
                 if ability_type in character_dict:
                     for ability in character_dict[ability_type]:
@@ -642,7 +686,6 @@ class Database:
 
     async def get_character(self, user_id: str, character_name: str) -> Optional[Character]:
         try:
-            # Check cache first for better performance
             cache_key = f"character_{user_id}_{character_name}"
             current_time = time.time()
             
@@ -652,7 +695,6 @@ class Database:
                     logger.debug(f"get_character cache hit for {character_name}")
                     return cached_data["character"]
             
-            # Try exact match first
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
@@ -661,7 +703,6 @@ class Database:
                 "xp": 1, "gas": 1, "equipped_weapon": 1, "stats": 1, "max_gas": 1
             })
             
-            # If not found, try case-insensitive match
             if not character_data:
                 character_data = await self.characters.find_one({
                     "user_id": str(user_id),
@@ -674,7 +715,6 @@ class Database:
             if character_data:
                 character = Character(**character_data)
                 
-                # Store in bounded cache for future use
                 if CACHE_ENABLED:
                     CHARACTER_CACHE.set(cache_key, {
                         "character": character,
@@ -698,13 +738,11 @@ class Database:
                 for ability in character_dict['passive_abilities']:
                     ability['unlocked'] = ability.get('is_unlocked', False)
 
-            # Check if this is a critical update that needs immediate return
             is_critical_update = any(key in character_dict for key in [
                 'current_hp', 'gas', 'level', 'xp'
             ])
 
             if is_critical_update:
-                # For critical updates, use find_one_and_update to get updated document
                 result = await self.characters.find_one_and_update(
                     {
                         "user_id": character.user_id,
@@ -714,7 +752,6 @@ class Database:
                     return_document=True
                 )
 
-                # Update cache immediately
                 if CACHE_ENABLED and result:
                     cache_key = f"character_{character.user_id}_{character.name}"
                     CHARACTER_CACHE.set(cache_key, {
@@ -726,7 +763,6 @@ class Database:
                 logger.debug(f"update_character (critical): {elapsed:.2f} ms")
                 return Character(**result) if result else character
             else:
-                # For non-critical updates, use faster update_one and return immediately
                 await self.characters.update_one(
                     {
                         "user_id": character.user_id,
@@ -735,7 +771,6 @@ class Database:
                     {"$set": character_dict}
                 )
 
-                # Update cache
                 if CACHE_ENABLED:
                     cache_key = f"character_{character.user_id}_{character.name}"
                     CHARACTER_CACHE.set(cache_key, {
@@ -752,7 +787,7 @@ class Database:
             raise
 
     async def batch_update_character(self, user_id: str, character_name: str, update_data: Dict) -> bool:
-        """Batch update multiple character fields at once for better performance."""
+        """Batch update multiple character fields at once for better performance"""
         try:
             import time
             start = time.perf_counter()
@@ -764,7 +799,6 @@ class Database:
                 {"$set": update_data}
             )
 
-            # Update cache if it exists
             if CACHE_ENABLED:
                 cache_key = f"character_{user_id}_{character_name}"
                 cached_data = CHARACTER_CACHE.get(cache_key)
@@ -787,23 +821,19 @@ class Database:
             return False
 
     async def batch_update_player(self, user_id: str, update_data: Dict) -> bool:
-        """Batch update multiple player fields at once for better performance."""
+        """Batch update multiple player fields at once for better performance"""
         try:
             import time
             start = time.perf_counter()
 
             update_data["updated_at"] = datetime.now(timezone.utc)
             
-            # Serialize complex objects before updating
             serialized_update = {}
             for key, value in update_data.items():
                 if isinstance(value, dict):
-                    # Handle dict fields properly - don't convert them to lists
                     if key == "daily_explores":
-                        # daily_explores is a Dict[str, int] - keep it as dict
                         serialized_update[key] = value
                     else:
-                        # Other dict fields
                         serialized_dict = {}
                         for k, v in value.items():
                             if hasattr(v, 'dict'):
@@ -812,7 +842,6 @@ class Database:
                                 serialized_dict[k] = v
                         serialized_update[key] = serialized_dict
                 elif isinstance(value, list):
-                    # Handle lists that may contain Pydantic models
                     serialized_list = []
                     for item in value:
                         if hasattr(item, 'dict'):
@@ -823,19 +852,16 @@ class Database:
                             serialized_list.append(item)
                     serialized_update[key] = serialized_list
                 elif hasattr(value, 'dict'):
-                    # Serialize Pydantic models
                     serialized_update[key] = value.dict()
                 else:
                     serialized_update[key] = value
 
-            # Use update_one with $set for better performance
             result = await self.players.update_one(
                 {"user_id": str(user_id)},
                 {"$set": serialized_update},
                 upsert=False  
             )
 
-            # Update cache if it exists
             if CACHE_ENABLED:
                 cache_key = f"player_{user_id}"
                 cached_data = PLAYER_CACHE.get(cache_key)
@@ -850,7 +876,7 @@ class Database:
                     })
 
             elapsed = (time.perf_counter() - start) * 1000
-            if elapsed > 250:  # Only log if it takes too long
+            if elapsed > 250:
                 logger.warning(f"batch_update_player: {elapsed:.2f} ms")
             else:
                 logger.debug(f"batch_update_player: {elapsed:.2f} ms")
@@ -875,9 +901,8 @@ class Database:
             raise
 
     async def get_character_fresh(self, user_id: str, character_name: str) -> Optional[Character]:
-        """Get character directly from database, bypassing cache for critical operations."""
+        """Get character directly from database, bypassing cache for critical operations"""
         try:
-            # Use projection for faster reads - include only essential fields for explore
             character_data = await self.characters.find_one({
                 "user_id": str(user_id),
                 "name": character_name
@@ -889,7 +914,6 @@ class Database:
             if character_data:
                 character = Character(**character_data)
                 
-                # Update cache with fresh data
                 if CACHE_ENABLED:
                     cache_key = f"character_{user_id}_{character_name}"
                     CHARACTER_CACHE.set(cache_key, {
@@ -902,9 +926,7 @@ class Database:
             logger.error(f"Failed to get fresh character: {e}")
             raise
 
-
     async def generate_titan(self, player_level: int, unlocked_areas: List[str], user_id: str = None) -> Optional[Titan]:
-        # Determine difficulty based on player level
         if player_level < 8:
             difficulty = "Easy"
         elif player_level < 15:
@@ -912,10 +934,8 @@ class Database:
         else:
             difficulty = "Hard"
 
-        # Titan level: within -2 to +2 of player, but at least 1
         level = max(1, player_level + random.randint(-2, 2))
 
-        # Name and HP using models.py logic
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(level, difficulty)
         abilities = []
@@ -933,14 +953,10 @@ class Database:
             min_level_requirement=level
         )
         
-        # If we're generating a titan for a specific user, make sure it's different from any cached titan
-        if user_id and user_id in self._titan_cache:
-            cached_titan = self._titan_cache[user_id]
-            # If the name is the same, generate a new one to ensure variety
+        if user_id and user_id in _titan_cache:
+            cached_titan = _titan_cache[user_id]
             if cached_titan.name == titan.name:
-                # Force a different name by regenerating
                 name = generate_titan_name(difficulty)
-                # Try up to 3 times to get a different name
                 attempts = 0
                 while name == cached_titan.name and attempts < 3:
                     name = generate_titan_name(difficulty)
@@ -950,10 +966,9 @@ class Database:
         return titan
         
     async def generate_multiple_titans(self, player_level: int, unlocked_areas: List[str], count: int = 3) -> List[Titan]:
-        """Generate multiple titans at once for better performance."""
+        """Generate multiple titans at once for better performance"""
         titans = []
         try:
-            # Determine difficulty based on player level once
             if player_level < 8:
                 difficulty = "Easy"
             elif player_level < 15:
@@ -964,19 +979,16 @@ class Database:
             now = datetime.now(timezone.utc)
             
             for _ in range(count):
-                # Titan level: within -2 to +2 of player, but at least 1
                 level = max(1, player_level + random.randint(-2, 2))
                 
-                # Generate titan data
                 name = generate_titan_name(difficulty)
                 max_hp = generate_titan_hp(level, difficulty)
                 
-                # Create titan
                 titan = Titan(
                     name=name,
                     level=level,
                     max_hp=max_hp,
-                    abilities=[],  # No abilities for now
+                    abilities=[],
                     created_at=now,
                     difficulty=difficulty,
                     spawn_areas=unlocked_areas or [],
@@ -991,7 +1003,7 @@ class Database:
         return titans
 
     async def create_new_titan(self, level: int, difficulty: str, spawn_areas: List[str]) -> Titan:
-        """Create a new titan with specified parameters."""
+        """Create a new titan with specified parameters"""
         name = generate_titan_name(difficulty)
         max_hp = generate_titan_hp(level, difficulty)
         xp_reward = generate_titan_xp(level, difficulty)
@@ -1010,28 +1022,56 @@ class Database:
             min_level_requirement=level
         )
         return titan
-
-    # Titan cache for better performance
-    _titan_cache = {}
+    
+    # FIX: Add TTL-aware titan cache methods
+    def _update_titan_cache(self, user_id: str, titan: Titan):
+        """Update titan cache with TTL tracking"""
+        _titan_cache[user_id] = titan
+        _titan_cache_expiry[user_id] = time.time() + TITAN_CACHE_TTL
+        
+        # Enforce max size
+        if len(_titan_cache) > MAX_TITAN_CACHE_SIZE:
+            # Remove oldest entries
+            oldest_key = min(
+                (k for k in _titan_cache if k not in ["reserved"]),
+                key=lambda k: _titan_cache_expiry.get(k, 0),
+                default=None
+            )
+            if oldest_key:
+                _titan_cache.pop(oldest_key, None)
+                _titan_cache_expiry.pop(oldest_key, None)
+    
+    def _get_titan_cache(self, user_id: str) -> Optional[Titan]:
+        """Get titan from cache if not expired"""
+        if user_id not in _titan_cache:
+            return None
+        
+        current_time = time.time()
+        if current_time > _titan_cache_expiry.get(user_id, 0):
+            # Expired - remove it
+            _titan_cache.pop(user_id, None)
+            _titan_cache_expiry.pop(user_id, None)
+            return None
+        
+        return _titan_cache[user_id]
     
     async def store_titan(self, user_id: str, titan: Titan):
-        """Optimized titan storage with caching and background persistence"""
-        # Store in cache first for immediate access
-        self._titan_cache[user_id] = titan
+        """Optimized titan storage with TTL caching"""
+        # FIX: Use TTL-aware cache update
+        self._update_titan_cache(user_id, titan)
         
-        # For better performance, use a background task for database persistence
-        # This allows the main explore command to return immediately
-        asyncio.create_task(self._background_store_titan(user_id, titan))
+        # Store in database as background task
+        task = asyncio.create_task(self._background_store_titan(user_id, titan))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)  # Auto-cleanup on completion
         
     async def _background_store_titan(self, user_id: str, titan: Titan):
         """Background task to store titan data without blocking the main thread"""
         try:
-            # Then save to database in background via asyncio task
             titan_doc = titan.dict() if hasattr(titan, 'dict') else titan.__dict__
             titan_doc["user_id"] = user_id
             titan_doc["updated_at"] = datetime.now(timezone.utc)
             
-            # Include all required fields to satisfy schema validation
             essential_titan_doc = {
                 "user_id": titan_doc["user_id"],
                 "name": titan_doc["name"],
@@ -1053,19 +1093,18 @@ class Database:
                 upsert=True
             )
         except Exception as e:
-            # Just log errors but don't fail since this is a background task
             logger.error(f"Background titan storage failed: {e}")
-            # Error in titan storage shouldn't affect the user experience
 
     async def get_titan(self, user_id: str) -> Optional[Titan]:
-        # Check cache first
-        if user_id in self._titan_cache:
-            return self._titan_cache[user_id]
+        """Get titan with TTL-aware cache"""
+        # FIX: Use TTL-aware cache getter
+        cached_titan = self._get_titan_cache(user_id)
+        if cached_titan:
+            return cached_titan
             
-        # If not in cache, get from database
+        # If not in cache or expired, get from database
         titan_data = await self.titans.find_one(
             {"user_id": user_id},
-            # Include all required fields
             {
                 "user_id": 1, "name": 1, "level": 1, "max_hp": 1, 
                 "abilities": 1, "difficulty": 1, "xp_reward": 1,
@@ -1073,9 +1112,7 @@ class Database:
             }
         )
         
-        # Store in cache if found
         if titan_data:
-            # Add defaults for any missing required fields
             if "abilities" not in titan_data or titan_data["abilities"] is None:
                 titan_data["abilities"] = []
             if "created_at" not in titan_data:
@@ -1088,14 +1125,14 @@ class Database:
                 titan_data["spawn_areas"] = ["Trost District"]
                 
             titan = Titan(**titan_data)
-            self._titan_cache[user_id] = titan
+            self._update_titan_cache(user_id, titan)  # FIX: Use TTL-aware cache update
             return titan
             
         return None
 
     async def delete_titan(self, user_id: str):
+        """Delete titan from DB and cache"""
         await self.titans.delete_one({"user_id": user_id})
-        # Also remove from cache if it exists
         self.invalidate_titan_cache(user_id)
 
     async def get_random_titan(self, min_level: int, max_level: int, target_level: int, unlocked_areas: Optional[List[str]] = None) -> Titan:
@@ -1165,7 +1202,7 @@ class Database:
         })
 
     async def store_shop_refresh(self, user_id: str, count: int):
-        await self.players_collection.update_one(
+        await self.players.update_one(
             {"user_id": user_id},
             {"$set": {"shop_refresh_count": count, "shop_refresh_date": datetime.now(timezone.utc)}}
         )
@@ -1180,28 +1217,20 @@ class Database:
         return 0
 
     async def add_new_character_to_player(self, user_id: str, character_name: str) -> bool:
-        """
-        Create a new character for a player with proper initialization.
-        This is called when a player unlocks a character from spin or other means.
-        """
+        """Create a new character for a player with proper initialization"""
         try:
-            # Get character template data
             char_data = get_character_data(character_name)
             if not char_data:
                 logger.error(f"Character data not found for: {character_name}")
                 return False
             
-            # Check if character already exists
             existing_char = await self.get_character(str(user_id), character_name)
             if existing_char:
                 logger.warning(f"Character {character_name} already exists for user {user_id}")
                 return False
             
-            # Create character with proper initialization
-            # Level 1 max HP from character data
             max_hp = char_data.get_max_hp(1)
             
-            # Create the character document
             new_character = Character(
                 user_id=str(user_id),
                 name=character_name,
@@ -1210,9 +1239,9 @@ class Database:
                 level=1,
                 xp=0,
                 total_xp=0,
-                stats=char_data.base_stats.dict(),  # Use base stats from character data
-                gas=5000,  # Starting gas
-                max_gas=5000,  # Starting max gas
+                stats=char_data.base_stats.dict(),
+                gas=5000,
+                max_gas=5000,
                 equipped_weapon=None,
                 active_abilities=[],
                 passive_abilities=[],
@@ -1222,7 +1251,6 @@ class Database:
                 updated_at=datetime.now(timezone.utc)
             )
             
-            # Unlock level 1 abilities
             for ability in char_data.active_abilities:
                 if ability.level_required <= 1:
                     ability_dict = ability.dict()
@@ -1247,7 +1275,6 @@ class Database:
                     new_character.ultimate_abilities.append(Ability(**ability_dict))
                     new_character.unlocked_abilities[ability.name] = True
             
-            # Save to database
             await self.characters.insert_one(new_character.dict())
             logger.info(f"Successfully created character {character_name} for user {user_id} with {len(new_character.unlocked_abilities)} abilities unlocked")
             return True
@@ -1328,7 +1355,7 @@ class Database:
             return False
 
     async def record_purchase(self, user_id: str, item_key: str):
-        """Record a shop purchase for tracking stock/cooldown."""
+        """Record a shop purchase for tracking stock/cooldown"""
         await self.shop_purchases_collection.insert_one({
             "user_id": user_id,
             "item_key": item_key,
