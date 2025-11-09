@@ -919,7 +919,45 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             titan_data = cached_titan_data
     else:
-        titan_data = context.bot_data.get(f"last_titan_data_{user_id}", titan_obj.dict())
+        # Fallback to bot_data cache, or use titan_obj if available
+        if f"last_titan_data_{user_id}" in context.bot_data:
+            titan_data = context.bot_data[f"last_titan_data_{user_id}"]
+        elif titan_obj:
+            titan_data = titan_obj.dict()
+        else:
+            # This should not happen in normal flow
+            logger.error(f"No titan data available for user {user_id}")
+            try:
+                await query.edit_message_text(
+                    "⏰ <b>This titan encounter has expired!</b>\n\n"
+                    "Use /explore to find a new one.",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
+            return
+    
+    # Ensure titan_data has all required fields
+    if not titan_data or not isinstance(titan_data, dict):
+        logger.error(f"Invalid titan_data for user {user_id}: {type(titan_data)}")
+        try:
+            await query.edit_message_text(
+                "⏰ <b>This titan encounter has expired!</b>\n\n"
+                "Use /explore to find a new one.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+        return
+    
+    # Ensure all required fields are present (with sensible defaults)
+    titan_data.setdefault("level", 1)
+    titan_data.setdefault("abilities", [])
+    titan_data.setdefault("created_at", datetime.now(timezone.utc))
+    titan_data.setdefault("spawn_areas", ["Trost"])
+    titan_data.setdefault("min_level_requirement", 1)
+    titan_data.setdefault("drop_table", {})
+    titan_data.setdefault("is_boss", False)
     
     # Create titan object
     titan = Titan(**titan_data)

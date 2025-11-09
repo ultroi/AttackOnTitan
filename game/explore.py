@@ -106,7 +106,7 @@ def cleanup_locks():
     current_time = time.time()
     for user_id in unlocked_users:
         if user_id not in user_last_explore or \
-           (current_time - user_last_explore[user_id]) > 600:
+           (current_time - user_last_explore.get(user_id, 0)) > 600:
             user_explore_locks.pop(user_id, None)
 
 def cleanup_timeout_tasks():
