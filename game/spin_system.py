@@ -55,7 +55,7 @@ SPIN_BUTTON_COOLDOWN = 3
 
 class SpinSystem:
     def __init__(self):
-        self.spin_counts = {}  # Track community spins
+        self.spin_counts = {}  
         self.last_reset = datetime.now(timezone.utc)
         self.event_active = False
         self.event_marks_bonus = 1.25

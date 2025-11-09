@@ -282,16 +282,12 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Create message
         message = (
-            f"📊 <b>GAME STATISTICS</b> 📊\n"
-            f"━━━━━━━━━━━━━━━━━━━\n\n"
             f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
             f"👥 <b>Total Groups:</b> <code>{total_groups}</code>\n\n"
-            f"🏆 <b>TOP 3 EXPLORERS (ALL-TIME):</b>\n{top_explorers_text}\n\n"
+            f"🏆 <b>TOP 3 EXPLORERS:</b>\n{top_explorers_text}\n\n"
             f"⭐ <b>TOP 3 LEVELS:</b>\n{top_levels_text}\n\n"
             f"🔥 <b>DAILY TOP 10 EXPLORERS:</b>\n{daily_explorers_text}\n\n"
-            f"━━━━━━━━━━━━━━━━━━━"
         )
-
         await update.message.reply_text(message, parse_mode="HTML")
 
     except Exception as e:

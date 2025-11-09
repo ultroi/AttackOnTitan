@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import logging
 from typing import Dict, List, Optional, Any
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, User
@@ -16,9 +16,7 @@ class ShopSystem:
     def __init__(self):
         self.db = None
         self.shop_items = self._initialize_shop_items()
-        self.hidden_items = {}  # Items that appear under special conditions
-        self.rotation_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        self.last_refresh_times = {}  # Track last refresh times per user
+        self.hidden_items = {}  
 
     async def _send_transaction_log(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, 
                                operation_type: str, amount: int, currency_type: str,
@@ -163,7 +161,6 @@ class ShopSystem:
         if user_id in active_battles:
             return "⚔️ You cannot access the shop during an active battle with a titan!", None
         
-        await self._check_daily_refresh(user_id)
         db = await self._get_db(context)
         player = await db.get_player(user_id)
         if not player:
@@ -174,18 +171,6 @@ class ShopSystem:
 
     async def _show_main_shop(self, context: ContextTypes.DEFAULT_TYPE, player: Player) -> tuple[str, InlineKeyboardMarkup]:
         """Show main shop interface with categories."""
-        now = datetime.now(timezone.utc)
-        next_midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        time_until_refresh = next_midnight - now
-        
-        # Calculate time left for shop refresh
-        total_seconds = int(time_until_refresh.total_seconds())
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        time_left = f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
-    
-        refresh_cost = await self._get_refresh_cost(context, user_id=player.user_id)
-
         header = (
             "═════════════════════════════\n"
             "       <b>ATTACK ON TITAN SHOP</b>       \n"
@@ -201,9 +186,6 @@ class ShopSystem:
             "• 2 Marks      ➜ 1 Gas\n\n"
             "<b> How to Purchase</b>\n"
             "<code>/buy gas 10 </code>\n\n"
-            "<b>⏰ Shop Information</b>\n"
-            f"• <b>Next Free Refresh:</b> {time_left}\n"
-            f"• <b>Manual Refresh Cost:</b> {refresh_cost} Valor\n\n"
             "═════════════════════════════\n"
         )
         keyboard = [
@@ -211,8 +193,7 @@ class ShopSystem:
              InlineKeyboardButton("🔷 Echo Shards", callback_data="shop_echo_shards")],
             [InlineKeyboardButton("🛡️ Gear", callback_data="shop_gear"),
              InlineKeyboardButton("🌀 Utilities", callback_data="shop_utilities")],
-            [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks")],
-            [InlineKeyboardButton(f"🔄 Refresh Shop ({refresh_cost} Valor)", callback_data="shop_refresh")]
+            [InlineKeyboardButton("🏛️ Military Quarter", callback_data="shop_barracks")]
         ]
         return header, InlineKeyboardMarkup(keyboard)
 
@@ -226,7 +207,7 @@ class ShopSystem:
             keyboard = [[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]]
             return message, InlineKeyboardMarkup(keyboard)
 
-        # Use random selection for shop items, persist per user until refresh
+        # Use random selection for shop items
         paged_items = self._get_random_shop_items(category, str(player.user_id), context)
         
         # Sort items by price (ascending order)
@@ -252,9 +233,7 @@ class ShopSystem:
         for idx, (item_key, item) in enumerate(paged_items, start=1):
             price_str = f"{item.price:,} {item.currency.title()}"
             item_currency = item.currency
-            rarity_emoji = {"common": "⚪", "uncommon": "🟢", "rare": "🔵", "epic": "🟣", "legendary": "🟡"}
-            rarity_symbol = rarity_emoji.get(item.rarity, '⚪')
-            item_header = f"{rarity_symbol} <b>{idx}. {item.name}</b>"
+            item_header = f"<b>{idx}. {item.name}</b>"
             damage_info = ""
             if "damage_min" in item.attributes and "damage_max" in item.attributes:
                 damage_min = item.attributes["damage_min"]
@@ -451,61 +430,10 @@ class ShopSystem:
             logger.error(f"Error in buy_currency for user {user_id}: {e}")
             return f"❌ Error purchasing currency: {str(e)}"
 
-    async def _get_refresh_cost(self, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> int:
-        """Get the current refresh cost for a user."""
-        db = await self._get_db(context)
-        count = await db.get_shop_refresh_count(user_id)
-        return 150 + (50 * count)
-
-    async def refresh_shop(self, context: ContextTypes.DEFAULT_TYPE, user_id: str) -> str:
-        """Handle manual shop refresh."""
-        try:
-            # Check if player is in titan battle
-            from game.battle_system import active_battles
-            if user_id in active_battles:
-                return "⚔️ You cannot refresh the shop during titan battles!"
-            
-            db = await self._get_db(context)
-            player = await db.get_player(user_id)
-            if not player:
-                return "❌ Player not found!"
-            refresh_cost = await self._get_refresh_cost(context, user_id)
-            if player.valor < refresh_cost:
-                return f"❌ Insufficient valor! Shop refresh costs {refresh_cost} valor."
-
-            await db.update_player(int(user_id), {"valor": player.valor - refresh_cost})
-            await db.store_shop_refresh(user_id, (await db.get_shop_refresh_count(user_id)) + 1)
-            
-            # Update last refresh time for this user
-            self.last_refresh_times[user_id] = datetime.now(timezone.utc)
-            
-            # Clear the user's random shop selection so new items are shown
-            self._clear_random_shop_items(str(user_id), context)
-            
-            next_cost = refresh_cost + 50
-            return f"✅ Shop refreshed successfully!"
-        except (ValueError, PyMongoError) as e:
-            logger.error(f"Error in refresh_shop for user {user_id}: {e}")
-            return f"❌ Error refreshing shop: {str(e)}"
-
     async def handle_callback(self, context: ContextTypes.DEFAULT_TYPE, user_id: str, callback_data: str) -> Optional[tuple[str, InlineKeyboardMarkup] | tuple[str, InlineKeyboardMarkup, bool]]:
         """Handle shop-related callback queries."""
         try:
-            if callback_data == "shop_refresh":
-                refresh_result = await self.refresh_shop(context, user_id)
-                shop_message, shop_keyboard = await self.show_shop(context, user_id)
-                # Show popup alert for shop refresh
-                update = context.update if hasattr(context, 'update') else None
-                if update and hasattr(update, 'callback_query') and update.callback_query:
-                    await context.bot.answer_callback_query(
-                        callback_query_id=update.callback_query.id,
-                        text="✅ Shop refreshed successfully!",
-                        show_alert=True
-                    )
-                combined_message = f"{shop_message}"
-                return combined_message, shop_keyboard
-            
-            elif callback_data.startswith("buy_"):
+            if callback_data.startswith("buy_"):
                 item_key = callback_data.replace("buy_", "")
                 result = await self.purchase_item(context, user_id, item_key)
                 keyboard = [[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]]
@@ -520,60 +448,6 @@ class ShopSystem:
         except (ValueError, PyMongoError) as e:
             logger.error(f"Error in handle_callback for user {user_id}: {e}")
             return f"❌ Error handling shop action: {str(e)}", InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Shop", callback_data="shop_main")]])
-
-    async def _check_daily_refresh(self, user_id: str):
-        """Check and handle daily shop refresh for a specific user."""
-        current_time = datetime.now(timezone.utc)
-        midnight = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Check if we need to do a daily refresh (after midnight)
-        if current_time >= midnight and self.rotation_date < midnight:
-            self.rotation_date = midnight
-            # Clear the user's random shop selection
-            self._clear_random_shop_items(user_id)
-            # Reset refresh counts in database (handled by get_shop_refresh_count)
-
-    def _get_random_shop_items(self, category: str, user_id: str, context: ContextTypes.DEFAULT_TYPE) -> list:
-        """Get a randomized list of items for the user and category, store in bot_data for persistence."""
-        all_items = list(self._get_category_items(category).items())
-        all_keys = set(k for k, _ in all_items)
-        # Use bot_data for persistence
-        bot_data = context.bot_data if hasattr(context, 'bot_data') else {}
-        if 'shop_random_selections' not in bot_data:
-            bot_data['shop_random_selections'] = {}
-        shop_random_selections = bot_data['shop_random_selections']
-        key = f"{user_id}_{category}"
-        # For all categories, persist selection until refresh
-        if key in shop_random_selections:
-            selected_keys = shop_random_selections[key]
-            expected_len = 12
-            if (
-                len(selected_keys) == expected_len and
-                all(k in all_keys for k in selected_keys)
-            ):
-                selected = [item for item in all_items if item[0] in selected_keys]
-                # Sort by price (ascending order)
-                selected.sort(key=lambda x: x[1].price)
-                return selected
-        # If not present or invalid, randomize and store
-        pick_count = min(12, len(all_items))
-        selected = random.sample(all_items, pick_count)
-        # Store the keys for persistence
-        shop_random_selections[key] = [item[0] for item in selected]
-        # Sort by price (ascending order)
-        selected.sort(key=lambda x: x[1].price)
-        return selected
-
-    def _clear_random_shop_items(self, user_id: str, context: Optional[ContextTypes.DEFAULT_TYPE] = None):
-        """Clear the user's random shop selection for all categories from bot_data."""
-        bot_data = context.bot_data if context is not None and hasattr(context, 'bot_data') else {}
-        if 'shop_random_selections' not in bot_data:
-            return
-        shop_random_selections = bot_data['shop_random_selections']
-        for category in ["weapons", "echo_shards", "gear", "utilities", "barracks"]:
-            key = f"{user_id}_{category}"
-            if key in shop_random_selections:
-                del shop_random_selections[key]
             
 
 shop_system = ShopSystem()

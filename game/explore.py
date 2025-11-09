@@ -495,8 +495,13 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
 # =====================================================================================
 
 def get_titan_difficulty_by_level(level: int) -> str:
-    """Returns random difficulty level"""
-    return random.choice(["Easy", "Normal", "Hard"])
+    """Returns difficulty level based on player level"""
+    if level < 50:
+        return "Easy"
+    elif level <= 100:
+        return "Normal"
+    else:  
+        return "Hard"
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (

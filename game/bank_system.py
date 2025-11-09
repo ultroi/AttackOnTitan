@@ -170,6 +170,21 @@ class BankSystem:
             'level_requirement': 15
         }
         
+        # Check if player has an open bank account
+        player_account = await self.db.get_bank_account(player.user_id)
+        if not player_account or not player_account.opened:
+            tax_info['bank_requirement_met'] = False
+            tax_info['exempt_reason'] = "You must open a bank account to be subject to taxation."
+            tax_info['would_be_taxed'] = False
+            
+            for currency in ["marks", "valor", "crystal"]:
+                player_balance = getattr(player, currency)
+                tax_info[f'{currency}_balance'] = player_balance
+            
+            return tax_info
+        
+        tax_info['bank_requirement_met'] = True
+        
         # If player is below level 15, they are exempt from taxes
         if player.level < 15:
             tax_info['exempt_reason'] = f"You are exempt from taxes until reaching level {tax_info['level_requirement']}."
@@ -285,6 +300,11 @@ class BankSystem:
         for player in all_players:
             # Skip players without user_id
             if not player.user_id:
+                continue
+
+            # Check if player has an open bank account
+            player_account = await self.db.get_bank_account(player.user_id)
+            if not player_account or not player_account.opened:
                 continue
 
             tax_report = {"user_id": player.user_id, "taxes": {}, "messages": []}

@@ -57,6 +57,14 @@ async def tax_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             balance = tax_info[f'{currency}_balance']
             threshold = tax_info['thresholds'][currency]
             msg += f"• {currency.capitalize()}: {balance} / {threshold}\n"
+    elif not tax_info.get('bank_requirement_met', True):
+        msg += f"🏦 **You are exempt from taxation!**\n"
+        msg += f"{tax_info.get('exempt_reason', 'You must open a bank account to be subject to taxation.')}\n\n"
+        msg += "Your current balances:\n"
+        for currency in ["marks", "valor", "crystal"]:
+            balance = tax_info[f'{currency}_balance']
+            threshold = tax_info['thresholds'][currency]
+            msg += f"• {currency.capitalize()}: {balance} / {threshold}\n"
     elif tax_info["would_be_taxed"]:
         msg += "You would be taxed at midnight for the following currencies:\n\n"
         
@@ -102,6 +110,7 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
             # Just count how many players would be taxed
             players_to_tax = 0
             players_exempt_by_level = 0
+            players_exempt_by_bank = 0
             total_tax = {"marks": 0, "valor": 0, "crystal": 0}
             
             all_players = await db.get_all_players()
@@ -109,6 +118,8 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
                 tax_info = await bank_system.check_player_tax_status(player)
                 if player.level < 15:
                     players_exempt_by_level += 1
+                elif not tax_info.get('bank_requirement_met', True):
+                    players_exempt_by_bank += 1
                 elif tax_info["would_be_taxed"]:
                     players_to_tax += 1
                     for currency, amount in tax_info["taxes"].items():
@@ -120,6 +131,7 @@ async def force_tax_check_command(update: Update, context: ContextTypes.DEFAULT_
                 f"Time until natural tax collection: {hours}h:{minutes}m\n\n"
                 f"• Players that would be taxed: {players_to_tax}\n"
                 f"• Players exempt due to being below level 15: {players_exempt_by_level}\n"
+                f"• Players exempt due to not having bank accounts: {players_exempt_by_bank}\n"
                 f"• Total taxes that would be collected:\n"
                 f"  - Marks: {total_tax['marks']}\n"
                 f"  - Valor: {total_tax['valor']}\n"
