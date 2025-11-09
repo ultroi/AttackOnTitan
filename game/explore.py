@@ -50,7 +50,7 @@ TITAN_TYPE_IMAGE_URLS = {
    # "founding": "https://i.ibb.co/svn2w3C0/image.jpg",
     "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
     "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
-    "attack": "https://i.ibb.co/JW8TyhmR/image.jpg",
+   # "attack": "https://i.ibb.co/JW8TyhmR/image.jpg",
     "cart": "https://i.ibb.co/nNRhLMqH/image.jpg",
     "female": "https://i.ibb.co/vNQF4Cb/image.jpg",
     "bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
