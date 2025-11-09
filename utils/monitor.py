@@ -8,8 +8,9 @@ from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
-# Live tracking variables 
-live_player_activity = {}  
+# Live tracking variables - CRITICAL: Limited to prevent memory leaks
+MAX_PLAYER_ACTIVITY = 500
+live_player_activity = {}  # Limited to 500 active players
 battle_statistics = {
     "total_battles_today": 0,
     "total_explorations_today": 0,
@@ -17,8 +18,31 @@ battle_statistics = {
     "average_battle_duration": 0
 }
 
+def cleanup_stale_activity(max_age_minutes: int = 10):
+    """Remove inactive players from tracking - CRITICAL: Prevent unbounded growth"""
+    current_time = datetime.now()
+    stale_users = []
+    
+    for user_id, activity in live_player_activity.items():
+        age = (current_time - activity["timestamp"]).total_seconds() / 60
+        if age > max_age_minutes:
+            stale_users.append(user_id)
+    
+    for user_id in stale_users:
+        del live_player_activity[user_id]
+    
+    if stale_users:
+        logger.debug(f"Cleaned {len(stale_users)} stale player activity entries (age > {max_age_minutes}m)")
+    
+    return len(stale_users)
+
 def track_player_action(user_id: int, username: str, action: str, details: Optional[Dict] = None):
     """Track player activity in real-time without DB queries"""
+    # CRITICAL: Cleanup before adding
+    if len(live_player_activity) > MAX_PLAYER_ACTIVITY:
+        oldest = min(live_player_activity.items(), key=lambda x: x[1].get("timestamp", datetime.now()))
+        del live_player_activity[oldest[0]]
+    
     live_player_activity[user_id] = {
         "name": username,
         "action": action,
@@ -53,23 +77,6 @@ def track_battle_end(user_id: int, username: str, result: str = "ended"):
             del live_player_activity[user_id]
     
     threading.Thread(target=delayed_remove, daemon=True).start()
-
-def cleanup_stale_activity(max_age_minutes: int = 10):
-    """Clean up stale activity records"""
-    current_time = datetime.now()
-    stale_users = []
-    
-    for user_id, activity in live_player_activity.items():
-        age = (current_time - activity["timestamp"]).total_seconds() / 60
-        if age > max_age_minutes:
-            stale_users.append(user_id)
-    
-    for user_id in stale_users:
-        del live_player_activity[user_id]
-    
-    if stale_users:
-        # Stale activity cleanup logging removed for cleaner logs
-        pass
 
 class ResourceMonitor:
     """Monitor system resources and bot performance"""

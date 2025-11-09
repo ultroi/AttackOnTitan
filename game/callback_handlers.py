@@ -120,11 +120,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     processed_callbacks[callback_id] = time.time()
     
-    # Cleanup only when cache is large
+    # CRITICAL: Cleanup expired callbacks (better than clearing all)
     if len(processed_callbacks) > 200:
         current_time = time.time()
-        processed_callbacks.clear()
-        processed_callbacks[callback_id] = current_time
+        expired = [cid for cid, ts in processed_callbacks.items() if current_time - ts > CALLBACK_EXPIRY]
+        for cid in expired:
+            del processed_callbacks[cid]
+        # If still too many, remove oldest entries
+        if len(processed_callbacks) > 300:
+            oldest_ids = sorted(processed_callbacks.items(), key=lambda x: x[1])[:100]
+            for cid, _ in oldest_ids:
+                del processed_callbacks[cid]
     
     user_id = str(update.effective_user.id)
     

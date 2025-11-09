@@ -69,8 +69,8 @@ CHARACTER_CACHE_TTL = 600
 # FIX: Add TTL tracking for titan cache instead of unbounded dict
 _titan_cache = {}
 _titan_cache_expiry = {}
-TITAN_CACHE_TTL = 300  # 5 minutes (was forever!)
-MAX_TITAN_CACHE_SIZE = 100  # Limit to 100 active titans
+TITAN_CACHE_TTL = 300  
+MAX_TITAN_CACHE_SIZE = 100  
 
 # FIX: Track background tasks for cleanup
 _background_tasks = set()

@@ -44,7 +44,9 @@ SESSION_COOKIE = "aot_dashboard_session"
 VERIFICATION_CODE_EXPIRY = 300  # 5 minutes
 ADMIN_GROUP_ID = -1002463105932
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-verification_codes = {}  # {code: (timestamp, ip)}
+verification_codes = {}  # {code: (timestamp, ip)} - CRITICAL: Limited to 500 entries
+MAX_VERIFICATION_CODES = 500
+MAX_ACTIVE_SESSIONS = 1000
 
 # MongoDB session helpers
 import asyncio
@@ -71,6 +73,22 @@ async def delete_dashboard_session(session_id: str):
         return
     await db["dashboard_sessions"].delete_one({"session_id": session_id})
 
+def cleanup_expired_verification_codes():
+    """Remove expired verification codes - CRITICAL: Prevent unbounded growth"""
+    current_time = time.time()
+    expired = [code for code, (timestamp, ip) in verification_codes.items() if current_time - timestamp > VERIFICATION_CODE_EXPIRY]
+    for code in expired:
+        del verification_codes[code]
+    return len(expired)
+
+def cleanup_expired_sessions():
+    """Remove expired sessions from memory - CRITICAL: Prevent unbounded growth"""
+    current_time = time.time()
+    expired = [sid for sid, data in active_sessions.items() if data["expiry"] < current_time]
+    for sid in expired:
+        del active_sessions[sid]
+    return len(expired)
+
 # Access log tracking
 dashboard_access_log: List[Dict] = []  # Keeps track of recent dashboard accesses
 
@@ -95,12 +113,20 @@ def log_dashboard_access(user_id: int, action: str, ip_address: str, details: Op
     
     # For critical actions, could also notify owners via Telegram
 
-# In-memory session cache
+# In-memory session cache - CRITICAL: Limited size
 active_sessions = {}  # {session_id: {"user_id": user_id, "ip_address": ip, "expiry": expiry, "created_at": timestamp, "last_activity": timestamp}}
 
 # Session management
 def create_session(user_id: int, ip_address: str = "unknown") -> str:
     """Create a new session for authenticated user"""
+    # CRITICAL: Cleanup before adding new session
+    cleanup_expired_sessions()
+    
+    # Limit active sessions to prevent memory leak
+    if len(active_sessions) > MAX_ACTIVE_SESSIONS:
+        oldest = min(active_sessions.items(), key=lambda x: x[1]["created_at"])
+        del active_sessions[oldest[0]]
+    
     session_id = secrets.token_hex(16)
     timestamp = time.time()
     expiry = timestamp + 3600

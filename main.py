@@ -20,6 +20,7 @@ from database.db_instance import get_persistent_database
 import signal
 # Scheduler import
 from game.scheduler import start_scheduler
+from utils.memory_cleanup import schedule_memory_cleanup
 from utils.sudo_reset import reset_handler
 from utils.ban_utils import ban_protected, ban_user, unban_user
 from utils.mod_utils import promote_mod, demote_mod
@@ -869,6 +870,9 @@ async def main():
 
         # Start the midnight tax scheduler with bot instance
         start_scheduler(app_instance.bot)
+        
+        # Start memory cleanup scheduler to prevent memory leaks
+        schedule_memory_cleanup(app_instance)
         
         # Start the stats scheduler for daily/weekly resets
         await start_stats_scheduler(global_db)

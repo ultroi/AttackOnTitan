@@ -26,7 +26,39 @@ BASE_RETRY_DELAY = 1.0
 MAX_RETRY_DELAY = 30.0
 
 # Anti-spam protection: track last interaction time for each user
+# CRITICAL: Limited to prevent memory leaks
 pvp_button_cooldowns: Dict[str, Dict[str, float]] = {}
+MAX_PVP_COOLDOWN_USERS = 1000
+PVP_COOLDOWN_EXPIRY = 3600  # 1 hour
+
+def cleanup_pvp_cooldowns():
+    """Remove old pvp_button_cooldowns to prevent memory leak"""
+    current_time = datetime.now(timezone.utc).timestamp()
+    expired_users = []
+    
+    for user_id, actions in list(pvp_button_cooldowns.items()):
+        # Remove if user hasn't had any actions in 1 hour
+        if actions:
+            max_action_time = max(actions.values())
+            if current_time - max_action_time > PVP_COOLDOWN_EXPIRY:
+                expired_users.append(user_id)
+        else:
+            expired_users.append(user_id)
+    
+    for user_id in expired_users:
+        del pvp_button_cooldowns[user_id]
+    
+    # If still too many, remove oldest
+    if len(pvp_button_cooldowns) > MAX_PVP_COOLDOWN_USERS:
+        # Find oldest users
+        oldest_users = sorted(
+            pvp_button_cooldowns.items(),
+            key=lambda x: max(x[1].values()) if x[1] else 0
+        )[:100]
+        for user_id, _ in oldest_users:
+            del pvp_button_cooldowns[user_id]
+    
+    return len(expired_users)
 
 async def safe_api_call(api_func, *args, **kwargs):
     retries = 0
@@ -1706,7 +1738,11 @@ async def check_button_cooldown(user_id: str, action: str, cooldown_secs: float 
     """
     Check if a user's action is on cooldown.
     Returns True if the action can proceed (not on cooldown), False otherwise.
+    CRITICAL: Cleanup called to prevent unbounded growth
     """
+    # CRITICAL: Cleanup before checking to prevent unbounded growth
+    cleanup_pvp_cooldowns()
+    
     current_time = datetime.now(timezone.utc).timestamp()
     
     # Initialize user's cooldown dict if not exists

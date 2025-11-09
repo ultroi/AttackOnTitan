@@ -26,9 +26,26 @@ logger = logging.getLogger(__name__)
 # Page size for pagination
 MISSIONS_PER_PAGE = 5
 
-# Cooldown tracking to prevent command spam
+# Cooldown tracking to prevent command spam - CRITICAL: Limited to prevent memory leaks
 mission_command_cooldowns = {}
+MAX_MISSION_COOLDOWNS = 1000
 COOLDOWN_SECONDS = 30
+
+def cleanup_mission_cooldowns():
+    """Remove expired mission command cooldowns - CRITICAL: Prevent unbounded growth"""
+    current_time = time.time()
+    expired = [uid for uid, ts in mission_command_cooldowns.items() 
+               if current_time - ts > COOLDOWN_SECONDS * 2]  # Remove if more than 2x cooldown
+    for uid in expired:
+        del mission_command_cooldowns[uid]
+    
+    # If still too many, remove oldest
+    if len(mission_command_cooldowns) > MAX_MISSION_COOLDOWNS:
+        oldest = sorted(mission_command_cooldowns.items(), key=lambda x: x[1])[:100]
+        for uid, _ in oldest:
+            del mission_command_cooldowns[uid]
+    
+    return len(expired)
 
 @maintenance_protected
 @ban_protected
@@ -38,6 +55,9 @@ async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
         
     user_id = str(update.effective_user.id)
+    
+    # CRITICAL: Cleanup expired cooldowns before checking
+    cleanup_mission_cooldowns()
     
     # Check cooldown to prevent command spam
     current_time = time.time()
