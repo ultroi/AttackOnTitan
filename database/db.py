@@ -120,55 +120,7 @@ class Database:
         self.groups = db.groups  # For storing groups information
         self.stats = db.stats  # For storing game statistics
         logger.info("Database collections initialized successfully")
-        
-        # Pre-warm caches with MINIMAL frequently accessed data for ultra-fast responses
-        try:
-            logger.info("Starting cache pre-warming (limited to top 32 active players)...")
-            
-            # Pre-warm ONLY top 32 recently active players (was 100)
-            recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-            
-            # Get recently active players - LIMIT TO 32
-            cursor = self.players.find({
-                "updated_at": {"$gte": recent_cutoff}
-            }, {
-                "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
-                "gas": 1, "crystal": 1, "valor": 1, "marks": 1, "explore_count": 1,
-                "owned_characters": 1, "location": 1, "travel": 1, "daily_explores": 1,
-                "unlocked_areas": 1, "team": 1, "shop_refresh_date": 1, "shop_refresh_count": 1,
-                "hcaptcha_verified": 1, "hcaptcha_start_time": 1, "explore_start_time": 1, "last_explore_time": 1,
-                "inventory": 1, "referral_code": 1, "referred_by": 1, "referral_count": 1, "referral_milestones": 1,
-                "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
-                "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
-                "double_exp_end": 1, "completed_quests": 1, "mission14_area_counts": 1, "created_at": 1, "updated_at": 1
-            }).sort("updated_at", -1).limit(32)
-            recent_players = await cursor.to_list(length=32)  
-            
-            # Cache them
-            current_time = time.time()
-            cached_count = 0
-            for player_data in recent_players:
-                # Sanitize player data before creating Player object
-                player_data = sanitize_player_data(player_data)
-
-                # Handle data correctly - player_data is always a dictionary here since it comes from database
-                if isinstance(player_data, dict) and "user_id" in player_data:
-                    user_id = player_data["user_id"]
-                    cache_key = f"player_{user_id}"
-                    player = Player(**player_data)
-                    PLAYER_CACHE.set(cache_key, {
-                        "player": player,
-                        "timestamp": current_time
-                    })
-                    cached_count += 1
-            
-            logger.info(f"Pre-warmed {cached_count} player caches (limited dataset)")
-            
-            # DO NOT pre-warm characters - load on demand instead to save memory
-            logger.info("Cache pre-warming completed")
-            
-        except Exception as e:
-            logger.error(f"Error during cache pre-warming: {e}")
+        logger.info("Caches will be populated on-demand for optimal memory usage")
     
     async def prewarm_caches(self):
         """Pre-warm caches - already done in init_db, this method exists for compatibility"""
