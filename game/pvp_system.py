@@ -1881,6 +1881,13 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # Get full team lists for both players
     challenger_team = []
     defender_team = []
+    # Get DB instance
+    db = context.bot_data.get("db")
+    if not db:
+        await safe_api_call(query.edit_message_text, "Error: Database not available. Cannot start PVP battle.")
+        if challenge_id in pvp_challenges:
+            del pvp_challenges[challenge_id]
+        return
     
     # Get challenger's full team
     challenger_player = challenge_data["challenger_player"]
@@ -1894,11 +1901,21 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 char_name = team_member
             
             try:
-                char = await db.get_character(challenger_id, char_name)
+                # Normalize challenger_id to int when possible
+                try:
+                    db_challenger_id = int(challenger_id)
+                except Exception:
+                    db_challenger_id = challenger_id
+
+                logger.debug(f"Loading challenger character '{char_name}' for user_id={db_challenger_id}")
+                char = await db.get_character(db_challenger_id, char_name)
                 if char:
                     challenger_team.append(char)
+                    logger.debug(f"Loaded challenger character '{char_name}' for user_id={db_challenger_id}")
+                else:
+                    logger.warning(f"Challenger character not found: user_id={db_challenger_id}, name={char_name}")
             except Exception as e:
-                logger.error(f"Error getting challenger character {char_name}: {e}")
+                logger.exception(f"Error getting challenger character {char_name} for user_id={challenger_id}: {e}")
     
     # Get defender's full team
     defender_player = challenge_data["defender_player"]
@@ -1912,11 +1929,21 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 char_name = team_member
             
             try:
-                char = await db.get_character(user_id, char_name)
+                # Normalize defender user id to int when possible
+                try:
+                    db_defender_id = int(user_id)
+                except Exception:
+                    db_defender_id = user_id
+
+                logger.debug(f"Loading defender character '{char_name}' for user_id={db_defender_id}")
+                char = await db.get_character(db_defender_id, char_name)
                 if char:
                     defender_team.append(char)
+                    logger.debug(f"Loaded defender character '{char_name}' for user_id={db_defender_id}")
+                else:
+                    logger.warning(f"Defender character not found: user_id={db_defender_id}, name={char_name}")
             except Exception as e:
-                logger.error(f"Error getting defender character {char_name}: {e}")
+                logger.exception(f"Error getting defender character {char_name} for user_id={user_id}: {e}")
     
     # Ensure at least one character per team
     if not challenger_team:
@@ -1929,11 +1956,20 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             else:
                 char_name = challenger_player.team[0]
             try:
-                char = await db.get_character(challenger_id, char_name)
+                try:
+                    db_challenger_id = int(challenger_id)
+                except Exception:
+                    db_challenger_id = challenger_id
+
+                logger.debug(f"Loading fallback challenger character '{char_name}' for user_id={db_challenger_id}")
+                char = await db.get_character(db_challenger_id, char_name)
                 if char:
                     challenger_team = [char]
+                    logger.debug(f"Loaded fallback challenger character '{char_name}' for user_id={db_challenger_id}")
+                else:
+                    logger.warning(f"Fallback challenger character not found: user_id={db_challenger_id}, name={char_name}")
             except Exception as e:
-                logger.error(f"Error getting fallback challenger character {char_name}: {e}")
+                logger.exception(f"Error getting fallback challenger character {char_name} for user_id={challenger_id}: {e}")
     
     if not defender_team:
         # Get the first character as fallback
@@ -1945,11 +1981,20 @@ async def handle_pvp_accept(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             else:
                 char_name = defender_player.team[0]
             try:
-                char = await db.get_character(user_id, char_name)
+                try:
+                    db_defender_id = int(user_id)
+                except Exception:
+                    db_defender_id = user_id
+
+                logger.debug(f"Loading fallback defender character '{char_name}' for user_id={db_defender_id}")
+                char = await db.get_character(db_defender_id, char_name)
                 if char:
                     defender_team = [char]
+                    logger.debug(f"Loaded fallback defender character '{char_name}' for user_id={db_defender_id}")
+                else:
+                    logger.warning(f"Fallback defender character not found: user_id={db_defender_id}, name={char_name}")
             except Exception as e:
-                logger.error(f"Error getting fallback defender character {char_name}: {e}")
+                logger.exception(f"Error getting fallback defender character {char_name} for user_id={user_id}: {e}")
     
     # If still no teams, we can't proceed
     if not challenger_team or not defender_team:

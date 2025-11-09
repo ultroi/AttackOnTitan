@@ -90,9 +90,10 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_id = update.effective_user.id if update.effective_user is not None else None
             db = await get_database()
             if db is not None and user_id is not None:
+                # Store user_id as string to match how bans are checked elsewhere
                 await db["bans"].update_one(
-                    {"user_id": user_id},
-                    {"$set": {"user_id": user_id, "expiry": None, "reason": "Captcha Timeout", "banned_by": user_id, "banned_at": int(time.time())}},
+                    {"user_id": str(user_id)},
+                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Timeout", "banned_by": user_id, "banned_at": int(time.time())}},
                     upsert=True
                 )
             # Log to channel
@@ -214,9 +215,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
             # Ban user for failing captcha
             if db is not None and user_id:
+                # Use string user_id for consistency with ban checks
                 await db["bans"].update_one(
-                    {"user_id": user_id},
-                    {"$set": {"user_id": user_id, "expiry": None, "reason": "Captcha Failed", "banned_by": user_id, "banned_at": int(time.time())}},
+                    {"user_id": str(user_id)},
+                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Failed", "banned_by": user_id, "banned_at": int(time.time())}},
                     upsert=True
                 )
             # Log to channel

@@ -71,6 +71,7 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
+from game.explore import precompute_titan_images
 from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback, custom_options_count_callback, collect_custom_option, end_voting_callback
 
 # Spin System
@@ -267,6 +268,8 @@ async def initialize_application():
         shop_system = ShopSystem()
         application.bot_data["shop_system"] = shop_system
         application.bot_data["shop_items"] = {**shop_system.shop_items, **shop_system.hidden_items}
+        
+        precompute_titan_images()
         
         # Initialize spin system
         from game.spin_system import SpinSystem

@@ -1,8 +1,3 @@
-"""
-Memory cleanup utilities to prevent memory leaks from unbounded dictionaries.
-This module provides periodic cleanup for all global caches and tracking dicts.
-"""
-
 import asyncio
 import logging
 from datetime import datetime, timedelta

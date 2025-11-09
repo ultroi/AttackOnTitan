@@ -2,7 +2,7 @@ import asyncio
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional, Tuple
 from uuid import uuid4
 from collections import OrderedDict
@@ -33,6 +33,12 @@ DEFAULT_AREAS = ["Trost", "Karanes", "Shiganshina", "Orvud"]
 MAX_CACHE_SIZE = 500  # CRITICAL: Limit cache size
 MAX_BOT_DATA_ENTRIES = 1000  # Prevent unbounded growth
 
+# Anti-spam: Continuous explore without battle protection
+CONSECUTIVE_EXPLORE_WARNING_THRESHOLD = 10  # Warn at 10 consecutive explores without battle
+CONSECUTIVE_EXPLORE_BAN_THRESHOLD = 15      # Ban at 15 consecutive explores without battle
+user_consecutive_explores: Dict[str, int] = {}  # Track consecutive explores per user
+user_explore_warned: Dict[str, bool] = {}  # Track if user was already warned
+
 # Performance: In-memory caches with size limits
 user_last_explore: Dict[str, float] = {}
 user_explore_locks: Dict[str, asyncio.Lock] = {}
@@ -60,6 +66,135 @@ TITAN_TYPE_IMAGE_URLS = {
 }
 
 BOSS_TITAN_IMAGE_URLS = ["https://i.ibb.co/cz6bJ0J/image.jpg"]
+
+# =====================================================================================
+# OPTIMIZATION: Pre-computed Image Cache
+# =====================================================================================
+
+# Pre-computed image mappings (loaded at bot startup)
+TITAN_IMAGE_CACHE = {}
+
+def precompute_titan_images():
+    global TITAN_IMAGE_CACHE
+    TITAN_IMAGE_CACHE.clear()
+    for titan_type, url in TITAN_TYPE_IMAGE_URLS.items():
+        TITAN_IMAGE_CACHE[titan_type] = url
+    logger.info(f"✅ Pre-computed {len(TITAN_IMAGE_CACHE)} titan images")
+
+# =====================================================================================
+# ANTI-SPAM: Continuous Explore Detection
+# =====================================================================================
+
+async def check_consecutive_explores_spam(user_id_str: str, user_id: int, context: ContextTypes.DEFAULT_TYPE, update: Update) -> Optional[bool]:
+    # Increment consecutive explore count
+    user_consecutive_explores[user_id_str] = user_consecutive_explores.get(user_id_str, 0) + 1
+    consecutive_count = user_consecutive_explores[user_id_str]
+    
+    # Check BAN threshold (15 consecutive explores without battle)
+    if consecutive_count >= CONSECUTIVE_EXPLORE_BAN_THRESHOLD:
+        logger.warning(f"🚫 AUTO-BAN: User {user_id_str} has {consecutive_count} consecutive explores without battle!")
+        
+        # Import ban function
+        from utils.ban_utils import ban_user as ban_user_func
+        
+        # Ban the user for 24 hours
+        db = context.bot_data.get("db")
+        if db:
+            ban_until = datetime.now(timezone.utc) + timedelta(hours=24)
+            await db.add_ban(
+                user_id_str, 
+                "Auto-banned for consecutive explore spam (15+ without battle)",
+                ban_until=ban_until
+            )
+        
+        # Get user info for group notification
+        username = update.effective_user.username if update.effective_user else "Unknown"
+        user_link = f"<a href='tg://user?id={user_id}'>@{username}</a>" if username else f"User {user_id}"
+        
+        # Notify user
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="🚫 <b>You have been BANNED for 24 HOURS!</b>\n\n"
+                     "Reason: Excessive explore spam (15+ without battle)\n\n"
+                     "⏰ Duration: 24 hours\n\n"
+                     "⚠️ If this is a mistake, contact support.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify banned user {user_id_str}: {e}")
+        
+        # Notify moderation group
+        try:
+            await context.bot.send_message(
+                chat_id=-1002873117075,  # Spam group
+                text=f"#Spam\n\n"
+                     f"<b>Name:</b> {user_link}\n"
+                     f"<b>ID:</b> <code>{user_id}</code>\n"
+                     f"<b>Reason:</b> Consecutive explore spam (15 without battle)\n"
+                     f"<b>Duration:</b> 24h\n"
+                     f"<b>Auto-Ban:</b> ✅ Active",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to send spam report to group: {e}")
+        
+        # Clean up tracking
+        user_consecutive_explores.pop(user_id_str, None)
+        user_explore_warned.pop(user_id_str, None)
+        
+        return True  # User banned
+    
+    # Check WARNING threshold (10 consecutive explores without battle)
+    elif consecutive_count == CONSECUTIVE_EXPLORE_WARNING_THRESHOLD and not user_explore_warned.get(user_id_str, False):
+        logger.warning(f"⚠️ WARNING: User {user_id_str} has {consecutive_count} consecutive explores without battle!")
+        
+        # Mark user as warned
+        user_explore_warned[user_id_str] = True
+        
+        # Send warning message
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="⚠️ <b>SPAM WARNING!</b>\n\n"
+                     f"You have performed <b>{consecutive_count}</b> consecutive explores without engaging in battles.\n\n"
+                     "❌ Continuing to spam explore will result in a <b>BAN</b>!\n\n",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Failed to send warning to user {user_id_str}: {e}")
+        
+        return False  # Warning sent
+    
+    return None  # No action needed
+
+def reset_consecutive_explores(user_id_str: str):
+    """Reset consecutive explore counter when user engages in battle"""
+    if user_id_str in user_consecutive_explores and user_consecutive_explores[user_id_str] > 0:
+        logger.info(f"✅ Reset explore spam counter for {user_id_str} (they engaged in battle)")
+        user_consecutive_explores[user_id_str] = 0
+        user_explore_warned.pop(user_id_str, None)
+
+def reset_spam_tracking_by_id(user_id: int):
+    """Public function to reset spam tracking (called by battle system)"""
+    user_id_str = str(user_id)
+    reset_consecutive_explores(user_id_str)
+
+def cleanup_spam_tracking():
+    """Remove spam tracking for users who haven't explored in 1 hour"""
+    current_time = time.time()
+    users_to_clean = []
+    
+    for user_id_str, last_time in user_last_explore.items():
+        if current_time - last_time > 3600:  # 1 hour timeout
+            users_to_clean.append(user_id_str)
+    
+    for user_id_str in users_to_clean:
+        user_consecutive_explores.pop(user_id_str, None)
+        user_explore_warned.pop(user_id_str, None)
+    
+    if users_to_clean:
+        logger.debug(f"Cleaned up spam tracking for {len(users_to_clean)} idle users")
 
 # =====================================================================================
 # MEMORY: Cleanup Functions
@@ -120,6 +255,13 @@ def cleanup_timeout_tasks():
     
     for user_id in completed_users:
         user_timeout_tasks.pop(user_id, None)
+
+def cleanup_all():
+    """Comprehensive cleanup (called periodically)"""
+    cleanup_cache()
+    cleanup_locks()
+    cleanup_timeout_tasks()
+    cleanup_spam_tracking()  # ← Added spam tracking cleanup
 
 # =====================================================================================
 # PERFORMANCE: Ultra-Fast Pre-Check System
@@ -262,6 +404,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cleanup_locks()
         cleanup_timeout_tasks()
         cleanup_bot_data(context.bot_data)
+        cleanup_spam_tracking()  # ← Added spam cleanup
     
     # Pre-generate random values
     event_type = check_random_events()
@@ -290,6 +433,15 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except asyncio.TimeoutError:
             await _reply_error(update, "⚠️ Database timeout. Try again!")
             return
+    
+    # ANTI-SPAM: Check for consecutive explores without battles
+    spam_result = await check_consecutive_explores_spam(user_id_str, user_id, context, update)
+    if spam_result is True:
+        # User banned
+        return
+    elif spam_result is False:
+        # Warning sent, continue but log it
+        logger.warning(f"⚠️ Spam warning sent to user {user_id_str}")
     
     # Handle random events
     if event_type == "dealer":
@@ -340,8 +492,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     titan_hp = generate_titan_hp(level=titan_level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
     titan_name = generate_titan_name(difficulty)
     titan_xp = generate_titan_xp(titan_level, difficulty)
-    titan_key = titan_name.lower().replace(" titan", "")
-    titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
+    
+    # OPTIMIZATION: Use fast image lookup (O(1) from pre-computed cache)
+    titan_image = get_titan_image_fast(titan_name)
     
     # Create titan object
     titan = Titan(
@@ -414,48 +567,54 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _deferred_explore_operations(context, user_id_str, user_id, db, titan, 
                                       sent_message, player, username):
-    """All heavy operations run in parallel"""
+    """All heavy operations run in parallel with optimized concurrency"""
     try:
-        async with user_explore_locks[user_id_str]:
-            # Cleanup old titan
+        # Ensure a lock exists for this user before using it (race-safe)
+        lock = user_explore_locks.get(user_id_str)
+        if lock is None:
+            lock = asyncio.Lock()
+            user_explore_locks[user_id_str] = lock
+
+        async with lock:
+            # OPTIMIZATION: Start cleanup and data update in parallel
             cleanup_task = asyncio.create_task(_cleanup_existing_titan(user_id_str, db))
             
-            # Prepare update data
+            # Prepare update data (no I/O - pure computation)
             player.increment_daily_explores(datetime.now(timezone.utc))
             update_data = {
                 "last_explore_time": time.time(),
                 "daily_explores": player.daily_explores
             }
             
-            # Handle travel
+            # Handle travel (can run in parallel)
             travel = getattr(player, "travel", {})
+            travel_update_task = None
             if travel.get("in_progress") and not FastPreCheck.is_in_battle(user_id_str):
                 travel_progress = travel.get("progress", 0) + 1
                 if travel_progress >= travel.get("required", 1):
                     update_data["location"] = travel.get("to", player.location)
                     update_data["travel"] = {}
-                    try:
-                        await asyncio.wait_for(
-                            context.bot.send_message(
-                                chat_id=user_id,
-                                text=f"🗺️ Arrived at <b>{travel.get('to')}</b>!",
-                                parse_mode=ParseMode.HTML
-                            ),
-                            timeout=2.0
+                    travel_update_task = asyncio.create_task(
+                        context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"🗺️ Arrived at <b>{travel.get('to')}</b>!",
+                            parse_mode=ParseMode.HTML
                         )
-                    except (asyncio.TimeoutError, Exception) as e:
-                        logger.warning(f"Travel message send failed: {e}")
+                    )
                 else:
                     travel["progress"] = travel_progress
                     update_data["travel"] = travel
             
-            # Run DB operations in parallel
-            await asyncio.gather(
+            # OPTIMIZATION: Run all DB operations + travel message in parallel
+            parallel_tasks = [
                 cleanup_task,
                 db.store_titan(user_id_str, titan),
                 db.batch_update_player(user_id_str, update_data),
-                return_exceptions=True
-            )
+            ]
+            if travel_update_task:
+                parallel_tasks.append(travel_update_task)
+            
+            await asyncio.gather(*parallel_tasks, return_exceptions=True)
             
             # FIX: Store minimal data
             minimal_titan_data = {
@@ -478,7 +637,7 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
             user_timeout_tasks[user_id_str] = timeout_task
             context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
             
-            # Track stats
+            # Track stats (fire and forget with timeout)
             try:
                 await asyncio.wait_for(
                     track_explore_stats(user_id_str, username or player.username, False),
@@ -502,6 +661,15 @@ def get_titan_difficulty_by_level(level: int) -> str:
         return "Normal"
     else:  
         return "Hard"
+
+def get_titan_image_fast(titan_name: str) -> str:
+    """Ultra-fast image lookup (O(1) - from pre-computed cache)"""
+    titan_key = titan_name.lower().replace(" titan", "")
+    # Use pre-computed cache first (fastest)
+    if TITAN_IMAGE_CACHE:
+        return TITAN_IMAGE_CACHE.get(titan_key, random.choice(list(TITAN_IMAGE_CACHE.values())))
+    # Fallback if cache not initialized
+    return TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
@@ -554,7 +722,9 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             boss_hp = generate_titan_hp(level=boss_level, difficulty="Hard", character_stats=None) * 3
             boss_name = "Armored Titan"
             boss_xp = generate_titan_xp(boss_level, "Hard") * 5
-            boss_image_url = random.choice(BOSS_TITAN_IMAGE_URLS)
+            
+            # OPTIMIZATION: Use pre-computed boss image (fastest - no lookup needed)
+            boss_image_url = BOSS_TITAN_IMAGE_URLS[0] if BOSS_TITAN_IMAGE_URLS else "https://i.ibb.co/cz6bJ0J/image.jpg"
             
             # Create boss titan
             boss_titan = Titan(

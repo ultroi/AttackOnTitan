@@ -867,6 +867,13 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = str(update.effective_user.id)
     callback_data = query.data
     
+    # ANTI-SPAM: Reset consecutive explore counter (user engaged in battle!)
+    try:
+        from game.explore import reset_spam_tracking_by_id
+        reset_spam_tracking_by_id(int(user_id))
+    except Exception as e:
+        logger.warning(f"Failed to reset spam tracking: {e}")
+    
     # OPTIMIZED: Answer immediately in background for instant feedback
     asyncio.create_task(query.answer())
     

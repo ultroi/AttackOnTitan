@@ -6,6 +6,7 @@ from game.explore import _reply_error
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from utils.maintenance import maintenance_protected
+import html
 
 logger = logging.getLogger(__name__)
 
@@ -60,106 +61,133 @@ async def buy_command(update: Update, context):
 @ban_protected
 async def give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle the /give command to share resources."""
-    if not update.effective_user or not update.message or not update.message.reply_to_message:
-        await _reply_error(update, "You must reply to a user's message to give resources.")
-        return
-
-    user_id = update.effective_user.id
-    user_id_str = str(user_id)
-    target_msg = update.message.reply_to_message
-    target_user = getattr(target_msg, 'from_user', None)
-    if not target_user:
-        await _reply_error(update, "Target user not found.")
-        return
-    target_id = getattr(target_user, 'id', None)
-    target_id_str = str(target_id) if target_id else None
-    first_name = update.effective_user.first_name or "Player"
-    target_first_name = getattr(target_user, 'first_name', 'Unknown')
-    target_first_name_clickable = f'<a href="tg://user?id={target_id}">{getattr(target_user, "first_name", "Unknown")}</a>'
-
-    # Block giving to bots
-    if getattr(target_user, 'is_bot', False):
-        await update.message.reply_text("You cannot give resources to a bot.")
-        return
-    # Block giving to yourself
-    if user_id == target_id:
-        await update.message.reply_text("You cannot give resources to yourself.")
-        return
-
-    # Check for active battle
     try:
-        from game.battle_system import active_battles, active_battles_lock
-    except ImportError:
-        active_battles = {}
-        active_battles_lock = None
+        if not update.effective_user or not update.message or not update.message.reply_to_message:
+            await _reply_error(update, "You must reply to a user's message to give resources.")
+            return
 
-    if active_battles_lock:
-        async with active_battles_lock:
+        user_id = update.effective_user.id
+        user_id_str = str(user_id)
+        target_msg = update.message.reply_to_message
+        target_user = getattr(target_msg, 'from_user', None)
+        if not target_user:
+            await _reply_error(update, "Target user not found.")
+            return
+        target_id = getattr(target_user, 'id', None)
+        target_id_str = str(target_id) if target_id else None
+
+        # Ensure we have valid ids
+        if target_id is None:
+            await _reply_error(update, "Target user ID not found.")
+            return
+
+        # HTML-escape display names to avoid injection
+        first_name = html.escape(update.effective_user.first_name or "Player")
+        target_first_name = html.escape(getattr(target_user, 'first_name', 'Unknown'))
+        target_first_name_clickable = f'<a href="tg://user?id={target_id}">{target_first_name}</a>'
+
+        # Block giving to bots
+        if getattr(target_user, 'is_bot', False):
+            await update.message.reply_text("You cannot give resources to a bot.")
+            return
+        # Block giving to yourself
+        if user_id == target_id:
+            await update.message.reply_text("You cannot give resources to yourself.")
+            return
+
+        # Check for active battle
+        try:
+            from game.battle_system import active_battles, active_battles_lock
+        except ImportError:
+            active_battles = {}
+            active_battles_lock = None
+
+        if active_battles_lock:
+            async with active_battles_lock:
+                if user_id_str in active_battles or target_id_str in active_battles:
+                    who = first_name if user_id_str in active_battles else target_first_name
+                    await update.message.reply_text(
+                        f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return
+        else:
             if user_id_str in active_battles or target_id_str in active_battles:
                 who = first_name if user_id_str in active_battles else target_first_name
                 await update.message.reply_text(
-                    f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!", parse_mode=ParseMode.HTML)
+                    f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!",
+                    parse_mode=ParseMode.HTML
+                )
                 return
-    else:
-        if user_id_str in active_battles or target_id_str in active_battles:
-            who = first_name if user_id_str in active_battles else target_first_name
-            await update.message.reply_text(
-                f"<a href=\"tg://user?id={user_id if user_id_str in active_battles else target_id}\">{who}</a> is currently battling !!", parse_mode=ParseMode.HTML)
+
+        # Parse command args
+        args = context.args if context.args else []
+        if len(args) < 2:
+            await update.message.reply_text("Usage: /give <amount> <item>")
+            return
+        try:
+            amount = int(args[0])
+        except Exception:
+            await update.message.reply_text("Invalid amount.")
             return
 
-    # Parse command args
-    args = context.args if context.args else []
-    if len(args) < 2:
-        await update.message.reply_text("Usage: /give <amount> <item>")
-        return
-    try:
-        amount = int(args[0])
-    except Exception:
-        await update.message.reply_text("Invalid amount.")
-        return
-    item = args[1].lower() if isinstance(args[1], str) else ''
-    allowed_items = ["crystal", "valor", "marks", "gas"]
-    if item not in allowed_items:
-        await update.message.reply_text(f"You can only give: {', '.join(allowed_items)}")
-        return
+        # Validate amount is positive
+        if amount <= 0:
+            await update.message.reply_text("Amount must be a positive integer.")
+            return
 
-    db = context.bot_data.get("db")
-    if not db:
-        await update.message.reply_text("Database unavailable.")
-        return
+        item = args[1].lower() if isinstance(args[1], str) else ''
+        allowed_items = ["crystal", "valor", "marks", "gas"]
+        if item not in allowed_items:
+            await update.message.reply_text(f"You can only give: {', '.join(allowed_items)}")
+            return
 
-    # Fetch sender and receiver in parallel
-    sender_task = asyncio.create_task(db.get_player(user_id_str))
-    receiver_task = asyncio.create_task(db.get_player(target_id_str)) if target_id_str else None
-    sender = await sender_task
-    receiver = await receiver_task if receiver_task else None
-    if not sender or not receiver:
-        await update.message.reply_text("Both users must have profiles.")
-        return
-    # Level check: Only allow giving if sender is at least level 10
-    if getattr(sender, 'level', 1) < 10:
-        await update.message.reply_text("You must be at least level 10 to give resources to others.")
-        return
-    if getattr(sender, item, 0) < amount:
-        await update.message.reply_text(f"You don't have enough {item}.")
-        return
-    # Update both balances in parallel
-    update_sender = asyncio.create_task(db.update_player(user_id_str, {item: getattr(sender, item, 0) - amount}))
-    update_receiver = asyncio.create_task(db.update_player(target_id_str, {item: getattr(receiver, item, 0) + amount}))
-    await asyncio.gather(update_sender, update_receiver)
+        db = context.bot_data.get("db")
+        if not db:
+            await update.message.reply_text("Database unavailable.")
+            return
 
-    # Log the transaction
-    log_msg = (
-        f"<b>#GiveEvent</b>\n\n"
-        f"<b>From</b>: <a href=\"tg://user?id={user_id}\">{first_name}</a>\n"
-        f"<b>From ID</b>: <code>{user_id_str}</code>\n"
-        f"<b>To</b>: <a href=\"tg://user?id={target_id}\">{target_first_name}</a>\n"
-        f"<b>To ID</b>: <code>{target_id_str}</code>\n"
-        f"<b>Item</b>: <code>{item}</code>\n"
-        f"<b>Amount</b>: <code>{amount}</code>"
-    )
-    GIVE_LOG_CHAT_ID = -1002686338026
-    await update.message.reply_text(f"Successfully gave {amount} {item} to {target_first_name_clickable}.", parse_mode=ParseMode.HTML)
-    await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
+        # Fetch sender and receiver in parallel
+        sender_task = asyncio.create_task(db.get_player(user_id_str))
+        receiver_task = asyncio.create_task(db.get_player(target_id_str)) if target_id_str else None
+        sender = await sender_task
+        receiver = await receiver_task if receiver_task else None
+        if not sender or not receiver:
+            await update.message.reply_text("Both users must have profiles.")
+            return
+        # Level check: Only allow giving if sender is at least level 10
+        if getattr(sender, 'level', 1) < 10:
+            await update.message.reply_text("You must be at least level 10 to give resources to others.")
+            return
+        if getattr(sender, item, 0) < amount:
+            await update.message.reply_text(f"You don't have enough {item}.")
+            return
+
+        # Update both balances in parallel (note: not transactional)
+        update_sender = asyncio.create_task(db.update_player(user_id_str, {item: getattr(sender, item, 0) - amount}))
+        update_receiver = asyncio.create_task(db.update_player(target_id_str, {item: getattr(receiver, item, 0) + amount}))
+        await asyncio.gather(update_sender, update_receiver)
+
+        # Log the transaction
+        log_msg = (
+            f"<b>#GiveEvent</b>\n\n"
+            f"<b>From</b>: <a href=\"tg://user?id={user_id}\">{first_name}</a>\n"
+            f"<b>From ID</b>: <code>{user_id_str}</code>\n"
+            f"<b>To</b>: <a href=\"tg://user?id={target_id}\">{target_first_name}</a>\n"
+            f"<b>To ID</b>: <code>{target_id_str}</code>\n"
+            f"<b>Item</b>: <code>{item}</code>\n"
+            f"<b>Amount</b>: <code>{amount}</code>"
+        )
+        GIVE_LOG_CHAT_ID = -1002686338026
+        await update.message.reply_text(f"Successfully gave {amount} {item} to {target_first_name_clickable}.", parse_mode=ParseMode.HTML)
+        await context.bot.send_message(GIVE_LOG_CHAT_ID, log_msg, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.exception(f"Error in give_command: {e}")
+        # Use _reply_error helper which safely handles missing message/effective_user
+        try:
+            await _reply_error(update, f"Error processing give command: {str(e)}")
+        except Exception:
+            # Last resort: log and ignore
+            logger.error("Failed to send error reply in give_command")
 
 

@@ -121,5 +121,18 @@ async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "updated_at": datetime.now(timezone.utc)
     })
 
+    # Invalidate any in-memory cached player+character tuple in explore module
+    # so effects apply immediately for subsequent /explore or battle actions.
+    try:
+        import game.explore as explore
+        user_key = str(user_id)
+        if hasattr(explore, 'user_cache') and user_key in explore.user_cache:
+            explore.user_cache.pop(user_key, None)
+        if hasattr(explore, 'cache_expiry') and user_key in explore.cache_expiry:
+            explore.cache_expiry.pop(user_key, None)
+    except Exception:
+        # Non-fatal: cache invalidation is best-effort
+        logger.debug("Failed to invalidate explore cache for user %s", user_id, exc_info=True)
+
     await update.message.reply_text(message, parse_mode=ParseMode.HTML)
 

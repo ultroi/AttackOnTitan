@@ -559,17 +559,17 @@ async def handle_verification_timeout(db, user_id: str, player: Optional[dict]):
     now = int(time.time())
     # Ensure user_id is int for ban logic compatibility
     user_id_int = int(user_id)
-    # Check if already banned
-    existing_ban = await db["bans"].find_one({"user_id": user_id_int})
+    # Check if already banned (store/find bans using string user_id for consistency)
+    existing_ban = await db["bans"].find_one({"user_id": str(user_id_int)})
     if existing_ban:
         # Already banned, do not send notification again
         return
     # Ban user
     await db["bans"].update_one(
-        {"user_id": user_id_int},
+        {"user_id": str(user_id_int)},
         {
             "$set": {
-                "user_id": user_id_int,
+                "user_id": str(user_id_int),
                 "expiry": None,
                 "reason": "hCaptcha timeout",
                 "banned_by": "system",

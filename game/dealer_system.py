@@ -347,7 +347,7 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
                     chat_id=update.effective_chat.id,
                     message_id=first_message.message_id,
                     text=f"<b>{selected_dealer['messages'][1]}</b>",
-                    delay=3.0
+                    delay=1.5
                 )
             )
             
@@ -357,12 +357,12 @@ async def show_dealer(update: Update, context: ContextTypes.DEFAULT_TYPE, dealer
                     context=context,
                     chat_id=update.effective_chat.id,
                     message_id=first_message.message_id,
-                    delay=6.0
+                    delay=3.0
                 )
             )
             
             # Schedule send third message with image after delay
-            await asyncio.sleep(6.5)
+            await asyncio.sleep(3.2)
             
             # Create keyboard for dealer options
             keyboard = [
