@@ -157,7 +157,6 @@ async def check_consecutive_explores_spam(user_id_str: str, user_id: int, contex
             await context.bot.send_message(
                 chat_id=user_id,
                 text="⚠️ <b>SPAM WARNING!</b>\n\n"
-                     f"You have performed <b>{consecutive_count}</b> consecutive explores without engaging in battles.\n\n"
                      "❌ Continuing to spam explore will result in a <b>BAN</b>!\n\n",
                 parse_mode=ParseMode.HTML
             )

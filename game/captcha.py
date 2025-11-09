@@ -93,7 +93,7 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Store user_id as string to match how bans are checked elsewhere
                 await db["bans"].update_one(
                     {"user_id": str(user_id)},
-                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Timeout", "banned_by": user_id, "banned_at": int(time.time())}},
+                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Timeout", "banned_by": 1, "banned_at": int(time.time())}},
                     upsert=True
                 )
             # Log to channel
@@ -218,7 +218,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Use string user_id for consistency with ban checks
                 await db["bans"].update_one(
                     {"user_id": str(user_id)},
-                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Failed", "banned_by": user_id, "banned_at": int(time.time())}},
+                    {"$set": {"user_id": str(user_id), "expiry": None, "reason": "Captcha Failed", "banned_by": 1, "banned_at": int(time.time())}},
                     upsert=True
                 )
             # Log to channel

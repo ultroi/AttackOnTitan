@@ -214,7 +214,14 @@ async def unban_user(update: Update, context: CallbackContext):
         if update.effective_message is not None:
             await update.effective_message.reply_text("Usage: /ubfb <user_id> [reason]")
         return
-    target_id = int(args[0])
+    try:
+        target_id = int(args[0])
+        if target_id <= 0:
+            raise ValueError
+    except Exception:
+        if update.effective_message is not None:
+            await update.effective_message.reply_text("Invalid user_id. Please provide a valid numeric user ID.")
+        return
     reason = ''
     if len(args) > 1:
         reason = ' '.join(args[1:]).strip()
