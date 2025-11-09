@@ -663,17 +663,17 @@ TITAN_NAME_VARIANTS = {
     "Easy": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
         "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
-        "Jaw"
+        "Beast"
     ],
     "Normal": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
         "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
-        "Jaw"
+        "Beast"
     ],
     "Hard": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
         "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
-        "Jaw"
+        "Beast"
     ]
 }
 
