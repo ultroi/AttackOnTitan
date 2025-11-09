@@ -222,8 +222,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Dealer event - NO titan, only dealer
         try:
             await show_dealer(update, context)
-            # Track stats
-            asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
+            # Track stats with timeout (don't block on failure)
+            try:
+                await asyncio.wait_for(
+                    track_explore_stats(user_id_str, update.effective_user.username or player.username, False),
+                    timeout=0.5
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass  # Don't block main flow
         except Exception as e:
             logger.error(f"Dealer event error: {e}", exc_info=True)
         return
@@ -232,8 +238,14 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Captcha event - NO titan, only captcha
         try:
             await spawn_captcha(update, context)
-            # Track stats
-            asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
+            # Track stats with timeout (don't block on failure)
+            try:
+                await asyncio.wait_for(
+                    track_explore_stats(user_id_str, update.effective_user.username or player.username, False),
+                    timeout=0.5
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass  # Don't block main flow
         except Exception as e:
             logger.error(f"Captcha event error: {e}", exc_info=True)
         return
@@ -317,11 +329,19 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "is_boss": False
     }
     
-    # Fire and forget all heavy operations
-    asyncio.create_task(_deferred_explore_operations(
-        context, user_id_str, user_id, db, titan, sent_message, 
-        player, update.effective_user.username, event_type
-    ))
+    # Execute deferred operations with timeout to prevent hanging
+    try:
+        await asyncio.wait_for(
+            _deferred_explore_operations(
+                context, user_id_str, user_id, db, titan, sent_message, 
+                player, update.effective_user.username, event_type
+            ),
+            timeout=5.0  # 5 second timeout
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Explore deferred operations timed out for user {user_id_str}")
+    except Exception as e:
+        logger.error(f"Error in deferred explore operations: {e}")
 
 
 async def _deferred_explore_operations(context, user_id_str, user_id, db, titan, 
@@ -351,13 +371,19 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
                 if travel_progress >= travel.get("required", 1):
                     update_data["location"] = travel.get("to", player.location)
                     update_data["travel"] = {}
-                    asyncio.create_task(
-                        context.bot.send_message(
-                            chat_id=user_id,
-                            text=f"🗺️ Arrived at <b>{travel.get('to')}</b>!",
-                            parse_mode=ParseMode.HTML
+                    try:
+                        await asyncio.wait_for(
+                            context.bot.send_message(
+                                chat_id=user_id,
+                                text=f"🗺️ Arrived at <b>{travel.get('to')}</b>!",
+                                parse_mode=ParseMode.HTML
+                            ),
+                            timeout=2.0
                         )
-                    )
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Travel message send timed out for user {user_id_str}")
+                    except Exception as e:
+                        logger.error(f"Failed to send travel message: {e}")
                 else:
                     travel["progress"] = travel_progress
                     update_data["travel"] = travel
@@ -385,8 +411,14 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
             user_timeout_tasks[user_id_str] = timeout_task
             context.bot_data[f"titan_timeout_{user_id_str}"] = timeout_task
             
-            # 7. Track stats (fire and forget)
-            asyncio.create_task(track_explore_stats(user_id_str, username or player.username, False))
+            # 7. Track stats with timeout (don't block on failure)
+            try:
+                await asyncio.wait_for(
+                    track_explore_stats(user_id_str, username or player.username, False),
+                    timeout=0.5
+                )
+            except (asyncio.TimeoutError, Exception):
+                pass  # Don't block main flow
                 
     except Exception as e:
         logger.error(f"Error in deferred operations: {e}", exc_info=True)
