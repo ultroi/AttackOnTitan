@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from database.db import Database
 from database.models import Player, TeamMember
 from database.characters import get_character_data, CHARACTER_IMAGES
@@ -1110,7 +1111,13 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 logger.info("[view_weapons_char] Message not modified, skipping edit.")
                 await query.answer("No changes made.", show_alert=True)
                 return
-            await query.edit_message_caption(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+            try:
+                await query.edit_message_caption(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+            except BadRequest as e:
+                if "not modified" in str(e).lower():
+                    logger.info("[view_weapons_char] Message not modified, skipping edit.")
+                else:
+                    raise
         else:
             current_text = getattr(current_message, "text", None)
             current_markup = getattr(current_message, "reply_markup", None)
@@ -1118,10 +1125,24 @@ async def view_weapons_char(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                 logger.info("[view_weapons_char] Message not modified, skipping edit.")
                 await query.answer("No changes made.", show_alert=True)
                 return
-            await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+            try:
+                await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+            except BadRequest as e:
+                if "not modified" in str(e).lower():
+                    logger.info("[view_weapons_char] Message not modified, skipping edit.")
+                    await query.answer("No changes made.", show_alert=True)
+                else:
+                    raise
     else:
         # Fallback: just send edit_message_text
-        await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+        try:
+            await query.edit_message_text(text, reply_markup=new_markup, parse_mode=ParseMode.HTML)
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                logger.info("[view_weapons_char] Message not modified, skipping edit.")
+                await query.answer("No changes made.", show_alert=True)
+            else:
+                raise
 
 async def equip_weapon(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

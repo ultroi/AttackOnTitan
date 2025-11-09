@@ -128,19 +128,19 @@ class ShopSystem:
             name="Satchel Bombs (Grenades)", type="weapon", rarity="legendary", attributes={"damage_min": 80, "damage_max": 110, "crit_chance": 25}, price=75000, currency="marks", description="Grenades for anti-titan combat with high critical chance."
             ),
             "titan_serum": Equipment(
-            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 160, "damage_max": 220, "crit_chance": 25}, price=140000, currency="marks", description="Serum that transforms the user into a titan with high critical chance."
+            name="Titan Serum Injections", type="weapon", rarity="legendary", attributes={"damage_min": 160, "damage_max": 220, "crit_chance": 25}, price=160000, currency="marks", description="Serum that transforms the user into a titan with high critical chance."
             ),
             "colossal_power": Equipment(
-            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 200, "damage_max": 260, "crit_chance": 25}, price=160000, currency="marks", description="Grants the power of the Colossal Titan with high critical chance."
+            name="Colossal Titan Transformation", type="weapon", rarity="legendary", attributes={"damage_min": 200, "damage_max": 260, "crit_chance": 25}, price=200000, currency="marks", description="Grants the power of the Colossal Titan with high critical chance."
             ),
             "control_rod": Equipment(
-            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 280, "damage_max": 350, "crit_chance": 25}, price=240000, currency="marks", description="Rod to control the Founding Titan with high critical chance."
+            name="Founding Titan Control Rod", type="weapon", rarity="legendary", attributes={"damage_min": 280, "damage_max": 350, "crit_chance": 25}, price=360000, currency="marks", description="Rod to control the Founding Titan with high critical chance."
             ),
             "warhammer_weapons": Equipment(
-            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 240, "damage_max": 300, "crit_chance": 25}, price=200000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
+            name="Warhammer Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 240, "damage_max": 300, "crit_chance": 25}, price=300000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
             ),
             "warhammer_titan_weapons": Equipment(
-            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 120, "damage_max": 160, "crit_chance": 25}, price=90000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
+            name="Warhammer Titan's Constructed Weapons", type="weapon", rarity="legendary", attributes={"damage_min": 120, "damage_max": 160, "crit_chance": 25}, price=100000, currency="marks", description="Weapons constructed by the Warhammer Titan with high critical chance."
             ),
             # Military category weapons
             "airship_machine_guns": Equipment(

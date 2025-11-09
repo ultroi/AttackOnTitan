@@ -662,17 +662,17 @@ class Titan(BaseModel):
 TITAN_NAME_VARIANTS = {
     "Easy": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart", "Dancing", "Smiling",
         "Beast"
     ],
     "Normal": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart", "Dancing", "Smiling",
         "Beast"
     ],
     "Hard": [
         "Bearded", "Potbellied", "Goofy Grinning", "Gaping Mouth",  "Small Jogger", "Female",
-        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart",
+        "Leaper", "Bloated", "Staggering Creepers", "Wailing", "Cart", "Dancing", "Smiling",
         "Beast"
     ]
 }
@@ -706,9 +706,9 @@ def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[Cha
         base_hp = hp_value * 0.2
         
         difficulty_multipliers = {
-            "Easy": 2.5,  # 50% of character's HP
-            "Normal": 3.5,  # 70% of character's HP
-            "Hard": 5.5  # 110% of character's HP
+            "Easy": 0.5,  
+            "Normal": 1.5,  
+            "Hard": 2.5  
         }
         
         scaled_hp = base_hp * difficulty_multipliers.get(difficulty, 1.0)
@@ -717,7 +717,7 @@ def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[Cha
         variation = random.uniform(0.8, 1.2)
         final_hp = scaled_hp * variation
         
-        return max(int(final_hp), 50)  # Ensure a minimum HP of 50
+        return max(int(final_hp), 50)  
 
     # Fallback for pre-generation pool (less aggressive scaling)
     min_hp, max_hp = HP_RANGES[difficulty]

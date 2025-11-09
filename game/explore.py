@@ -46,8 +46,10 @@ TITAN_TYPE_IMAGE_URLS = {
     "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
     "beast": "https://i.ibb.co/B2C79CM4/image.jpg",
     "potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
+    "dancing": "https://i.ibb.co/DgK98CzY/image.jpg",
     "bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
     "gaping mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
+    "smiling": "https://i.ibb.co/3YTw6Wy2/image.jpg",
     "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
     "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
     "cart": "https://i.ibb.co/nNRhLMqH/image.jpg",
@@ -329,11 +331,11 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Adjust titan level based on difficulty with some randomness (close to character level)
     if difficulty == "Easy":
-        titan_level = max(1, character.level + random.randint(-1, 0))  # Slightly lower or same
+        titan_level = max(1, character.level + random.randint(-1, 1))  
     elif difficulty == "Normal":
-        titan_level = max(1, character.level + random.randint(-1, 1))  # Around character level
+        titan_level = max(1, character.level + random.randint(-1, 1))  
     else:  # Hard
-        titan_level = character.level + random.randint(0, 2)  # Slightly higher
+        titan_level = character.level + random.randint(0, 2)  
     
     titan_hp = generate_titan_hp(level=titan_level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
     titan_name = generate_titan_name(difficulty)

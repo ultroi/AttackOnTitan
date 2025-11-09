@@ -39,10 +39,12 @@ class BattleSystem:
     """
     Manages a battle between a character and a titan, handling gas, HP, abilities, buffs, debuffs, and turn logic.
     """
-    def __init__(self, character: Character, titan: Titan, player: Optional[Player] = None):
+    def __init__(self, character: Character, titan: Titan, player: Optional[Player] = None, team: Optional[List] = None, current_team_index: int = 0):
         self.character = character
         self.titan = titan
         self.player = player
+        self.team = team or []
+        self.current_team_index = current_team_index
         self.character_hp: int = character.current_hp
         self.titan_hp: int = titan.max_hp
         self.gas: int = character.gas
@@ -104,6 +106,87 @@ class BattleSystem:
         self.last_passive_refresh: float = 0  
         self.participating_characters = set([self.character.name])  
         self.is_boss_battle: bool = getattr(titan, 'is_boss', False)
+        self.character_cache: Dict[str, Any] = {}
+
+    async def switch_character_on_death(self, db, user_id: str) -> bool:
+        """Switch to the next available team character on defeat. Returns True if switched successfully."""
+        if not self.team or len(self.team) <= 1:
+            return False
+        
+        # Find next character with HP > 0
+        start_index = self.current_team_index
+        for i in range(1, len(self.team)):
+            next_index = (start_index + i) % len(self.team)
+            next_member = self.team[next_index]
+            next_name = next_member.character_name if hasattr(next_member, 'character_name') else next_member.get('character_name', next_member)
+            
+            # Skip current character
+            if next_name == self.character.name:
+                continue
+            
+            # Check if character has HP
+            next_character = self.character_cache.get(next_name)
+            if not next_character:
+                # Try to get from DB
+                try:
+                    next_character = await db.get_character(user_id, next_name)
+                    if next_character:
+                        self.character_cache[next_name] = next_character
+                except:
+                    continue
+            
+            if next_character and next_character.current_hp > 0:
+                # Switch to this character
+                old_name = self.character.name
+                
+                # Add old character to participants
+                self.participating_characters.add(old_name)
+                
+                # Switch character
+                self.character = next_character
+                self.current_team_index = next_index
+                self.character_hp = next_character.current_hp
+                self.gas = next_character.gas
+                self.character_gas = next_character.max_gas
+                self.max_gas = next_character.max_gas
+                
+                # Reset cooldowns for new character
+                character_data = get_character_data(next_character.character_type)
+                if character_data:
+                    self.ability_cooldowns = {
+                        ability.name: 0 for ability in (
+                            (character_data.active_abilities or []) +
+                            (character_data.passive_abilities or []) +
+                            (character_data.ultimate_abilities or [])
+                        )
+                    }
+                    # Rebuild ability lookup
+                    prefixes = {
+                        "active_abilities": "⚔️",
+                        "passive_abilities": " ",
+                        "ultimate_abilities": "✨"
+                    }
+                    self.ability_lookup = {}
+                    self.ability_prefixes = {}
+                    for ability_type, prefix in prefixes.items():
+                        abilities = getattr(character_data, ability_type, [])
+                        for ability in abilities:
+                            if ability and ability.name:
+                                self.ability_lookup[ability.name] = ability
+                                self.ability_prefixes[ability.name] = prefix
+                
+                # Clear buffs/debuffs and reapply passives
+                self.buffs.clear()
+                self.debuffs.clear()
+                self.titan_debuffs.clear()
+                self.apply_passives("battle_start")
+                
+                # Reset emergency heal
+                self.emergency_heal_used = False
+                
+                return True
+        
+        return False
 
     # ---------- Resource Management ----------
     def dispose(self) -> None:
@@ -125,6 +208,7 @@ class BattleSystem:
         """Clear all internal battle caches to free memory."""
         self.keyboard_cache = None
         self.keyboard_cache_invalid = True
+        self.character_cache.clear()
 
     # ---------- Context & Effects ----------
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
@@ -713,6 +797,7 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
     weapon = battle.get_equipped_weapon(shop_items)
     
     # OPTIMIZED: Build ability buttons in single pass (no intermediate lists)
+    ability_buttons = []
     for ability_name, ability in battle.ability_lookup.items():
         # Skip passive abilities
         if hasattr(ability, 'show_as_button') and not ability.show_as_button:
@@ -724,20 +809,24 @@ async def generate_ability_keyboard(battle: 'BattleSystem', context: ContextType
             
             # OPTIMIZED: Inline button creation
             if cooldown > 0:
-                keyboard.append([InlineKeyboardButton(
+                ability_buttons.append(InlineKeyboardButton(
                     f"{battle.ability_prefixes.get(ability_name, '')} {ability.name} ({cooldown}t)",
                     callback_data=f"cooldown_{ability.name}"
-                )])
+                ))
             elif battle.gas < gas_cost:
-                keyboard.append([InlineKeyboardButton(
+                ability_buttons.append(InlineKeyboardButton(
                     f"{battle.ability_prefixes.get(ability_name, '')} {ability.name} (Low Gas)",
                     callback_data=f"lowgas_{ability.name}"
-                )])
+                ))
             else:
-                keyboard.append([InlineKeyboardButton(
+                ability_buttons.append(InlineKeyboardButton(
                     f"{battle.ability_prefixes.get(ability_name, '')} {ability.name}",
                     callback_data=f"ability_{ability.name}"
-                )])
+                ))
+    
+    # Group ability buttons in rows of 3
+    for i in range(0, len(ability_buttons), 3):
+        keyboard.append(ability_buttons[i:i+3])
     
     # OPTIMIZED: Add attack button
     if battle.gas >= attack_gas_cost:
@@ -1001,7 +1090,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     player = player_data if isinstance(player_data, Player) else Player(**player_data)
     
     # OPTIMIZED: Create battle system
-    battle = BattleSystem(character, titan, player)
+    battle = BattleSystem(character, titan, player, team, 0)
     
     emergency_heal_message = ""
     if player:
@@ -1559,6 +1648,40 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         ))
 
     else: # Defeat
+        # Try to switch to next team character
+        switched = await battle.switch_character_on_death(db, user_id)
+        
+        if switched:
+            # Character switched successfully, continue battle
+            switch_message = f"🔄 {battle.character.name} steps in to continue the fight!"
+            
+            # Update UI with switch message
+            status = battle.get_battle_status()
+            battle_message = (
+                f"<b>⚔️ BATTLE ⚔️</b>\n"
+                f"{switch_message}\n\n"
+                f"<b>| {battle.get_titan_display_name()} ({battle.titan.level}) |</b>\n"
+                f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
+                f"{status['titan_bar']}\n\n"
+                f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
+                f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
+                f"{status['character_bar']}\n"
+                f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
+            )
+            
+            keyboard = await generate_ability_keyboard(battle, context)
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            try:
+                await query.edit_message_text(battle_message, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+            
+            # Restart timeout
+            battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
+            return
+        
+        # No switch possible, end battle
         battle.character.gas = max(0, battle.character.gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
