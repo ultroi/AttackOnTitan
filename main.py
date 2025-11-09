@@ -896,7 +896,13 @@ async def main():
             app=app,
             host="0.0.0.0",
             port=port,
-            log_level="info"
+            log_level="info",
+            # Memory optimization settings
+            workers=1,  # Single worker to reduce memory footprint
+            loop="uvloop" if os.name != "nt" else "asyncio",  # Use uvloop on non-Windows for better performance
+            limit_concurrency=256,  # Limit concurrent connections to prevent memory explosion
+            limit_max_requests=10000,  # Restart worker after 10k requests to prevent memory leaks
+            timeout_keep_alive=5,  # Reduce keep-alive timeout
         )
         server = uvicorn.Server(config)
 

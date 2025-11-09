@@ -13,19 +13,53 @@ import logging
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from datetime import datetime, timezone, timedelta
+from functools import lru_cache
+from collections import OrderedDict
 
-# Enhanced player cache for improved performance
-PLAYER_CACHE = {}
-PLAYER_CACHE_TTL = 3600  # Increased to 3600 seconds (1 hour)
-CHARACTER_CACHE = {}  # Add character cache
-CHARACTER_CACHE_TTL = 3600  # Increased to 3600 seconds (1 hour)
+# ===== BOUNDED CACHE IMPLEMENTATION =====
+class BoundedCache:
+    """Memory-efficient bounded cache with LRU eviction"""
+    def __init__(self, max_size: int = 256):
+        self.max_size = max_size
+        self.cache = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+    
+    def get(self, key: str):
+        if key in self.cache:
+            self.hits += 1
+            # Move to end (most recently used)
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        self.misses += 1
+        return None
+    
+    def set(self, key: str, value):
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        
+        # Evict oldest item if cache exceeds size
+        if len(self.cache) > self.max_size:
+            oldest_key = next(iter(self.cache))
+            self.cache.pop(oldest_key)
+    
+    def clear(self):
+        self.cache.clear()
+        self.hits = 0
+        self.misses = 0
+    
+    def size(self):
+        return len(self.cache)
+
+# Use bounded caches instead of unbounded dictionaries
+PLAYER_CACHE = BoundedCache(max_size=128)  # Limit to 128 players in memory
+CHARACTER_CACHE = BoundedCache(max_size=256)  # Limit to 256 characters in memory
+PLAYER_CACHE_TTL = 1800  # Reduced to 30 minutes
+CHARACTER_CACHE_TTL = 1800  # Reduced to 30 minutes
 PLAYER_CACHE_LOCK = asyncio.Lock()
 CACHE_ENABLED = True
 CACHE_STATS = {"hits": 0, "misses": 0}  # For monitoring cache performance
-
-# Add pre-warm cache for frequently accessed data
-PREWARM_CACHE = {}
-PREWARM_CACHE_TTL = 3600  # 1 hour for pre-warmed data
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -87,15 +121,15 @@ class Database:
         self.stats = db.stats  # For storing game statistics
         logger.info("Database collections initialized successfully")
         
-        # Pre-warm caches with frequently accessed data for ultra-fast responses
+        # Pre-warm caches with MINIMAL frequently accessed data for ultra-fast responses
         try:
-            logger.info("Starting cache pre-warming...")
+            logger.info("Starting cache pre-warming (limited to top 32 active players)...")
             
-            # Pre-warm active players (recently active)
+            # Pre-warm ONLY top 32 recently active players (was 100)
             recent_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
             
-            # Get recently active players
-            recent_players = await self.players.find({
+            # Get recently active players - LIMIT TO 32
+            cursor = self.players.find({
                 "updated_at": {"$gte": recent_cutoff}
             }, {
                 "user_id": 1, "username": 1, "name": 1, "level": 1, "xp": 1, "total_xp": 1,
@@ -107,10 +141,12 @@ class Database:
                 "missions": 1, "pvp_wins": 1, "pvp_losses": 1, "battle_rating": 1,
                 "pvp_matches": 1, "tax_history": 1, "guild_id": 1, "daily_streak": 1, "last_daily_claim": 1,
                 "double_exp_end": 1, "completed_quests": 1, "mission14_area_counts": 1, "created_at": 1, "updated_at": 1
-            }).to_list(length=100)  
+            }).sort("updated_at", -1).limit(32)
+            recent_players = await cursor.to_list(length=32)  
             
             # Cache them
             current_time = time.time()
+            cached_count = 0
             for player_data in recent_players:
                 # Sanitize player data before creating Player object
                 player_data = sanitize_player_data(player_data)
@@ -120,25 +156,15 @@ class Database:
                     user_id = player_data["user_id"]
                     cache_key = f"player_{user_id}"
                     player = Player(**player_data)
-                    PLAYER_CACHE[cache_key] = {
+                    PLAYER_CACHE.set(cache_key, {
                         "player": player,
                         "timestamp": current_time
-                    }
+                    })
+                    cached_count += 1
             
-            logger.info(f"Pre-warmed {len(recent_players)} player caches")
+            logger.info(f"Pre-warmed {cached_count} player caches (limited dataset)")
             
-            # Pre-warm frequently used characters
-            for player_data in recent_players[:50]:  # Top 50 most recent
-                # Safely access data from dictionary
-                if isinstance(player_data, dict):
-                    user_id = player_data.get("user_id")
-                    team = player_data.get("team", [])
-                    if team and user_id:
-                        for team_member in team:
-                            if isinstance(team_member, dict) and "character_name" in team_member:
-                                char_name = team_member["character_name"]
-                                await self._prewarm_character_cache(user_id, char_name)
-            
+            # DO NOT pre-warm characters - load on demand instead to save memory
             logger.info("Cache pre-warming completed")
             
         except Exception as e:
@@ -152,7 +178,8 @@ class Database:
         """Pre-warm a specific character cache"""
         try:
             cache_key = f"character_{user_id}_{character_name}"
-            if cache_key not in CHARACTER_CACHE:
+            cached_data = CHARACTER_CACHE.get(cache_key)
+            if not cached_data:
                 character_data = await self.characters.find_one({
                     "user_id": str(user_id),
                     "name": character_name
@@ -163,10 +190,10 @@ class Database:
                 
                 if character_data:
                     character = Character(**character_data)
-                    CHARACTER_CACHE[cache_key] = {
+                    CHARACTER_CACHE.set(cache_key, {
                         "character": character,
                         "timestamp": time.time()
-                    }
+                    })
         except Exception as e:
             logger.debug(f"Error pre-warming character {character_name}: {e}")
 
@@ -249,12 +276,11 @@ class Database:
                 current_time = time.time()
                 
                 # Get from cache if available and not expired
-                if cache_key in PLAYER_CACHE:
-                    cached_data = PLAYER_CACHE[cache_key]
-                    if current_time - cached_data["timestamp"] < PLAYER_CACHE_TTL:
-                        elapsed = (time.perf_counter() - start) * 1000
-                        logger.info(f"get_player cache hit, time: {elapsed:.2f} ms")
-                        return cached_data["player"]
+                cached_data = PLAYER_CACHE.get(cache_key)
+                if cached_data and current_time - cached_data["timestamp"] < PLAYER_CACHE_TTL:
+                    elapsed = (time.perf_counter() - start) * 1000
+                    logger.debug(f"get_player cache hit, time: {elapsed:.2f} ms")
+                    return cached_data["player"]
             
             # Not in cache or expired, query database
             if self.players is None:
@@ -274,7 +300,7 @@ class Database:
             })
             
             elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"get_player db query time: {elapsed:.2f} ms")
+            logger.debug(f"get_player db query time: {elapsed:.2f} ms")
             
             # Create a Player object
             player = None
@@ -294,10 +320,10 @@ class Database:
                 # Cache the player if enabled
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
-                    PLAYER_CACHE[cache_key] = {
+                    PLAYER_CACHE.set(cache_key, {
                         "player": player,
                         "timestamp": time.time()
-                    }
+                    })
                     
             return player
         except (PyMongoError, ConnectionError) as e:
@@ -322,37 +348,44 @@ class Database:
                     for member in update_data['team']
                 ]
             
-            # Check if this is a time-tracking update that can be fully asynchronous
+            # Check if this is a time-tracking update that can be non-critical
             is_time_tracking_update = len(update_data) == 1 and (
                 'last_explore_time' in update_data
             )
             
-            # For time tracking updates, use fire-and-forget pattern
+            # For time tracking updates, use faster update path
             if is_time_tracking_update:
                 update_data["updated_at"] = datetime.now(timezone.utc)
                 
                 # Update cache immediately if it exists for instant access
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
-                    if cache_key in PLAYER_CACHE:
-                        player = PLAYER_CACHE[cache_key]["player"]
+                    cached_data = PLAYER_CACHE.get(cache_key)
+                    if cached_data:
+                        player = cached_data["player"]
                         for key, value in update_data.items():
                             setattr(player, key, value)
-                        PLAYER_CACHE[cache_key] = {
+                        PLAYER_CACHE.set(cache_key, {
                             "player": player,
                             "timestamp": time.time()
-                        }
+                        })
                 
-                # Launch fire-and-forget task for database update
-                # This will run in the background without blocking execution
-                asyncio.create_task(self._background_update_player(user_id, update_data))
+                # Use background update without awaiting - but ensure it completes
+                # Use update_one instead of fire-and-forget to reduce memory pressure
+                await self.players.update_one(
+                    {"user_id": str(user_id)},
+                    {"$set": update_data}
+                )
                 
                 elapsed = (time.perf_counter() - start) * 1000
-                logger.info(f"update_player (non-blocking time update) initiated: {elapsed:.2f} ms")
+                logger.debug(f"update_player (time update): {elapsed:.2f} ms")
                 
-                # Return immediately with cached player or fetch a new one
-                if CACHE_ENABLED and cache_key in PLAYER_CACHE:
-                    return PLAYER_CACHE[cache_key]["player"]
+                # Return immediately with cached player
+                if CACHE_ENABLED:
+                    cache_key = f"player_{user_id}"
+                    cached_data = PLAYER_CACHE.get(cache_key)
+                    if cached_data:
+                        return cached_data["player"]
                 else:
                     return await self.get_player(str(user_id))
             
@@ -373,30 +406,31 @@ class Database:
                 # Update cache if it exists - for mission updates, refresh from database
                 if CACHE_ENABLED:
                     cache_key = f"player_{user_id}"
-                    if cache_key in PLAYER_CACHE:
+                    cached_data = PLAYER_CACHE.get(cache_key)
+                    if cached_data:
                         # For mission updates, refresh from database to ensure consistency
                         if "missions" in update_data:
                             # Get fresh data from database
                             fresh_player_data = await self.players.find_one({"user_id": str(user_id)})
                             if fresh_player_data:
                                 fresh_player = Player(**fresh_player_data)
-                                PLAYER_CACHE[cache_key] = {
+                                PLAYER_CACHE.set(cache_key, {
                                     "player": fresh_player,
                                     "timestamp": time.time()
-                                }
+                                })
                         else:
                             # For other minor updates, just update the cached object
-                            player = PLAYER_CACHE[cache_key]["player"]
+                            player = cached_data["player"]
                             for key, value in update_data.items():
                                 if hasattr(player, key):
                                     setattr(player, key, value)
-                            PLAYER_CACHE[cache_key] = {
+                            PLAYER_CACHE.set(cache_key, {
                                 "player": player,
                                 "timestamp": time.time()
-                            }
+                            })
                 
                 elapsed = (time.perf_counter() - start) * 1000
-                logger.info(f"update_player (minor) query time: {elapsed:.2f} ms")
+                logger.debug(f"update_player (minor): {elapsed:.2f} ms")
                 return await self.get_player(str(user_id))
             else:
                 # For major updates, need to get the updated document
@@ -411,13 +445,13 @@ class Database:
                 if CACHE_ENABLED and result:
                     player = Player(**result)
                     cache_key = f"player_{user_id}"
-                    PLAYER_CACHE[cache_key] = {
+                    PLAYER_CACHE.set(cache_key, {
                         "player": player,
                         "timestamp": time.time()
-                    }
+                    })
                     
                 elapsed = (time.perf_counter() - start) * 1000
-                logger.info(f"update_player (major) query time: {elapsed:.2f} ms")
+                logger.debug(f"update_player (major): {elapsed:.2f} ms")
                 return Player(**result) if result else None
                 
         except Exception as e:
@@ -426,6 +460,7 @@ class Database:
             
     async def _background_update_player(self, user_id: str, update_data: Dict):
         """
+        DEPRECATED: Use direct update_one instead to reduce memory pressure
         Internal method to update player data in the background without blocking.
         Used for non-critical updates like timestamp tracking.
         """
@@ -436,15 +471,13 @@ class Database:
             )
             logger.debug(f"Background player update completed for user {user_id}")
         except Exception as e:
-            # Just log the error but don't propagate it since this is fire-and-forget
             logger.error(f"Background player update failed: {e}")
-            # No raise here since this is a background task
             
     def invalidate_character_cache(self, user_id: str, character_name: str):
         if CACHE_ENABLED:
             cache_key = f"character_{user_id}_{character_name}"
-            if cache_key in CHARACTER_CACHE:
-                CHARACTER_CACHE.pop(cache_key, None)
+            if cache_key in CHARACTER_CACHE.cache:
+                CHARACTER_CACHE.cache.pop(cache_key, None)
                 logger.debug(f"Invalidated character cache for {character_name}")
                 return True
         return False
@@ -456,8 +489,9 @@ class Database:
         """
         if CACHE_ENABLED:
             cache_key = f"player_{user_id}"
-            if cache_key in PLAYER_CACHE:
-                PLAYER_CACHE.pop(cache_key, None)
+            # BoundedCache handles its own eviction, just clear from our managed cache
+            if cache_key in PLAYER_CACHE.cache:
+                PLAYER_CACHE.cache.pop(cache_key, None)
                 logger.debug(f"Invalidated player cache for user {user_id}")
                 return True
         return False
@@ -469,16 +503,16 @@ class Database:
         """
         if CACHE_ENABLED:
             keys_to_remove = []
-            for cache_key in CHARACTER_CACHE.keys():
+            for cache_key in list(CHARACTER_CACHE.cache.keys()):
                 if cache_key.startswith(f"character_{user_id}_"):
                     keys_to_remove.append(cache_key)
 
             for cache_key in keys_to_remove:
-                CHARACTER_CACHE.pop(cache_key, None)
+                CHARACTER_CACHE.cache.pop(cache_key, None)
                 logger.debug(f"Invalidated character cache: {cache_key}")
 
             if keys_to_remove:
-                logger.info(f"Cleared {len(keys_to_remove)} character cache entries for user {user_id}")
+                logger.debug(f"Cleared {len(keys_to_remove)} character cache entries for user {user_id}")
             return len(keys_to_remove) > 0
         return False
 
@@ -488,16 +522,17 @@ class Database:
 
         # Clear all character caches for this user
         keys_to_remove = []
-        for cache_key in list(CHARACTER_CACHE.keys()):
+        for cache_key in list(CHARACTER_CACHE.cache.keys()):
             if cache_key.startswith(f"character_{user_id}_"):
                 keys_to_remove.append(cache_key)
 
         for cache_key in keys_to_remove:
-            CHARACTER_CACHE.pop(cache_key, None)
+            CHARACTER_CACHE.cache.pop(cache_key, None)
 
         # Clear player cache for this user
         player_cache_key = f"player_{user_id}"
-        PLAYER_CACHE.pop(player_cache_key, None)
+        if player_cache_key in PLAYER_CACHE.cache:
+            PLAYER_CACHE.cache.pop(player_cache_key, None)
 
         # Clear titan cache for this user
         self.invalidate_titan_cache(user_id)
@@ -659,16 +694,11 @@ class Database:
             cache_key = f"character_{user_id}_{character_name}"
             current_time = time.time()
             
-            if CACHE_ENABLED and cache_key in CHARACTER_CACHE:
-                cached_data = CHARACTER_CACHE[cache_key]
-                if current_time - cached_data["timestamp"] < CHARACTER_CACHE_TTL:
-                    # Cache hit
-                    CACHE_STATS["hits"] += 1
-                    logger.info(f"get_character cache hit for {character_name}")
+            if CACHE_ENABLED:
+                cached_data = CHARACTER_CACHE.get(cache_key)
+                if cached_data and current_time - cached_data["timestamp"] < CHARACTER_CACHE_TTL:
+                    logger.debug(f"get_character cache hit for {character_name}")
                     return cached_data["character"]
-                    
-            # Cache miss or expired
-            CACHE_STATS["misses"] += 1
             
             # Try exact match first
             character_data = await self.characters.find_one({
@@ -692,12 +722,12 @@ class Database:
             if character_data:
                 character = Character(**character_data)
                 
-                # Store in cache for future use
+                # Store in bounded cache for future use
                 if CACHE_ENABLED:
-                    CHARACTER_CACHE[cache_key] = {
+                    CHARACTER_CACHE.set(cache_key, {
                         "character": character,
                         "timestamp": time.time()
-                    }
+                    })
                 return character
             return None
         except Exception as e:
@@ -735,13 +765,13 @@ class Database:
                 # Update cache immediately
                 if CACHE_ENABLED and result:
                     cache_key = f"character_{character.user_id}_{character.name}"
-                    CHARACTER_CACHE[cache_key] = {
+                    CHARACTER_CACHE.set(cache_key, {
                         "character": Character(**result),
                         "timestamp": time.time()
-                    }
+                    })
 
                 elapsed = (time.perf_counter() - start) * 1000
-                logger.info(f"update_character (critical) query time: {elapsed:.2f} ms")
+                logger.debug(f"update_character (critical): {elapsed:.2f} ms")
                 return Character(**result) if result else character
             else:
                 # For non-critical updates, use faster update_one and return immediately
@@ -756,13 +786,13 @@ class Database:
                 # Update cache
                 if CACHE_ENABLED:
                     cache_key = f"character_{character.user_id}_{character.name}"
-                    CHARACTER_CACHE[cache_key] = {
+                    CHARACTER_CACHE.set(cache_key, {
                         "character": character,
                         "timestamp": time.time()
-                    }
+                    })
 
                 elapsed = (time.perf_counter() - start) * 1000
-                logger.info(f"update_character (non-critical) query time: {elapsed:.2f} ms")
+                logger.debug(f"update_character (non-critical): {elapsed:.2f} ms")
                 return character
 
         except Exception as e:
@@ -785,15 +815,19 @@ class Database:
             # Update cache if it exists
             if CACHE_ENABLED:
                 cache_key = f"character_{user_id}_{character_name}"
-                if cache_key in CHARACTER_CACHE:
-                    cached_character = CHARACTER_CACHE[cache_key]["character"]
+                cached_data = CHARACTER_CACHE.get(cache_key)
+                if cached_data:
+                    cached_character = cached_data["character"]
                     for key, value in update_data.items():
                         if hasattr(cached_character, key):
                             setattr(cached_character, key, value)
-                    CHARACTER_CACHE[cache_key]["timestamp"] = time.time()
+                    CHARACTER_CACHE.set(cache_key, {
+                        "character": cached_character,
+                        "timestamp": time.time()
+                    })
 
             elapsed = (time.perf_counter() - start) * 1000
-            logger.info(f"batch_update_character query time: {elapsed:.2f} ms")
+            logger.debug(f"batch_update_character: {elapsed:.2f} ms")
             return result.modified_count > 0
 
         except Exception as e:
@@ -852,18 +886,22 @@ class Database:
             # Update cache if it exists
             if CACHE_ENABLED:
                 cache_key = f"player_{user_id}"
-                if cache_key in PLAYER_CACHE:
-                    cached_player = PLAYER_CACHE[cache_key]["player"]
+                cached_data = PLAYER_CACHE.get(cache_key)
+                if cached_data:
+                    cached_player = cached_data["player"]
                     for key, value in update_data.items():
                         if hasattr(cached_player, key):
                             setattr(cached_player, key, value)
-                    PLAYER_CACHE[cache_key]["timestamp"] = time.time()
+                    PLAYER_CACHE.set(cache_key, {
+                        "player": cached_player,
+                        "timestamp": time.time()
+                    })
 
             elapsed = (time.perf_counter() - start) * 1000
             if elapsed > 250:  # Only log if it takes too long
-                logger.warning(f"batch_update_player query time: {elapsed:.2f} ms")
+                logger.warning(f"batch_update_player: {elapsed:.2f} ms")
             else:
-                logger.debug(f"batch_update_player query time: {elapsed:.2f} ms")
+                logger.debug(f"batch_update_player: {elapsed:.2f} ms")
             return result.modified_count > 0
 
         except Exception as e:
@@ -902,10 +940,10 @@ class Database:
                 # Update cache with fresh data
                 if CACHE_ENABLED:
                     cache_key = f"character_{user_id}_{character_name}"
-                    CHARACTER_CACHE[cache_key] = {
+                    CHARACTER_CACHE.set(cache_key, {
                         "character": character,
                         "timestamp": time.time()
-                    }
+                    })
                 return character
             return None
         except Exception as e:
