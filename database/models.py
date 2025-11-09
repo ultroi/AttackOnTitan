@@ -706,9 +706,9 @@ def generate_titan_hp(level: int, difficulty: str, character_stats: Optional[Cha
         base_hp = hp_value * 0.2
         
         difficulty_multipliers = {
-            "Easy": 0.8,  # Easy titans are slightly weaker
-            "Normal": 1.0,
-            "Hard": 1.2  # Hard titans are slightly stronger
+            "Easy": 2.5,  # 50% of character's HP
+            "Normal": 3.5,  # 70% of character's HP
+            "Hard": 5.5  # 110% of character's HP
         }
         
         scaled_hp = base_hp * difficulty_multipliers.get(difficulty, 1.0)

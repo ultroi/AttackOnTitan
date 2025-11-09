@@ -316,7 +316,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif event_type == "boss_titan":
         try:
-            await spawn_boss_titan_directly(update, context, user_id_str, player, db)
+            await spawn_boss_titan_directly(update, context, user_id_str, player, character, db)
             asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
         except Exception as e:
             logger.error(f"Boss Titan event error: {e}", exc_info=True)
@@ -325,23 +325,32 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
     
     # Generate titan
-    difficulty = get_titan_difficulty_by_level(player.level)
-    titan_hp = generate_titan_hp(level=player.level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
+    difficulty = get_titan_difficulty_by_level(character.level)
+    
+    # Adjust titan level based on difficulty with some randomness (close to character level)
+    if difficulty == "Easy":
+        titan_level = max(1, character.level + random.randint(-1, 0))  # Slightly lower or same
+    elif difficulty == "Normal":
+        titan_level = max(1, character.level + random.randint(-1, 1))  # Around character level
+    else:  # Hard
+        titan_level = character.level + random.randint(0, 2)  # Slightly higher
+    
+    titan_hp = generate_titan_hp(level=titan_level, difficulty=difficulty, character_stats=character.stats if isinstance(character.stats, CharacterStats) else None)
     titan_name = generate_titan_name(difficulty)
-    titan_xp = generate_titan_xp(player.level, difficulty)
+    titan_xp = generate_titan_xp(titan_level, difficulty)
     titan_key = titan_name.lower().replace(" titan", "")
     titan_image = TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
     
     # Create titan object
     titan = Titan(
         name=titan_name,
-        level=player.level,
+        level=titan_level,
         max_hp=titan_hp,
         xp_reward=titan_xp,
         difficulty=difficulty,
         created_at=datetime.now(timezone.utc),
         spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
-        min_level_requirement=max(1, player.level - 2),
+        min_level_requirement=max(1, titan_level - 2),
         abilities=[],
         drop_table={}
     )
@@ -349,7 +358,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Build message
     reply_text = (
         f"<code>-------------------------</code>\n"
-        f"📍 <b>{titan_name} Lvl ({player.level})</b>\n"
+        f"📍 <b>{titan_name} Lvl ({titan_level})</b>\n"
         f"<b>has blocked your way<a href=\"{titan_image}\">!</a></b>\n"
         f"<code>-------------------------</code>"
     )
@@ -366,7 +375,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # FIX: Store minimal titan data only
         minimal_titan_data = {
             "name": titan_name,
-            "level": player.level,
+            "level": titan_level,
             "max_hp": titan_hp,
             "xp_reward": titan_xp,
             "difficulty": difficulty,
@@ -484,13 +493,8 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
 # =====================================================================================
 
 def get_titan_difficulty_by_level(level: int) -> str:
-    """Returns difficulty level based on player level"""
-    if level <= 50:
-        return "Easy"
-    elif level <= 100:
-        return "Normal"
-    else:
-        return "Hard"
+    """Returns random difficulty level"""
+    return random.choice(["Easy", "Normal", "Hard"])
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
@@ -515,7 +519,7 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
         if FastPreCheck.is_in_battle(user_id_str):
             return
         
-        result = await db.titans.delete_one({"user_id": user_id_str}) if db.titans else None
+        result = await db.titans.delete_one({"user_id": user_id_str}) if db.titans is not None else None
         deleted_count = getattr(result, 'deleted_count', 0) if result else 0
         if deleted_count > 0:
             db.invalidate_titan_cache(user_id_str)
@@ -527,7 +531,7 @@ async def _cleanup_existing_titan(user_id_str: str, db: Database):
 # =====================================================================================
 
 async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAULT_TYPE, 
-                                    user_id_str: str, player: Player, db: Database):
+                                    user_id_str: str, player: Player, character: Character, db: Database):
     """Spawn boss titan directly"""
     try:
         user_id = int(user_id_str)
@@ -539,21 +543,22 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             await _cleanup_existing_titan(user_id_str, db)
             
             # Generate BOSS titan
-            boss_hp = generate_titan_hp(level=player.level, difficulty="Hard", character_stats=None) * 3
+            boss_level = character.level + random.randint(1, 3)  # +1 to +3 for epic challenge
+            boss_hp = generate_titan_hp(level=boss_level, difficulty="Hard", character_stats=None) * 3
             boss_name = "Armored Titan"
-            boss_xp = generate_titan_xp(player.level, "Hard") * 5
+            boss_xp = generate_titan_xp(boss_level, "Hard") * 5
             boss_image_url = random.choice(BOSS_TITAN_IMAGE_URLS)
             
             # Create boss titan
             boss_titan = Titan(
                 name=boss_name,
-                level=player.level,
+                level=boss_level,
                 max_hp=boss_hp,
                 xp_reward=boss_xp,
                 difficulty="Hard",
                 created_at=datetime.now(timezone.utc),
                 spawn_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS),
-                min_level_requirement=max(1, player.level - 2),
+                min_level_requirement=max(1, boss_level - 2),
                 abilities=[],
                 drop_table={},
                 is_boss=True
@@ -565,7 +570,7 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             # FIX: Store minimal data only
             minimal_boss_data = {
                 "name": boss_name,
-                "level": player.level,
+                "level": boss_level,
                 "max_hp": boss_hp,
                 "xp_reward": boss_xp,
                 "difficulty": "Hard",
@@ -580,7 +585,7 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             
             # Send boss message
             image_embed = f'<a href="{boss_image_url}">!</a>'
-            boss_message = format_boss_titan_message(boss_name, player.level, image_embed)
+            boss_message = format_boss_titan_message(boss_name, boss_level, image_embed)
             keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
