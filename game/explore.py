@@ -44,10 +44,10 @@ TITAN_TYPE_IMAGE_URLS = {
     "beast": "https://i.ibb.co/B2C79CM4/image.jpg",
     "potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
     "bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
-    "colossal": "https://i.ibb.co/5hCrTgjN/image.jpg",
-    "war hammer": "https://i.ibb.co/SSts9zx/image.jpg",
+   # "colossal": "https://i.ibb.co/5hCrTgjN/image.jpg",
+   # "war hammer": "https://i.ibb.co/SSts9zx/image.jpg",
     "gaping mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
-    "founding": "https://i.ibb.co/svn2w3C0/image.jpg",
+   # "founding": "https://i.ibb.co/svn2w3C0/image.jpg",
     "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
     "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
     "attack": "https://i.ibb.co/JW8TyhmR/image.jpg",
@@ -55,9 +55,9 @@ TITAN_TYPE_IMAGE_URLS = {
     "female": "https://i.ibb.co/vNQF4Cb/image.jpg",
     "bloated": "https://i.ibb.co/fYrcqngz/image.jpg",
     "staggering creepers": "https://i.ibb.co/mFchdbj9/image.jpg",
-    "armored": "https://i.ibb.co/212Jh2XG/image.jpg",
+   # "armored": "https://i.ibb.co/212Jh2XG/image.jpg",
     "wailing": "https://i.ibb.co/1JJQg9Db/image.jpg",
-    "jaw": "https://i.ibb.co/ychR6L72/image.jpg"
+   # "jaw": "https://i.ibb.co/ychR6L72/image.jpg"
     
 }
 
