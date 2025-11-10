@@ -328,6 +328,23 @@ async def get_cached_player_data(user_id_str: str, db: Database) -> Optional[Tup
             return None
         
         character = await db.get_character(user_id_str, player.team[0].character_name)
+        
+        # AUTO-CREATE: If character data missing, create it now
+        if not character or not character.stats:
+            logger.warning(f"⚠️ Character document missing for {user_id_str}/{player.team[0].character_name}, creating...")
+            try:
+                success = await db.add_new_character_to_player(user_id_str, player.team[0].character_name)
+                if success:
+                    # Try fetching again
+                    character = await db.get_character(user_id_str, player.team[0].character_name)
+                    logger.info(f"✅ Successfully created character document for {player.team[0].character_name}")
+                else:
+                    logger.error(f"❌ Failed to create character {player.team[0].character_name}")
+                    return None
+            except Exception as e:
+                logger.error(f"❌ Error auto-creating character: {e}")
+                return None
+        
         if not character or not character.stats:
             return None
         
