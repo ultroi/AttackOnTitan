@@ -364,6 +364,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             "gas": player.gas,
             "updated_at": datetime.now(timezone.utc)
         })
+        # CRITICAL: Invalidate cache
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(user_id)
         
         await query.answer("✅ Redeemed 10 medals for 500 Gas!", show_alert=True)
         # Return to medals menu
@@ -388,6 +391,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             "inventory": player.inventory,
             "updated_at": datetime.now(timezone.utc)
         })
+        # CRITICAL: Invalidate cache
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(user_id)
         
         await query.answer("✅ Redeemed 25 medals for 1 RDO!", show_alert=True)
         # Return to medals menu
@@ -427,6 +433,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 "owned_characters": player.owned_characters,
                 "updated_at": datetime.now(timezone.utc)
             })
+            # CRITICAL: Invalidate cache after player update
+            if hasattr(db, 'invalidate_player_cache'):
+                db.invalidate_player_cache(user_id)
 
             # Create character data
             try:
@@ -447,6 +456,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                             "owned_characters": [c for c in player.owned_characters if c != awarded_item],
                             "updated_at": datetime.now(timezone.utc)
                         })
+                        # CRITICAL: Invalidate cache after refund
+                        if hasattr(db, 'invalidate_player_cache'):
+                            db.invalidate_player_cache(user_id)
                         await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
                         await spin_callback_handler(update, context)
                         return
@@ -459,6 +471,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                         "owned_characters": [c for c in player.owned_characters if c != awarded_item],
                         "updated_at": datetime.now(timezone.utc)
                     })
+                    # CRITICAL: Invalidate cache after refund
+                    if hasattr(db, 'invalidate_player_cache'):
+                        db.invalidate_player_cache(user_id)
                     await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
                     await spin_callback_handler(update, context)
                     return
@@ -473,6 +488,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     "owned_characters": [c for c in player.owned_characters if c != awarded_item],
                     "updated_at": datetime.now(timezone.utc)
                 })
+                # CRITICAL: Invalidate cache after refund
+                if hasattr(db, 'invalidate_player_cache'):
+                    db.invalidate_player_cache(user_id)
                 await query.answer("❌ Character creation failed! Fragments have been refunded.", show_alert=True)
                 await spin_callback_handler(update, context)
                 return
@@ -486,6 +504,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 "inventory": player.inventory,
                 "updated_at": datetime.now(timezone.utc)
             })
+            # CRITICAL: Invalidate cache
+            if hasattr(db, 'invalidate_player_cache'):
+                db.invalidate_player_cache(user_id)
             
             await query.answer(f"✅ Redeemed 50 medals for 1 Ultra-Rare Fragment! You now have {fragments}/50 fragments.", show_alert=True)
         
@@ -631,6 +652,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             "spin_medals": player.spin_medals,
             "updated_at": datetime.now(timezone.utc)
         })
+        # CRITICAL: Invalidate cache after player update
+        if hasattr(db, 'invalidate_player_cache'):
+            db.invalidate_player_cache(user_id)
         
         # CRITICAL FIX: Auto-add first character to team if team is empty
         if (not player.team or len(player.team) == 0) and player.owned_characters:
@@ -641,6 +665,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 "team": [m.dict() if hasattr(m, "dict") else vars(m) for m in player.team],
                 "updated_at": datetime.now(timezone.utc)
             })
+            # CRITICAL: Invalidate cache after team update
+            if hasattr(db, 'invalidate_player_cache'):
+                db.invalidate_player_cache(user_id)
             logger.info(f"Auto-added {first_character} to team for user {user_id} (team was empty)")
 
         # Create character data for any new characters won
@@ -670,9 +697,16 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     # Remove from owned_characters if creation failed
                     if reward["item_key"] in player.owned_characters:
                         player.owned_characters.remove(reward["item_key"])
+                        # Save to database immediately
+                        await db.update_player(user_id, {
+                            "owned_characters": player.owned_characters,
+                            "updated_at": datetime.now(timezone.utc)
+                        })
+                        # Invalidate cache
+                        if hasattr(db, 'invalidate_player_cache'):
+                            db.invalidate_player_cache(user_id)
                         # Mark as duplicate so it doesn't show as "new" in results
                         reward["duplicate"] = True
-                        # Failed character removal logging removed for cleaner logs
             except Exception as e:
                 logger.error(f"❌ Error creating character {reward['item_key']} for user {user_id}: {e}")
                 import traceback
@@ -680,6 +714,14 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 # Remove from owned_characters if creation failed
                 if reward["item_key"] in player.owned_characters:
                     player.owned_characters.remove(reward["item_key"])
+                    # Save to database immediately
+                    await db.update_player(user_id, {
+                        "owned_characters": player.owned_characters,
+                        "updated_at": datetime.now(timezone.utc)
+                    })
+                    # Invalidate cache
+                    if hasattr(db, 'invalidate_player_cache'):
+                        db.invalidate_player_cache(user_id)
                     # Mark as duplicate so it doesn't show as "new" in results
                     reward["duplicate"] = True
 
