@@ -1364,34 +1364,34 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Arc Net Trap",
-                "description": "Deploys an electric tripwire system for 4 turns. Stun duration and agility penalties scale with Titan tier: Easy (2 turn stun, -30%), Normal (1 turn, -40%), Difficult (1 turn, -50% + Entangled Core). Allies gain +20% Dodge Rate and +5% Crit Evasion.",
+                "description": "Deploys an electric tripwire system for 4 turns. Stun duration and agility penalties scale with Titan tier: Easy (2 turn stun, -30%), Normal (1 turn, -40%), Difficult (1 turn, -50% + Entangled Core). Allies gain +20% Dodge Rate and +5% Crit Evasion. SCALING: Damage increases 20% per INT stat.",
                 "type": "active",
                 "gas_cost": 100,
                 "cooldown": 4,
                 "level_required": 50,
-                "base_damage": 54,  # 45 * 1.2, as per new damage
+                "base_damage": 125,  # INCREASED from 54 - more competitive with weapons
                 "effect_function": arc_net_trap_effect
             },
             {
                 "name": "Stimulant Injection",
-                "description": "Ally: 15% HP heal + full debuff cleanse. Self: 10% HP heal + Cold Edge with Titan-tier scaling. Easy: 2x Crit + 10% morale damage. Normal: 2x Crit + 5% morale + -15 enemy DEF. Difficult: 2.5x Crit + ignores 25% DEF + morale + INT drain.",
+                "description": "Ally: 15% HP heal + full debuff cleanse. Self: 10% HP heal + Cold Edge with Titan-tier scaling. Easy: 2x Crit + 10% morale damage. Normal: 2x Crit + 5% morale + -15 enemy DEF. Difficult: 2.5x Crit + ignores 25% DEF + morale + INT drain. SCALING: Damage scales with INT (0.5% per INT).",
                 "type": "active",
                 "gas_cost": 120,
                 "cooldown": 3,
                 "level_required": 75,
-                "base_damage": 18,  # 17-20, set to avg 18
+                "base_damage": 85,  # INCREASED from 18 - now more valuable
                 "effect_function": stimulant_injection_effect
             }
         ],
         ultimate_abilities=[
             {
                 "name": "Bunker Descent",
-                "description": "Ultimate battlefield control. Heals all allies 25% HP. All allies gain: Stealth, +50% Evasion, +30% Morale Resistance, enemy accuracy halved for 3 turns. If enemy Titans have >100 HP: Surveillance Disruption (50% AoE failure) + allies gain grab immunity.",
+                "description": "Ultimate battlefield control. Heals all allies 25% HP. All allies gain: Stealth, +50% Evasion, +30% Morale Resistance, enemy accuracy halved for 3 turns. If enemy Titans have >100 HP: Surveillance Disruption (50% AoE failure) + allies gain grab immunity. SCALING: Damage scales with team size (50 base + 30 per ally).",
                 "type": "ultimate",
                 "gas_cost": 400,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 15,  # as per new damage
+                "base_damage": 140,  # INCREASED from 15 - MASSIVE boost for ultimate
                 "effect_function": bunker_descent_effect
             }
         ]
@@ -1425,34 +1425,34 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Field Patch",
-                "description": "Heals 5% HP/second for 3 turns. If target HP < 30%, applies Survivor's Shield: 500 damage absorption (1000 vs Easy Titans, 750 vs Normal). VS Difficult Titans: enemy breaking shield loses 10 ACC.",
+                "description": "Heals 5% HP/second for 3 turns. If target HP < 30%, applies Survivor's Shield: 500 damage absorption (1000 vs Easy Titans, 750 vs Normal). VS Difficult Titans: enemy breaking shield loses 10 ACC. SCALING: Damage scales with DEF (1% per DEF), healing scales with INT (2% per INT).",
                 "type": "active",
                 "gas_cost": 150,
                 "cooldown": 3,
                 "level_required": 50,
-                "base_damage": 10,  # as per new damage
+                "base_damage": 95,  # INCREASED from 10 - now meaningful
                 "effect_function": field_patch_effect
             },
             {
                 "name": "Supply Dump",
-                "description": "Tosses random support item: Gas (resets movement), Blades (+15% Crit), Ration (20% HP), or Repair Kit (removes status effects). With Fear Counter ≥3: effect doubles/becomes AoE. 20% chance for Fear Syringe (stuns Titan, causes 30% AoE miss vs Normal/Difficult).",
+                "description": "Tosses random support item: Gas (resets movement), Blades (+15% Crit), Ration (20% HP), or Repair Kit (removes status effects). With Fear Counter ≥3: effect doubles/becomes AoE. 20% chance for Fear Syringe (stuns Titan, causes 30% AoE miss vs Normal/Difficult). SCALING: Damage increases with stacks.",
                 "type": "active",
                 "gas_cost": 75,
                 "cooldown": 2,
                 "level_required": 100,
-                "base_damage": 16,  # as per new damage
+                "base_damage": 110,  # INCREASED from 16 - competitive now
                 "effect_function": supply_dump_effect
             }
         ],
         ultimate_abilities=[
             {
                 "name": "Survival Override",
-                "description": "Auto-triggers if last alive. 3 turns: Zero movement cost, +2 actions/turn, enhanced passives. Field Patch becomes AoE, Supply Dump drops 2 items, Heart Overload recastable. VS Titans >100 HP: abilities apply -20% Titan Morale Resist. Final action deals True Damage = 10% highest Titan HP. Collapses after 3 turns (bypasses revive).",
+                "description": "Auto-triggers if last alive. 3 turns: Zero movement cost, +2 actions/turn, enhanced passives. Field Patch becomes AoE, Supply Dump drops 2 items, Heart Overload recastable. VS Titans >100 HP: abilities apply -20% Titan Morale Resist. Final action deals True Damage = 10% highest Titan HP. Collapses after 3 turns (bypasses revive). SCALING: Damage per turn increases with character level (base 80 + 2 per level).",
                 "type": "ultimate",
                 "gas_cost": 400,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 80,
+                "base_damage": 180,  # INCREASED from 80 - competitive with weapons
                 "effect_function": survival_override_effect
             }
         ]
@@ -1478,44 +1478,44 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Golden Hour Reflex",
-                "description": "When activated, allows dodging only the next attack (one time) and grants +5% Crit Rate for 2 turns.",
+                "description": "When activated, allows dodging only the next attack (one time) and grants +5% Crit Rate for 2 turns. SCALING: Crit bonus increases with SPD (0.1% per SPD).",
                 "type": "active",
                 "gas_cost": 20,
                 "cooldown": 5,
                 "is_unlocked": True,
-                "base_damage": 21,  
+                "base_damage": 75,  # INCREASED from 21 - better scaling with counter
                 "effect_function": golden_hour_reflex_effect
             },
             {
                 "name": "Nape Cutter Dash",
-                "description": "High-speed ODM slice. 2x damage at Full Gas. Easy Titans: Auto-Crit if HP <25%. Normal: -10 Agility for 1 turn. Difficult: +50% damage after dodge/kill.",
+                "description": "High-speed ODM slice. 2x damage at Full Gas. Easy Titans: Auto-Crit if HP <25%. Normal: -10 Agility for 1 turn. Difficult: +50% damage after dodge/kill. SCALING: Damage multiplies with SPD (0.5% per SPD).",
                 "type": "active",
                 "gas_cost": 150,
                 "cooldown": 2,
                 "level_required": 50,
-                "base_damage": 60,  
+                "base_damage": 180,  # INCREASED from 60 - now competitive with weapons
                 "effect_function": nape_cutter_dash_effect
             },
             {
                 "name": "Emergency Pulse Beacon",
-                "description": "Allies: +20% DEF, +15% ACC (3 turns). Titans (30m): 25% target switch. Titans <75 HP become Unstable on switch. Under Rapid Focus: clears Fear debuffs on allies.",
+                "description": "Allies: +20% DEF, +15% ACC (3 turns). Titans (30m): 25% target switch. Titans <75 HP become Unstable on switch. Under Rapid Focus: clears Fear debuffs on allies. SCALING: Buff percentages increase with ACC (0.1% per ACC).",
                 "type": "active",
                 "gas_cost": 80,
                 "cooldown": 3,
                 "level_required": 100,
-                "base_damage": 0,  
+                "base_damage": 140,  # INCREASED from 0 - now has damage scaling
                 "effect_function": emergency_pulse_beacon_effect
             }
         ],
         ultimate_abilities=[
             {
                 "name": "Flicker Instinct",
-                "description": "3 strikes on multiple/single target. 40% Bleed Chance. 80% Evasion after final hit. Easy: Execute <15% HP. Normal: Deep Bleed (-10% DEF, HP loss). Difficult: Refreshes Nape Cutter + Speed Surge.",
+                "description": "3 strikes on multiple/single target. 40% Bleed Chance. 80% Evasion after final hit. Easy: Execute <15% HP. Normal: Deep Bleed (-10% DEF, HP loss). Difficult: Refreshes Nape Cutter + Speed Surge. SCALING: Total damage is 3x base (40 per hit), increases with ATK+SPD combined.",
                 "type": "ultimate",
                 "gas_cost": 450,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 120, 
+                "base_damage": 270,  # INCREASED from 120 - 3 hits at 90 each (competitive with best weapons)
                 "effect_function": flicker_instinct_effect
             }
         ]
@@ -1549,34 +1549,34 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Riot Spark",
-                "description": "Floch throws a flare grenade into enemy lines: All enemies take 200 damage. 50% chance to induce 'Disarray' (target randomly attacks his allies for 1 turn). If cast on terrain like rooftops, spread radius increases by 50%.",
+                "description": "Floch throws a flare grenade into enemy lines: All enemies take 200 damage. 50% chance to induce 'Disarray' (target randomly attacks his allies for 1 turn). If cast on terrain like rooftops, spread radius increases by 50%. SCALING: Damage increases 1% per ATK stat.",
                 "type": "active",
                 "gas_cost": 120,
                 "cooldown": 3,
                 "level_required": 50,
-                "base_damage": 200,
+                "base_damage": 280,  # INCREASED from 200 - now matches best weapons
                 "effect_function": riot_spark_effect
             },
             {
                 "name": "Execute Traitor",
-                "description": "Targets a low-HP (<30%) enemy for public execution: If it succeeds, all allies gain +10% DEF (stat boost across the board for 2 turns). If it fails, Floch loses 10% HP but taunts enemy team (increases chance he'll be targeted).",
+                "description": "Targets a low-HP (<30%) enemy for public execution: If it succeeds, all allies gain +10% DEF (stat boost across the board for 2 turns). If it fails, Floch loses 10% HP but taunts enemy team (increases chance he'll be targeted). SCALING: Success rate increases with ACC (0.2% per ACC).",
                 "type": "active",
                 "gas_cost": 100,
                 "cooldown": 4,
                 "level_required": 75,
-                "base_damage": 0,
+                "base_damage": 220,  # INCREASED from 0 - now deals damage on execution
                 "effect_function": execute_traitor_effect
             }
         ],
         ultimate_abilities=[
             {
                 "name": "Last Bastion of War",
-                "description": "Floch enters a 3-turn buffed state: 'Iron Conviction' makes him immune to stun, slow, confusion, and bleed. During this phase, he has double speed and attack on every strike. Once phase ends, Floch is stunned for 1 turn and his defense drops to 0 for 2 more. (Success rate: 49%)",
+                "description": "Floch enters a 3-turn buffed state: 'Iron Conviction' makes him immune to stun, slow, confusion, and bleed. During this phase, he has double speed and attack on every strike. Once phase ends, Floch is stunned for 1 turn and his defense drops to 0 for 2 more. (Success rate: 49%). SCALING: Each attack during buff deals bonus damage equal to 5% of missing enemy HP.",
                 "type": "ultimate",
                 "gas_cost": 400,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 0,
+                "base_damage": 320,  # INCREASED from 0 - now deals damage via 2x multiplier + bonus
                 "effect_function": last_bastion_of_war_effect
             }
         ]
@@ -1602,24 +1602,24 @@ CHARACTERS: Dict[str, CharacterData] = {
         active_abilities=[
             {
                 "name": "Crisis Order",
-                "description": "If ally HP drops below 20%, Pixis can instantly teleport to their rescue and: Block 1 hit, Shield them for 2 turns, Transfer one of his own buffs to that ally.",
+                "description": "If ally HP drops below 20%, Pixis can instantly teleport to their rescue and: Block 1 hit, Shield them for 2 turns, Transfer one of his own buffs to that ally. SCALING: Shield strength increases with Pixis's DEF (2% per DEF).",
                 "type": "active",
                 "gas_cost": 150,
                 "cooldown": 2,
                 "level_required": 50,
-                "base_damage": 0,
+                "base_damage": 165,  # INCREASED from 0 - now can do damage via shield break
                 "effect_function": crisis_order_effect
             }
         ],
         ultimate_abilities=[
             {
                 "name": "Chain of Command: Final Salute",
-                "description": "Pixis issues a once-per-battle 'Command Overload' — all actives of all teammates come off cooldown and can be used once in the same turn (multi-cast). After this, Pixis cannot use any actives or passives for 3 turns, reflecting 'Mental Exhaustion.' If Pixis dies during exhaustion, all allies receive 10% HP and a 'Revenant Surge' stat boost.",
+                "description": "Pixis issues a once-per-battle 'Command Overload' — all actives of all teammates come off cooldown and can be used once in the same turn (multi-cast). After this, Pixis cannot use any actives or passives for 3 turns, reflecting 'Mental Exhaustion.' If Pixis dies during exhaustion, all allies receive 10% HP and a 'Revenant Surge' stat boost. SCALING: All reset abilities gain +25% damage bonus from Command Overload.",
                 "type": "ultimate",
                 "gas_cost": 500,
                 "cooldown": 1,
                 "level_required": 125,
-                "base_damage": 0,
+                "base_damage": 350,  # INCREASED from 0 - represents the multiplied damage from reset abilities
                 "effect_function": chain_of_command_effect
             }
         ]

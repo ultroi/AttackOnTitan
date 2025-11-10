@@ -16,7 +16,7 @@ TAX_THRESHOLDS = {
     'valor': 500,        
     'crystal': 50        
 }
-TAX_RATE = 0.15  
+TAX_RATE = 0.05  
 
 # Used for richness calculation to avoid magic numbers
 CURRENCY_VALUES = {

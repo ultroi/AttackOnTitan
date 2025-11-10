@@ -51,11 +51,13 @@ CACHE_TTL = 300
 TITAN_TYPE_IMAGE_URLS = {
     "goofy grinning": "https://i.ibb.co/dJ6J58s0/image.jpg",
     "beast": "https://i.ibb.co/B2C79CM4/image.jpg",
+    "ancient beast": "https://i.ibb.co/jZJHL3D3/image.jpg",
     "potbellied": "https://i.ibb.co/XkMw0Xt5/image.jpg",
     "dancing": "https://i.ibb.co/DgK98CzY/image.jpg",
     "bearded": "https://i.ibb.co/7J8S4s6v/image.jpg",
     "gaping mouth": "https://i.ibb.co/9mMK2FG1/image.jpg",
     "smiling": "https://i.ibb.co/3YTw6Wy2/image.jpg",
+    "abnormal": "https://i.ibb.co/4Z6kfGnJ/image.jpg",
     "small jogger": "https://i.ibb.co/Fk8NspGP/image.jpg",
     "leaper": "https://i.ibb.co/k2XqYdX6/image.jpg",
     "cart": "https://i.ibb.co/nNRhLMqH/image.jpg",

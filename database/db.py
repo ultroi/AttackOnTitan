@@ -1327,6 +1327,34 @@ class Database:
             logger.error(f"Failed to update group {group_id}: {e}")
             return False
 
+    async def add_ban(self, user_id: str, reason: str, ban_until: Optional[datetime] = None) -> bool:
+        """Add or update a ban for a user"""
+        try:
+            if self.bans is None:
+                logger.warning("Bans collection is None in add_ban")
+                return False
+            
+            ban_data = {
+                "user_id": str(user_id),
+                "reason": reason,
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc)
+            }
+            
+            if ban_until:
+                ban_data["ban_until"] = ban_until
+            
+            result = await self.bans.update_one(
+                {"user_id": str(user_id)},
+                {"$set": ban_data},
+                upsert=True
+            )
+            logger.info(f"Banned user {user_id}: {reason}")
+            return result.modified_count > 0 or result.upserted_id is not None
+        except Exception as e:
+            logger.error(f"Failed to add ban for user {user_id}: {e}")
+            return False
+
     async def get_all_groups(self, filter_data: Optional[Dict] = None) -> List[Dict]:
         """Get all groups, optionally filtered"""
         try:
