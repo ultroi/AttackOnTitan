@@ -1277,6 +1277,10 @@ class Database:
             
             await self.characters.insert_one(new_character.dict())
             logger.info(f"Successfully created character {character_name} for user {user_id} with {len(new_character.unlocked_abilities)} abilities unlocked")
+            
+            # CRITICAL: Invalidate cache so subsequent calls fetch fresh data
+            self.invalidate_character_cache(user_id, character_name)
+            
             return True
             
         except Exception as e:

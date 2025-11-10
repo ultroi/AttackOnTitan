@@ -631,6 +631,17 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             "spin_medals": player.spin_medals,
             "updated_at": datetime.now(timezone.utc)
         })
+        
+        # CRITICAL FIX: Auto-add first character to team if team is empty
+        if (not player.team or len(player.team) == 0) and player.owned_characters:
+            from database.models import TeamMember
+            first_character = player.owned_characters[0]
+            player.team = [TeamMember(character_name=first_character, position=1)]
+            await db.update_player(user_id, {
+                "team": [m.dict() if hasattr(m, "dict") else vars(m) for m in player.team],
+                "updated_at": datetime.now(timezone.utc)
+            })
+            logger.info(f"Auto-added {first_character} to team for user {user_id} (team was empty)")
 
         # Create character data for any new characters won
         new_characters_won = [reward for reward in rewards if reward["type"] == "character" and not reward["duplicate"]]
@@ -640,6 +651,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 success = await db.add_new_character_to_player(user_id, reward["item_key"])
                 if success:
                     # Character creation success logging removed for cleaner logs
+                    
+                    # Invalidate all player caches to ensure fresh data
+                    if hasattr(db, 'invalidate_all_character_caches'):
+                        db.invalidate_all_character_caches(user_id)
+                    if hasattr(db, 'invalidate_player_cache'):
+                        db.invalidate_player_cache(user_id)
                     
                     # Verify character was created properly
                     created_char = await db.get_character(user_id, reward["item_key"])
