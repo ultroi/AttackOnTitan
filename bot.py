@@ -53,10 +53,8 @@ from game.profile_system import (
 from game.item_usage import use_command
 from game.spin_system import spin_command, spin_callback_handler
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
-from database.models import Character, Player
-from pymongo import UpdateOne
+from database.models import Player
 from typing import List, Dict
-import motor.motor_asyncio
 
 # Load environment variables
 load_dotenv()
@@ -90,21 +88,21 @@ class LocalMemoryDatabase:
         self.active_battles = {}
         self.titan_timeout_tasks = {}
         self.db = None
-        self.characters_collection = self.characters  # Use the dict as mock collection
-        self.characters = self.characters  # For compatibility
-        self.players_collection = self.players  # Use the dict as mock collection
-        self.titans_collection = self.titans  # Use the dict as mock collection
+        self.characters_collection = self.characters  
+        self.characters = self.characters  
+        self.players_collection = self.players  
+        self.titans_collection = self.titans  
         self.equipment = {}
         self.shop_purchases = {}
         self.shop_purchases_collection = {}
         self.bank_accounts = {}
-        self.groups_collection = self.groups  # Use the dict as mock collection
-        self.characters_collection = self.characters  # Use the dict as mock collection
-        self.players_collection = self.players  # Use the dict as mock collection
-        self.titans_collection = self.titans  # Use the dict as mock collection
+        self.groups_collection = self.groups  
+        self.characters_collection = self.characters  
+        self.players_collection = self.players  
+        self.titans_collection = self.titans  
         self.stats = {}
         self._titan_cache = {}
-        self.bans_collection = self.bans  # Use the dict as mock collection
+        self.bans_collection = self.bans  
         
         # Initialize the internal dicts
         self._characters_dict = {}
@@ -139,17 +137,14 @@ class LocalMemoryDatabase:
             return await self.db.count_documents(self.collection_name, query)
         
         async def find(self, query=None, projection=None):
-            # Return a mock cursor for compatibility
             return self.db.MockCursor(self.db, self.collection_name, query or {})
         
         async def insert_one(self, document):
-            # For insert operations, we'll just store in the appropriate dict
             if self.collection_name == "players":
                 user_id = document.get("user_id")
                 if user_id:
                     self.db._players_dict[str(user_id)] = document
             elif self.collection_name == "characters":
-                # Use user_id + name as key
                 user_id = document.get("user_id")
                 name = document.get("name")
                 if user_id and name:
@@ -187,7 +182,6 @@ class LocalMemoryDatabase:
             return {"inserted_id": "mock_id"}
         
         def find_one_and_update(self, query, update_data, return_document=False):
-            # Mock implementation
             return None
 
         def __setitem__(self, key, value):
@@ -211,7 +205,6 @@ class LocalMemoryDatabase:
             elif self.collection_name == "stats":
                 self.db._stats_dict[str(key)] = value
             else:
-                # Fallback to regular dict behavior
                 super().__setitem__(key, value)
 
         def __getitem__(self, key):
@@ -235,7 +228,6 @@ class LocalMemoryDatabase:
             elif self.collection_name == "stats":
                 return self.db._stats_dict.get(str(key))
             else:
-                # Fallback to regular dict behavior
                 return super().__getitem__(key)
 
         def __contains__(self, key):
@@ -259,7 +251,6 @@ class LocalMemoryDatabase:
             elif self.collection_name == "stats":
                 return str(key) in self.db._stats_dict
             else:
-                # Fallback to regular dict behavior
                 return super().__contains__(key)
 
     class MockCursor:
@@ -271,7 +262,6 @@ class LocalMemoryDatabase:
             self.query = query
         
         async def to_list(self, length=None):
-            # Return matching documents from the appropriate collection
             if self.collection_name == "players":
                 return list(self.db._players_dict.values())
             elif self.collection_name == "characters":
@@ -296,7 +286,6 @@ class LocalMemoryDatabase:
             return self
         
         async def __anext__(self):
-            # Simple iterator implementation
             raise StopAsyncIteration
 
     async def init_db(self, motor_db=None):

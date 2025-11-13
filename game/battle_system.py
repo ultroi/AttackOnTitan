@@ -1699,44 +1699,56 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         ))
 
     else: # Defeat
-        # Try to switch to next team character
-        switched = await battle.switch_character_on_death(db, user_id)
-        
-        if switched:
-            # Character switched successfully, continue battle
-            switch_message = f"🔄 {battle.character.name} steps in to continue the fight!"
-            
-            # Update UI with switch message
-            status = battle.get_battle_status()
-            battle_message = (
-                f"<b>⚔️ BATTLE ⚔️</b>\n"
-                f"{switch_message}\n\n"
-                f"<b>| {battle.get_titan_display_name()} ({battle.titan.level}) |</b>\n"
-                f"<b>HP: {status['titan_hp']}/{battle.titan.max_hp}</b>\n"
-                f"{status['titan_bar']}\n\n"
-                f"<b>| {battle.character.name} (Lv. {battle.character.level}) |</b>\n"
-                f"<b>HP: {status['character_hp']}/{battle.character.stats.HP}</b>\n"
-                f"{status['character_bar']}\n"
-                f"<b>Gas: {status['gas']}/{battle.character.max_gas}</b>"
-            )
-            
-            keyboard = await generate_ability_keyboard(battle, context)
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            try:
-                await query.edit_message_text(battle_message, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
-            except Exception:
-                pass
-            
-            # Restart timeout
-            battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
-            return
-        
-        # No switch possible, end battle
+        # Mark current character as dead in-memory
         battle.character.gas = max(0, battle.character.gas - gas_consumed)
         battle.character.max_gas = battle.character.gas
         battle.character.current_hp = 0
 
+        # Check if there are any alive teammates to let the player manually switch in
+        alive_team_members = []
+        if battle.player and hasattr(battle.player, 'team') and battle.player.team:
+            for i, member in enumerate(battle.player.team):
+                try:
+                    char_name = member.character_name
+                except Exception:
+                    # Skip malformed entries
+                    continue
+                if char_name == battle.character.name:
+                    continue
+
+                # Try cache first
+                cached_char = battle.character_cache.get(char_name)
+                if not cached_char:
+                    try:
+                        cached_char = await db.get_character(user_id, char_name)
+                        if cached_char:
+                            battle.character_cache[char_name] = cached_char
+                    except Exception:
+                        cached_char = None
+
+                if cached_char and getattr(cached_char, 'current_hp', 0) > 0:
+                    alive_team_members.append((i, char_name))
+
+        if alive_team_members:
+            switch_keyboard = []
+            for idx, name in alive_team_members:
+                switch_keyboard.append([InlineKeyboardButton(name, callback_data=f"switch_to_{idx}")])
+            switch_keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="switch_back")])
+
+            try:
+                await query.edit_message_text(
+                    "<b>Your character was defeated! Select a teammate to continue the fight:</b>",
+                    reply_markup=InlineKeyboardMarkup(switch_keyboard),
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
+
+            # Restart timeout and keep battle active
+            battle.timeout_task = asyncio.create_task(battle_timeout(user_id, query, battle, context))
+            return
+
+        # No alive teammates — process defeat as before
         buff_updates = {}
         if hasattr(player_data, 'double_gas_injector_uses') and player_data.double_gas_injector_uses > 0:
             player_data.double_gas_injector_uses -= 1
@@ -1754,10 +1766,10 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         await query.edit_message_text(defeat_message, parse_mode=ParseMode.HTML)
 
         character_defeat_task = db.batch_update_character(
-            str(user_id), battle.character.name, 
+            str(user_id), battle.character.name,
             {"gas": battle.character.gas, "max_gas": battle.character.max_gas, "current_hp": 0}
         )
-        
+
         player_defeat_task = db.batch_update_player(
             str(user_id), {"explore_count": explore_count + 1, **buff_updates}
         )
