@@ -149,48 +149,270 @@ async def manage_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     team = context.user_data["team"]
     team_text = "🎯 <b>Team Management</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    team_text += "<b>Current Team:</b>\n"
     if team:
-        team_text += "<b>Current Team:</b>\n"
         for member in sorted(team, key=lambda m: m.position):
-            char_data = get_character_data(member.character_name)
-            role = char_data.role if char_data else "Unknown"
             team_text += (
                 f"{get_position_emoji(member.position)} "
-                f"<b>{escape(member.character_name)}</b> (Role: {escape(role)}) "
-                f"<i>[Remove]</i>"
-                "\n"
+                f"<b>{escape(member.character_name)}</b>\n"
             )
     else:
-        team_text += "No members selected yet.\n"
-    team_text += "\n<i>Select up to 3 characters:</i>"
-    # Add buttons for adding characters not in team
-    add_buttons = []
-    for char in owned_characters:
-        if not any(m.character_name == char for m in team):
-            add_buttons.append(InlineKeyboardButton(f"➕ {char}", callback_data=f"add_to_team_{char}"))
-    # Remove buttons for characters in team
-    remove_buttons = []
-    for member in team:
-        remove_buttons.append(InlineKeyboardButton(f"❌ {member.character_name}", callback_data=f"remove_from_team_{member.character_name}"))
+        team_text += "<i>No members selected yet</i>\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("➕ Add", callback_data="team_add_mode"),
+         InlineKeyboardButton("➖ Remove", callback_data="team_remove_mode")],
+        [InlineKeyboardButton("🔄 Swap", callback_data="team_swap_mode"),
+         InlineKeyboardButton("🔄 Clear", callback_data="clear_team")],
+        [InlineKeyboardButton("💾 Save", callback_data="save_team")],
+        [InlineKeyboardButton("Back", callback_data="back_from_manage_team")]
+    ]
+    try:
+        await query.edit_message_text(
+            team_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            # Message content and markup are identical, ignore the error
+            pass
+        else:
+            raise
+
+async def team_add_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all available characters to add to team"""
+    if context.user_data is None:
+        context.user_data = {}
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    user_id = str(query.from_user.id)
+    
+    db = context.bot_data.get("db")
+    if not db or not hasattr(db, 'players') or db.players is None:
+        await query.edit_message_text("❌ Database not initialized. Please try again later.")
+        return
+    
+    player = await db.get_player(user_id)
+    if not player:
+        await query.edit_message_text("❌ You have no player account.")
+        return
+    
+    owned_characters = player.owned_characters
+    team = context.user_data.get("team", [])
+    
+    # Get characters not in team
+    available_chars = [char for char in owned_characters if not any(m.character_name == char for m in team)]
+    
+    if not available_chars:
+        await query.answer("✅ All characters are in team or team is full!", show_alert=True)
+        return
+    
+    if len(team) >= 3:
+        await query.answer("⚠️ Team is full! Max 3 characters.", show_alert=True)
+        return
+    
+    # Build UI for add mode
+    add_text = "🎯 <b>Select Character to Add</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    add_text += "<b>Available Characters:</b>\n"
+    add_text += "<i>Click on a character to add them to your team</i>\n\n"
+    
     keyboard = []
-    # Add add_buttons in rows of 2
-    for i in range(0, len(add_buttons), 2):
-        keyboard.append(add_buttons[i:i+2])
-    # Add remove_buttons in rows of 2
-    for i in range(0, len(remove_buttons), 2):
-        keyboard.append(remove_buttons[i:i+2])
-    keyboard.append([
-        InlineKeyboardButton("🔄 Clear", callback_data="clear_team"),
-        InlineKeyboardButton("💾 Save", callback_data="save_team")
-    ])
-    keyboard.append([
-        InlineKeyboardButton("Back", callback_data="back_from_manage_team")
-    ])
-    await query.edit_message_text(
-        team_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.HTML
-    )
+    for char in available_chars:
+        keyboard.append([InlineKeyboardButton(f"➕ {char}", callback_data=f"add_to_team_{char}")])
+    
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="manage_team")])
+    
+    try:
+        await query.edit_message_text(
+            add_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
+async def team_remove_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all team members to remove from team"""
+    if context.user_data is None:
+        context.user_data = {}
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    user_id = str(query.from_user.id)
+    
+    team = context.user_data.get("team", [])
+    
+    if not team:
+        await query.answer("⚠️ Team is empty! Nothing to remove.", show_alert=True)
+        return
+    
+    # Build UI for remove mode
+    remove_text = "🎯 <b>Select Character to Remove</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    remove_text += "<b>Team Members:</b>\n"
+    remove_text += "<i>Click on a character to remove them from your team</i>\n\n"
+    
+    keyboard = []
+    for member in sorted(team, key=lambda m: m.position):
+        keyboard.append([InlineKeyboardButton(
+            f"➖ {member.character_name}", 
+            callback_data=f"remove_from_team_{member.character_name}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="manage_team")])
+    
+    try:
+        await query.edit_message_text(
+            remove_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
+async def team_swap_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all team members to select first character for swapping"""
+    if context.user_data is None:
+        context.user_data = {}
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    user_id = str(query.from_user.id)
+    
+    team = context.user_data.get("team", [])
+    
+    if len(team) < 2:
+        await query.answer("⚠️ Need at least 2 characters to swap!", show_alert=True)
+        return
+    
+    # Clear any previous swap selection
+    context.user_data.pop("swap_first_char", None)
+    
+    # Build UI for swap mode
+    swap_text = "🔄 <b>Select First Character to Swap</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    swap_text += "<b>Team Members:</b>\n"
+    swap_text += "<i>Click on the first character you want to swap</i>\n\n"
+    
+    keyboard = []
+    for member in sorted(team, key=lambda m: m.position):
+        keyboard.append([InlineKeyboardButton(
+            f"🔄 {member.character_name}", 
+            callback_data=f"swap_first_{member.character_name}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="manage_team")])
+    
+    try:
+        await query.edit_message_text(
+            swap_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
+async def swap_first(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Select first character and show second selection"""
+    if context.user_data is None:
+        context.user_data = {}
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    
+    first_char_name = query.data.replace("swap_first_", "")
+    team = context.user_data.get("team", [])
+    
+    # Find the first character
+    first_member = next((m for m in team if m.character_name == first_char_name), None)
+    if not first_member:
+        await query.answer("⚠️ Character not found in team!", show_alert=True)
+        return
+    
+    # Store first selection
+    context.user_data["swap_first_char"] = first_char_name
+    
+    # Build UI for second selection
+    swap_text = f"🔄 <b>Swap {first_char_name} with...</b>\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    swap_text += "<b>Select Second Character:</b>\n"
+    swap_text += "<i>Click on the character to swap positions with</i>\n\n"
+    
+    keyboard = []
+    for member in sorted(team, key=lambda m: m.position):
+        if member.character_name != first_char_name:  # Don't show the first selected character
+            keyboard.append([InlineKeyboardButton(
+                f"🔄 {member.character_name}", 
+                callback_data=f"swap_second_{member.character_name}"
+            )])
+    
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="manage_team")])
+    
+    try:
+        await query.edit_message_text(
+            swap_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except BadRequest as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
+async def swap_second(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Complete the swap with second character"""
+    if context.user_data is None:
+        context.user_data = {}
+    query = update.callback_query
+    owner_id = context.user_data.get('owner_id')
+    if str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
+        return
+    await query.answer()
+    
+    second_char_name = query.data.replace("swap_second_", "")
+    first_char_name = context.user_data.get("swap_first_char")
+    
+    if not first_char_name:
+        await query.answer("⚠️ No first character selected!", show_alert=True)
+        return
+    
+    team = context.user_data.get("team", [])
+    
+    # Find both characters
+    first_member = next((m for m in team if m.character_name == first_char_name), None)
+    second_member = next((m for m in team if m.character_name == second_char_name), None)
+    
+    if not first_member or not second_member:
+        await query.answer("⚠️ One or both characters not found in team!", show_alert=True)
+        return
+    
+    # Swap positions
+    first_member.position, second_member.position = second_member.position, first_member.position
+    
+    # Clear swap selection
+    context.user_data.pop("swap_first_char", None)
+    
+    await query.answer(f"✅ Swapped {first_char_name} and {second_char_name}!", show_alert=True)
+    await manage_team(update, context)
+
 
 def get_position_emoji(position: int) -> str:
     return {
@@ -212,12 +434,16 @@ async def add_to_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.setdefault("team", [])
     team = context.user_data["team"]
     if len(team) >= 3:
-        await query.answer("⚠️ Team is full!")
+        await query.answer("⚠️ Team is full!", show_alert=True)
+        return
+    # Check if character already in team
+    if any(m.character_name == char_name for m in team):
+        await query.answer(f"⚠️ {char_name} is already in team!", show_alert=True)
         return
     used_positions = {m.position for m in team}
     next_pos = min(set([1, 2, 3]) - used_positions)
     team.append(TeamMember(character_name=char_name, position=next_pos))
-    await query.answer(f"Added {char_name}.")
+    await query.answer(f"✅ Added {char_name} to team!", show_alert=True)
     await manage_team(update, context)
 
 async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -237,9 +463,13 @@ async def remove_from_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if m.character_name != char_name
     ]
     if len(context.user_data["team"]) < before:
-        await query.answer(f"Removed {char_name}.")
+        # Renumber positions after removal
+        team = context.user_data["team"]
+        for idx, member in enumerate(sorted(team, key=lambda m: m.position), 1):
+            member.position = idx
+        await query.answer(f"✅ Removed {char_name} from team!", show_alert=True)
     else:
-        await query.answer("Character not in team.")
+        await query.answer("⚠️ Character not in team.", show_alert=True)
     await manage_team(update, context)
 
 async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,7 +486,7 @@ async def clear_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Team is already empty!", show_alert=True)
         return
     context.user_data["team"] = []
-    await query.answer("Team cleared.")
+    await query.answer("✅ Team cleared.", show_alert=True)
     await manage_team(update, context)
 
 async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -275,7 +505,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     team = context.user_data.get("team", [])
     if not team:
-        await query.answer("⚠️ Add members first!")
+        await query.answer("⚠️ Add members first!", show_alert=True)
         return
     team = sorted(team, key=lambda x: x.position)
     for idx, m in enumerate(team, 1):
@@ -286,8 +516,7 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     text = "✅ <b>Team saved!</b>\n\n<b>Composition:</b>\n"
     for m in team:
-        role = get_character_data(m.character_name).role if get_character_data(m.character_name) else "Unknown"
-        text += f"{get_position_emoji(m.position)} {escape(m.character_name)} - {escape(role)}\n"
+        text += f"{get_position_emoji(m.position)} {escape(m.character_name)}\n"
     keyboard = [
         [InlineKeyboardButton("🔄 Edit", callback_data="manage_team")],
         [InlineKeyboardButton("❌ Exit", callback_data="exit_profile")]

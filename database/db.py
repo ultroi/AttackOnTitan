@@ -1231,6 +1231,10 @@ class Database:
             
             max_hp = char_data.get_max_hp(1)
             
+            # FIX: Ensure gas and max_gas are properly initialized
+            initial_gas = 5000
+            initial_max_gas = 5000
+            
             new_character = Character(
                 user_id=str(user_id),
                 name=character_name,
@@ -1240,8 +1244,8 @@ class Database:
                 xp=0,
                 total_xp=0,
                 stats=char_data.base_stats.dict(),
-                gas=5000,
-                max_gas=5000,
+                gas=initial_gas,
+                max_gas=initial_max_gas,
                 equipped_weapon=None,
                 active_abilities=[],
                 passive_abilities=[],
@@ -1286,7 +1290,7 @@ class Database:
                     new_character.unlocked_abilities[ability.name] = True
             
             await self.characters.insert_one(new_character.dict())
-            logger.info(f"Successfully created character {character_name} for user {user_id} with {len(new_character.unlocked_abilities)} abilities unlocked")
+            logger.info(f"✅ Created character {character_name} for user {user_id} with HP={max_hp}, Gas={initial_gas}/{initial_max_gas}, {len(new_character.unlocked_abilities)} abilities unlocked")
             
             # CRITICAL: Invalidate cache so subsequent calls fetch fresh data
             self.invalidate_character_cache(user_id, character_name)

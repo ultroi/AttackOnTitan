@@ -43,7 +43,7 @@ from game.start import (
 from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
+    show_team, manage_team, team_add_mode, team_remove_mode, team_swap_mode, swap_first, swap_second, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
     show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, view_miscellaneous, referral_info,
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
@@ -747,6 +747,11 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
     app_instance.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
     app_instance.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
+    app_instance.add_handler(CallbackQueryHandler(team_add_mode, pattern="^team_add_mode$"))
+    app_instance.add_handler(CallbackQueryHandler(team_remove_mode, pattern="^team_remove_mode$"))
+    app_instance.add_handler(CallbackQueryHandler(team_swap_mode, pattern="^team_swap_mode$"))
+    app_instance.add_handler(CallbackQueryHandler(swap_first, pattern="^swap_first_"))
+    app_instance.add_handler(CallbackQueryHandler(swap_second, pattern="^swap_second_"))
     app_instance.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
     app_instance.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     app_instance.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))

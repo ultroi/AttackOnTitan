@@ -1213,18 +1213,19 @@ async def generate_pvp_ability_keyboard(battle: PvPBattleSystem, context: Contex
     current_team = battle.challenger_team if battle.current_turn_user_id == str(battle.challenger_player.user_id) else battle.defender_team
     current_index = battle.challenger_current_index if battle.current_turn_user_id == str(battle.challenger_player.user_id) else battle.defender_current_index
     
-    # Add switch buttons if there are characters available to switch to
+    # Check if there are characters available to switch to
     available_switches = []
     for i in range(current_index + 1, len(current_team)):
         if i < len(current_team):  # Make sure index is valid
             char = current_team[i]
-            available_switches.append(InlineKeyboardButton(f"🔄 {char.name}", callback_data=f"pvp_switch_{i}"))
+            available_switches.append((i, char))
     
     # Create the bottom row with switches, items, and surrender
     bottom_row = []
+    
+    # If there are switches available, add a single "Switch" button
     if available_switches:
-        # Add switch buttons (limit to 2 to avoid overcrowding)
-        bottom_row.extend(available_switches[:2])
+        bottom_row.append(InlineKeyboardButton("🔄 Switch", callback_data="pvp_show_switches"))
     
     # Add item button if not used this turn
     if not used_item:
@@ -1476,6 +1477,77 @@ async def generate_pvp_items_keyboard(battle: PvPBattleSystem, context: ContextT
     # Always add back button in a new row
     keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")])
     return keyboard
+
+async def handle_pvp_show_switches(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle showing available characters to switch to."""
+    query = update.callback_query
+    if not query or not update.effective_user:
+        return
+        
+    user_id = str(update.effective_user.id)
+    
+    # Check if user is in a PVP battle
+    if user_id not in active_pvp_battles:
+        try:
+            await safe_api_call(query.answer, "You are not in an active PVP battle.", show_alert=True)
+        except:
+            pass
+        return
+        
+    battle = active_pvp_battles[user_id]
+    
+    # Check if it's user's turn
+    if user_id != battle.current_turn_user_id:
+        try:
+            await safe_api_call(query.answer, "It's not your turn!", show_alert=True)
+        except:
+            pass
+        return
+    
+    # Determine current team and index
+    if battle.current_turn_user_id == str(battle.challenger_player.user_id):
+        current_team = battle.challenger_team
+        current_index = battle.challenger_current_index
+    else:
+        current_team = battle.defender_team
+        current_index = battle.defender_current_index
+    
+    # Get available characters to switch to (only future team members)
+    available_switches = []
+    for i in range(current_index + 1, len(current_team)):
+        char = current_team[i]
+        available_switches.append((i, char))
+    
+    if not available_switches:
+        try:
+            await safe_api_call(query.answer, "No characters available to switch to.", show_alert=True)
+        except:
+            pass
+        return
+    
+    # Build keyboard with available characters
+    keyboard = []
+    for index, char in available_switches:
+        keyboard.append([InlineKeyboardButton(f"🔄 {char.name} (HP: {char.stats.HP})", callback_data=f"pvp_switch_{index}")])
+    
+    # Add back button
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="pvp_back_to_battle")])
+    
+    # Show switch menu
+    switch_text = "🔄 <b>Available Characters to Switch:</b>\n\n"
+    for index, char in available_switches:
+        switch_text += f"• <b>{char.name}</b>\n"
+        switch_text += f"  HP: {char.stats.HP} | ATK: {char.stats.ATK} | DEF: {char.stats.DEF}\n\n"
+    
+    try:
+        await safe_api_call(
+            query.edit_message_text,
+            text=switch_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.debug(f"Error showing switches menu: {e}")
 
 async def handle_pvp_show_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle showing available items in PvP."""
@@ -1770,11 +1842,20 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             await safe_api_call(query.answer)
         except Exception as e:
-            logger.error(f"Error in answer: {e}")
+            # Silently ignore query expired errors - user won't see them
+            if "Query is too old" in str(e) or "query id is invalid" in str(e):
+                logger.debug(f"Query expired (silently ignored): {type(e).__name__}")
+                return  # Exit gracefully without logging error
+            logger.debug(f"Could not answer callback query: {e}")
+        
         callback_data = getattr(query, 'data', None)
         if not callback_data or not isinstance(callback_data, str):
-            await safe_api_call(query.answer, "Invalid callback data.", show_alert=True)
+            try:
+                await safe_api_call(query.answer, "Invalid callback data.", show_alert=True)
+            except:
+                pass  # Ignore if query expired
             return
+        
         user_id = str(update.effective_user.id)
         cooldown = 0.5
         if callback_data.startswith("pvp_ability_") or callback_data == "pvp_basic_attack":
@@ -1788,6 +1869,7 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         if not callback_data.startswith("pvp_cooldown_") and not callback_data.startswith("pvp_lowgas_") and not callback_data == "pvp_no_items":
             if not await check_button_cooldown(user_id, callback_data, cooldown):
                 return
+        
         if callback_data.startswith("pvp_accept_"):
             await handle_pvp_accept(update, context)
         elif callback_data.startswith("pvp_decline_"):
@@ -1801,14 +1883,22 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif callback_data.startswith("pvp_ability_"):
             ability_name = callback_data[11:].strip()
             if not ability_name:
-                await safe_api_call(query.answer, "Invalid ability name.", show_alert=True)
+                try:
+                    await safe_api_call(query.answer, "Invalid ability name.", show_alert=True)
+                except:
+                    pass
                 return
             logger.debug(f"Received ability callback: {ability_name}")
             await handle_pvp_ability(update, context, ability_name)
         elif callback_data == "pvp_surrender":
             await handle_pvp_surrender(update, context)
+        elif callback_data == "pvp_show_switches":
+            await handle_pvp_show_switches(update, context)
         elif callback_data == "pvp_switch":
-            await safe_api_call(query.answer, "Switching characters is not implemented yet.", show_alert=True)
+            try:
+                await safe_api_call(query.answer, "Switching characters is not implemented yet.", show_alert=True)
+            except:
+                pass
         elif callback_data.startswith("pvp_switch_"):
             target_index = int(callback_data[11:])  # Extract target index from "pvp_switch_1"
             await handle_pvp_manual_switch(update, context, target_index)
@@ -1819,16 +1909,23 @@ async def pvp_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         elif callback_data == "pvp_back_to_battle":
             await handle_pvp_back_to_battle(update, context)
         elif callback_data == "pvp_no_items":
-            await safe_api_call(query.answer, "You don't have any utility items to use.", show_alert=True)
+            try:
+                await safe_api_call(query.answer, "You don't have any utility items to use.", show_alert=True)
+            except:
+                pass
         elif callback_data.startswith("pvp_cooldown_") or callback_data.startswith("pvp_lowgas_"):
             try:
                 if callback_data.startswith("pvp_lowgas_"):
                     await safe_api_call(query.answer, "Not enough gas! Using an ability without sufficient gas will end the battle and you will lose.", show_alert=True)
                 else:
                     await safe_api_call(query.answer, "This ability is not available right now.", show_alert=True)
-            except Exception as e:
-                logger.debug(f"Could not answer callback query for cooldown/lowgas: {e}")
+            except:
+                pass  # Silently ignore query expired errors
     except Exception as e:
+        # Check if it's a query expired error
+        if "Query is too old" in str(e) or "query id is invalid" in str(e):
+            logger.debug(f"PVP callback query expired (silently handled)")
+            return  # Exit gracefully without logging as error
         logger.error(f"Error in pvp_callback_handler: {e}")
 
 

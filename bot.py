@@ -44,11 +44,12 @@ from game.start import (
 from game.add_resource_command import add_resource_command
 from game.profile_system import (
     profile, char_detail,
-    show_team, manage_team, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
+    show_team, manage_team, team_add_mode, team_remove_mode, team_swap_mode, swap_first, swap_second, add_to_team, remove_from_team, save_team, clear_team, back_from_manage_team,
     show_inventory, view_weapons, view_gear, view_military, view_utilities, view_echo_shards, view_miscellaneous, referral_info,
     fill_gas, exit_profile, view_weapons_char, equip_weapon, char_detail_callback, view_abilities,
     show_characters
 )
+
 from game.item_usage import use_command
 from game.spin_system import spin_command, spin_callback_handler
 from game.bank_command import handle_bank_command, handle_deposit_command, handle_withdrawal_command, handle_open_bank_callback
@@ -1964,6 +1965,11 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(back_to_selection, pattern="^back_to_selection$"))
     application.add_handler(CallbackQueryHandler(show_team, pattern="^show_team$"))
     application.add_handler(CallbackQueryHandler(manage_team, pattern="^manage_team$"))
+    application.add_handler(CallbackQueryHandler(team_add_mode, pattern="^team_add_mode$"))
+    application.add_handler(CallbackQueryHandler(team_remove_mode, pattern="^team_remove_mode$"))
+    application.add_handler(CallbackQueryHandler(team_swap_mode, pattern="^team_swap_mode$"))
+    application.add_handler(CallbackQueryHandler(swap_first, pattern="^swap_first_"))
+    application.add_handler(CallbackQueryHandler(swap_second, pattern="^swap_second_"))
     application.add_handler(CallbackQueryHandler(add_to_team, pattern=r"^add_to_team_"))
     application.add_handler(CallbackQueryHandler(remove_from_team, pattern="^remove_from_team_"))
     application.add_handler(CallbackQueryHandler(save_team, pattern="^save_team$"))

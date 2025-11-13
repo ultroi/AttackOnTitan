@@ -53,7 +53,7 @@ class BattleSystem:
         self.character.max_gas = self.max_gas  
         self.character.stats = character.stats or CharacterStats()
         self.ability_cooldowns: Dict[str, int] = {
-            ability.name: 0 for ability in (
+            ability.name.strip().lstrip('_'): 0 for ability in (
                 (character.active_abilities or []) +
                 (character.passive_abilities or []) +
                 (character.ultimate_abilities or [])
@@ -73,8 +73,10 @@ class BattleSystem:
                 abilities = getattr(character_data, ability_type, [])
                 for ability in abilities:
                     if ability and ability.name:
-                        self.ability_lookup[ability.name] = ability
-                        self.ability_prefixes[ability.name] = prefix
+                        # Clean ability names to ensure consistent lookup
+                        clean_name = ability.name.strip().lstrip('_')
+                        self.ability_lookup[clean_name] = ability
+                        self.ability_prefixes[clean_name] = prefix
         self.buffs: Dict[str, Any] = {}
         self.debuffs: Dict[str, int] = {}  
         self.titan_debuffs: Dict[str, int] = {}
@@ -153,6 +155,10 @@ class BattleSystem:
                 self.character_gas = next_character.max_gas
                 self.max_gas = next_character.max_gas
                 
+                # FIX: Update initial_gas to reflect the new character's gas
+                # This prevents gas calculation from using the old character's data
+                self.initial_gas = next_character.gas
+                
                 # Reset cooldowns for new character
                 character_data = get_character_data(next_character.character_type)
                 if character_data:
@@ -175,8 +181,10 @@ class BattleSystem:
                         abilities = getattr(character_data, ability_type, [])
                         for ability in abilities:
                             if ability and ability.name:
-                                self.ability_lookup[ability.name] = ability
-                                self.ability_prefixes[ability.name] = prefix
+                                # Clean ability names to avoid issues with extra spaces or underscores
+                                clean_name = ability.name.strip().lstrip('_')
+                                self.ability_lookup[clean_name] = ability
+                                self.ability_prefixes[clean_name] = prefix
                 
                 # Clear buffs/debuffs and reapply passives
                 self.buffs.clear()
@@ -186,6 +194,9 @@ class BattleSystem:
                 
                 # Reset emergency heal
                 self.emergency_heal_used = False
+                
+                # Invalidate keyboard cache so it gets regenerated
+                self.keyboard_cache_invalid = True
                 
                 return True
         
@@ -491,24 +502,27 @@ class BattleSystem:
         if not self.character or not self.character.stats:
             return damage, "Error: Character stats not available", effects, False
         
+        # Clean the ability name to ensure consistent lookup
+        clean_ability_name = ability_name.strip().lstrip('_')
+        
         # NEW: Check for mental exhaustion (blocks ultimate abilities)
         if self.debuffs.get("mental_exhaustion", 0) > 0:
             # Only block if trying to use an ultimate ability
-            ability = self.ability_lookup.get(ability_name)
+            ability = self.ability_lookup.get(clean_ability_name)
             if ability:
                 character_data = get_character_data(self.character.character_type)
                 if character_data and ability in getattr(character_data, "ultimate_abilities", []):
                     return 0, f"⚠️ {self.character.name} is mentally exhausted and cannot use ultimate abilities! ({self.debuffs['mental_exhaustion']} turns remaining)", effects, False
             
-        # O(1) ability lookup using pre-built dictionary
-        ability = self.ability_lookup.get(ability_name)
+        # O(1) ability lookup using pre-built dictionary with cleaned name
+        ability = self.ability_lookup.get(clean_ability_name)
         if not ability:
-            return damage, f"Error: Ability {ability_name} not found", effects, False
+            return damage, f"Error: Ability {clean_ability_name} not found", effects, False
             
         # Check cooldown and gas with early returns
-        cooldown = self.ability_cooldowns.get(ability_name, 0)
+        cooldown = self.ability_cooldowns.get(clean_ability_name, 0)
         if cooldown > 0:
-            return damage, f"{ability_name} is on cooldown for {cooldown} turns!", effects, False
+            return damage, f"{clean_ability_name} is on cooldown for {cooldown} turns!", effects, False
             
         gas_cost = ability.gas_cost or 20
         if self.is_boss_battle:
@@ -529,7 +543,7 @@ class BattleSystem:
                 effect = ability.effect_function(ctx)
                 if effect:
                     self.apply_effect(effect)
-                    message = effect.message or f"{ability_name} used successfully!"
+                    message = effect.message or f"{clean_ability_name} used successfully!"
                     
                     # Apply Double Gas Injector buff (half gas cost)
                     actual_gas_cost = gas_cost
@@ -547,11 +561,11 @@ class BattleSystem:
                         "bleed_applied": getattr(effect, 'bleed_applied', False)
                     }
         except Exception as e:
-            logger.error(f"Error applying ability {ability_name}: {e}")
-            return damage, f"Error using {ability_name}", effects, False
+            logger.error(f"Error applying ability {clean_ability_name}: {e}")
+            return damage, f"Error using {clean_ability_name}", effects, False
             
-        # Set cooldown and return
-        self.ability_cooldowns[ability_name] = ability.cooldown or 1
+        # Set cooldown and return using cleaned name
+        self.ability_cooldowns[clean_ability_name] = ability.cooldown or 1
         return damage, message, effects, False
 
     def has_usable_abilities(self) -> bool:
@@ -1458,7 +1472,7 @@ async def _handle_do_switch(action, battle, user_id, context):
     character_data = get_character_data(target_character.character_type)
     if character_data:
         battle.ability_cooldowns = {
-            ability.name: 0 for ability in (
+            ability.name.strip().lstrip('_'): 0 for ability in (
                 (character_data.active_abilities or []) +
                 (character_data.passive_abilities or []) +
                 (character_data.ultimate_abilities or [])
@@ -1476,8 +1490,10 @@ async def _handle_do_switch(action, battle, user_id, context):
             abilities = getattr(character_data, ability_type, [])
             for ability in abilities:
                 if ability and ability.name:
-                    battle.ability_lookup[ability.name] = ability
-                    battle.ability_prefixes[ability.name] = prefix
+                    # Clean ability names to ensure consistent lookup
+                    clean_name = ability.name.strip().lstrip('_')
+                    battle.ability_lookup[clean_name] = ability
+                    battle.ability_prefixes[clean_name] = prefix
 
     battle.apply_passives("battle_start") 
 
