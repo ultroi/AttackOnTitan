@@ -20,3 +20,6 @@ CONNECTION_TIMEOUT = 5000  # 5 seconds timeout for database operations
 
 # Channel IDs
 TRANSACTION_LOG_CHANNEL = -1002686338026  # Transaction logs channel ID
+# Broadcast settings
+# Maximum length for a custom vote option label. Telegram button text is limited (recommend <=64).
+BROADCAST_OPTION_MAX_LENGTH = int(os.getenv("BROADCAST_OPTION_MAX_LENGTH", 64))

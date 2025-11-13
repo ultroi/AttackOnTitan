@@ -9,6 +9,7 @@ from telegram.error import Forbidden, BadRequest
 
 from database.db import Database
 from utils.owners import is_owner, get_owner_ids
+from config import BROADCAST_OPTION_MAX_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -379,8 +380,11 @@ async def collect_custom_option(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ Option cannot be empty. Please try again.")
         return
 
-    if len(option_text) > 50:
-        await update.message.reply_text("❌ Option too long (max 50 characters). Please try again.")
+    if len(option_text) > BROADCAST_OPTION_MAX_LENGTH:
+        await update.message.reply_text(
+            f"❌ Option too long (max {BROADCAST_OPTION_MAX_LENGTH} characters). Please try again."
+        )
+        return
         return
 
     # Add emoji if not present
