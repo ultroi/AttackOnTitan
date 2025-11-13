@@ -1254,6 +1254,10 @@ class Database:
             for ability in char_data.active_abilities:
                 if ability.level_required <= 1:
                     ability_dict = ability.dict()
+                    # Avoid storing raw function objects in MongoDB (bson can't encode callables)
+                    ef = ability_dict.get('effect_function')
+                    if callable(ef):
+                        ability_dict['effect_function'] = None
                     ability_dict['is_unlocked'] = True
                     ability_dict['unlocked'] = True
                     new_character.active_abilities.append(Ability(**ability_dict))
@@ -1262,6 +1266,9 @@ class Database:
             for ability in char_data.passive_abilities:
                 if ability.level_required <= 1:
                     ability_dict = ability.dict()
+                    ef = ability_dict.get('effect_function')
+                    if callable(ef):
+                        ability_dict['effect_function'] = None
                     ability_dict['is_unlocked'] = True
                     ability_dict['unlocked'] = True
                     new_character.passive_abilities.append(Ability(**ability_dict))
@@ -1270,6 +1277,9 @@ class Database:
             for ability in char_data.ultimate_abilities:
                 if ability.level_required <= 1:
                     ability_dict = ability.dict()
+                    ef = ability_dict.get('effect_function')
+                    if callable(ef):
+                        ability_dict['effect_function'] = None
                     ability_dict['is_unlocked'] = True
                     ability_dict['unlocked'] = True
                     new_character.ultimate_abilities.append(Ability(**ability_dict))

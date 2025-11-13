@@ -674,44 +674,54 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         new_characters_won = [reward for reward in rewards if reward["type"] == "character" and not reward["duplicate"]]
         for reward in new_characters_won:
             try:
-                # Create the character data in database
-                success = await db.add_new_character_to_player(user_id, reward["item_key"])
-                if success:
-                    # Character creation success logging removed for cleaner logs
-                    
-                    # Invalidate all player caches to ensure fresh data
-                    if hasattr(db, 'invalidate_all_character_caches'):
-                        db.invalidate_all_character_caches(user_id)
-                    if hasattr(db, 'invalidate_player_cache'):
-                        db.invalidate_player_cache(user_id)
-                    
-                    # Verify character was created properly
-                    created_char = await db.get_character(user_id, reward["item_key"])
-                    if created_char:
-                        # Character verification logging removed for cleaner logs
-                        pass
-                    else:
-                        logger.error(f"❌ Character {reward['item_key']} was not found after creation!")
+                # Check if character already exists in database (handles race conditions)
+                existing_char = await db.get_character(user_id, reward["item_key"])
+                
+                if existing_char:
+                    # Character already exists - this is actually a duplicate despite our flag saying it wasn't
+                    # Don't try to create it again, just mark as duplicate
+                    reward["duplicate"] = True
+                    logger.info(f"Character {reward['item_key']} already exists for user {user_id}, marking as duplicate")
                 else:
-                    logger.warning(f"⚠️ Failed to create character data for {reward['item_key']} for user {user_id}")
-                    # Remove from owned_characters if creation failed
-                    if reward["item_key"] in player.owned_characters:
-                        player.owned_characters.remove(reward["item_key"])
-                        # Save to database immediately
-                        await db.update_player(user_id, {
-                            "owned_characters": player.owned_characters,
-                            "updated_at": datetime.now(timezone.utc)
-                        })
-                        # Invalidate cache
+                    # Character doesn't exist, create it
+                    success = await db.add_new_character_to_player(user_id, reward["item_key"])
+                    if success:
+                        # Character creation success logging removed for cleaner logs
+                        
+                        # Invalidate all player caches to ensure fresh data
+                        if hasattr(db, 'invalidate_all_character_caches'):
+                            db.invalidate_all_character_caches(user_id)
                         if hasattr(db, 'invalidate_player_cache'):
                             db.invalidate_player_cache(user_id)
-                        # Mark as duplicate so it doesn't show as "new" in results
-                        reward["duplicate"] = True
+                        
+                        # Verify character was created properly
+                        created_char = await db.get_character(user_id, reward["item_key"])
+                        if created_char:
+                            # Character verification logging removed for cleaner logs
+                            pass
+                        else:
+                            logger.error(f"❌ Character {reward['item_key']} was not found after creation!")
+                    else:
+                        logger.warning(f"⚠️ Failed to create character data for {reward['item_key']} for user {user_id}")
+                        # Only remove from owned_characters if it's NOT already in the database
+                        # (If it's in the DB, we just mark it as duplicate instead)
+                        if reward["item_key"] in player.owned_characters:
+                            player.owned_characters.remove(reward["item_key"])
+                            # Save to database immediately
+                            await db.update_player(user_id, {
+                                "owned_characters": player.owned_characters,
+                                "updated_at": datetime.now(timezone.utc)
+                            })
+                            # Invalidate cache
+                            if hasattr(db, 'invalidate_player_cache'):
+                                db.invalidate_player_cache(user_id)
+                            # Mark as duplicate so it doesn't show as "new" in results
+                            reward["duplicate"] = True
             except Exception as e:
                 logger.error(f"❌ Error creating character {reward['item_key']} for user {user_id}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-                # Remove from owned_characters if creation failed
+                # Remove from owned_characters only if creation truly failed (not just already exists)
                 if reward["item_key"] in player.owned_characters:
                     player.owned_characters.remove(reward["item_key"])
                     # Save to database immediately
@@ -756,6 +766,12 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         duplicate_characters = []
 
         for reward in rewards:
+            # Skip duplicates completely - don't show them in results
+            if reward.get("duplicate"):
+                if reward.get("type") == "character":
+                    duplicate_characters.append(reward.get('item_name'))
+                continue  # Skip showing this reward
+            
             rarity_emoji = {
                 "common": "⚪",
                 "uncommon": "🟢",
@@ -767,14 +783,9 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             amount_part = f" x{reward['amount']}" if reward['amount'] and reward['amount'] > 1 else ""
 
             status_parts = []
-            if reward.get("duplicate"):
-                if reward.get("type") == "character":
-                    status_parts.append("♻️ Duplicate")
-                    duplicate_characters.append(reward.get('item_name'))
-            else:
-                if reward.get("type") == "character":
-                    status_parts.append("✨ New")
-                    new_characters.append(reward.get('item_name'))
+            if reward.get("type") == "character":
+                status_parts.append("✨ New")
+                new_characters.append(reward.get('item_name'))
 
             status = f" — {'; '.join(status_parts)}" if status_parts else ""
 
@@ -822,9 +833,6 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         if new_characters:
             for cname in new_characters:
                 reward_text += f"• ✨ <b>{cname}</b> — Congratulations!\n"
-        elif duplicate_characters:
-            for cname in duplicate_characters:
-                reward_text += f"• ♻️ <b>{cname}</b> — Duplicate (Already Owned)\n"
         else:
             reward_text += "• <b>None</b>\n"
 
