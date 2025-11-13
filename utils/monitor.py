@@ -428,9 +428,46 @@ def get_system_health_stats() -> Dict[str, Any]:
         }
 
 async def monitor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Telegram command handler for /monitor - sends live status and dashboard link."""
     if not update or not hasattr(update, 'message'):
         logger.error(f"Invalid update object in monitor_command")
+        return
+
+    # Restrict this command: only allowed in the specific group OR in private chats
+    try:
+        chat = update.message.chat
+        chat_id = getattr(chat, 'id', None)
+        chat_type = getattr(chat, 'type', None)
+        ALLOWED_GROUP_ID = -1002848899456
+
+        if chat_type != 'private' and chat_id != ALLOWED_GROUP_ID:
+                # If used in any other group: delete the command message, tag the user and inform
+                try:
+                    user = getattr(update, 'effective_user', None) or getattr(update.message, 'from_user', None)
+                    user_id = getattr(user, 'id', None)
+                    user_name = getattr(user, 'first_name', 'User')
+                    mention = f"<a href='tg://user?id={user_id}'>{user_name}</a>" if user_id else user_name
+
+                    # Attempt to delete the invoking message (the /monitor command)
+                    try:
+                        await update.message.delete()
+                    except Exception:
+                        logger.debug("Could not delete /monitor message")
+
+                    # Send a message tagging the user with the restriction notice
+                    try:
+                        text = f"{mention}, Buddy not here 🤫!!"
+                        await update.effective_message.reply_text(text, parse_mode="HTML")
+                    except Exception:
+                        # Fallback: try replying without HTML
+                        try:
+                            await update.effective_message.reply_text(f"{user_name}, This command can only be used in the designated group or in a private chat.")
+                        except Exception:
+                            logger.debug("Unable to send restriction message for /monitor")
+                except Exception as e:
+                    logger.error(f"Error handling restricted /monitor usage: {e}")
+                return
+    except Exception as e:
+        logger.error(f"Error checking chat restriction for /monitor: {e}")
         return
         
     try:
