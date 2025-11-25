@@ -115,7 +115,9 @@ async def captcha(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data = {}
     # Start timeout task
     context.user_data['captcha_timeout_task'] = asyncio.create_task(captcha_timeout())
-    captcha_text, captcha_image = generate_captcha()
+    # Offload CPU-bound image generation to a threadpool so we don't block the event loop
+    loop = asyncio.get_running_loop()
+    captcha_text, captcha_image = await loop.run_in_executor(None, generate_captcha)
     context.user_data['captcha_answer'] = captcha_text
     context.user_data['captcha_tries'] = 3
     context.user_data['captcha_active'] = True
@@ -255,7 +257,8 @@ async def spawn_captcha(update, context):
     # Always use text captcha now
     context.user_data['captcha_active'] = True
     context.user_data['captcha_processed'] = False  # Reset processed flag for new captcha
-    await captcha(update, context)
+    # Run captcha handling in the background so callers (like explore) can return immediately
+    asyncio.create_task(captcha(update, context))
     context.user_data['captcha_mode'] = 'text'
     context.user_data['verified'] = False
     return True

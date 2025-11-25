@@ -464,13 +464,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle random events
     if event_type == "dealer":
         try:
-            await show_dealer(update, context)
+            # Offload the dealer flow so we return to the user immediately (non-blocking)
+            asyncio.create_task(show_dealer(update, context))
+            # Track stats in background (fire-and-forget)
             try:
-                await asyncio.wait_for(
-                    track_explore_stats(user_id_str, update.effective_user.username or player.username, False),
-                    timeout=0.5
-                )
-            except (asyncio.TimeoutError, Exception):
+                asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
+            except Exception:
                 pass
         except Exception as e:
             logger.error(f"Dealer event error: {e}", exc_info=True)
@@ -480,11 +479,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await spawn_captcha(update, context)
             try:
-                await asyncio.wait_for(
-                    track_explore_stats(user_id_str, update.effective_user.username or player.username, False),
-                    timeout=0.5
-                )
-            except (asyncio.TimeoutError, Exception):
+                asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
+            except Exception:
                 pass
         except Exception as e:
             logger.error(f"Captcha event error: {e}", exc_info=True)
@@ -492,7 +488,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif event_type == "boss_titan":
         try:
-            await spawn_boss_titan_directly(update, context, user_id_str, player, character, db)
+            # Spawn boss titan in background - immediate return to user
+            asyncio.create_task(spawn_boss_titan_directly(update, context, user_id_str, player, character, db))
             asyncio.create_task(track_explore_stats(user_id_str, update.effective_user.username or player.username, False))
         except Exception as e:
             logger.error(f"Boss Titan event error: {e}", exc_info=True)

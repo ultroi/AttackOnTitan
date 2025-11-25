@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from database.models import Character, Player, Titan, generate_titan_xp
 from database.characters import AbilityEffect, get_character_data
 from database.schemas import Ability, CharacterStats
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, error
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 from database.db import Database
@@ -17,6 +17,49 @@ from datetime import datetime, timezone
 import time
 
 logger = logging.getLogger(__name__)
+
+# Resilient API helper (similar to game/pvp_system.safe_api_call)
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 1.0
+MAX_RETRY_DELAY = 30.0
+
+async def safe_api_call(api_func, *args, **kwargs):
+    """Call Telegram API func with retries on RetryAfter and TimedOut."""
+    retries = 0
+    delay = BASE_RETRY_DELAY
+
+    while True:
+        try:
+            return await api_func(*args, **kwargs)
+        except error.RetryAfter as e:
+            retries += 1
+            if retries > MAX_RETRIES:
+                logger.error(f"Max retries exceeded for {getattr(api_func,'__name__',str(api_func))}: {e}")
+                raise
+
+            retry_after = float(e.retry_after)
+            delay = max(retry_after, min(delay * 2, MAX_RETRY_DELAY))
+            logger.info(f"Rate limited. Retrying {getattr(api_func,'__name__',str(api_func))} after {delay:.1f}s (retry {retries}/{MAX_RETRIES})")
+            await asyncio.sleep(delay)
+        except error.TimedOut:
+            retries += 1
+            if retries > MAX_RETRIES:
+                logger.error(f"Max retries exceeded for {getattr(api_func,'__name__',str(api_func))}: Timed out")
+                raise
+
+            delay = min(delay * 2, MAX_RETRY_DELAY)
+            logger.info(f"Request timed out. Retrying {getattr(api_func,'__name__',str(api_func))} after {delay:.1f}s (retry {retries}/{MAX_RETRIES})")
+            await asyncio.sleep(delay)
+        except error.BadRequest as e:
+            if "Query is too old" in str(e) or "query id is invalid" in str(e):
+                logger.warning(f"Callback query expired: {e}")
+                # propagate the specific BadRequest so callers can handle gracefully
+                raise error.BadRequest(f"Query is too old and response timeout expired or query id is invalid")
+            logger.error(f"Bad request in {getattr(api_func,'__name__',str(api_func))}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in {getattr(api_func,'__name__',str(api_func))}: {e}")
+            raise
 
 # Global dictionary to track active battles
 active_battles: Dict[str, 'BattleSystem'] = {}
@@ -724,7 +767,7 @@ class BattleSystem:
         # Boss Rewards - BALANCED: Better rewards for harder fight
         if self.is_boss_battle:
             xp *= 7  
-            marks *= 5  # Increased from 3x to 5x
+            marks *= 5  
             crystal += random.randint(2, 5) 
             valor += random.randint(8, 15) 
             
@@ -888,8 +931,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         logger.warning(f"Failed to reset spam tracking: {e}")
     
-    # OPTIMIZED: Answer immediately in background for instant feedback
-    asyncio.create_task(query.answer())
+    # OPTIMIZED: Answer immediately in background for instant feedback (resilient)
+    asyncio.create_task(safe_api_call(query.answer))
     
     # OPTIMIZED: Fast pre-checks (no locks yet)
     current_battle_id = context.bot_data.get(f"active_battle_id_{user_id}")
@@ -898,16 +941,16 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if callback_data != current_battle_id:
         # Check if it was already used or expired
         if current_battle_id and (current_battle_id.startswith("used_") or current_battle_id.startswith("expired_")):
-            asyncio.create_task(query.answer("⚠️ This titan encounter has already been used or expired. Use /explore again!", show_alert=True))
+            asyncio.create_task(safe_api_call(query.answer, "⚠️ This titan encounter has already been used or expired. Use /explore again!", show_alert=True))
             logger.warning(f"Battle button clicked but ID already used/expired for user {user_id}")
         else:
-            asyncio.create_task(query.answer("⚠️ Battle expired or invalid. Use /explore again!", show_alert=True))
+            asyncio.create_task(safe_api_call(query.answer, "⚠️ Battle expired or invalid. Use /explore again!", show_alert=True))
             logger.warning(f"Battle button clicked but ID mismatch for user {user_id}: {callback_data} != {current_battle_id}")
         return
     
     # Check if already in battle (fast check without lock first)
     if user_id in active_battles:
-        asyncio.create_task(query.answer("⚠️ You are already in a battle!", show_alert=True))
+        asyncio.create_task(safe_api_call(query.answer, "⚠️ You are already in a battle!", show_alert=True))
         logger.warning(f"User {user_id} already in active battle")
         return
     
@@ -933,7 +976,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     # OPTIMIZED: Get DB reference (fast)
     db = context.bot_data.get("db")
     if not db:
-        asyncio.create_task(query.edit_message_text("Database error!"))
+        asyncio.create_task(safe_api_call(query.edit_message_text, "Database error!"))
         return
     
     # OPTIMIZED: Fetch titan and player data in parallel
@@ -1027,7 +1070,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
                 except Exception as e:
                     logger.error(f"Emergency titan creation failed: {e}")
                     try:
-                        await query.edit_message_text(
+                        await safe_api_call(query.edit_message_text,
                             "⏰ <b>This titan encounter has expired!</b>\n\n"
                             "Use /explore to find a new one.",
                             parse_mode=ParseMode.HTML
@@ -1038,7 +1081,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 # Normal timeout/expiration case
                 try:
-                    await query.edit_message_text(
+                    await safe_api_call(query.edit_message_text,
                         "⏰ <b>This titan encounter has expired!</b>\n\n"
                         "Use /explore to find a new one.",
                         parse_mode=ParseMode.HTML
@@ -1047,7 +1090,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
                     logger.error(f"Error editing message for expired titan: {e}")
                     # Try answering callback query if edit fails
                     try:
-                        await query.answer("⚠️ This titan has expired. Use /explore again!", show_alert=True)
+                        await safe_api_call(query.answer, "⚠️ This titan has expired. Use /explore again!", show_alert=True)
                     except Exception:
                         pass
                 return
@@ -1063,7 +1106,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             # This should not happen in normal flow
             logger.error(f"No titan data available for user {user_id}")
             try:
-                await query.edit_message_text(
+                await safe_api_call(query.edit_message_text,
                     "⏰ <b>This titan encounter has expired!</b>\n\n"
                     "Use /explore to find a new one.",
                     parse_mode=ParseMode.HTML
@@ -1076,7 +1119,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not titan_data or not isinstance(titan_data, dict):
         logger.error(f"Invalid titan_data for user {user_id}: {type(titan_data)}")
         try:
-            await query.edit_message_text(
+            await safe_api_call(query.edit_message_text,
                 "⏰ <b>This titan encounter has expired!</b>\n\n"
                 "Use /explore to find a new one.",
                 parse_mode=ParseMode.HTML
@@ -1174,7 +1217,7 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         from game.pvp_system import active_pvp_battles
         if user_id in active_pvp_battles:
-            asyncio.create_task(query.edit_message_text("⚔️ In PVP battle! Complete it first."))
+            asyncio.create_task(safe_api_call(query.edit_message_text, "⚔️ In PVP battle! Complete it first."))
             return
     except ImportError:
         pass
@@ -1212,8 +1255,8 @@ async def handle_battle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id = query.message.chat_id if query.message else None
     
     if chat_id:
-        # Send battle UI
-        await context.bot.send_message(
+        # Send battle UI (resilient)
+        await safe_api_call(context.bot.send_message,
             chat_id=chat_id,
             text=battle_message,
             reply_markup=reply_markup,
@@ -1246,8 +1289,8 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
 
     user_id = str(update.effective_user.id)
 
-    # OPTIMIZED: Answer immediately in background (don't wait)
-    asyncio.create_task(query.answer())
+    # OPTIMIZED: Answer immediately in background (don't wait) - resilient
+    asyncio.create_task(safe_api_call(query.answer))
 
     # OPTIMIZED: Ultra-fast anti-spam (200ms for instant feel)
     action_time_key = f"battle_action_time_{user_id}"
@@ -1293,7 +1336,7 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         ended, message = await _handle_run_action(battle, user_id, context)
         full_message.append(message)
         if ended:
-            await query.edit_message_text(message)
+            await safe_api_call(query.edit_message_text, message)
             return
     elif action == "action_switch":
         await _handle_switch_action(query, battle, context)
@@ -1307,14 +1350,14 @@ async def handle_battle_action(update: Update, context: ContextTypes.DEFAULT_TYP
         ended, message = await _handle_basic_attack(battle, context)
         full_message.append(message)
         if ended:
-            await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+            await safe_api_call(query.edit_message_text, message, parse_mode=ParseMode.HTML)
             cleanup_battle(user_id, "out_of_gas", battle)
             return
     elif action.startswith("ability_"):
         ended, message = await _handle_ability_action(action, battle)
         full_message.append(message)
         if ended:
-            await query.edit_message_text(message, parse_mode=ParseMode.HTML)
+            await safe_api_call(query.edit_message_text, message, parse_mode=ParseMode.HTML)
             cleanup_battle(user_id, "out_of_gas", battle)
             return
 
@@ -1368,7 +1411,7 @@ async def _update_battle_ui(query, battle, context, full_message):
 
     # OPTIMIZED: Fast edit with no error handling overhead
     try:
-        await query.edit_message_text(battle_message, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+        await safe_api_call(query.edit_message_text, battle_message, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
     except Exception:
         pass
 
@@ -1381,9 +1424,9 @@ async def _handle_info_action(query, action, battle):
         if action.startswith("cooldown_"):
             ability_name = action.split('_', 1)[1]
             cooldown = battle.ability_cooldowns.get(ability_name, 0)
-            await query.answer(f"{ability_name}: {cooldown} turns", show_alert=True)
+            await safe_api_call(query.answer, f"{ability_name}: {cooldown} turns", show_alert=True)
         else:
-            await query.answer(f"Low gas! /char {battle.character.name}", show_alert=True)
+            await safe_api_call(query.answer, f"Low gas! /char {battle.character.name}", show_alert=True)
     except Exception:
         pass
 
@@ -1408,7 +1451,7 @@ async def _handle_run_action(battle, user_id, context):
 async def _handle_switch_action(query, battle, context):
     """Displays the character switching UI."""
     if not battle.player or not hasattr(battle.player, 'team') or len(battle.player.team) <= 1:
-        await query.answer("You don't have other characters to switch to!", show_alert=True)
+        await safe_api_call(query.answer, "You don't have other characters to switch to!", show_alert=True)
         # Need to redraw the UI and restart the timer if the action is invalid
         await _update_battle_ui(query, battle, context, [])
         return
@@ -1422,7 +1465,7 @@ async def _handle_switch_action(query, battle, context):
     
     switch_keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="switch_back")])
     
-    await query.edit_message_text(
+    await safe_api_call(query.edit_message_text,
         "<b>Select a character to switch to:</b>",
         reply_markup=InlineKeyboardMarkup(switch_keyboard),
         parse_mode=ParseMode.HTML
@@ -1556,14 +1599,14 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     db = context.bot_data.get("db")
     if not db:
         logger.error("Database not initialized")
-        await query.edit_message_text("❌ Database error!")
+        await safe_api_call(query.edit_message_text, "❌ Database error!")
         cleanup_battle(user_id, "error", battle)
         return
 
     player_data = await db.get_player(user_id)
 
     if not player_data:
-        await query.edit_message_text("❌ Player data not found!")
+        await safe_api_call(query.edit_message_text, "❌ Player data not found!")
         cleanup_battle(user_id, "error", battle)
         return
 
@@ -1639,7 +1682,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         if rewards['valor'] > 0:
             reward_parts.append(f"⚔️ <b>Valor: +{rewards['valor']}</b>")
 
-        await query.edit_message_text("\n".join(reward_parts), parse_mode=ParseMode.HTML)
+        await safe_api_call(query.edit_message_text, "\n".join(reward_parts), parse_mode=ParseMode.HTML)
 
         # Send levelup messages separately
         participating_chars = [char for char, _ in participating_level_infos]
@@ -1653,7 +1696,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             if drop and drop.get('type') in ['bottle', 'cylinder']:
                 player_data.gas += drop['amount']
                 await db.batch_update_player(str(user_id), {"gas": player_data.gas})
-                await context.bot.send_message(
+                await safe_api_call(context.bot.send_message,
                     chat_id=query.message.chat_id,
                     text=f"🎁 <b>Random Drop!</b>\n{drop['message']}",
                     parse_mode=ParseMode.HTML
@@ -1736,7 +1779,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             switch_keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data="switch_back")])
 
             try:
-                await query.edit_message_text(
+                await safe_api_call(query.edit_message_text,
                     "<b>Your character was defeated! Select a teammate to continue the fight:</b>",
                     reply_markup=InlineKeyboardMarkup(switch_keyboard),
                     parse_mode=ParseMode.HTML
@@ -1763,7 +1806,7 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
             else f"💀 <b>DEFEAT</b> 💀\n{battle.character.name} was defeated by {battle.get_titan_display_name()}!"
         )
 
-        await query.edit_message_text(defeat_message, parse_mode=ParseMode.HTML)
+        await safe_api_call(query.edit_message_text, defeat_message, parse_mode=ParseMode.HTML)
 
         character_defeat_task = db.batch_update_character(
             str(user_id), battle.character.name,
@@ -1829,7 +1872,7 @@ async def _process_defeat_updates(db, player_data, user_id, chat_id, send_func):
         pass  # Silently fail for performance
 
     # Send defeat message
-    await send_func(
+    await safe_api_call(send_func,
         chat_id=chat_id,
         text=f"💀 You have been defeated! The titan was too strong.",
         parse_mode=ParseMode.HTML
@@ -1855,7 +1898,7 @@ async def _send_level_up_messages(char_level_info, player_level_info, player_obj
                             if increase > 0:
                                 message += f"\n   • {stat}: +{int(increase)}"
                     
-                    await send_func(
+                    await safe_api_call(send_func,
                         chat_id=chat_id,
                         text=message,
                         parse_mode=ParseMode.HTML
@@ -1878,7 +1921,7 @@ async def _send_level_up_messages(char_level_info, player_level_info, player_obj
                 if rewards.get('valor', 0) > 0:
                     message += f"\n⚔️ Valor: +{rewards['valor']}"
                 
-            await send_func(
+            await safe_api_call(send_func,
                 chat_id=chat_id,
                 text=message,
                 parse_mode=ParseMode.HTML
@@ -1904,7 +1947,7 @@ async def battle_timeout(user_id: str, query, battle: 'BattleSystem', context: C
                     del context.bot_data[f"titan_battle_started_{user_id}"]
                 
                 try:
-                    await query.edit_message_text(
+                    await safe_api_call(query.edit_message_text,
                         "🕰️ <b>Battle Ended - Inactivity Timeout!</b>\n\n"
                         "Use /explore to find another titan.",
                         parse_mode=ParseMode.HTML
