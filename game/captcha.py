@@ -256,8 +256,7 @@ async def spawn_captcha(update, context):
         return False
     # Always use text captcha now
     context.user_data['captcha_active'] = True
-    context.user_data['captcha_processed'] = False  # Reset processed flag for new captcha
-    # Run captcha handling in the background so callers (like explore) can return immediately
+    context.user_data['captcha_processed'] = False  
     asyncio.create_task(captcha(update, context))
     context.user_data['captcha_mode'] = 'text'
     context.user_data['verified'] = False

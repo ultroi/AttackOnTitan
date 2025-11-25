@@ -406,6 +406,48 @@ async def swap_second(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Swap positions
     first_member.position, second_member.position = second_member.position, first_member.position
+
+    # Persist swap immediately so battlefield (and other systems) see the change
+    # Normalize and ensure positions are 1..N after swap
+    try:
+        db = context.bot_data.get("db")
+        if db and hasattr(db, 'players') and db.players is not None:
+            team = context.user_data.get("team", [])
+            # Sort by position and renumber to be safe
+            team = sorted(team, key=lambda m: m.position)
+            for idx, m in enumerate(team, 1):
+                m.position = idx
+            await db.update_player(str(query.from_user.id), {
+                "team": [m.dict() if hasattr(m, "dict") else vars(m) for m in team],
+                "updated_at": datetime.now(timezone.utc)
+            })
+            # Ensure any battle-related caches are invalidated so the battle system
+            # fetches the updated team immediately.
+            try:
+                if hasattr(db, 'invalidate_battle_caches'):
+                    db.invalidate_battle_caches(str(query.from_user.id))
+            except Exception:
+                # Shouldn't block save, just log
+                logger.debug("Failed to invalidate battle caches after swap")
+            # Also clear any in-memory battle cache (if present) so a subsequent
+            # battle will re-fetch fresh player data.
+            try:
+                if context.user_data is not None and 'battle_cache' in context.user_data:
+                    del context.user_data['battle_cache']
+            except Exception:
+                pass
+            # Also update context.user_data team with normalized ordering
+            context.user_data["team"] = [m if isinstance(m, TeamMember) else TeamMember(**m) for m in team]
+            await query.answer("✅ Swapped and saved team positions!", show_alert=True)
+        else:
+            # No DB available; just confirm the swap in session
+            await query.answer("✅ Swapped positions", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error saving team after swap: {e}")
+        try:
+            await query.answer("⚠️ Swapped locally but failed to save. Try saving from the team menu.", show_alert=True)
+        except Exception:
+            pass
     
     # Clear swap selection
     context.user_data.pop("swap_first_char", None)
@@ -514,6 +556,19 @@ async def save_team(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "team": [m.dict() if hasattr(m, "dict") else vars(m) for m in team],
         "updated_at": datetime.now(timezone.utc)
     })
+    # Invalidate caches so the battle system sees the new team ordering right away
+    try:
+        if hasattr(db, 'invalidate_battle_caches'):
+            db.invalidate_battle_caches(user_id)
+    except Exception:
+        logger.debug("Failed to invalidate battle caches after save_team")
+
+    # Also clear any in-memory battle cache so future battle starts re-fetch player data
+    if context.user_data is not None and 'battle_cache' in context.user_data:
+        try:
+            del context.user_data['battle_cache']
+        except Exception:
+            pass
     text = "✅ <b>Team saved!</b>\n\n<b>Composition:</b>\n"
     for m in team:
         text += f"{get_position_emoji(m.position)} {escape(m.character_name)}\n"
