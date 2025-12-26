@@ -13,12 +13,12 @@ class CharacterStats(BaseModel):
 class Ability(BaseModel):
     name: str
     description: str
-    type: str  # "passive", "active", "ultimate"
+    type: str 
     gas_cost: int = 0
     cooldown: Optional[int] = None
     level_required: int = 1
     is_unlocked: bool = False
-    unlocked: bool = False  # Add this field to match MongoDB validation schema
+    unlocked: bool = False 
     base_damage: int = 0
     disabled_against_titans: bool = False
     effect_function: Optional[Callable[[Dict], Any]] = None
@@ -34,7 +34,7 @@ class Ability(BaseModel):
             data['is_unlocked'] = True
             data['unlocked'] = True  # Set both fields for compatibility
         if 'is_unlocked' in data and 'unlocked' not in data:
-            data['unlocked'] = data['is_unlocked']  # Ensure unlocked is set whenever is_unlocked is set
+            data['unlocked'] = data['is_unlocked'] 
         elif 'unlocked' in data and 'is_unlocked' not in data:
-            data['is_unlocked'] = data['unlocked']  # Ensure is_unlocked is set whenever unlocked is set
+            data['is_unlocked'] = data['unlocked']  
         super().__init__(**data) 

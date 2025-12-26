@@ -1588,9 +1588,9 @@ async def _handle_ability_action(action, battle):
 async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the end of a battle, updating gas and rewards with optimized performance."""
     user_id = str(user_id)
+    # If already finalized, skip
     if battle.battle_ended:
         return
-    battle.battle_ended = True
 
     # Cancel timeout immediately
     if battle.timeout_task and not battle.timeout_task.done():
@@ -1615,6 +1615,8 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
     gas_consumed = max(0, battle.initial_gas - battle.gas)
 
     if victory:
+        # Mark battle as ended for victory branch
+        battle.battle_ended = True
         rewards = battle.calculate_rewards(
             titan=battle.titan,
             character=battle.character,
@@ -1822,6 +1824,9 @@ async def handle_battle_end(query, battle: 'BattleSystem', user_id: str, context
         asyncio.create_task(_process_defeat_updates(
             db, player_data, user_id, query.message.chat_id if query.message else None, context.bot.send_message
         ))
+
+        # Mark battle as ended for defeat finalization
+        battle.battle_ended = True
 
     db.invalidate_battle_caches(user_id)
     cleanup_battle(user_id, "completed", battle)

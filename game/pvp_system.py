@@ -1067,39 +1067,70 @@ class PvPBattleSystem:
         }
         
     async def calculate_rewards(self, db: Database) -> Dict:
-        """Calculate rewards for winning a PvP battle (updated: winner XP 50-100, Marks 600-800; loser XP 50-70)"""
+        """Calculate rewards for a PvP battle.
+
+        New balanced rules:
+        - Winner marks reduced and scaled by team average level (base 150-300)
+        - Loser receives modest XP (30-60) to encourage participation but no large marks
+
+        This lowers PvP inflation while keeping PvP attractive. No valor/crystal rewards are granted here.
+        """
         rewards = {
-            "winner": {
-                "xp": 0,
-                "marks": 0,
-                "valor": 0,
-            },
-            "loser": {
-                "xp": 0,
-                "marks": 0,
-                "valor": 0,
-            }
+            "winner": {"xp": 0, "marks": 0, "valor": 0, "crystal": 0},
+            "loser": {"xp": 0, "marks": 0, "valor": 0, "crystal": 0}
         }
 
         if not self.winner:
             return rewards
 
-        # Winner and loser assignment (for possible future use)
+        # Determine winner/loser objects
         if self.winner == self.challenger.name:
-            winner = self.challenger
-            loser = self.defender
+            winner_char = self.challenger
+            loser_char = self.defender
+            winner_player = self.challenger_player
+            loser_player = self.defender_player
         else:
-            winner = self.defender
-            loser = self.challenger
+            winner_char = self.defender
+            loser_char = self.challenger
+            winner_player = self.defender_player
+            loser_player = self.challenger_player
 
-        # Winner: XP 50-100, Marks 600-800
-        rewards["winner"]["xp"] = random.randint(50, 100)
-        rewards["winner"]["marks"] = random.randint(600, 800)
+        # Determine a team-average level to scale rewards reasonably (if teams are same, use  single char level)
+        try:
+            def average_level(team):
+                if not team:
+                    return 1
+                levels = [getattr(m, 'level', 1) if hasattr(m, 'level') else (m.get('level', 1) if isinstance(m, dict) else 1) for m in team]
+                return sum(levels) / max(1, len(levels))
+        except Exception:
+            average_level = lambda t: getattr((t[0] if t else None), 'level', 1) if t else 1
 
-        # Loser: XP 50-70, no marks or valor
-        rewards["loser"]["xp"] = random.randint(50, 70)
+        winner_team_level = average_level(self.challenger_team if self.winner == self.challenger.name else self.defender_team)
+        loser_team_level = average_level(self.defender_team if self.winner == self.challenger.name else self.challenger_team)
+
+        # XP rewards - modest
+        # Winner XP: scales with team level slightly
+        winner_xp_base = int(max(30, min(150, 30 + winner_team_level * 0.6)))
+        rewards["winner"]["xp"] = random.randint(max(30, winner_xp_base - 10), min(120, winner_xp_base + 10))
+        # Loser XP: small consolation
+        loser_xp_base = int(max(20, min(80, 20 + loser_team_level * 0.5)))
+        rewards["loser"]["xp"] = random.randint(max(20, loser_xp_base - 5), min(70, loser_xp_base + 10))
+
+        # Marks reward: LOWERED significantly - base 150-300 scaled by level ratio
+        # Compute a level multiplier to scale slightly for stronger players but avoid runaway inflation
+        level_multiplier = max(0.5, min(2.0, (winner_team_level + 1) / (max(1, loser_team_level) + 1)))
+        base_marks_min = 150
+        base_marks_max = 300
+        scaled_min = int(base_marks_min * level_multiplier)
+        scaled_max = int(base_marks_max * level_multiplier)
+        rewards["winner"]["marks"] = random.randint(scaled_min, scaled_max)
+
+        # Loser receives no marks in PvP (prevents repeated farming), only xp
         rewards["loser"]["marks"] = 0
-        rewards["loser"]["valor"] = 0
+
+        # Keep valor and crystal as zero (no new reward types added)
+        rewards["winner"]["valor"] = 0
+        rewards["winner"]["crystal"] = 0
 
         return rewards
 

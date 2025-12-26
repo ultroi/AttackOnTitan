@@ -2,9 +2,8 @@ from datetime import datetime, timezone, timedelta
 import random
 from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field
-from database.characters import CharacterData, get_character_data, AbilityEffect
-from motor.motor_asyncio import AsyncIOMotorClient
-from database.schemas import Ability  # <-- Import Ability
+from database.characters import get_character_data, AbilityEffect
+from database.schemas import Ability  
 
 class BankAccount(BaseModel):
     user_id: str
@@ -17,8 +16,6 @@ class BankAccount(BaseModel):
     penalty_applied: bool = False
     penalty_rate: float = 2.5
     penalty_start_date: Optional[datetime] = None
-    # When a player reaches the open-bank level but doesn't open an account,
-    # we schedule a 24-hour warning before the penalty starts. Track that here.
     penalty_warning_date: Optional[datetime] = None
     penalty_warning_sent: bool = False
     total_wealth: Optional[int] = None  # Added for central bank stats

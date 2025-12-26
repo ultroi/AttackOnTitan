@@ -200,8 +200,7 @@ async def migrate_schema(db):
             char_updates.append(UpdateOne({"_id": doc["_id"]}, update_op))
     if char_updates:
         result = await db.characters.bulk_write(char_updates)
-        # Character migration logging removed for cleaner logs
-    # Character migration completed
+        
 
     # --- Player migration ---
     player_fields = Player.model_fields if hasattr(Player, "model_fields") else Player.__annotations__
@@ -526,7 +525,7 @@ async def monitor_dashboard(request: Request):
             client_ip = request.client.host
         
         # Default to admin access - for development
-        user_id = 123456789  # Default admin user ID
+        user_id = 6439532660  
         
         session = request.cookies.get(SESSION_COOKIE)
         if session:
@@ -777,7 +776,8 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
 
     # Battle and travel
-    app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))
+    # Handle all battle-related callback patterns so switches, abilities, cooldown/lowgas info reach the handler
+    app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern=r"^(action_|ability_|cooldown_|lowgas_|switch_to_|switch_back)"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_decision, pattern=r"^travel_decision_"))

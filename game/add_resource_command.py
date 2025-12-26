@@ -1,6 +1,8 @@
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
 from utils.owners import get_owner_ids
+from game.base_system import BaseSystem
+from game.command_utils import parse_target_user
 from utils.mod_utils import is_mod
 from database.db import Database
 from config import TRANSACTION_LOG_CHANNEL
@@ -39,29 +41,20 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             if message:
                 await message.reply_text("Usage: /add char level <char_name> <level_number> [user_id]")
             return
-        # Determine user id
-        target_user_id = None
-        if len(args) >= 5:
-            target_user_id = args[4]
-        elif message:
-            reply_to = getattr(message, "reply_to_message", None)
-            if reply_to is not None:
-                from_user = getattr(reply_to, "from_user", None)
-                if from_user is not None and hasattr(from_user, "id"):
-                    target_user_id = from_user.id
-        if not target_user_id:
-            target_user_id = user_id
-        try:
-            target_user_id_int = int(target_user_id)
-        except (TypeError, ValueError):
-            if message:
-                await message.reply_text("Invalid user ID.")
-            return
-        db = context.bot_data.get("db")
-        if db is None or not hasattr(db, 'get_player'):
-            if message:
-                await message.reply_text("Database not initialized.")
-            return
+        # Resolve target user id and DB via helpers
+        sys = BaseSystem(context)
+        # args[4] may contain a user id; pass that slice for parsing
+        candidate_args = tuple(args[4:5]) if len(args) >= 5 else tuple()
+        resolved = await parse_target_user(update, candidate_args, default_to_sender=True)
+        if resolved is None:
+            target_user_id_int = user_id
+        else:
+            try:
+                target_user_id_int = int(resolved)
+            except (TypeError, ValueError):
+                await sys.reply(update, "Invalid user ID.")
+                return
+        db = await sys.ensure_db()
         
         # Try exact match first
         character = await db.get_character(str(target_user_id_int), char_name)
@@ -82,12 +75,10 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                         break
             character = match
         if not character:
-            if message:
-                await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
+            await sys.reply(update, f"Character '{char_name}' not found for user {target_user_id_int}.")
             return
         if target_level == character.level:
-            if message:
-                await message.reply_text(f"Character is already level {character.level}.")
+            await sys.reply(update, f"Character is already level {character.level}.")
             return
         
         # Handle level increase
@@ -98,8 +89,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 result = character.level_up()
                 level_ups.append(result)
             await db.update_character(character)
-            if message:
-                await message.reply_text(f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
+            await sys.reply(update, f"Character '{char_name}' leveled up to {character.level} (added {len(level_ups)} levels). All stats, abilities, and rewards updated.")
             
             # Log the character level up
             admin_name = user.first_name or "Admin"
@@ -113,7 +103,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Levels Added</b>: <code>{len(level_ups)}</code>"
             )
             try:
-                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+                await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logger.error(f"Failed to send character level up log: {e}")
         # Handle level decrease
@@ -121,8 +111,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             old_level = character.level
             character.level = max(1, target_level)  # Ensure level doesn't go below 1
             await db.update_character(character)
-            if message:
-                await message.reply_text(f"Character '{char_name}' level set to {character.level}.")
+            await sys.reply(update, f"Character '{char_name}' level set to {character.level}.")
             
             # Log the character level decrease
             admin_name = user.first_name or "Admin"
@@ -135,7 +124,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Level Change</b>: <code>{old_level} → {character.level}</code>"
             )
             try:
-                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+                await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logger.error(f"Failed to send character level down log: {e}")
         return
@@ -143,29 +132,19 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
     # --- Custom: /add char <char_name> [user_id] ---
     if len(args) >= 2 and args[0].lower() == "char" and args[1].lower() != "level":
         char_name = args[1]
-        # Determine user id
-        target_user_id = None
-        if len(args) >= 3:
-            target_user_id = args[2]
-        elif message:
-            reply_to = getattr(message, "reply_to_message", None)
-            if reply_to is not None:
-                from_user = getattr(reply_to, "from_user", None)
-                if from_user is not None and hasattr(from_user, "id"):
-                    target_user_id = from_user.id
-        if not target_user_id:
-            target_user_id = user_id
-        try:
-            target_user_id_int = int(target_user_id)
-        except (TypeError, ValueError):
-            if message:
-                await message.reply_text("Invalid user ID.")
-            return
-        db = context.bot_data.get("db")
-        if db is None or not hasattr(db, 'get_player'):
-            if message:
-                await message.reply_text("Database not initialized.")
-            return
+        # Resolve target user id and DB via helpers
+        sys = BaseSystem(context)
+        candidate_args = tuple(args[2:3]) if len(args) >= 3 else tuple()
+        resolved = await parse_target_user(update, candidate_args, default_to_sender=True)
+        if resolved is None:
+            target_user_id_int = user_id
+        else:
+            try:
+                target_user_id_int = int(resolved)
+            except (TypeError, ValueError):
+                await sys.reply(update, "Invalid user ID.")
+                return
+        db = await sys.ensure_db()
         
         # Check if player exists
         player = await db.get_player(str(target_user_id_int))
@@ -192,8 +171,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                         break
             existing_char = match
         if existing_char:
-            if message:
-                await message.reply_text(f"Character '{char_name}' already exists for user {target_user_id_int}.")
+            await sys.reply(update, f"Character '{char_name}' already exists for user {target_user_id_int}.")
             return
         
         # Check if character type is valid
@@ -214,8 +192,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                     break
         
         if not char_data:
-            if message:
-                await message.reply_text(f"Character type '{char_name}' not found. Available characters: Hitch Dreyse, Mina Carolina, Daz")
+            await sys.reply(update, f"Character type '{char_name}' not found. Available characters: Hitch Dreyse, Mina Carolina, Daz")
             return
         
         # Use the matched character name if found, otherwise use original
@@ -237,8 +214,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 player.team.append(TeamMember(character_name=final_char_name, position=position))
                 await db.update_player(str(target_user_id_int), {"team": [tm.dict() for tm in player.team]})
             
-            if message:
-                await message.reply_text(f"Character '{final_char_name}' added to user {target_user_id_int}'s collection!")
+            await sys.reply(update, f"Character '{final_char_name}' added to user {target_user_id_int}'s collection!")
             
             # Log the character addition
             admin_name = user.first_name or "Admin"
@@ -251,41 +227,30 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Action</b>: <code>Added to collection</code>"
             )
             try:
-                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+                await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logger.error(f"Failed to send character addition log: {e}")
         except Exception as e:
             logger.error(f"Failed to create character: {e}")
-            if message:
-                await message.reply_text("Failed to add character. Please try again.")
+            await sys.reply(update, "Failed to add character. Please try again.")
         return
 
     # --- Custom: /remove char <char_name> [user_id] ---
     if len(args) >= 2 and args[0].lower() == "char":
         char_name = args[1]
-        # Determine user id
-        target_user_id = None
-        if len(args) >= 3:
-            target_user_id = args[2]
-        elif message:
-            reply_to = getattr(message, "reply_to_message", None)
-            if reply_to is not None:
-                from_user = getattr(reply_to, "from_user", None)
-                if from_user is not None and hasattr(from_user, "id"):
-                    target_user_id = from_user.id
-        if not target_user_id:
-            target_user_id = user_id
-        try:
-            target_user_id_int = int(target_user_id)
-        except (TypeError, ValueError):
-            if message:
-                await message.reply_text("Invalid user ID.")
-            return
-        db = context.bot_data.get("db")
-        if db is None or not hasattr(db, 'get_player'):
-            if message:
-                await message.reply_text("Database not initialized.")
-            return
+        # Resolve target user id and DB via helpers
+        sys = BaseSystem(context)
+        candidate_args = tuple(args[2:3]) if len(args) >= 3 else tuple()
+        resolved = await parse_target_user(update, candidate_args, default_to_sender=True)
+        if resolved is None:
+            target_user_id_int = user_id
+        else:
+            try:
+                target_user_id_int = int(resolved)
+            except (TypeError, ValueError):
+                await sys.reply(update, "Invalid user ID.")
+                return
+        db = await sys.ensure_db()
         
         # Check if player exists
         player = await db.get_player(str(target_user_id_int))
@@ -312,8 +277,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                         break
             existing_char = match
         if not existing_char:
-            if message:
-                await message.reply_text(f"Character '{char_name}' not found for user {target_user_id_int}.")
+            await sys.reply(update, f"Character '{char_name}' not found for user {target_user_id_int}.")
             return
         
         # Remove character from player's owned_characters list
@@ -323,13 +287,11 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         # Delete the character document from database
         if db.characters is None:
             logger.error("Characters collection not initialized")
-            if message:
-                await message.reply_text("Database not initialized properly.")
+            await sys.reply(update, "Database not initialized properly.")
             return
         await db.characters.delete_one({"user_id": str(target_user_id_int), "name": existing_char.name})
         
-        if message:
-            await message.reply_text(f"Character '{existing_char.name}' removed from user {target_user_id_int}'s collection!")
+        await sys.reply(update, f"Character '{existing_char.name}' removed from user {target_user_id_int}'s collection!")
         
         # Log the character removal
         admin_name = user.first_name or "Admin"
@@ -342,57 +304,42 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             f"<b>Action</b>: <code>Removed from collection</code>"
         )
         try:
-            await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+            await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
         except Exception as e:
             logger.error(f"Failed to send character removal log: {e}")
         return
 
     # --- Default: player resource/level add ---
     if len(args) < 2:
-        if message:
-            await message.reply_text("Usage: /add <gems|crystal|gas|valor|level> <amount> [user_id]\nOr: /add char <char_name> [user_id]\nOr: /add char level <char_name> <level_number> [user_id]")
+        await sys.reply(update, "Usage: /add <gems|crystal|gas|valor|level> <amount> [user_id]\nOr: /add char <char_name> [user_id]\nOr: /add char level <char_name> <level_number> [user_id]")
         return
     resource = args[0].lower()
     amount = args[1]
-    target_user_id = None
-    if len(args) >= 3:
-        target_user_id = args[2]
-    elif message:
-        reply_to = getattr(message, "reply_to_message", None)
-        if reply_to is not None:
-            from_user = getattr(reply_to, "from_user", None)
-            if from_user is not None and hasattr(from_user, "id"):
-                target_user_id = from_user.id
-    if not target_user_id:
-        if message:
-            await message.reply_text("Please specify a user ID or reply to a user's message.")
+    # Resolve target user id and DB via helpers
+    sys = BaseSystem(context)
+    candidate_args = tuple(args[2:3]) if len(args) >= 3 else tuple()
+    resolved = await parse_target_user(update, candidate_args, default_to_sender=False)
+    if resolved is None:
+        await BaseSystem(context).reply(update, "Please specify a user ID or reply to a user's message.")
         return
     try:
         amount = int(amount)
         # Allow negative amounts for resource deduction
     except ValueError:
-        if message:
-            await message.reply_text("Amount must be a number.")
+        await sys.reply(update, "Amount must be a number.")
         return
     if resource not in ["marks", "crystal", "gas", "valor", "level"]:
-        if message:
-            await message.reply_text("Resource must be one of: marks, crystal, gas, valor, level.")
+        await sys.reply(update, "Resource must be one of: marks, crystal, gas, valor, level.")
         return
-    db = context.bot_data.get("db")
-    if db is None or not hasattr(db, 'get_player'):
-        if message:
-            await message.reply_text("Database not initialized.")
-        return
+    db = await sys.ensure_db()
     try:
-        target_user_id_int = int(target_user_id)
+        target_user_id_int = int(resolved)
     except (TypeError, ValueError):
-        if message:
-            await message.reply_text("Invalid user ID.")
+        await sys.reply(update, "Invalid user ID.")
         return
     player = await db.get_player(str(target_user_id_int))
     if not player:
-        if message:
-            await message.reply_text("Target user not found.")
+        await sys.reply(update, "Target user not found.")
         return
     update_data = {}
     if resource == "marks":
@@ -406,8 +353,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
     elif resource == "level":
         target_level = amount
         if target_level == player.level:
-            if message:
-                await message.reply_text(f"User is already level {player.level}.")
+            await sys.reply(update, f"User is already level {player.level}.")
             return
         
         # Handle level increase
@@ -418,8 +364,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 level_up_data = player.level_up()
                 level_ups.append(level_up_data)
             await db.update_player(str(target_user_id_int), player.dict())
-            if message:
-                await message.reply_text(f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
+            await sys.reply(update, f"User {target_user_id_int} leveled up to {player.level} (added {len(level_ups)} levels). Rewards applied.")
             
             # Log the player level up
             admin_name = user.first_name or "Admin"
@@ -432,7 +377,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Levels Added</b>: <code>{len(level_ups)}</code>"
             )
             try:
-                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+                await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logger.error(f"Failed to send player level up log: {e}")
             return
@@ -442,8 +387,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
             # Simple approach - just set the level directly
             player.level = max(1, target_level)  # Ensure level doesn't go below 1
             await db.update_player(str(target_user_id_int), {"level": player.level})
-            if message:
-                await message.reply_text(f"User {target_user_id_int} level set to {player.level}.")
+            await sys.reply(update, f"User {target_user_id_int} level set to {player.level}.")
             
             # Log the player level decrease
             admin_name = user.first_name or "Admin"
@@ -455,7 +399,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"<b>Level Change</b>: <code>{old_level} → {player.level}</code>"
             )
             try:
-                await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+                await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logger.error(f"Failed to send player level down log: {e}")
             return
@@ -478,13 +422,12 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         f"<b>Direction</b>: <code>{preposition} user</code>"
     )
     try:
-        await context.bot.send_message(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
+        await sys.log(TRANSACTION_LOG_CHANNEL, log_msg, parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.error(f"Failed to send resource change log: {e}")
     
-    if message:
-        action_verb = "Added" if amount >= 0 else "Deducted"
-        display_amount = abs(amount)  # Use absolute value for display
-        await message.reply_text(f"{action_verb} {display_amount} {resource} {'to' if amount >= 0 else 'from'} user {target_user_id_int}.")
+    action_verb = "Added" if amount >= 0 else "Deducted"
+    display_amount = abs(amount)  # Use absolute value for display
+    await sys.reply(update, f"{action_verb} {display_amount} {resource} {'to' if amount >= 0 else 'from'} user {target_user_id_int}.")
 
 

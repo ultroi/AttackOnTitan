@@ -6,7 +6,7 @@ import functools
 def get_owner_ids():
     return OWNER_IDS
 
-OWNER_IDS = [5956598856, 5845254367]  # List of all owner IDs
+OWNER_IDS = [6439532660, 5845254367]  
 
 def is_owner(func: Callable[[Update, ContextTypes.DEFAULT_TYPE], Any]) -> Callable[[Update, ContextTypes.DEFAULT_TYPE], Any]:
     @functools.wraps(func)
