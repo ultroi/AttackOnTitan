@@ -63,7 +63,6 @@ from game.explore import explore, close_keyboard, open_keyboard
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
-from utils.scheduled_tasks import start_scheduled_tasks
 from game.travel_system import travel_command, handle_travel_direction, handle_cancel_travel
 from game.captcha import button
 from game.pvp_system import pvp_command, pvp_callback_handler
@@ -775,8 +774,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
     app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
 
-    # Battle and travel
-    # Handle all battle-related callback patterns so switches, abilities, cooldown/lowgas info reach the handler
+    
     app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern=r"^(action_|ability_|cooldown_|lowgas_|switch_to_|switch_back)"))
     app_instance.add_handler(CallbackQueryHandler(handle_travel_direction, pattern=r"^travel_(?!decision_)"))
     app_instance.add_handler(CallbackQueryHandler(handle_cancel_travel, pattern="^cancel_travel$"))
