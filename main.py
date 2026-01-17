@@ -10,11 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, ChatMemberHandler, MessageHandler, filters
-from telegram.error import BadRequest
-from pymongo.errors import PyMongoError
-from telegram import Update as TelegramUpdate
 from ipaddress import ip_network, ip_address
-from game.map_system import show_map, MAP_IMAGE_URL
+from game.map_system import show_map
 from database.db import Database
 from database.db_instance import get_persistent_database
 import signal
@@ -59,7 +56,7 @@ from utils.fastapi_dashboard import include_dashboard_route
 from utils.group import group_update_handler
 from utils.monitor import monitor_command
 from utils.extra import buy_command, give_command
-from game.explore import explore, close_keyboard, open_keyboard
+from game.explore import explore, close_keyboard, open_keyboard, precompute_titan_images
 from game.callback_handlers import button_callback, handle_travel_decision
 from game.shop_system import ShopSystem
 from game.battle_system import handle_battle_action, active_battles
@@ -70,7 +67,7 @@ from game.tax_command import tax_status_command, force_tax_check_command
 from game.stats_command import stats_command, start_stats_scheduler
 from game.missions_command import missions_command, missions_callback_handler, reset_mission_command, remission_command, reset_mission_callback_handler
 from game.dealer_system import handle_dealer_callback
-from game.explore import precompute_titan_images
+# precompute_titan_images imported with explore above
 from utils.broadcast import broadcast_command, broadcast_location_callback, confirm_broadcast_callback, broadcast_type_callback, vote_options_callback, vote_callback, custom_options_count_callback, collect_custom_option, end_voting_callback
 
 # Spin System
@@ -288,7 +285,7 @@ async def initialize_application():
                 logger.warning(f"Rate limited. Retry after {retry_seconds} seconds")
                 
                 # For rate limit errors, only notify the user if possible, but don't send to error group
-                if isinstance(update, TelegramUpdate) and getattr(update, "effective_message", None):
+                if isinstance(update, Update) and getattr(update, "effective_message", None):
                     try:
                         if update.effective_message:
                             await asyncio.sleep(min(retry_seconds, 5))  
@@ -303,7 +300,7 @@ async def initialize_application():
             
             # Prepare detailed error message
             command = None
-            if isinstance(update, TelegramUpdate):
+            if isinstance(update, Update):
                 if hasattr(update, "message") and update.message is not None and hasattr(update.message, "text") and update.message.text:
                     command = update.message.text
                 elif hasattr(update, "callback_query") and update.callback_query is not None and hasattr(update.callback_query, "data") and update.callback_query.data:
