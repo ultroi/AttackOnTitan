@@ -96,8 +96,8 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     keyboard = [
         [InlineKeyboardButton("👥 Team", callback_data="manage_team"),
-        InlineKeyboardButton("🧳 Items", callback_data="show_inventory")],
-        [InlineKeyboardButton("Exit", callback_data="exit_profile")]
+         InlineKeyboardButton("🧳 Items", callback_data=f"show_inventory_{user_id}")],
+        [InlineKeyboardButton("Exit", callback_data=f"exit_profile_{user_id}")]
     ]
     if update.message:
         await update.message.reply_text(player_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
@@ -611,12 +611,16 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^show_inventory_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
         await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_inventory_click', 0)
@@ -626,10 +630,6 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if user is in active battle
     if user_id in active_battles:
         await query.edit_message_text("⚔️ You cannot access your inventory during an active battle with a titan!")
-        return
-    # --- Privacy: Only allow owner to access ---
-    if str(query.from_user.id) != user_id:
-        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     db = context.bot_data.get("db")
     if not db or not hasattr(db, 'players') or db.players is None:
@@ -678,13 +678,13 @@ async def show_inventory(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<i>View details:</i>"
     )
     keyboard = [
-        [InlineKeyboardButton("View Weapons", callback_data="view_weapons"),
-         InlineKeyboardButton("View Gear", callback_data="view_gear")],
-        [InlineKeyboardButton("View Military", callback_data="view_military"),
-         InlineKeyboardButton("View Utilities", callback_data="view_utilities")],
-        [InlineKeyboardButton("View Miscellaneous", callback_data="view_miscellaneous"),
-         InlineKeyboardButton("View Echo Shards", callback_data="view_echo_shards")],
-        [InlineKeyboardButton("Back", callback_data="show_profile")]
+        [InlineKeyboardButton("View Weapons", callback_data=f"view_weapons_{owner_id}"),
+         InlineKeyboardButton("View Gear", callback_data=f"view_gear_{owner_id}")],
+        [InlineKeyboardButton("View Military", callback_data=f"view_military_{owner_id}"),
+         InlineKeyboardButton("View Utilities", callback_data=f"view_utilities_{owner_id}")],
+        [InlineKeyboardButton("View Miscellaneous", callback_data=f"view_miscellaneous_{owner_id}"),
+         InlineKeyboardButton("View Echo Shards", callback_data=f"view_echo_shards_{owner_id}")],
+        [InlineKeyboardButton("Back", callback_data=f"show_profile_{owner_id}")]
     ]
     # Fix: Use edit_message_caption if message has photo/caption, else edit_message_text
     try:
@@ -703,23 +703,22 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_weapons_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_weapons', 0)
     if now - last < 0.5:
         return
     context.user_data['last_view_weapons'] = now
-    # --- Privacy: Only allow owner to access ---
-    if str(query.from_user.id) != user_id:
-        await query.answer("You are not authorized to view this.", show_alert=True)
-        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -733,30 +732,29 @@ async def view_weapons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if item and getattr(item, 'type', None) == "weapon":
             weapons.append((k, v))
     text = "<b>Weapons:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in weapons) if weapons else "No weapons.")
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_gear_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_gear', 0)
     if now - last < 0.5:
         return
     context.user_data['last_view_gear'] = now
-    # --- Privacy: Only allow owner to access ---
-    if str(query.from_user.id) != user_id:
-        await query.answer("You are not authorized to view this.", show_alert=True)
-        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -770,30 +768,29 @@ async def view_gear(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if item and getattr(item, 'type', None) == "gear":
             gear.append((k, v))
     text = "<b>Gear:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in gear) if gear else "No gear.")
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_utilities_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_utilities', 0)
     if now - last < 0.5:
         return
     context.user_data['last_view_utilities'] = now
-    # --- Privacy: Only allow owner to access ---
-    if str(query.from_user.id) != user_id:
-        await query.answer("You are not authorized to view this.", show_alert=True)
-        return
     db = context.bot_data.get("db") or Database()
     player = await db.get_player(user_id)
     if not player:
@@ -807,21 +804,23 @@ async def view_utilities(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if item and getattr(item, 'type', None) == "utility":
             utilities.append((k, v))
     text = "<b>Utilities:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in utilities) if utilities else "No utilities.")
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_military_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
-    # --- Anti-spam: ignore if called again within 0.5s ---
+    user_id = owner_id    # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_military', 0)
     if now - last < 0.5:
@@ -844,20 +843,23 @@ async def view_military(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if item and getattr(item, 'type', None) == "military":
             military.append((k, v))
     text = "<b>Military:</b>\n" + ("\n".join(f"- {getattr(shop_system.shop_items.get(k) or shop_system.hidden_items.get(k), 'name', k)} x{v}" for k, v in military) if military else "No military items.")
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_echo_shards_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_echo_shards', 0)
@@ -876,20 +878,23 @@ async def view_echo_shards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inv = getattr(player, 'inventory', {}) or {}
     echo_shards = inv.get("echo_shard", 0)
     text = f"<b>Echo Shards:</b>\n- {echo_shards}"
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^view_miscellaneous_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
-    user_id = str(getattr(query.from_user, 'id', ''))
+    user_id = owner_id
     # --- Anti-spam: ignore if called again within 0.5s ---
     now = datetime.now(timezone.utc).timestamp()
     last = context.user_data.get('last_view_miscellaneous', 0)
@@ -924,7 +929,7 @@ async def view_miscellaneous(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 miscellaneous.append((k, item_name, v))
     text = "<b>Miscellaneous:</b>\n" + ("\n".join(f"- <code>{k}</code> ({name}) x{v}" for k, name, v in miscellaneous) if miscellaneous else "No miscellaneous items.")
     text += "\n\n<b>Usage:</b> /use &lt;item_name&gt; [amount]\n<i>Copy the item name in code format above</i>"
-    keyboard = [[InlineKeyboardButton("Back", callback_data="show_inventory")]]
+    keyboard = [[InlineKeyboardButton("Back", callback_data=f"show_inventory_{owner_id}")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
 
@@ -996,10 +1001,13 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = getattr(update, 'callback_query', None)
-    owner_id = context.user_data.get('owner_id')
-    if not query or str(query.from_user.id) != owner_id:
-        if query:
-            await query.answer("You are not authorized to view this.", show_alert=True)
+    if not query:
+        return
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^show_profile_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
+        await query.answer("You are not authorized to view this.", show_alert=True)
         return
     await query.answer()
     # Call the main profile function to show the profile
@@ -1585,15 +1593,14 @@ async def exit_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data is None:
         context.user_data = {}
     query = update.callback_query
-    owner_id = context.user_data.get('owner_id')
-    if not owner_id and query:
-        owner_id = str(query.from_user.id)
-        context.user_data['owner_id'] = owner_id
-    # Always try to close the profile, but show alert if unauthorized
     if not query:
         return
-    if str(query.from_user.id) != owner_id:
+    data = getattr(query, 'data', '') or ''
+    m = re.match(r"^exit_profile_(\d+)$", data)
+    owner_id = m.group(1) if m else None
+    if not owner_id or str(query.from_user.id) != owner_id:
         await query.answer("⚠️ You cannot access this!", show_alert=True)
+        return
         return
     await query.answer("Profile closed.")
     try:

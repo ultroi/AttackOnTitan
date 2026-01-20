@@ -1966,14 +1966,14 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(back_from_manage_team, pattern="^back_from_manage_team$"))
 
     # Profile and inventory
-    application.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
-    application.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
-    application.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
-    application.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
-    application.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
-    application.add_handler(CallbackQueryHandler(view_miscellaneous, pattern="^view_miscellaneous$"))
-    application.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
-    application.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
+    application.add_handler(CallbackQueryHandler(profile, pattern=r"^show_profile_"))
+    application.add_handler(CallbackQueryHandler(show_inventory, pattern=r"^show_inventory_"))
+    application.add_handler(CallbackQueryHandler(view_weapons, pattern=r"^view_weapons_"))
+    application.add_handler(CallbackQueryHandler(view_gear, pattern=r"^view_gear_"))
+    application.add_handler(CallbackQueryHandler(view_military, pattern=r"^view_military_"))
+    application.add_handler(CallbackQueryHandler(view_miscellaneous, pattern=r"^view_miscellaneous_"))
+    application.add_handler(CallbackQueryHandler(view_utilities, pattern=r"^view_utilities_"))
+    application.add_handler(CallbackQueryHandler(view_echo_shards, pattern=r"^view_echo_shards_"))
 
     # Character detail handlers
     application.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
@@ -1981,7 +1981,7 @@ def setup_handlers(application):
     application.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
     application.add_handler(CallbackQueryHandler(view_abilities, pattern=r"^view_abilities_"))
     application.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
-    application.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
+    application.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile_"))
 
     # Battle and travel
     application.add_handler(CallbackQueryHandler(handle_battle_action, pattern="^action_"))

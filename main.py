@@ -754,14 +754,14 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(back_from_manage_team, pattern="^back_from_manage_team$"))
 
     # Profile and inventory
-    app_instance.add_handler(CallbackQueryHandler(profile, pattern="^show_profile$"))
-    app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern="^show_inventory$"))
-    app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern="^view_weapons$"))
-    app_instance.add_handler(CallbackQueryHandler(view_gear, pattern="^view_gear$"))
-    app_instance.add_handler(CallbackQueryHandler(view_military, pattern="^view_military$"))
-    app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern="^view_utilities$"))
-    app_instance.add_handler(CallbackQueryHandler(view_miscellaneous, pattern="^view_miscellaneous$"))
-    app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern="^view_echo_shards$"))
+    app_instance.add_handler(CallbackQueryHandler(profile, pattern=r"^show_profile_"))
+    app_instance.add_handler(CallbackQueryHandler(show_inventory, pattern=r"^show_inventory_"))
+    app_instance.add_handler(CallbackQueryHandler(view_weapons, pattern=r"^view_weapons_"))
+    app_instance.add_handler(CallbackQueryHandler(view_gear, pattern=r"^view_gear_"))
+    app_instance.add_handler(CallbackQueryHandler(view_military, pattern=r"^view_military_"))
+    app_instance.add_handler(CallbackQueryHandler(view_utilities, pattern=r"^view_utilities_"))
+    app_instance.add_handler(CallbackQueryHandler(view_miscellaneous, pattern=r"^view_miscellaneous_"))
+    app_instance.add_handler(CallbackQueryHandler(view_echo_shards, pattern=r"^view_echo_shards_"))
 
     # Character detail handlers (new)
     app_instance.add_handler(CallbackQueryHandler(fill_gas, pattern=r"^fill_gas_"))
@@ -769,7 +769,7 @@ def register_handlers(app_instance):
     app_instance.add_handler(CallbackQueryHandler(equip_weapon, pattern=r"^equip_weapon_"))
     app_instance.add_handler(CallbackQueryHandler(view_abilities, pattern=r"^view_abilities_"))
     app_instance.add_handler(CallbackQueryHandler(char_detail_callback, pattern=r"^char_detail_"))
-    app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile$"))
+    app_instance.add_handler(CallbackQueryHandler(exit_profile, pattern=r"^exit_profile_"))
 
     
     app_instance.add_handler(CallbackQueryHandler(handle_battle_action, pattern=r"^(action_|ability_|cooldown_|lowgas_|switch_to_|switch_back)"))
