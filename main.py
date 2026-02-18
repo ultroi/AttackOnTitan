@@ -294,7 +294,7 @@ async def initialize_application():
                 logger.warning(f"Task cancelled for update {update}")
                 return
                 
-            # Special handling for rate limiting errors
+            # Special handling for Rate limiting errors
             from telegram.error import RetryAfter
             if isinstance(context.error, RetryAfter):
                 retry_seconds = context.error.retry_after
