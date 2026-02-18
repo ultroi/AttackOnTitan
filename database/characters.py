@@ -1172,6 +1172,7 @@ def scapegoat_rally_effect(ctx: BattleContext) -> AbilityEffect:
         if ally_death_count >= 3:
             buffs["full_cooldown_reset"] = 1.0  # Reset all cooldowns
             buffs["hp_regen"] = 0.1  # 10% HP regen over 3 turns
+            buffs["hp_regen_turns"] = 3
             buffs["ATK"] = 1.5  # +50% ATK
             buffs["SPD"] = 1.4  # +40% SPD
             message = f"🎖️ Scapegoat Rally: Floch stands alone with {ally_death_count} fallen comrades!\n" \

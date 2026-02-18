@@ -225,7 +225,29 @@ class PvPBattleSystem:
         return None
         
     def switch_turn(self) -> None:
-        """Switch turn between challenger and defender using user_id for clarity"""
+        """Switch turn between challenger and defender using user_id for clarity.
+        If the current player has an `extra_action` buff, consume one and keep the turn."""
+        # consume extra_action BEFORE switching (gives immediate extra move)
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            extra = self.challenger_buffs.get("extra_action", 0)
+            if extra:
+                if isinstance(extra, (int, float)):
+                    if extra > 1:
+                        self.challenger_buffs["extra_action"] = extra - 1
+                    else:
+                        del self.challenger_buffs["extra_action"]
+                return
+        else:
+            extra = self.defender_buffs.get("extra_action", 0)
+            if extra:
+                if isinstance(extra, (int, float)):
+                    if extra > 1:
+                        self.defender_buffs["extra_action"] = extra - 1
+                    else:
+                        del self.defender_buffs["extra_action"]
+                return
+
+        # Normal switch behavior
         self.turn_count += 1
         if self.current_turn_user_id == str(self.challenger_player.user_id):
             self.current_turn_user_id = str(self.defender_player.user_id)
@@ -249,12 +271,28 @@ class PvPBattleSystem:
                     self.challenger_debuffs[debuff] -= 1
                     if self.challenger_debuffs[debuff] <= 0:
                         del self.challenger_debuffs[debuff]
+            # Decrement any explicit turn-counters (keys that end with _turns)
             for buff in list(self.challenger_buffs.keys()):
-                if isinstance(self.challenger_buffs[buff], (int, float)) and buff != "shield":
+                if buff.endswith("_turns") and isinstance(self.challenger_buffs[buff], (int, float)):
+                    self.challenger_buffs[buff] -= 1
+                    if self.challenger_buffs[buff] <= 0:
+                        # remove the paired stat (e.g. hp_regen_turns -> hp_regen)
+                        stat_key = buff[:-6]
+                        self.challenger_buffs.pop(stat_key, None)
+                        del self.challenger_buffs[buff]
+                elif isinstance(self.challenger_buffs[buff], (int, float)) and buff != "shield":
+                    # legacy handling for numeric-duration-style buffs (preserve existing behavior)
                     if self.challenger_buffs[buff] > 1:
                         self.challenger_buffs[buff] -= 1
                         if self.challenger_buffs[buff] <= 0:
                             del self.challenger_buffs[buff]
+
+            # Apply HP regen (percent or flat) if present
+            if 'hp_regen' in self.challenger_buffs:
+                regen_val = self.challenger_buffs['hp_regen']
+                heal_amount = int(self.challenger.stats.HP * regen_val) if isinstance(regen_val, float) and regen_val < 1 else int(regen_val)
+                self.challenger_hp = min(self.challenger.stats.HP, self.challenger_hp + heal_amount)
+
             if self.challenger_debuffs.get("bleed", 0) > 0:
                 bleed_damage = max(10, self.defender.stats.ATK // 2)
                 self.challenger_hp = max(0, self.challenger_hp - bleed_damage)
@@ -267,12 +305,26 @@ class PvPBattleSystem:
                     self.defender_debuffs[debuff] -= 1
                     if self.defender_debuffs[debuff] <= 0:
                         del self.defender_debuffs[debuff]
+            # Decrement any explicit turn-counters (keys that end with _turns)
             for buff in list(self.defender_buffs.keys()):
-                if isinstance(self.defender_buffs[buff], (int, float)) and buff != "shield":
+                if buff.endswith("_turns") and isinstance(self.defender_buffs[buff], (int, float)):
+                    self.defender_buffs[buff] -= 1
+                    if self.defender_buffs[buff] <= 0:
+                        stat_key = buff[:-6]
+                        self.defender_buffs.pop(stat_key, None)
+                        del self.defender_buffs[buff]
+                elif isinstance(self.defender_buffs[buff], (int, float)) and buff != "shield":
                     if self.defender_buffs[buff] > 1:
                         self.defender_buffs[buff] -= 1
                         if self.defender_buffs[buff] <= 0:
                             del self.defender_buffs[buff]
+
+            # Apply HP regen (percent or flat) if present
+            if 'hp_regen' in self.defender_buffs:
+                regen_val = self.defender_buffs['hp_regen']
+                heal_amount = int(self.defender.stats.HP * regen_val) if isinstance(regen_val, float) and regen_val < 1 else int(regen_val)
+                self.defender_hp = min(self.defender.stats.HP, self.defender_hp + heal_amount)
+
             if self.defender_debuffs.get("bleed", 0) > 0:
                 bleed_damage = max(10, self.challenger.stats.ATK // 2)
                 self.defender_hp = max(0, self.defender_hp - bleed_damage)
@@ -436,16 +488,34 @@ class PvPBattleSystem:
                     message = getattr(effect, 'message', f"{ability_name} used successfully!")
                     # Apply damage to opponent
                     if self.current_turn_user_id == str(self.challenger_player.user_id):
+                        # apply damage/heal to defender and attacker respectively
                         self.defender_hp = max(0, self.defender_hp - damage)
                         if heal > 0:
                             self.challenger_hp = min(getattr(self.challenger.stats, 'HP', self.challenger_hp), self.challenger_hp + heal)
+
+                        # explicit single-field effects
                         if getattr(effect, 'shield', 0):
                             self.challenger_buffs["shield"] = self.challenger_buffs.get("shield", 0) + effect.shield
                         if getattr(effect, 'stun_duration', 0):
                             self.defender_debuffs["stun"] = max(self.defender_debuffs.get("stun", 0), effect.stun_duration)
                         if getattr(effect, 'bleed_applied', False):
                             self.defender_debuffs["bleed"] = max(self.defender_debuffs.get("bleed", 0), 3)
+
+                        # reflect damage if defender has damage_reflection
+                        refl_pct = self.defender_buffs.get("damage_reflection", 0)
+                        if refl_pct and damage > 0:
+                            reflected = int(damage * refl_pct)
+                            self.challenger_hp = max(0, self.challenger_hp - reflected)
+                            effects['reflected'] = reflected
+                            message += f"\n↺ {self.defender.name} reflected {reflected} damage back!"
+
+                        # store any generic buffs/debuffs returned by ability
+                        for buff_name, buff_value in getattr(effect, 'buffs', {}) .items():
+                            self.challenger_buffs[buff_name] = buff_value
+                        for debuff_name, debuff_value in getattr(effect, 'debuffs', {}) .items():
+                            self.defender_debuffs[debuff_name] = debuff_value
                     else:
+                        # attacker is defender in this branch
                         self.challenger_hp = max(0, self.challenger_hp - damage)
                         if heal > 0:
                             self.defender_hp = min(getattr(self.defender.stats, 'HP', self.defender_hp), self.defender_hp + heal)
@@ -455,13 +525,29 @@ class PvPBattleSystem:
                             self.challenger_debuffs["stun"] = max(self.challenger_debuffs.get("stun", 0), effect.stun_duration)
                         if getattr(effect, 'bleed_applied', False):
                             self.challenger_debuffs["bleed"] = max(self.challenger_debuffs.get("bleed", 0), 3)
+
+                        # reflect damage if challenger has damage_reflection
+                        refl_pct = self.challenger_buffs.get("damage_reflection", 0)
+                        if refl_pct and damage > 0:
+                            reflected = int(damage * refl_pct)
+                            self.defender_hp = max(0, self.defender_hp - reflected)
+                            effects['reflected'] = reflected
+                            message += f"\n↺ {self.challenger.name} reflected {reflected} damage back!"
+
+                        # store any generic buffs/debuffs returned by ability
+                        for buff_name, buff_value in getattr(effect, 'buffs', {}) .items():
+                            self.defender_buffs[buff_name] = buff_value
+                        for debuff_name, debuff_value in getattr(effect, 'debuffs', {}) .items():
+                            self.challenger_debuffs[debuff_name] = debuff_value
+
                     # Return effects for UI updates
                     effects = {
                         "damage": damage,
                         "heal": heal,
                         "shield": getattr(effect, 'shield', 0) or 0,
                         "stun": getattr(effect, 'stun_duration', 0) or 0,
-                        "bleed": getattr(effect, 'bleed_applied', False)
+                        "bleed": getattr(effect, 'bleed_applied', False),
+                        "reflected": effects.get('reflected', 0) if isinstance(effects, dict) else 0
                     }
         except Exception as e:
             logger.error(f"Error applying ability {ability_name}: {e}")
@@ -599,6 +685,9 @@ class PvPBattleSystem:
             if crit_boost > 0 and random.randint(1, 100) <= crit_boost:
                 damage_multiplier *= 1.5
                 weapon_name = f"{weapon_name} (CRITICAL)"
+
+        # incorporate any explicit damage_multiplier buff
+        damage_multiplier = damage_multiplier * (self.challenger_buffs.get('damage_multiplier', 1.0) if self.current_turn_user_id == str(self.challenger_player.user_id) else self.defender_buffs.get('damage_multiplier', 1.0))
 
         # Apply the multiplier
         total_damage = int(base_damage * damage_multiplier)
@@ -1349,13 +1438,13 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
             
         # Check if target is already in a battle
-        target_id = str(target_player["user_id"])
-        if target_id in active_battles:
-            await update.message.reply_text(f"{target_player['name']} is currently in a battle with a titan!")
+        defender_id = str(defender_player.user_id) if hasattr(defender_player, 'user_id') else str(defender_player.get("user_id", target_id))
+        if defender_id in active_battles:
+            await update.message.reply_text(f"{defender_player.name if hasattr(defender_player, 'name') else defender_player.get('name', target_username)} is currently in a battle with a titan!")
             return
             
-        if target_id in active_pvp_battles:
-            await update.message.reply_text(f"{target_player['name']} is already in a PVP battle!")
+        if defender_id in active_pvp_battles:
+            await update.message.reply_text(f"{defender_player.name if hasattr(defender_player, 'name') else defender_player.get('name', target_username)} is already in a PVP battle!")
             return
             
         # Get challenger's player and character data
