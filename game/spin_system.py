@@ -318,11 +318,11 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         text += "250+ spins/week = 25% more marks + 20% discount"
 
         keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="spin_menu")]]
-    try:
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-    except Exception:
-        await query.answer("Opening spin info...", show_alert=False)
-        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception:
+            await query.answer("Opening spin info...", show_alert=False)
+            await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
     elif data == "spin_medals":
         # Show spin medals with exchange options
