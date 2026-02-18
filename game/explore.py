@@ -33,6 +33,9 @@ DEFAULT_AREAS = ["Trost", "Karanes", "Shiganshina", "Orvud"]
 MAX_CACHE_SIZE = 500  # CRITICAL: Limit cache size
 MAX_BOT_DATA_ENTRIES = 1000  # Prevent unbounded growth
 
+# Short per-user explore cooldown (seconds) — prevents rapid-fire abuse
+EXPLORE_COOLDOWN_SECONDS = 0.5
+
 # Anti-spam: Continuous explore without battle protection
 CONSECUTIVE_EXPLORE_WARNING_THRESHOLD = 10  # Warn at 10 consecutive explores without battle
 CONSECUTIVE_EXPLORE_BAN_THRESHOLD = 15      # Ban at 15 consecutive explores without battle
@@ -230,8 +233,8 @@ def cleanup_cache():
     # Also enforce max size (LRU)
     while len(user_cache) > MAX_CACHE_SIZE:
         # Remove oldest (OrderedDict pops from front)
-        user_cache.popitem(last=False)
-        cache_expiry.pop(list(cache_expiry.keys())[0], None)
+        oldest_key, _ = user_cache.popitem(last=False)
+        cache_expiry.pop(oldest_key, None)  # Ensure both structures stay in sync
 
 def cleanup_locks():
     """Remove unused locks to prevent accumulation"""
@@ -409,6 +412,16 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check 3: In battle
     if FastPreCheck.is_in_battle(user_id_str):
         await _reply_error(update, "⚔️ You are currently in a battle! Complete it first.")
+        return
+
+    # Short per-user cooldown to prevent rapid-fire explore abuse
+    now_ts = time.time()
+    last_ts = user_last_explore.get(user_id_str, 0)
+    if now_ts - last_ts < EXPLORE_COOLDOWN_SECONDS:
+        wait = int(EXPLORE_COOLDOWN_SECONDS - (now_ts - last_ts))
+        if wait <= 0:
+            wait = 1
+        await _reply_error(update, f"⚠️ Slow down — try again in {wait}s.")
         return
     
     db = context.bot_data.get("db")
@@ -592,16 +605,16 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
             user_explore_locks[user_id_str] = lock
 
         async with lock:
-            # OPTIMIZATION: Start cleanup and data update in parallel
-            cleanup_task = asyncio.create_task(_cleanup_existing_titan(user_id_str, db))
-            
+            # Ensure old titan is removed before storing the new one (prevents race/delete of newly stored titan)
+            await _cleanup_existing_titan(user_id_str, db)
+
             # Prepare update data (no I/O - pure computation)
             player.increment_daily_explores(datetime.now(timezone.utc))
             update_data = {
                 "last_explore_time": time.time(),
                 "daily_explores": player.daily_explores
             }
-            
+
             # Handle travel (can run in parallel)
             travel = getattr(player, "travel", {})
             travel_update_task = None
@@ -620,16 +633,15 @@ async def _deferred_explore_operations(context, user_id_str, user_id, db, titan,
                 else:
                     travel["progress"] = travel_progress
                     update_data["travel"] = travel
-            
-            # OPTIMIZATION: Run all DB operations + travel message in parallel
+
+            # Run DB operations in parallel (store titan + update player)
             parallel_tasks = [
-                cleanup_task,
                 db.store_titan(user_id_str, titan),
                 db.batch_update_player(user_id_str, update_data),
             ]
             if travel_update_task:
                 parallel_tasks.append(travel_update_task)
-            
+
             await asyncio.gather(*parallel_tasks, return_exceptions=True)
             
             # FIX: Store minimal data
@@ -842,17 +854,22 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
 async def titan_encounter_timeout(user_id: int, context: ContextTypes.DEFAULT_TYPE, sent_message=None):
     """Handle timeout without blocking"""
     user_id_str = str(user_id)
+    # Acquire per-user lock to avoid races with explore flow
+    if user_id_str not in user_explore_locks:
+        user_explore_locks[user_id_str] = asyncio.Lock()
+    lock = user_explore_locks[user_id_str]
     try:
         await asyncio.sleep(TITAN_TIMEOUT_SECONDS)
-        
-        battle_id_key = f"active_battle_id_{user_id_str}"
-        old_battle_id = context.bot_data.get(battle_id_key)
-        
-        if old_battle_id and old_battle_id.startswith("used_"):
-            return
-        
-        if FastPreCheck.is_in_battle(user_id_str):
-            return
+
+        async with lock:
+            battle_id_key = f"active_battle_id_{user_id_str}"
+            old_battle_id = context.bot_data.get(battle_id_key)
+
+            if old_battle_id and old_battle_id.startswith("used_"):
+                return
+
+            if FastPreCheck.is_in_battle(user_id_str):
+                return
 
         if old_battle_id:
             context.bot_data[battle_id_key] = f"expired_{old_battle_id}_{time.time()}"

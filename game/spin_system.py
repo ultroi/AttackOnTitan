@@ -261,12 +261,18 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     db = context.bot_data.get("db")
     if not db:
-        await query.edit_message_text("❌ Database not initialized.")
+        try:
+            await query.edit_message_text("❌ Database not initialized.")
+        except Exception:
+            await query.answer("❌ Database not initialized.", show_alert=True)
         return
 
     player = await db.get_player(user_id)
     if not player:
-        await query.edit_message_text("You haven't created a player account yet!")
+        try:
+            await query.edit_message_text("You haven't created a player account yet!")
+        except Exception:
+            await query.answer("You haven't created a player account yet! Use /start to begin.", show_alert=True)
         return
 
     # (View Items feature removed per request)
@@ -312,8 +318,11 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         text += "250+ spins/week = 25% more marks + 20% discount"
 
         keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="spin_menu")]]
+    try:
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-        return
+    except Exception:
+        await query.answer("Opening spin info...", show_alert=False)
+        await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
     elif data == "spin_medals":
         # Show spin medals with exchange options
@@ -344,7 +353,11 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         # Always show back button
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="spin_menu")])
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        except Exception:
+            await query.answer("Opening medals...", show_alert=False)
+            await context.bot.send_message(chat_id=query.from_user.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         return
 
     # Handle medal redemption
@@ -542,7 +555,10 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             insufficient_text = "💰 <b>Oops !!</b>\n"
             insufficient_text += f"❌ <b>Insufficient Valor!</b>\n"
 
-            await query.edit_message_text(insufficient_text, parse_mode=ParseMode.HTML)
+            try:
+                await query.edit_message_text(insufficient_text, parse_mode=ParseMode.HTML)
+            except Exception:
+                await query.answer("❌ Insufficient Valor!", show_alert=True)
             return
         
         # Store last spin type and proceed with spin
@@ -574,7 +590,10 @@ async def spin_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             insufficient_text = "💰 <b>Oops !!</b>\n"
             insufficient_text += f"❌ <b>Insufficient Valor!</b>\n"
 
-            await query.edit_message_text(insufficient_text, parse_mode=ParseMode.HTML)
+            try:
+                await query.edit_message_text(insufficient_text, parse_mode=ParseMode.HTML)
+            except Exception:
+                await query.answer("❌ Insufficient Valor!", show_alert=True)
             return
     # At this point we will proceed with the spin: mark in-progress so further presses are ignored
     context.user_data['spin_in_progress'] = True

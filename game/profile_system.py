@@ -945,23 +945,13 @@ async def referral_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if db.players is None:
         logger.warning("Database not properly initialized, players collection is None")
     
-    if db.players is not None:
-        player_doc = await db.players.find_one({"user_id": user_id})
-        if player_doc:
-            from database.models import Player
-            player = Player(**player_doc)
-            # Log the raw referral data from the document
-            logger.info(f"Raw referral data from DB: referral_count={player_doc.get('referral_count', 0)}, "
-                        f"referral_code={player_doc.get('referral_code')}, "
-                        f"referred_by={player_doc.get('referred_by')}")
-        else:
-            # If not found, use standard get_player (should not normally happen)
-            player = await db.get_player(user_id)
-            logger.warning(f"Player {user_id} not found directly in DB, using cached version")
-    else:
-        # Fallback if database isn't initialized
-        player = await db.get_player(user_id)
-        logger.warning(f"DB not initialized, using cached player for {user_id}")
+    # Use sanitized accessor to ensure fields like `daily_explores` are validated
+    player = await db.get_player(user_id)
+    if not player:
+        await update.message.reply_text("You haven't created a player account yet! Use /start to begin.")
+        return
+    # Log referral info for debugging
+    logger.info(f"Referral data: referral_count={getattr(player, 'referral_count', 0)}, referral_code={getattr(player, 'referral_code', None)}, referred_by={getattr(player, 'referred_by', None)}")
     
     # Clear cache for this player to ensure subsequent calls get fresh data
     if hasattr(db, 'invalidate_player_cache'):

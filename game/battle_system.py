@@ -269,18 +269,32 @@ class BattleSystem:
 
     # ---------- Context & Effects ----------
     def build_context(self, trigger: Optional[str] = None, ability: Optional[Ability] = None) -> Dict:
-        """Build context for ability effect functions."""
+        """Build context for ability effect functions.
+
+        Enhancements:
+        - return an adjusted `character_stats` that applies active stat buffs
+        - expose commonly-used situational flags (turns, stacks, just_dodged/just_killed)
+        """
         base_damage = (ability.base_damage + self.character.stats.ATK) if ability and ability.base_damage else 0
-        
-        # NEW: Apply command_boost if Chain of Command is active
+
+        # Apply command_boost if active
         if self.buffs.get("command_boost", 1.0) > 1.0:
             base_damage = int(base_damage * self.buffs["command_boost"])
-        
+
+        # Start with a copy of raw character stats and apply stat buffs using helper
+        from utils.stats import apply_stat_buffs
+        raw_stats = self.character.stats.dict() if self.character.stats else {"ATK": 0, "DEF": 0, "ACC": 0, "INT": 0, "SPD": 0, "HP": 0}
+        adjusted_stats = apply_stat_buffs(raw_stats, self.buffs)
+
+        titan_hp_percent = self.titan_hp / max(1, getattr(self.titan, 'max_hp', 1))
+        target_hp_percent = titan_hp_percent
+
         return {
-            "character_stats": self.character.stats.dict() if self.character.stats else {},
+            "character_stats": adjusted_stats,
             "character_hp": self.character_hp,
             "character_max_hp": self.character.stats.HP,
             "titan_hp": self.titan_hp,
+            "titan_hp_percent": titan_hp_percent,
             "titan_size": random.randint(5, 15),
             "is_intelligent_titan": random.random() < 0.1,
             "is_leader": random.random() < 0.05,
@@ -288,14 +302,23 @@ class BattleSystem:
             "dodge_count": self.trigger_states.get("dodge_count", 0),
             "fear_counter": self.trigger_states.get("fear_counter", 0),
             "focused_turns": self.trigger_states.get("focused_turns", 0),
-            "ally_died": self.trigger_states.get("ally_died", False),
+            "turns_not_focused": self.trigger_states.get("turns_not_focused", 0),
+            "ally_death_count": self.trigger_states.get("ally_death_count", 0),
+            "demagogue_stacks": self.trigger_states.get("demagogue_stacks", 0),
+            "allies_died_this_turn": self.trigger_states.get("allies_died_this_turn", 0),
+            "ally_died_in_range": self.trigger_states.get("ally_died", False),
+            "rapid_focus_active": self.trigger_states.get("rapid_focus_active", False),
+            "just_dodged": self.trigger_states.get("just_dodged", False),
+            "just_killed": self.trigger_states.get("just_killed", False),
             "turn": self.turn,
             "gas": self.gas,
+            "gas_full": self.gas >= (self.max_gas or self.character.max_gas),
             "character_gas": self.character_gas,
             "base_damage": base_damage,
             "character_level": self.character.level,
             "target_is_self": False,
             "titan_difficulty": self.titan.difficulty,
+            "target_hp_percent": target_hp_percent,
         }
 
     def apply_passives(self, trigger: str) -> List[str]:
@@ -339,6 +362,9 @@ class BattleSystem:
         if not effect:
             return
         self.titan_hp = max(0, self.titan_hp - (effect.damage or 0))
+        # If titan died as a result of this effect, mark single-turn trigger
+        if self.titan_hp == 0:
+            self.trigger_states["just_killed"] = True
         self.character_hp = min(self.character.stats.HP, self.character_hp + (effect.healed or 0))
         if effect.shield:
             self.buffs["shield"] = self.buffs.get("shield", 0) + effect.shield
@@ -405,7 +431,8 @@ class BattleSystem:
                 del self.buffs["dodge"]
             else:
                 self.trigger_states["dodge_count"] = max(0, self.trigger_states["dodge_count"] - 1)
-            
+            # Mark a one-turn dodge flag so ability effects can react
+            self.trigger_states["just_dodged"] = True
             messages = self.apply_passives("dodge")
             return 0, f"{self.character.name} dodged the attack!\n" + "\n".join(messages)
         
@@ -707,6 +734,12 @@ class BattleSystem:
             self.titan_debuffs["bleed"] -= 1
             if self.titan_debuffs["bleed"] <= 0:
                 del self.titan_debuffs["bleed"]
+
+        # Clear one-turn triggers so abilities that look for them only see them for the following context build
+        if self.trigger_states.get("just_dodged"):
+            self.trigger_states["just_dodged"] = False
+        if self.trigger_states.get("just_killed"):
+            self.trigger_states["just_killed"] = False
 
     def get_battle_status(self) -> Dict:
         """Return current battle state for UI display - ULTRA OPTIMIZED."""

@@ -1078,7 +1078,31 @@ def demagogues_aura_effect(ctx: BattleContext) -> AbilityEffect:
         ally_death_count = getattr(ctx, "ally_death_count", 0)
         is_pvp = getattr(ctx, "is_pvp", False)
     
-    # Calculate buffs based on stacks
+    # PvP specific behavior - use ally_death_count directly since stacks may not be tracked
+    if is_pvp:
+        # In PvP, each teammate defeated grants stacking buffs (reduced values for balance)
+        stacks = max(demagogue_stacks, ally_death_count)
+        buffs = {}
+        
+        if stacks > 0:
+            # +15% ATK, +3% Crit, +8% SPD per stack in PvP (reduced from Titan values)
+            buffs["ATK"] = 1.0 + (stacks * 0.15)
+            buffs["crit_rate"] = 1.0 + (stacks * 0.03)
+            buffs["SPD"] = 1.0 + (stacks * 0.08)
+            
+            # After 2 stacks in PvP, become "Unhinged" (lower threshold for faster PvP)
+            if stacks >= 2:
+                buffs["DEF"] = 0.85  # -15% DEF in PvP
+                buffs["extra_action"] = 1.0  # Signal for extra action
+                message = f"Demagogue's Aura (PvP): Unhinged! {stacks} fallen allies - +{int(stacks * 15)}% ATK, +{int(stacks * 3)}% Crit, +{int(stacks * 8)}% SPD, -15% DEF, bonus action!"
+            else:
+                message = f"Demagogue's Aura (PvP): {stacks} fallen allies - +{int(stacks * 15)}% ATK, +{int(stacks * 3)}% Crit, +{int(stacks * 8)}% SPD"
+        else:
+            message = "Demagogue's Aura (PvP): No fallen allies yet"
+        
+        return create_effect(message=message, buffs=buffs)
+    
+    # Original Titan battle behavior
     buffs = {}
     if demagogue_stacks > 0:
         # +20% ATK, +5% Crit, +10% SPD per stack
@@ -1104,11 +1128,43 @@ def scapegoat_rally_effect(ctx: BattleContext) -> AbilityEffect:
         flochs_last_standing = ctx.get("flochs_last_standing", False)
         ally_death_count = ctx.get("ally_death_count", 0)
         is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+        character_max_hp = ctx.get("character_max_hp", 100)
     else:
         flochs_last_standing = getattr(ctx, "flochs_last_standing", False)
         ally_death_count = getattr(ctx, "ally_death_count", 0)
         is_pvp = getattr(ctx, "is_pvp", False)
+        character_max_hp = ctx.character_max_hp
     
+    # PvP specific behavior - triggers when Floch is last character standing in team
+    if is_pvp:
+        buffs = {}
+        healed = 0
+        
+        if flochs_last_standing:
+            # PvP buffs are reduced for balance but still impactful
+            if ally_death_count >= 2:
+                buffs["full_cooldown_reset"] = 1.0
+                buffs["ATK"] = 1.35  # +35% ATK in PvP (reduced from 50%)
+                buffs["SPD"] = 1.25  # +25% SPD in PvP (reduced from 40%)
+                healed = int(character_max_hp * 0.15)  # 15% HP heal
+                message = f"🎖️ Scapegoat Rally (PvP): Floch stands alone with {ally_death_count} fallen!\n" \
+                          f"✅ Cooldowns reset, +35% ATK, +25% SPD, healed {healed} HP"
+            elif ally_death_count >= 1:
+                buffs["ATK"] = 1.2  # +20% ATK
+                buffs["SPD"] = 1.15  # +15% SPD
+                buffs["crit_rate"] = 1.1  # +10% crit
+                message = f"🎖️ Scapegoat Rally (PvP): Floch rallies after {ally_death_count} fell!\n" \
+                          f"⚡ +20% ATK, +15% SPD, +10% Crit"
+            else:
+                buffs["SPD"] = 1.1
+                buffs["ATK"] = 1.1
+                message = "🎖️ Scapegoat Rally (PvP): Last stand! +10% ATK & SPD"
+        else:
+            message = "🎖️ Scapegoat Rally (PvP): Waiting for last stand..."
+        
+        return create_effect(message=message, buffs=buffs, healed=healed)
+    
+    # Original Titan battle behavior
     buffs = {}
     
     if flochs_last_standing:
@@ -1143,12 +1199,35 @@ def riot_spark_effect(ctx: BattleContext) -> AbilityEffect:
     if isinstance(ctx, dict):
         base_damage = ctx.get("base_damage", 0)
         is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+        character_stats = ctx.get("character_stats", {})
+        atk = character_stats.get("ATK", 0)
     else:
         base_damage = ctx.base_damage
         is_pvp = getattr(ctx, "is_pvp", False)
+        atk = ctx.character_stats.ATK
     
-    damage = 200  # Fixed damage
-    message = "Riot Spark: All enemies take 200 damage"
+    # PvP specific behavior - balanced for player vs player
+    if is_pvp:
+        # Damage scales with ATK in PvP (1% per ATK as per description)
+        pvp_damage = int(150 + (atk * 1.0))  # Base 150 + ATK scaling
+        debuffs = {}
+        message = f"Riot Spark (PvP): Dealt {pvp_damage} damage"
+        
+        # 35% chance for Disarray in PvP (reduced from 50%)
+        if random.random() < 0.35:
+            debuffs["disarray"] = 1
+            debuffs["ACC"] = 15  # -15 ACC while disarrayed
+            message += ", Disarray induced! (-15 ACC)"
+        
+        return create_effect(
+            message=message,
+            damage=pvp_damage,
+            debuffs=debuffs
+        )
+    
+    # Original Titan battle behavior
+    damage = 200 + int(atk * 1.0)  # Scaling: 1% per ATK
+    message = f"Riot Spark: All enemies take {damage} damage"
     
     debuffs = {}
     if random.random() < 0.5:  # 50% chance
@@ -1174,34 +1253,106 @@ def execute_traitor_effect(ctx: BattleContext) -> AbilityEffect:
         target_hp_percent = ctx.get("target_hp_percent", 1.0)
         character_max_hp = ctx.get("character_max_hp", 100)
         is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+        character_stats = ctx.get("character_stats", {})
+        acc = character_stats.get("ACC", 0)
+        opponent_hp = ctx.get("opponent_hp", 0)
+        opponent_max_hp = ctx.get("opponent_max_hp", 100)
     else:
         base_damage = ctx.base_damage
         target_hp_percent = ctx.target_hp_percent
         character_max_hp = ctx.character_max_hp
         is_pvp = getattr(ctx, "is_pvp", False)
+        acc = ctx.character_stats.ACC
+        opponent_hp = getattr(ctx, "opponent_hp", 0)
+        opponent_max_hp = getattr(ctx, "opponent_max_hp", 100)
     
+    # PvP specific behavior
+    if is_pvp:
+        pvp_target_hp_percent = opponent_hp / opponent_max_hp if opponent_max_hp > 0 else 1.0
+        # Success rate scales with ACC (base 50% + 0.2% per ACC)
+        success_rate = min(0.85, 0.50 + (acc * 0.002))
+        
+        if pvp_target_hp_percent < 0.30:  # <30% HP threshold
+            if random.random() < success_rate:
+                # Execute succeeds - deal massive damage and gain buffs
+                exec_damage = int(base_damage * 1.8)  # 1.8x base damage on execute
+                buffs = {"DEF": 1.15, "ATK": 1.1}  # +15% DEF, +10% ATK
+                message = f"Execute Traitor (PvP): Execution SUCCESS! Dealt {exec_damage} damage, +15% DEF, +10% ATK"
+                return create_effect(message=message, damage=exec_damage, buffs=buffs)
+            else:
+                # Execute fails - self damage and taunt
+                self_damage = int(character_max_hp * 0.08)  # 8% HP loss in PvP
+                debuffs = {"taunt": 2}  # Taunted for 2 turns
+                message = f"Execute Traitor (PvP): Execution FAILED! Lost {self_damage} HP, taunted for 2 turns"
+                return create_effect(message=message, debuffs=debuffs)  # Note: self-damage handled by caller
+        else:
+            # Target HP too high - deal reduced damage
+            reduced_damage = int(base_damage * 0.6)
+            message = f"Execute Traitor (PvP): Target HP too high! Dealt {reduced_damage} reduced damage"
+            return create_effect(message=message, damage=reduced_damage)
+    
+    # Original Titan battle behavior
     if target_hp_percent < 0.3:  # <30% HP
-        if random.random() < 0.7:  # 70% success rate (assuming)
+        success_rate = min(0.90, 0.70 + (acc * 0.002))  # 70% base + 0.2% per ACC, max 90%
+        if random.random() < success_rate:
             buffs = {"DEF": 1.1}  # +10% DEF for allies
             message = "Execute Traitor: Success! All allies gain +10% DEF for 2 turns"
-            return create_effect(message=message, buffs=buffs)
+            return create_effect(message=message, buffs=buffs, damage=int(base_damage * 2.0))
         else:
             damage = int(character_max_hp * 0.1)  # 10% HP loss
             debuffs = {"taunt": 1}  # Increases chance to be targeted
             message = "Execute Traitor: Failed! Floch loses 10% HP and is taunted"
-            return create_effect(message=message, damage=damage, debuffs=debuffs)
+            return create_effect(message=message, debuffs=debuffs)
     else:
         message = "Execute Traitor: Target HP too high (>30%)"
-        return create_effect(message=message)
+        return create_effect(message=message, damage=int(base_damage * 0.5))
 
 def last_bastion_of_war_effect(ctx: BattleContext) -> AbilityEffect:
     """Ultimate: 3-turn buffed state with immunity and reversal mechanic"""
     import random
     
+    if isinstance(ctx, dict):
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+        base_damage = ctx.get("base_damage", 0)
+    else:
+        is_pvp = getattr(ctx, "is_pvp", False)
+        base_damage = ctx.base_damage
+    
+    # PvP specific behavior - more balanced for player vs player
+    if is_pvp:
+        # 55% success rate in PvP (slightly higher than Titan)
+        success_rate = 0.55
+        if random.random() > success_rate:
+            message = "⚠️ Last Bastion of War (PvP): Failed to activate! (45% failure chance triggered)"
+            return create_effect(message=message, buffs={})
+        
+        # PvP buffs are reduced for balance
+        buffs = {
+            "immune_stun": 1,
+            "immune_slow": 1,
+            "SPD": 1.5,  # 1.5x speed in PvP (reduced from 2x)
+            "ATK": 1.5,  # 1.5x attack in PvP (reduced from 2x)
+            "crit_rate": 1.2,  # +20% crit rate
+            "iron_conviction": 1,
+            "iron_conviction_turns": 2  # 2-turn duration in PvP (reduced from 3)
+        }
+        
+        # Deal initial damage on activation
+        activation_damage = int(base_damage * 0.8)
+        
+        message = "🛡️ Last Bastion of War (PvP): Iron Conviction activated!\n" \
+                  "✅ Immune to stun/slow\n" \
+                  f"⚡ 1.5x Speed, 1.5x Attack, +20% Crit for 2 turns\n" \
+                  f"💥 Dealt {activation_damage} damage on activation\n" \
+                  "⚠️ WARNING: After 2 turns, stunned for 1 turn and DEF drops to 0!"
+        
+        return create_effect(message=message, buffs=buffs, damage=activation_damage)
+    
+    # Original Titan battle behavior
     # 49% success rate as described
     success_rate = 0.49
     if random.random() > success_rate:
-        message = "⚠️ Last Bastion of War: Failed to activate! (49% failure chance triggered)"
+        message = "⚠️ Last Bastion of War: Failed to activate! (51% failure chance triggered)"
         return create_effect(message=message, buffs={})
     
     buffs = {
@@ -1226,7 +1377,23 @@ def warlord_command_effect(ctx: BattleContext) -> AbilityEffect:
     """Passive: Strategic buff at battle start - now works in single-player"""
     import random
     
-    # Select 2 random buffs from pool
+    if isinstance(ctx, dict):
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+    else:
+        is_pvp = getattr(ctx, "is_pvp", False)
+    
+    # PvP specific behavior - more predictable buffs
+    if is_pvp:
+        # In PvP, always grant balanced defensive + offensive buffs
+        buffs = {
+            "DEF": 1.15,     # +15% DEF
+            "ATK": 1.1,      # +10% ATK
+            "ACC": 1.1       # +10% ACC
+        }
+        message = "⚔️ Warlord Command (PvP): Strategic positioning! +15% DEF, +10% ATK, +10% ACC"
+        return create_effect(message=message, buffs=buffs)
+    
+    # Original Titan battle behavior - random buffs
     buff_pool = [
         ("DEF", 1.2),      # +20% DEF
         ("SPD", 1.15),     # +15% SPD
@@ -1278,6 +1445,44 @@ def chain_of_command_effect(ctx: BattleContext) -> AbilityEffect:
     """Ultimate: Emergency cooldown reset and damage boost - modified for single-player"""
     import random
     
+    if isinstance(ctx, dict):
+        is_pvp = ctx.get("is_pvp", False) or ctx.get("pvp", False)
+        base_damage = ctx.get("base_damage", 0)
+    else:
+        is_pvp = getattr(ctx, "is_pvp", False)
+        base_damage = ctx.base_damage
+    
+    # PvP specific behavior - more reliable but with trade-offs
+    if is_pvp:
+        # 70% success rate in PvP
+        success_rate = 0.70
+        if random.random() > success_rate:
+            message = "⚠️ Chain of Command (PvP): Failed! (30% failure chance triggered)"
+            return create_effect(message=message, buffs={})
+        
+        # PvP buffs - cooldown reset + moderate attack boost
+        buffs = {
+            "reset_all_cooldowns": 1,
+            "command_boost": 1.35,  # +35% attack boost in PvP (reduced from 50%)
+            "DEF": 1.1,  # +10% DEF
+        }
+        
+        debuffs = {
+            "mental_exhaustion": 2  # 2-turn exhaustion in PvP (reduced from 3)
+        }
+        
+        # Deal activation damage
+        activation_damage = int(base_damage * 0.5)
+        
+        message = "🎖️ Chain of Command (PvP): Final Salute!\n" \
+                  "✅ All ability cooldowns reset!\n" \
+                  f"⚡ +35% Attack boost, +10% DEF\n" \
+                  f"💥 Dealt {activation_damage} damage\n" \
+                  "⚠️ Cannot use ultimates for 2 turns"
+        
+        return create_effect(message=message, buffs=buffs, debuffs=debuffs, damage=activation_damage)
+    
+    # Original Titan battle behavior
     # 60% success rate (balanced for balance)
     success_rate = 0.60
     if random.random() > success_rate:

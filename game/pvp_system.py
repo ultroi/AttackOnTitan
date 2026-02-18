@@ -352,21 +352,49 @@ class PvPBattleSystem:
         opponent_max_hp = opponent_char.stats.HP if hasattr(opponent_char, 'stats') and hasattr(opponent_char.stats, 'HP') else (opponent_char.stats.get('HP', 0) if isinstance(opponent_char.stats, dict) else 100)
         target_hp_percent = opponent_hp / opponent_max_hp if opponent_max_hp > 0 else 1.0
             
-        # Build context for ability effect
+        # Build context for ability effect (apply any active buff modifiers to stats)
+        from utils.stats import apply_stat_buffs
+
+        char_stats = current_char.stats.dict() if getattr(current_char, 'stats', None) else {}
+        opp_stats = opponent_char.stats.dict() if getattr(opponent_char, 'stats', None) else {}
+
+        # Apply per-side stat buffs using centralized helper (floats = multiplier, ints = additive)
+        if self.current_turn_user_id == str(self.challenger_player.user_id):
+            char_stats = apply_stat_buffs(char_stats, self.challenger_buffs)
+            opp_stats = apply_stat_buffs(opp_stats, self.defender_buffs)
+        else:
+            char_stats = apply_stat_buffs(char_stats, self.defender_buffs)
+            opp_stats = apply_stat_buffs(opp_stats, self.challenger_buffs)
+
+        # PvP is 1v1, so ally tracking works differently:
+        # - In 1v1, ally_death_count = 0 (no team), flochs_last_standing = always True if playing
+        # - demagogue_stacks track damage milestones instead of ally deaths
+        # Track demagogue stacks based on damage taken (25% HP lost = 1 stack)
+        char_hp = self.challenger_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.defender_hp
+        char_max_hp = current_char.stats.HP if hasattr(current_char, 'stats') and hasattr(current_char.stats, 'HP') else (current_char.stats.get('HP', 0) if isinstance(current_char.stats, dict) else 100)
+        hp_lost_percent = 1.0 - (char_hp / char_max_hp) if char_max_hp > 0 else 0
+        demagogue_stacks_from_damage = int(hp_lost_percent / 0.25)  # 1 stack per 25% HP lost
+        
         ctx = {
-            "character_stats": current_char.stats.dict() if getattr(current_char, 'stats', None) else {},
-            "opponent_stats": opponent_char.stats.dict() if getattr(opponent_char, 'stats', None) else {},
-            "character_hp": self.challenger_hp if self.current_turn_user_id == str(self.challenger_player.user_id) else self.defender_hp,
+            "character_stats": char_stats,
+            "opponent_stats": opp_stats,
+            "character_hp": char_hp,
             "opponent_hp": opponent_hp,
-            "character_max_hp": current_char.stats.HP if hasattr(current_char, 'stats') and hasattr(current_char.stats, 'HP') else (current_char.stats.get('HP', 0) if isinstance(current_char.stats, dict) else 0),
+            "character_max_hp": char_max_hp,
             "opponent_max_hp": opponent_max_hp,
-            "target_hp_percent": target_hp_percent,  # FIX: Now properly calculated
+            "target_hp_percent": target_hp_percent,
             "pvp": True,
             "turn": self.turn_count,
             "gas": gas - gas_cost,
             "character_level": getattr(current_char, 'level', 1),
             "opponent_level": getattr(opponent_char, 'level', 1),
             "is_pvp": True,
+            # Floch ability context - PvP adapts team mechanics to 1v1
+            "ally_death_count": demagogue_stacks_from_damage,  # Use damage milestones as "fallen allies"
+            "demagogue_stacks": demagogue_stacks_from_damage,  # Same tracking for demagogue's aura
+            "flochs_last_standing": hp_lost_percent >= 0.5,  # Trigger "last stand" when below 50% HP
+            # Base damage for abilities that scale with it
+            "base_damage": char_stats.get("ATK", 50) + char_stats.get("INT", 0) // 2,
         }
         
         # Apply ability effect
@@ -1303,19 +1331,18 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         target_id = str(target_user.id)
         target_username = target_user.username or str(target_user.id)
         
-        # Find the target user in database
-        target_player = None
+        # Find the target user in database (use sanitized get_player)
         try:
-            target_player = await db.players.find_one({"user_id": target_id})
+            defender_player = await db.get_player(target_id)
         except Exception as e:
             logger.error(f"Error finding target player: {e}")
             await update.message.reply_text("Error finding target player.")
             return
-            
-        if not target_player:
+
+        if not defender_player:
             await update.message.reply_text(f"Player '{target_username}' has not started the game yet.")
             return
-            
+
         # Check if user is challenging themselves
         if target_id == user_id:
             await update.message.reply_text("You can't challenge yourself to a PVP battle!")
@@ -1350,8 +1377,7 @@ async def pvp_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await update.message.reply_text("Your primary character was not found!")
             return
 
-        # Get defender's character data
-        defender_player = Player(**target_player)
+        # Get defender's character data (already loaded above)
         
         if not defender_player.team:
             await update.message.reply_text(f"{defender_player.name} doesn't have any characters in their team!")

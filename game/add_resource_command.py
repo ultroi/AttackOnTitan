@@ -25,6 +25,7 @@ async def add_resource_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if message:
             await message.reply_text("You are not authorized to use this command.")
         return
+    sys = BaseSystem(context)
     args = context.args if context.args is not None else []
     if not isinstance(args, list):
         args = list(args)
