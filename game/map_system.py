@@ -30,11 +30,27 @@ async def show_map(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await update.message.reply_photo(
-            MAP_IMAGE_URL,
-            caption=caption,
-            parse_mode=ParseMode.MARKDOWN
-        )
+        # Use cached Telegram file_id for the map image when available
+        map_cache = context.bot_data.setdefault("image_file_ids", {})
+        map_file_id = map_cache.get(MAP_IMAGE_URL)
+        if map_file_id:
+            await update.message.reply_photo(
+                map_file_id,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            sent = await update.message.reply_photo(
+                MAP_IMAGE_URL,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            # Cache file_id for faster subsequent sends
+            try:
+                if getattr(sent, "photo", None):
+                    map_cache[MAP_IMAGE_URL] = sent.photo[-1].file_id
+            except Exception:
+                pass
     except Exception as e:
         await update.message.reply_text(
             f"{caption}\n\n_Image could not be sent._",

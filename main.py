@@ -272,6 +272,22 @@ async def initialize_application():
         
         register_handlers(application)
 
+        # Start periodic explore cleanup (every 60s) to avoid accumulating locks/timeouts
+        try:
+            async def _explore_cleanup_loop():
+                from game.explore import cleanup_all
+                while True:
+                    await asyncio.sleep(60)
+                    try:
+                        cleanup_all()
+                    except Exception as e:
+                        logger.error(f"[Explore Cleanup] Error: {e}", exc_info=True)
+
+            # Store task so it can be cancelled on shutdown
+            application.bot_data["explore_cleanup_task"] = asyncio.create_task(_explore_cleanup_loop())
+        except Exception as e:
+            logger.error(f"Failed to start explore cleanup loop: {e}")
+
         
         async def error_handler(update: object, context):
             if isinstance(context.error, asyncio.CancelledError):
@@ -362,6 +378,14 @@ async def shutdown_application():
     if application and app_initialized:
         # Shutdown logging removed for cleaner logs
         try:
+            # Cancel explore cleanup task if present
+            cleanup_task = application.bot_data.get("explore_cleanup_task")
+            if cleanup_task:
+                try:
+                    cleanup_task.cancel()
+                except Exception:
+                    pass
+                application.bot_data.pop("explore_cleanup_task", None)
             # Stop receiving updates first
             if hasattr(application, 'updater') and application.updater is not None:
                 await application.updater.stop()

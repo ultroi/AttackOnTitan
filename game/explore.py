@@ -529,7 +529,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_text = (
         f"<code>-------------------------</code>\n"
         f"📍 <b>{titan_name} Lvl ({titan_level})</b>\n"
-        f"<b>has blocked your way<a href=\"{titan_image}\">!</a></b>\n"
+        f"<b>has blocked your way<a href=\"{titan_image}\">&#8203;</a></b>\n"
         f"<code>-------------------------</code>"
     )
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]])
@@ -553,7 +553,8 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "is_boss": False
         }
         context.bot_data[f"last_titan_data_{user_id_str}"] = minimal_titan_data
-        
+
+        # Use link preview (hidden anchor) so Telegram renders the image preview
         sent_message = await update.message.reply_text(
             reply_text,
             reply_markup=reply_markup,
@@ -775,8 +776,8 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
             context.bot_data[f"active_battle_id_{user_id}"] = battle_id
             
-            # Send boss message
-            image_embed = f'<a href="{boss_image_url}">!</a>'
+            # Send boss message (link preview with hidden anchor)
+            image_embed = f'<a href="{boss_image_url}">&#8203;</a>'
             boss_message = format_boss_titan_message(boss_name, boss_level, image_embed)
             keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
