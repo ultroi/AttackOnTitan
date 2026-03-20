@@ -574,7 +574,7 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     reply_text = (
         f"<code>-------------------------</code>\n"
-        f"{scene_text}\n"
+        f"<i>{scene_text}</i>\n\n"
         f"📍 <b>{titan_name} Lvl ({titan_level})</b>\n"
         f"<b>has blocked your way<a href=\"{titan_image}\">&#8203;</a></b>\n"
         f"<code>-------------------------</code>"
@@ -847,7 +847,7 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             image_embed = f'<a href="{boss_image_url}">&#8203;</a>'
             boss_message = (
                 f"<code>-------------------------</code>\n"
-                f"{scene_text}\n"
+                f"<i>{scene_text}</i>\n\n"
                 f"🚨 <b>BOSS APPEARED!</b> 🚨\n"
                 f"🔥 <b>{boss_name} Lvl ({boss_level})</b>\n"
                 f"<b>stands in your path, radiating immense power!{image_embed}</b>\n"
