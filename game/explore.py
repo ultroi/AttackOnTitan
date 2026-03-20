@@ -568,7 +568,9 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     # Build exploration narrative + titan message
-    scene_text = generate_explore_scene(random.choice(getattr(player, 'unlocked_areas', DEFAULT_AREAS)))
+    scene_text = generate_explore_scene(
+        unlocked_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS)
+    )
 
     reply_text = (
         f"<code>-------------------------</code>\n"
@@ -732,16 +734,20 @@ def get_titan_image_fast(titan_name: str) -> str:
     return TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
 
 
-def generate_explore_scene(area: Optional[str] = None) -> str:
+def generate_explore_scene(area: Optional[str] = None, unlocked_areas: Optional[list] = None) -> str:
     """Generate an immersive description stanza based on area."""
-    if not area or area not in AREA_SCENES:
-        area = random.choice(DEFAULT_AREAS)
+    valid_areas = [a for a in (unlocked_areas or []) if a in AREA_SCENES]
+    if area and area in AREA_SCENES:
+        chosen_area = area
+    elif valid_areas:
+        chosen_area = random.choice(valid_areas)
+    else:
+        chosen_area = random.choice(DEFAULT_AREAS)
 
     mood = random.choice(EXPLORATION_MOODS)
-    scene = random.choice(AREA_SCENES.get(area, ["the wild is filled with unknown threats."]))
+    scene = random.choice(AREA_SCENES.get(chosen_area, ["the wild is filled with unknown threats."]))
 
     return f"{mood} {scene}"
-
 
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
@@ -833,7 +839,9 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             context.bot_data[f"active_battle_id_{user_id}"] = battle_id
             
             # Scene text for boss encounter
-            scene_text = generate_explore_scene(random.choice(getattr(player, 'unlocked_areas', DEFAULT_AREAS)))
+            scene_text = generate_explore_scene(
+                unlocked_areas=getattr(player, 'unlocked_areas', DEFAULT_AREAS)
+            )
 
             # Send boss message (link preview with hidden anchor)
             image_embed = f'<a href="{boss_image_url}">&#8203;</a>'
