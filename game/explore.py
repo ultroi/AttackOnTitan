@@ -30,6 +30,35 @@ logger = logging.getLogger(__name__)
 TITAN_TIMEOUT_SECONDS = 60
 BATTLE_BUTTON_TEXT = "⚔️ Battle"
 DEFAULT_AREAS = ["Trost", "Karanes", "Shiganshina", "Orvud"]
+EXPLORATION_MOODS = [
+    "A chilling wind whispers:",
+    "The ground trembles as:",
+    "In the misty horizon:",
+    "You sense danger ahead:",
+    "A distant roar echoes:",
+]
+AREA_SCENES = {
+    "Trost": [
+        "the ruins of Trost hide a lurking terror.",
+        "shadows twist among broken walls.",
+        "a cold fog curls around collapsed towers."
+    ],
+    "Karanes": [
+        "the burned plains of Karanes hold a deadly silence.",
+        "smoke and flame reveal a wounded titan.",
+        "ashes swirl as you press forward."
+    ],
+    "Shiganshina": [
+        "the outer gates of Shiganshina still stand, faintly humming.",
+        "distant cries carry from the forest edge.",
+        "old battle scars form an eerie path."
+    ],
+    "Orvud": [
+        "the cratered fields of Orvud tremble beneath your boots.",
+        "fog veils ruins where something moves.",
+        "blighted trees gnarled by titan corruption."
+    ],
+}
 MAX_CACHE_SIZE = 500  # CRITICAL: Limit cache size
 MAX_BOT_DATA_ENTRIES = 1000  # Prevent unbounded growth
 
@@ -538,9 +567,12 @@ async def explore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         drop_table={}
     )
     
-    # Build message
+    # Build exploration narrative + titan message
+    scene_text = generate_explore_scene(random.choice(getattr(player, 'unlocked_areas', DEFAULT_AREAS)))
+
     reply_text = (
         f"<code>-------------------------</code>\n"
+        f"{scene_text}\n"
         f"📍 <b>{titan_name} Lvl ({titan_level})</b>\n"
         f"<b>has blocked your way<a href=\"{titan_image}\">&#8203;</a></b>\n"
         f"<code>-------------------------</code>"
@@ -699,6 +731,18 @@ def get_titan_image_fast(titan_name: str) -> str:
     # Fallback if cache not initialized
     return TITAN_TYPE_IMAGE_URLS.get(titan_key, random.choice(list(TITAN_TYPE_IMAGE_URLS.values())))
 
+
+def generate_explore_scene(area: Optional[str] = None) -> str:
+    """Generate an immersive description stanza based on area."""
+    if not area or area not in AREA_SCENES:
+        area = random.choice(DEFAULT_AREAS)
+
+    mood = random.choice(EXPLORATION_MOODS)
+    scene = random.choice(AREA_SCENES.get(area, ["the wild is filled with unknown threats."]))
+
+    return f"{mood} {scene}"
+
+
 def format_titan_message(name: str, level: int, image_embed: str = "") -> str:
     return (
         f"<code>-------------------------</code>\n"
@@ -788,9 +832,19 @@ async def spawn_boss_titan_directly(update: Update, context: ContextTypes.DEFAUL
             battle_id = f"battle_{user_id}_{uuid4().hex[:8]}"
             context.bot_data[f"active_battle_id_{user_id}"] = battle_id
             
+            # Scene text for boss encounter
+            scene_text = generate_explore_scene(random.choice(getattr(player, 'unlocked_areas', DEFAULT_AREAS)))
+
             # Send boss message (link preview with hidden anchor)
             image_embed = f'<a href="{boss_image_url}">&#8203;</a>'
-            boss_message = format_boss_titan_message(boss_name, boss_level, image_embed)
+            boss_message = (
+                f"<code>-------------------------</code>\n"
+                f"{scene_text}\n"
+                f"🚨 <b>BOSS APPEARED!</b> 🚨\n"
+                f"🔥 <b>{boss_name} Lvl ({boss_level})</b>\n"
+                f"<b>stands in your path, radiating immense power!{image_embed}</b>\n"
+                f"<code>-------------------------</code>"
+            )
             keyboard = [[InlineKeyboardButton(BATTLE_BUTTON_TEXT, callback_data=battle_id)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
