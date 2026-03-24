@@ -748,8 +748,8 @@ class BattleSystem:
         titan_bar_filled = int((self.titan_hp / self.titan.max_hp) * 10)
         
         # OPTIMIZED: Direct string multiplication (fastest method)
-        character_bar = "█" * char_bar_filled + "▒" * (10 - char_bar_filled)
-        titan_bar = "█" * titan_bar_filled + "▒" * (10 - titan_bar_filled)
+        character_bar = "■" * char_bar_filled + "□" * (10 - char_bar_filled)
+        titan_bar = "■" * titan_bar_filled + "□" * (10 - titan_bar_filled)
         
         # OPTIMIZED: Single f-string for status (faster than join)
         status_message = (

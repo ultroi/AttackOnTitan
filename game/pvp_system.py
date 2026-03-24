@@ -1109,8 +1109,8 @@ class PvPBattleSystem:
         """Return current battle state for UI display (HP bars, buffs, debuffs, etc)."""
         challenger_hp_percent = self.challenger_hp / self.challenger.stats.HP
         defender_hp_percent = self.defender_hp / self.defender.stats.HP
-        challenger_bar = "█" * int(challenger_hp_percent * 10) + "▒" * (10 - int(challenger_hp_percent * 10))
-        defender_bar = "█" * int(defender_hp_percent * 10) + "▒" * (10 - int(defender_hp_percent * 10))
+        challenger_bar = "■" * int(challenger_hp_percent * 10) + "□" * (10 - int(challenger_hp_percent * 10))
+        defender_bar = "■" * int(defender_hp_percent * 10) + "□" * (10 - int(defender_hp_percent * 10))
         # Use user_id to determine current turn
         if self.current_turn_user_id == str(self.challenger_player.user_id):
             current_player_id = self.challenger_player.user_id
