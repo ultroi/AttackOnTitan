@@ -66,10 +66,10 @@ MAX_BOT_DATA_ENTRIES = 1000  # Prevent unbounded growth
 EXPLORE_COOLDOWN_SECONDS = 0.5
 
 # Anti-spam: Continuous explore without battle protection
-CONSECUTIVE_EXPLORE_WARNING_THRESHOLD = 10  # Warn at 10 consecutive explores without battle
-CONSECUTIVE_EXPLORE_BAN_THRESHOLD = 15      # Ban at 15 consecutive explores without battle
-user_consecutive_explores: Dict[str, int] = {}  # Track consecutive explores per user
-user_explore_warned: Dict[str, bool] = {}  # Track if user was already warned
+CONSECUTIVE_EXPLORE_WARNING_THRESHOLD = 10  
+CONSECUTIVE_EXPLORE_BAN_THRESHOLD = 15      
+user_consecutive_explores: Dict[str, int] = {}  
+user_explore_warned: Dict[str, bool] = {}  
 
 # Performance: In-memory caches with size limits
 user_last_explore: Dict[str, float] = {}
